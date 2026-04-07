@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""Create synthetic host and donor genotype VCFs with 100 biallelic SNPs.
+
+Generates two VCFs with realistic structure and diverse genotype combinations
+to maximise the number of informative markers for chimerism testing.
+
+Usage:
+    python scripts/make_synthetic_genotypes.py --outdir tests/test_data
+
+Output:
+    tests/test_data/host.vcf
+    tests/test_data/donor.vcf
+"""
+
+from __future__ import annotations
+
+import argparse
+import random
+import sys
+from pathlib import Path
+
+N_MARKERS = 100
+
+# Spread across autosomes
+CHROMS = [f"chr{i}" for i in range(1, 23)]
+
+# Realistic bases for REF/ALT
+TRANSITIONS = [("A", "G"), ("G", "A"), ("C", "T"), ("T", "C")]
+TRANSVERSIONS = [("A", "C"), ("A", "T"), ("G", "C"), ("G", "T"),
+                 ("C", "A"), ("C", "G"), ("T", "A"), ("T", "G")]
+
+# Genotype distribution for a realistic population sample.
+# We want a good mix: ~50% het, ~25% hom-ref, ~25% hom-alt.
+# Assign host/donor genotypes to ensure high informativeness.
+# Pattern: cycle through all 9 genotype combos, weighting fully informative ones.
+GT_COMBOS = [
+    # (host_gt, donor_gt) — fully informative (types 0, 1)
+    ("0/0", "1/1"),
+    ("1/1", "0/0"),
+    ("0/0", "1/1"),
+    ("1/1", "0/0"),
+    # partially informative (types 10, 11, 20, 21)
+    ("0/1", "0/0"),
+    ("0/1", "1/1"),
+    ("0/0", "0/1"),
+    ("1/1", "0/1"),
+    # non-informative (same genotype) — include a few for realism
+    ("0/0", "0/0"),
+    ("0/1", "0/1"),
+]
+
+
+def gt_to_ad(gt: str, depth: int, rng: random.Random) -> str:
+    """Generate realistic AD field for a genotype at a given depth."""
+    if gt == "0/0":
+        # Small noise: a few alt reads from sequencing error
+        alt = rng.binomialvariate(depth, 0.002)
+        return f"{depth - alt},{alt}"
+    elif gt == "1/1":
+        ref = rng.binomialvariate(depth, 0.002)
+        return f"{ref},{depth - ref}"
+    else:  # 0/1
+        # Slight allelic imbalance is realistic
+        bias = rng.uniform(-0.05, 0.05)
+        alt = rng.binomialvariate(depth, 0.5 + bias)
+        return f"{depth - alt},{alt}"
+
+
+def gt_to_af(gt: str, ad: str) -> str:
+    """Compute AF from AD."""
+    parts = ad.split(",")
+    ref_c, alt_c = int(parts[0]), int(parts[1])
+    total = ref_c + alt_c
+    if total == 0:
+        return "0"
+    return f"{alt_c / total:.4f}"
+
+
+def make_vcf(
+    sample_name: str,
+    genotypes: list[str],
+    positions: list[tuple[str, int, str, str]],
+    rng: random.Random,
+    depth_mean: int = 2000,
+) -> str:
+    """Build a VCF string."""
+    lines = []
+
+    # Header
+    lines.append("##fileformat=VCFv4.2")
+    lines.append('##FILTER=<ID=PASS,Description="All filters passed">')
+    lines.append('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">')
+    lines.append(
+        '##FORMAT=<ID=AD,Number=R,Type=Integer,'
+        'Description="Allelic depths for the ref and alt alleles">'
+    )
+    lines.append(
+        '##FORMAT=<ID=DP,Number=1,Type=Integer,'
+        'Description="Approximate read depth">'
+    )
+    lines.append('##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">')
+    lines.append(
+        '##FORMAT=<ID=AF,Number=A,Type=Float,'
+        'Description="Variant allele frequency">'
+    )
+    lines.append(
+        '##FORMAT=<ID=PL,Number=G,Type=Integer,'
+        'Description="Phred-scaled likelihoods for genotypes">'
+    )
+    lines.append(
+        '##INFO=<ID=AC,Number=A,Type=Integer,'
+        'Description="Allele count in genotypes">'
+    )
+    lines.append(
+        '##INFO=<ID=AF,Number=A,Type=Float,'
+        'Description="Allele Frequency">'
+    )
+    lines.append('##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles">')
+    lines.append(
+        '##INFO=<ID=DP,Number=1,Type=Integer,'
+        'Description="Approximate read depth">'
+    )
+    for c in CHROMS:
+        lines.append(f"##contig=<ID={c},length=248956422>")
+    lines.append(f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample_name}")
+
+    # Records
+    for i, ((chrom, pos, ref, alt), gt) in enumerate(zip(positions, genotypes)):
+        depth = max(500, rng.gauss(depth_mean, 300))
+        depth = int(depth)
+        ad = gt_to_ad(gt, depth, rng)
+        af = gt_to_af(gt, ad)
+        dp = sum(int(x) for x in ad.split(","))
+        gq = 99
+
+        info = f"AC=1;AF=0.5;AN=2;DP={dp * 100}"
+        fmt = "GT:AD:DP:GQ:AF"
+        sample = f"{gt}:{ad}:{dp}:{gq}:{af}"
+
+        lines.append(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t10000\tPASS\t{info}\t{fmt}\t{sample}")
+
+    return "\n".join(lines) + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Create synthetic host + donor VCFs.")
+    parser.add_argument(
+        "--outdir", default="output/genotypes",
+        help="Output directory (default: output/genotypes)",
+    )
+    parser.add_argument("--seed", type=int, default=12345, help="Random seed")
+    parser.add_argument("--n-markers", type=int, default=N_MARKERS, help="Number of SNPs")
+    args = parser.parse_args(argv)
+
+    rng = random.Random(args.seed)
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    n = args.n_markers
+
+    # Generate positions spread across chromosomes
+    positions = []
+    for i in range(n):
+        chrom = CHROMS[i % len(CHROMS)]
+        pos = 1_000_000 + i * 100_000  # evenly spaced, fictional
+        # Pick ref/alt — favour transitions (realistic)
+        if rng.random() < 0.67:
+            ref, alt = rng.choice(TRANSITIONS)
+        else:
+            ref, alt = rng.choice(TRANSVERSIONS)
+        positions.append((chrom, pos, ref, alt))
+
+    # Sort by chrom, pos
+    positions.sort(key=lambda x: (CHROMS.index(x[0]), x[1]))
+
+    # Assign genotype combos — cycle through the pattern
+    host_gts = []
+    donor_gts = []
+    for i in range(n):
+        combo = GT_COMBOS[i % len(GT_COMBOS)]
+        host_gts.append(combo[0])
+        donor_gts.append(combo[1])
+
+    # Write VCFs
+    host_vcf = make_vcf("HOST_SYNTHETIC", host_gts, positions, random.Random(rng.randint(0, 2**31)))
+    donor_vcf = make_vcf(
+        "DONOR_SYNTHETIC", donor_gts, positions, random.Random(rng.randint(0, 2**31))
+    )
+
+    host_path = outdir / "host.vcf"
+    donor_path = outdir / "donor.vcf"
+    host_path.write_text(host_vcf)
+    donor_path.write_text(donor_vcf)
+
+    # Count informativeness
+    n_informative = sum(1 for h, d in zip(host_gts, donor_gts) if h != d)
+    print(f"Created {n} markers ({n_informative} informative) in {outdir}/", file=sys.stderr)
+    print(f"  {host_path}", file=sys.stderr)
+    print(f"  {donor_path}", file=sys.stderr)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

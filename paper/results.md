@@ -32,15 +32,15 @@ To evaluate the impact of per-marker amplification bias correction, we generated
 
 Without bias correction, the mean absolute error on interior fractions (excluding 0% and 100%) was {{ bias_no_bias.mean_abs_error_pct | dp(2) }}% with RMSE {{ bias_no_bias.rmse_pct | dp(2) }}%. With bias correction, the mean absolute error was {{ bias_with_bias.mean_abs_error_pct | dp(2) }}% with RMSE {{ bias_with_bias.rmse_pct | dp(2) }}%. The most notable improvement from bias correction was at the boundary fractions: without correction, the 0% donor sample was estimated at 0.44%, while with correction the estimate was 0.00%. Similarly, the 100% donor sample improved from 99.37% to 100.00% (Figure 2).
 
-![**Figure 1.** In silico validation of allomix. True donor fraction (x-axis) versus estimated donor fraction (y-axis) for synthetic chimeric samples with {{ validation_summary.n_markers | fmt('g') }} markers at {{ validation_summary.depth | fmt(',.0f') }}x depth. Dashed line indicates perfect agreement.](paper/figures/fig1_scatter.png)
+![**Figure 1.** In silico validation of allomix. True donor fraction (x-axis) versus estimated donor fraction (y-axis) for synthetic chimeric samples with {{ validation_summary.n_markers | fmt('g') }} markers at {{ validation_summary.depth | fmt(',.0f') }}x depth. Dashed line indicates perfect agreement.]({{ facts_dir }}/fig1_scatter.png)
 
-![**Figure 2.** Effect of per-marker bias correction. Left: truth versus estimated donor fraction without (red) and with (blue) bias correction. Centre: residuals. Right: 95% confidence intervals. Per-marker biases were simulated with $\sigma_{bias}$ = 0.02.](paper/figures/fig2_bias_correction.png)
+![**Figure 2.** Effect of per-marker bias correction. Left: truth versus estimated donor fraction without (red) and with (blue) bias correction. Centre: residuals. Right: 95% confidence intervals. Per-marker biases were simulated with $\sigma_{bias}$ = 0.02.]({{ facts_dir }}/fig2_bias_correction.png)
 
 ### Confidence Interval Calibration
 
 The 95% profile likelihood confidence intervals showed nominal coverage of {{ validation_summary.ci_coverage_pct }}% in the standard validation. This under-coverage relative to the 95% nominal level is attributable to systematic per-marker capture biases that are not accounted for in the standard error model. When bias correction is applied, CI calibration is expected to improve, as the residual error after correction is dominated by stochastic sampling noise that is well-modeled by the binomial likelihood.
 
-![**Figure 3.** Confidence interval coverage. Vertical bars show 95% profile likelihood CIs for each simulated donor fraction. Blue bars contain the true value; red bars miss it. Black dots are point estimates.](paper/figures/fig3_ci_coverage.png)
+![**Figure 3.** Confidence interval coverage. Vertical bars show 95% profile likelihood CIs for each simulated donor fraction. Blue bars contain the true value; red bars miss it. Black dots are point estimates.]({{ facts_dir }}/fig3_ci_coverage.png)
 
 ### Comparison with Existing Tools
 

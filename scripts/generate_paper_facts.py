@@ -212,7 +212,28 @@ def main():
         "min_informative_markers": 3,
     })
 
-    print("\nDone! Facts written to output/facts/")
+    # --- Copy figures into facts dir so {{ facts_dir }} paths work ---
+    import shutil
+    from scripts.run_validation import main as run_validation_main
+
+    print("Generating validation plots...")
+    run_validation_main([
+        "--host", host_vcf, "--donor", donor_vcf,
+        "--truth", "tests/test_data/truth_table.tsv",
+        "--vcf-dir", "tests/test_data",
+        "--outdir", "output/validation",
+    ])
+
+    print("Copying figures to facts dir...")
+    for src, dst in [
+        ("output/validation/validation_scatter.png", "fig1_scatter.png"),
+        ("output/bias_comparison/bias_correction_comparison.png", "fig2_bias_correction.png"),
+        ("output/validation/validation_ci.png", "fig3_ci_coverage.png"),
+    ]:
+        shutil.copy2(src, FACTS_DIR / dst)
+        print(f"  {FACTS_DIR / dst}")
+
+    print("\nDone! Facts and figures written to output/facts/")
 
 
 if __name__ == "__main__":

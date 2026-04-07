@@ -61,6 +61,7 @@ def expected_weight(
     host_gt: tuple[int, int],
     donor_gt: tuple[int, int],
     f_donor: float,
+    bias: float = 0.0,
 ) -> float:
     """Expected reference allele weight for a given chimerism fraction.
 
@@ -68,17 +69,28 @@ def expected_weight(
 
     where ref_dose = 2 - alt_dose.
 
+    When ``bias`` is non-zero, the weight is adjusted to account for
+    per-marker amplification bias.  A positive bias means the ALT allele
+    is preferentially captured, so the observed REF weight is lower:
+
+        w_corrected = w_true - bias   (clamped to [eps, 1 - eps])
+
     Args:
         host_gt: Host diploid genotype, e.g. (0, 0), (0, 1), (1, 1).
         donor_gt: Donor diploid genotype.
         f_donor: Donor fraction (0.0 to 1.0).
+        bias: Per-marker amplification bias (default 0.0 = no correction).
 
     Returns:
         Expected reference allele weight (0.0 to 1.0).
     """
     host_ref_dose = 2 - (host_gt[0] + host_gt[1])
     donor_ref_dose = 2 - (donor_gt[0] + donor_gt[1])
-    return (1.0 - f_donor) * host_ref_dose / 2.0 + f_donor * donor_ref_dose / 2.0
+    w = (1.0 - f_donor) * host_ref_dose / 2.0 + f_donor * donor_ref_dose / 2.0
+    if bias != 0.0:
+        # Clamp to avoid 0/1 boundary (log-likelihood needs p > 0)
+        w = max(1e-6, min(1.0 - 1e-6, w - bias))
+    return w
 
 
 def log_likelihood_marker(
@@ -122,6 +134,7 @@ def total_log_likelihood(
     markers: list[InformativeMarker],
     f_donor: float,
     error_rate: float = 0.01,
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
 ) -> float:
     """Sum of per-marker log-likelihoods across all informative markers.
 
@@ -129,13 +142,19 @@ def total_log_likelihood(
         markers: List of informative markers with admixture allele counts.
         f_donor: Donor fraction to evaluate.
         error_rate: Sequencing error rate.
+        marker_biases: Optional dict mapping (chrom, pos, ref, alt) to per-marker
+            amplification bias. When provided, the expected weight at each marker
+            is adjusted to account for systematic capture bias.
 
     Returns:
         Total log-likelihood.
     """
     ll = 0.0
     for m in markers:
-        w = expected_weight(m.host_gt, m.donor_gts[0], f_donor)
+        bias = 0.0
+        if marker_biases is not None:
+            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        w = expected_weight(m.host_gt, m.donor_gts[0], f_donor, bias=bias)
         ll += log_likelihood_marker(m.admix_ad_ref, m.admix_ad_alt, w, error_rate)
     return ll
 
@@ -164,6 +183,7 @@ def estimate_single_donor(
     markers: list[InformativeMarker],
     error_rate: float = 0.01,
     grid_steps: int = 1001,
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
 ) -> ChimerismResult:
     """Estimate single-donor chimerism fraction via maximum likelihood.
 
@@ -177,6 +197,8 @@ def estimate_single_donor(
         markers: List of informative markers with admixture allele counts.
         error_rate: Sequencing error rate.
         grid_steps: Number of grid points for initial search.
+        marker_biases: Optional dict mapping (chrom, pos, ref, alt) to per-marker
+            amplification bias for likelihood correction.
 
     Returns:
         ChimerismResult with MLE estimate, CI, and per-marker details.
@@ -197,7 +219,9 @@ def estimate_single_donor(
 
     # Step 1: Grid search
     grid = np.linspace(0.0, 1.0, grid_steps)
-    ll_values = np.array([total_log_likelihood(markers, f, error_rate) for f in grid])
+    ll_values = np.array(
+        [total_log_likelihood(markers, f, error_rate, marker_biases) for f in grid]
+    )
     best_idx = int(np.argmax(ll_values))
     f_grid = float(grid[best_idx])
 
@@ -206,7 +230,7 @@ def estimate_single_donor(
     hi = min(1.0, f_grid + 0.01)
 
     result = minimize_scalar(
-        lambda f: -total_log_likelihood(markers, f, error_rate),
+        lambda f: -total_log_likelihood(markers, f, error_rate, marker_biases),
         bounds=(lo, hi),
         method="bounded",
     )
@@ -223,7 +247,7 @@ def estimate_single_donor(
     step = 0.001
     while f_lo > 0.0:
         f_test = max(0.0, f_lo - step)
-        ll_test = total_log_likelihood(markers, f_test, error_rate)
+        ll_test = total_log_likelihood(markers, f_test, error_rate, marker_biases)
         if (ll_max - ll_test) > half_threshold:
             # Interpolate between f_test and f_lo for better precision
             f_lo = f_test
@@ -236,7 +260,7 @@ def estimate_single_donor(
     f_hi = f_mle
     while f_hi < 1.0:
         f_test = min(1.0, f_hi + step)
-        ll_test = total_log_likelihood(markers, f_test, error_rate)
+        ll_test = total_log_likelihood(markers, f_test, error_rate, marker_biases)
         if (ll_max - ll_test) > half_threshold:
             f_hi = f_test
             break
@@ -249,24 +273,29 @@ def estimate_single_donor(
     residuals: list[float] = []
 
     for m in markers:
-        w = expected_weight(m.host_gt, m.donor_gts[0], f_mle)
+        bias = 0.0
+        if marker_biases is not None:
+            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        w = expected_weight(m.host_gt, m.donor_gts[0], f_mle, bias=bias)
         expected_vaf = 1.0 - w  # ALT VAF = 1 - ref_weight
         observed_vaf = m.admix_ad_alt / m.admix_dp if m.admix_dp > 0 else 0.0
         residual = observed_vaf - expected_vaf
         residuals.append(residual)
 
-        per_marker.append(MarkerResult(
-            chrom=m.chrom,
-            pos=m.pos,
-            marker_type=m.marker_type,
-            expected_vaf=expected_vaf,
-            observed_vaf=observed_vaf,
-            residual=residual,
-            ad_ref=m.admix_ad_ref,
-            ad_alt=m.admix_ad_alt,
-            dp=m.admix_dp,
-            included=True,  # will be updated below
-        ))
+        per_marker.append(
+            MarkerResult(
+                chrom=m.chrom,
+                pos=m.pos,
+                marker_type=m.marker_type,
+                expected_vaf=expected_vaf,
+                observed_vaf=observed_vaf,
+                residual=residual,
+                ad_ref=m.admix_ad_ref,
+                ad_alt=m.admix_ad_alt,
+                dp=m.admix_dp,
+                included=True,  # will be updated below
+            )
+        )
 
     # Flag outliers (residual > 3 SD) but do NOT exclude them in v1
     if len(residuals) >= 2:

@@ -2,20 +2,6 @@
 
 This is the master plan for building an in-house NGS chimerism monitoring tool. Each step is designed to be fed into a prompt as a self-contained task.
 
----
-
-## Step 1: Project Setup and README
-
-**Goal:** Establish project structure, write the top-level README, and define scope.
-
-- Create the project directory structure (e.g. `src/`, `tests/`, `third_party/`, `data/`, `docs/`)
-- Write a top-level `README.md` covering: what the tool does, the clinical context (HSCT chimerism monitoring replacing STR), the 76-SNP rhAmpSeq panel, intended workflow (genotype donor+host, then analyse post-HSCT admixtures), sensitivity target (<1%), multi-donor support (up to 3 genomes)
-- Define input/output contract: what goes in (VCFs? BAMs? both?), what comes out (% chimerism, confidence intervals, per-marker details, QC)
-- Write a `CLAUDE.md` for the tool's own repo with dev conventions, dependencies, testing approach
-- Set up `pyproject.toml` / packaging basics (Python, dependencies: cyvcf2 or pysam, numpy, scipy)
-
----
-
 ## Step 2: BAM vs VCF — Determine Primary Input Format
 
 **Goal:** Decide whether the tool should operate on VCFs, BAMs, or both, with clear reasoning.

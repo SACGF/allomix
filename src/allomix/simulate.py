@@ -18,6 +18,7 @@ from pathlib import Path
 # Data types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class VcfRecord:
     """A single VCF data line, lightly parsed."""
@@ -43,6 +44,7 @@ class VcfRecord:
 # VCF I/O helpers
 # ---------------------------------------------------------------------------
 
+
 def parse_vcf(path: str | Path) -> tuple[list[str], list[VcfRecord]]:
     """Read a VCF file and return (header_lines, records).
 
@@ -66,18 +68,20 @@ def parse_vcf(path: str | Path) -> tuple[list[str], list[VcfRecord]]:
             fields = line.split("\t")
             if len(fields) < 10:
                 continue
-            records.append(VcfRecord(
-                chrom=fields[0],
-                pos=int(fields[1]),
-                id_=fields[2],
-                ref=fields[3],
-                alt=fields[4],
-                qual=fields[5],
-                filter_=fields[6],
-                info=fields[7],
-                format_=fields[8],
-                sample=fields[9],
-            ))
+            records.append(
+                VcfRecord(
+                    chrom=fields[0],
+                    pos=int(fields[1]),
+                    id_=fields[2],
+                    ref=fields[3],
+                    alt=fields[4],
+                    qual=fields[5],
+                    filter_=fields[6],
+                    info=fields[7],
+                    format_=fields[8],
+                    sample=fields[9],
+                )
+            )
     return header, records
 
 
@@ -153,6 +157,7 @@ def alt_dose(gt: tuple[int, int]) -> int:
 # ---------------------------------------------------------------------------
 # Core simulation logic
 # ---------------------------------------------------------------------------
+
 
 def expected_vaf(
     host_gt: tuple[int, int],
@@ -282,6 +287,7 @@ def gt_from_counts(ref_count: int, alt_count: int) -> str:
 # High-level blending
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BlendResult:
     """Result of blending two VCFs at a given mixture fraction."""
@@ -290,6 +296,8 @@ class BlendResult:
     records: list[str]
     num_markers: int
     num_informative: int
+    marker_biases: list[tuple[str, int, str, str, float]] | None = None
+    # List of (chrom, pos, ref, alt, bias) for each shared marker, or None if no bias
 
 
 def generate_marker_biases(
@@ -329,6 +337,7 @@ def blend_vcfs(
     sample_name: str | None = None,
     seed: int | None = None,
     marker_bias_sd: float = 0.0,
+    fixed_biases: list[float] | None = None,
 ) -> BlendResult:
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
 
@@ -343,6 +352,10 @@ def blend_vcfs(
         seed: Random seed for reproducibility.
         marker_bias_sd: Standard deviation of per-marker capture bias.
             0.0 = no bias (ideal simulation), 0.02 = realistic.
+            Ignored when ``fixed_biases`` is provided.
+        fixed_biases: Pre-generated per-marker bias values. When provided,
+            these biases are used directly instead of generating random ones.
+            Length must match the number of shared markers.
 
     Returns:
         BlendResult containing the header, VCF record lines, and statistics.
@@ -374,9 +387,17 @@ def blend_vcfs(
 
     # Pre-generate per-marker biases (one per shared locus, in order)
     n_shared = sum(1 for hr in host_records if hr.locus in donor_by_locus)
-    marker_biases = generate_marker_biases(n_shared, rng, marker_bias_sd)
+    if fixed_biases is not None:
+        if len(fixed_biases) != n_shared:
+            raise ValueError(
+                f"fixed_biases length ({len(fixed_biases)}) != shared markers ({n_shared})"
+            )
+        marker_biases = fixed_biases
+    else:
+        marker_biases = generate_marker_biases(n_shared, rng, marker_bias_sd)
 
     out_records: list[str] = []
+    bias_info: list[tuple[str, int, str, str, float]] = []
     num_markers = 0
     num_informative = 0
     bias_idx = 0
@@ -407,7 +428,10 @@ def blend_vcfs(
 
         # Calculate expected VAF, apply per-marker capture bias, then sample
         vaf = expected_vaf(host_gt, donor_gt, donor_fraction)
-        vaf_biased = max(0.0, min(1.0, vaf + marker_biases[bias_idx]))
+        this_bias = marker_biases[bias_idx]
+        vaf_biased = max(0.0, min(1.0, vaf + this_bias))
+        alt_allele_bias = host_rec.alt if host_rec.alt != "." else donor_rec.alt
+        bias_info.append((host_rec.chrom, host_rec.pos, host_rec.ref, alt_allele_bias, this_bias))
         bias_idx += 1
         ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng)
 
@@ -444,18 +468,20 @@ def blend_vcfs(
             an = 2
             info_parts.extend([f"AC={ac}", f"AN={an}"])
 
-        line = "\t".join([
-            host_rec.chrom,
-            str(host_rec.pos),
-            host_rec.id_,
-            host_rec.ref,
-            alt_allele,
-            str(host_rec.qual),
-            "PASS",
-            ";".join(info_parts),
-            format_field,
-            sample_field,
-        ])
+        line = "\t".join(
+            [
+                host_rec.chrom,
+                str(host_rec.pos),
+                host_rec.id_,
+                host_rec.ref,
+                alt_allele,
+                str(host_rec.qual),
+                "PASS",
+                ";".join(info_parts),
+                format_field,
+                sample_field,
+            ]
+        )
         out_records.append(line)
 
     return BlendResult(
@@ -463,6 +489,7 @@ def blend_vcfs(
         records=out_records,
         num_markers=num_markers,
         num_informative=num_informative,
+        marker_biases=bias_info if (marker_bias_sd > 0 or fixed_biases is not None) else None,
     )
 
 

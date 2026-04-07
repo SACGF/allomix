@@ -117,8 +117,18 @@ allomix timeline \
 
 ## Project Status
 
-This project is in early development (v0.0.1). The core chimerism calculation algorithm is not yet implemented.
+Single-donor chimerism estimation is implemented and validated:
+
+- MLE-based estimation using Crysup & Woerner (2022) likelihood framework with known genotypes
+- Grid search + Brent refinement, profile likelihood 95% confidence intervals
+- QC assessment (marker counts, depth, goodness-of-fit, outlier detection)
+- TSV and JSON output, including multi-timepoint timeline
+- 192 automated tests, in-silico validation at 0–100% donor fractions (RMSE ~0.3%)
+
+**Not yet implemented:** multi-donor support (host + 2 donors), per-marker bias correction (Vynck et al.), VariantGrid integration.
 
 ## License
 
 MIT
+
+Chimerism MLE methodology based on Crysup & Woerner (2022) — independently reimplemented, not derived from Demixtify source code.

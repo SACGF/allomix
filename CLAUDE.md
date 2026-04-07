@@ -20,38 +20,40 @@ Our specific deployment uses the 76 Sample ID SNPs from the IDT rhAmpSeq panel i
 - **Existing data**: VCF files with genotypes for all 76 markers on TAU server at `/tau/data/clinical_hg38/idt_rhampseq_sid/` with AF tag (VAF) present, depth >>1000x
 - **GMP constraint**: New workflow must be conducted entirely within GMP to avoid donor/host genome mix-up during data analysis (identified as a problem in external review of current workflow)
 
-## Files
+## Input Requirements
 
-- `email.txt` — Internal email thread establishing project requirements, data locations, and questions
-- `Brochure -One Lambda Devyser Chimerism.pdf` / `One_Lambda_Devyser_Chimerism_brochure.txt` — Thermo Fisher/Devyser product using 24 indel markers, LOD 0.05%, Advyser software
-- `MAR0094_Rev5_AlloSeq_HCT_sales_brochure-DIGITAL.pdf` / `AlloSeq_HCT_brochure.txt` — CareDx product using 202 bi-allelic SNPs, LOD 0.22%, HCT software
-- `CareDx AlloSeq HCT Demo 18.3.26 WP notes.docx` — Notes from CareDx commercial software demo
+- **VCF-first**: allomix takes VCFs as input (not BAMs). Minimum required FORMAT fields: GT, AD, DP.
+- **Joint calling**: For low-fraction detection (<5% donor), admixture samples MUST be joint-called alongside donor/host genotyping samples in the same GATK GenomicsDBImport + GenotypeGVCFs run. This ensures ALT alleles discovered in donors produce 2-element AD fields (ref,alt) in admixture samples even when called hom-ref. See `claude/step2_bam_vs_vcf_decision.md` for full rationale.
 
-## Commercial Products Evaluated
+## Data Access
 
-| Product | Vendor | Markers | Type | LOD | Software |
-|---|---|---|---|---|---|
-| AlloSeq HCT | CareDx | 202 SNPs (bi-allelic, 22 autosomes) | SNP | 0.22% | HCT Software (web-based) |
-| Devyser Chimerism for NGS | One Lambda / Thermo Fisher | 24 indel markers (17 chromosomes) | Indel | 0.05% | Advyser (desktop) |
+- Patient data on `/tau` is NOT directly accessible. To examine real VCFs, write a standalone script that outputs only summary statistics (no patient identifiers or genomic coordinates) and ask the user to run it.
+- De-identified example VCFs are in `data/` for development use.
 
-Both support up to 3 genomes (host + 2 donors) and provide timeline visualization of chimerism over time.
+## License & Attribution
 
-## In-House Approach (rhAmpSeq Sample ID)
+- allomix is MIT licensed.
+- The MLE chimerism estimation methodology is based on Crysup & Woerner (2022) — cite this paper.
+- Code is independently reimplemented. Do NOT copy code from AGPL (Demixtify), non-commercial (Conpair, chimerism_smmip), or unlicensed repos. The math is published science and freely reimplementable.
+- MIT-licensed repos (All-FIT, FABCASE, somalier) can be referenced/adapted.
 
-- Uses IDT xGen Human ID Hybridization Capture Panel: 76 SNPs with 229 probes, discrimination power >1 in 5 million
-- Panel info: https://sg.idtdna.com/pages/products/next-generation-sequencing/workflow/xgen-ngs-hybridization-capture/pre-designed-hyb-cap-panels/human-id-hyb-panel
-- VCF data already generated via GATK per-sample calling from rhAmpSeq amplicon data
-- Suggestion to use VariantGrid (VG) as database for donor/host genotypes matched to subsequent post-HSCT samples
+## Background Materials
+
+- `claude/` — Planning documents, decision records, and reference tool analysis
+- Commercial product evaluations (CareDx AlloSeq HCT, Thermo Fisher Devyser) were reviewed during planning; specs are captured in `claude/step4_reference_tool_analysis.md` and the README comparison table
 
 ## Development
 
 ### Project Structure
 
 ```
-src/allomix/          # Main package
+src/allomix/          # Main package (genotype, chimerism, qc, report, simulate, cli)
 tests/                # pytest tests
-docs/                 # Documentation
-claude/               # Planning documents and research notes
+tests/test_data/      # Synthetic test VCFs (100 markers, 0-100% in 10% steps + timeline)
+scripts/              # Utility scripts (test data generation, validation)
+data/                 # De-identified example VCFs from real pipeline
+claude/               # Planning documents, decision records, research notes
+output/               # Script output (gitignored)
 ```
 
 ### Python Version

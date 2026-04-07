@@ -1,0 +1,8 @@
+sample_name	day	true_donor_fraction	num_markers	num_informative
+day030_donor_95	30	0.950000	100	80
+day060_donor_98	60	0.980000	100	80
+day090_donor_99	90	0.990000	100	80
+day120_donor_97	120	0.970000	100	80
+day180_donor_90	180	0.900000	100	80
+day240_donor_70	240	0.700000	100	80
+day300_donor_40	300	0.400000	100	80

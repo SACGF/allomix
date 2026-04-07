@@ -30,6 +30,17 @@ DEFAULT_FRACTIONS = [
 ]
 
 
+def _fraction_to_filename(donor_fraction: float) -> str:
+    """Convert a donor fraction to a descriptive filename.
+
+    Names show host_X_donor_Y where X and Y are integer percentages.
+    E.g. donor_fraction=0.10 -> 'host_90_donor_10'
+    """
+    donor_pct = round(donor_fraction * 100)
+    host_pct = 100 - donor_pct
+    return f"host_{host_pct}_donor_{donor_pct}"
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the test data generator."""
     parser = argparse.ArgumentParser(
@@ -42,7 +53,8 @@ def main(argv: list[str] | None = None) -> int:
         "--donor", required=True, help="Donor genotype VCF (plain text .vcf)",
     )
     parser.add_argument(
-        "--outdir", required=True, help="Output directory for simulated VCFs",
+        "--outdir", default="output/simulated",
+        help="Output directory for simulated VCFs (default: output/simulated)",
     )
     parser.add_argument(
         "--depth", type=int, default=None,
@@ -55,6 +67,10 @@ def main(argv: list[str] | None = None) -> int:
         "--fractions", type=float, nargs="+", default=None,
         help="Custom donor fractions (default: 0 0.001 0.005 ... 0.99 1.0)",
     )
+    parser.add_argument(
+        "--bias-sd", type=float, default=0.0,
+        help="Per-marker capture bias SD (0=ideal, 0.02=realistic, default: 0)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -65,8 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     truth_rows: list[dict[str, str]] = []
 
     for frac in fractions:
-        pct_label = f"{frac * 100:.1f}".replace(".", "p")
-        sample_name = f"sim_donor_{pct_label}pct"
+        sample_name = _fraction_to_filename(frac)
         vcf_name = f"{sample_name}.vcf"
 
         print(f"Generating {vcf_name} (donor fraction = {frac:.4f}) ...", file=sys.stderr)
@@ -77,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             donor_fraction=frac,
             target_depth=args.depth,
             sample_name=sample_name,
+            marker_bias_sd=args.bias_sd,
             seed=args.seed + hash(str(frac)) % (2**31),
         )
 

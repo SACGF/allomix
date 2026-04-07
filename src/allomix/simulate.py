@@ -292,6 +292,35 @@ class BlendResult:
     num_informative: int
 
 
+def generate_marker_biases(
+    n_markers: int,
+    rng: random.Random,
+    bias_sd: float = 0.02,
+) -> list[float]:
+    """Generate per-marker capture/amplification biases.
+
+    Each marker gets a fixed bias drawn from N(0, bias_sd). This models
+    the systematic reference/alt allele capture efficiency difference seen
+    in real hybridisation capture and amplicon data (Vynck et al.).
+
+    A bias of +0.02 means the observed ALT VAF is shifted +0.02 relative
+    to the true VAF (i.e. ALT allele is preferentially captured).
+
+    Args:
+        n_markers: Number of markers.
+        rng: Random instance for reproducibility.
+        bias_sd: Standard deviation of the bias distribution. Typical values:
+            0.0 = no bias (ideal), 0.02 = moderate (typical for capture panels),
+            0.05 = high (poor panel design).
+
+    Returns:
+        List of per-marker bias values.
+    """
+    if bias_sd <= 0:
+        return [0.0] * n_markers
+    return [rng.gauss(0.0, bias_sd) for _ in range(n_markers)]
+
+
 def blend_vcfs(
     host_path: str | Path,
     donor_path: str | Path,
@@ -299,6 +328,7 @@ def blend_vcfs(
     target_depth: int | None = None,
     sample_name: str | None = None,
     seed: int | None = None,
+    marker_bias_sd: float = 0.0,
 ) -> BlendResult:
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
 
@@ -311,6 +341,8 @@ def blend_vcfs(
         sample_name: Sample name for the output VCF column header.
             Defaults to 'simulated'.
         seed: Random seed for reproducibility.
+        marker_bias_sd: Standard deviation of per-marker capture bias.
+            0.0 = no bias (ideal simulation), 0.02 = realistic.
 
     Returns:
         BlendResult containing the header, VCF record lines, and statistics.
@@ -340,9 +372,14 @@ def blend_vcfs(
         else:
             out_header.append(line)
 
+    # Pre-generate per-marker biases (one per shared locus, in order)
+    n_shared = sum(1 for hr in host_records if hr.locus in donor_by_locus)
+    marker_biases = generate_marker_biases(n_shared, rng, marker_bias_sd)
+
     out_records: list[str] = []
     num_markers = 0
     num_informative = 0
+    bias_idx = 0
 
     for host_rec in host_records:
         donor_rec = donor_by_locus.get(host_rec.locus)
@@ -368,9 +405,11 @@ def blend_vcfs(
         else:
             depth = extract_depth(host_rec) or 1000
 
-        # Calculate expected VAF and sample
+        # Calculate expected VAF, apply per-marker capture bias, then sample
         vaf = expected_vaf(host_gt, donor_gt, donor_fraction)
-        ref_count, alt_count = sample_allele_counts(vaf, depth, rng)
+        vaf_biased = max(0.0, min(1.0, vaf + marker_biases[bias_idx]))
+        bias_idx += 1
+        ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng)
 
         # Build output record
         gt = gt_from_counts(ref_count, alt_count)

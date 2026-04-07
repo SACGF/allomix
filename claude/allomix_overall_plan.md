@@ -39,9 +39,10 @@ Full analysis in `claude/step2_bam_vs_vcf_decision.md`. Key points:
 Built in `src/allomix/simulate.py` + `scripts/generate_test_data.py` + `tests/test_simulate.py` (64 tests).
 
 - VCF blending: takes host + donor VCFs, mixture fraction, target depth → synthetic chimeric VCF with binomial-sampled allele counts
+- **Capture bias simulation**: `marker_bias_sd` parameter adds per-marker capture/amplification bias drawn from N(0, sd). 0.0 = ideal, 0.02 = realistic for capture panels. Each marker gets a fixed bias that shifts its observed VAF relative to truth.
 - Plain-text VCF parsing (no cyvcf2 dependency) so simulation code is lightweight
-- CLI script generates 13 mixture fractions (0%–100%) + truth table TSV
-- Supports custom fractions, depth, and random seed
+- CLI scripts: `generate_test_data.py` (chimerism series), `generate_timeline_data.py` (engraftment + relapse scenario)
+- Supports custom fractions, depth, random seed, and `--bias-sd`
 
 ---
 
@@ -147,12 +148,31 @@ allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf --verbose
 
 ### Done
 
-Test data infrastructure is in place and initial validation passes:
+Test data infrastructure and initial validation are complete:
 
 - `scripts/make_synthetic_genotypes.py` — generates 100-SNP synthetic host + donor VCFs (80 informative markers)
-- `scripts/generate_test_data.py` — blends host + donor at specified fractions using binomial sampling, outputs `host_X_donor_Y.vcf` naming
-- `tests/test_data/` — 11 chimeric VCFs at 0–100% in 10% steps, plus host.vcf, donor.vcf, and truth_table.tsv
-- Initial run: allomix estimates within ~1% of truth at all fractions (0–100%), all QC PASS, 80 informative markers used
+- `scripts/generate_test_data.py` — blends host + donor at specified fractions, outputs `host_X_donor_Y.vcf` naming. Supports `--bias-sd` for simulating per-marker capture/amplification bias.
+- `scripts/generate_timeline_data.py` — generates 7-timepoint engraftment + relapse scenario (`day030_donor_95.vcf` through `day300_donor_40.vcf`)
+- `scripts/run_validation.py` — reads truth table, runs allomix on each sample, computes accuracy metrics (bias, MAE, RMSE, CI coverage), produces validation_results.tsv, validation_summary.tsv, and 3 plots (scatter, residuals, CI coverage)
+- `tests/test_data/` — 11 chimeric VCFs at 0–100% in 10% steps + timeline data (7 timepoints)
+- Capture bias simulation added to `simulate.py` via `marker_bias_sd` parameter (0.0 = ideal, 0.02 = realistic)
+
+### Validation Results (100 markers, 2000x depth, bias_sd=0.02)
+
+| Metric | Value |
+|--------|-------|
+| Mean signed error | +0.08% |
+| Mean absolute error | 0.30% |
+| RMSE | 0.37% |
+| Max absolute error | 0.59% |
+| CI coverage rate | **55%** (target: 95%) |
+| Mean CI width | 0.51% |
+
+**Accuracy is excellent. CI coverage is the known gap.** The 95% profile likelihood CIs only cover the truth ~55% of the time because the model assumes pure binomial sampling variance but does not account for:
+1. Per-marker capture/amplification bias (systematic VAF shifts, ~2% SD per marker)
+2. Overdispersion beyond binomial (real sequencing data is slightly overdispersed)
+
+**Expected fix:** Step 8 (Vynck bias correction) should correct the systematic per-marker shifts. Additionally, a variance inflation factor or empirical CI calibration will be needed to achieve proper coverage.
 
 ### Remaining
 
@@ -160,9 +180,8 @@ Test data infrastructure is in place and initial validation passes:
 - Generate multiple donor-host pairs (different genotype distributions, related pairs with fewer informative markers)
 - Vary depth (500x, 1000x, 2000x, 5000x) to measure depth effect on CI width and accuracy
 - Vary marker count (10, 20, 50, 100) to measure panel size effect
-- Formal accuracy metrics: bias (mean signed error), RMSE, CI coverage rate (should be ~95%)
-- Produce validation plots: estimated vs true (scatter + identity line), Bland-Altman, CI width vs depth
-- Write a validation script (`scripts/run_validation.py`) that runs all the above and produces a summary report
+- Implement CI calibration/inflation after Step 8 bias correction
+- Validate on real data (Step 11)
 
 ---
 

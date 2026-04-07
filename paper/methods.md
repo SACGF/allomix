@@ -1,0 +1,98 @@
+## Materials and Methods
+
+### Overview
+
+allomix is implemented in Python (version 3.10 or later) and operates on standard Variant Call Format (VCF) files. The workflow comprises four stages: (1) VCF parsing and marker classification, (2) maximum likelihood chimerism estimation, (3) optional per-marker bias correction, and (4) quality control assessment. The tool is designed to work with any set of biallelic markers (SNPs or indels) and imposes no requirements on the specific panel used.
+
+### Input Requirements and VCF Parsing
+
+allomix requires three sets of VCF files: host (recipient) pre-transplant genotyping, donor pre-transplant genotyping, and post-transplant admixture sample(s). VCF parsing is performed using the cyvcf2 library. For each biallelic site, the tool extracts the genotype (GT), allele depth (AD), total depth (DP), and genotype quality (GQ) FORMAT fields.
+
+For low-fraction donor detection (below approximately 5%), admixture samples should be joint-called alongside donor and host genotyping samples in the same variant calling pipeline (e.g., GATK GenomicsDBImport followed by GenotypeGVCFs). This ensures that alternative alleles discovered in donor samples produce two-element AD fields (reference, alternative) in admixture samples even when those sites are called homozygous-reference, preventing loss of informative read count data.
+
+### Marker Classification
+
+Markers are classified as informative when the host and donor differ in genotype at that locus. Following the classification system of De Vynck et al.,[@Vynck2023bias] informative markers are assigned to one of six types based on the host and donor alternative allele dosage:
+
+- **Type 0**: Host homozygous-reference (0/0), donor homozygous-alternative (1/1)
+- **Type 1**: Host homozygous-alternative (1/1), donor homozygous-reference (0/0)
+- **Type 10**: Host heterozygous (0/1), donor homozygous-reference (0/0)
+- **Type 11**: Host heterozygous (0/1), donor homozygous-alternative (1/1)
+- **Type 20**: Host homozygous-reference (0/0), donor heterozygous (0/1)
+- **Type 21**: Host homozygous-alternative (1/1), donor heterozygous (0/1)
+
+Types 0 and 1 are fully informative (maximum allelic contrast between host and donor), while types 10, 11, 20, and 21 are partially informative (one contributor is heterozygous, providing half the allelic contrast). Markers where host and donor share the same genotype are non-informative and excluded from analysis. Filtering is applied based on minimum genotype quality for host and donor samples (default GQ >= 20) and minimum read depth for the admixture sample (default DP >= 100).
+
+### Maximum Likelihood Estimation
+
+The donor fraction is estimated by maximum likelihood. For a proposed donor fraction *f*, the expected reference allele weight at each informative marker is:
+
+$$w_i(f) = (1 - f) \cdot \frac{g_{h,i}}{2} + f \cdot \frac{g_{d,i}}{2}$$
+
+where $g_{h,i}$ and $g_{d,i}$ are the reference allele doses (0, 1, or 2) for the host and donor at marker *i*, respectively.
+
+To account for sequencing errors (base substitutions, polymerase errors), the observed allele probabilities are modeled as:
+
+$$p_{ref,i} = w_i(1 - \varepsilon) + (1 - w_i)\frac{\varepsilon}{3}$$
+
+$$p_{alt,i} = (1 - w_i)(1 - \varepsilon) + w_i\frac{\varepsilon}{3}$$
+
+where $\varepsilon$ is the per-base sequencing error rate (default 0.01). The factor of 3 distributes error probability among the three non-reference (or non-alternative) bases.
+
+The per-marker log-likelihood is:
+
+$$\ell_i(f) = n_{ref,i} \cdot \log(p_{ref,i}) + n_{alt,i} \cdot \log(p_{alt,i})$$
+
+where $n_{ref,i}$ and $n_{alt,i}$ are the observed reference and alternative allele read counts at marker *i*. The total log-likelihood across all *M* informative markers is:
+
+$$\mathcal{L}(f) = \sum_{i=1}^{M} \ell_i(f)$$
+
+This formulation is adapted from the mixture deconvolution model of Crysup and Woerner,[@CrysupWoerner2022] simplified for the case of known contributor genotypes.
+
+Optimization proceeds in two stages. First, a grid search evaluates the likelihood at 1,001 evenly spaced points across the interval [0, 1], identifying the approximate maximum. Second, bounded Brent optimization (via scipy.optimize.minimize_scalar) refines the estimate within a ±1% window around the grid maximum, yielding the MLE point estimate $\hat{f}$.
+
+### Confidence Intervals
+
+A 95% profile likelihood confidence interval is constructed by identifying the bounds where the log-likelihood drops by a threshold derived from the chi-squared distribution:
+
+$$2[\mathcal{L}(\hat{f}) - \mathcal{L}(f)] = \chi^2_{1, 0.95} \approx 3.84$$
+
+The lower and upper bounds are found by scanning outward from the MLE in steps of 0.001, following standard profile likelihood methodology.[@Wilks1938]
+
+### Per-Marker Bias Correction
+
+Capture and amplicon-based sequencing panels exhibit systematic per-marker amplification biases that cause observed variant allele frequencies to deviate from their true values.[@Vynck2023bias] allomix supports optional per-marker bias correction following the approach of De Vynck et al.
+
+Bias is estimated from a set of training samples (typically genotyping controls with known heterozygous genotypes). For each marker, the bias $b_i$ is computed as the median deviation of observed variant allele frequency from 0.5 across all heterozygous observations:
+
+$$b_i = \text{median}(\text{VAF}_{het,i} - 0.5)$$
+
+During chimerism estimation, the expected reference allele weight at each marker is adjusted:
+
+$$w'_i = w_i - b_i$$
+
+clamped to the interval [$10^{-6}$, $1 - 10^{-6}$] to prevent numerical instability. The corrected weight is then used in the likelihood calculation. Bias correction is optional and requires a pre-computed bias table; when no bias table is provided, correction is not applied.
+
+### Quality Control
+
+allomix performs several quality control assessments for each chimerism estimate:
+
+1. **Marker sufficiency**: A minimum of 3 informative markers is required (configurable).
+2. **Depth assessment**: Mean and median sequencing depth across informative markers are reported, with a warning if mean depth falls below 100-fold.
+3. **Confidence interval width**: A warning is issued if the 95% CI exceeds 20 percentage points.
+4. **Goodness-of-fit**: A chi-squared test is performed on the per-marker Pearson residuals (observed minus expected variant allele frequency). A significant result (p < 0.01) may indicate genotype errors, copy number alterations, or other systematic model violations.
+5. **Outlier detection**: Markers with standardized residuals exceeding 3 standard deviations from the mean are flagged.
+
+Each sample receives an overall pass/fail QC assessment based on these criteria.
+
+### Simulation Framework
+
+For validation, allomix includes a simulation module that generates synthetic chimeric VCFs by blending two genotype VCFs at a specified donor fraction. For each marker, the expected alternative allele frequency is calculated from the mixture model:
+
+$$\text{VAF}_{expected} = \frac{(1-f) \cdot a_h + f \cdot a_d}{2}$$
+
+where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and donor, respectively. Per-marker capture biases are optionally added, sampled from $\mathcal{N}(0, \sigma_{bias})$ where $\sigma_{bias}$ defaults to 0.02, consistent with empirical observations.[@Vynck2023bias] Alternative allele counts are then drawn from a binomial distribution with the biased expected frequency and target depth. This produces realistic synthetic data that reflects both stochastic sampling noise and systematic panel-specific biases.
+
+### Software Availability
+
+allomix is implemented in Python with dependencies on cyvcf2, NumPy, and SciPy. It is available under the MIT license at https://github.com/SACGF/allomix. Installation is via pip (`pip install allomix`). The command-line interface provides three subcommands: `monitor` for single-sample or multi-timepoint analysis, `timeline` for consolidated multi-timepoint reporting, and `estimate-bias` for panel bias calibration.

@@ -1,0 +1,23 @@
+[paper]
+title = "allomix: donor chimerism monitoring from existing clinical NGS panels"
+# alt: "allomix: repurposing clinical NGS panels for donor chimerism monitoring after HSCT"
+
+sections = [
+    "paper/abstract.md",
+    "paper/introduction.md",
+    "paper/methods.md",
+    "paper/results.md",
+    "paper/discussion.md",
+    "paper/acknowledgements.md",
+]
+
+[output]
+dir = "output"
+name = "allomix_paper"
+
+[facts]
+dir = "output/facts"
+
+[bibliography]
+bib = "paper/references.bib"
+csl = "paper/the-journal-of-molecular-diagnostics.csl"

@@ -90,7 +90,7 @@ Full plan in `claude/step5_implementation_plan.md`. Defines:
 | report | `src/allomix/report.py` | TSV output (summary + verbose per-marker detail), JSON, timeline format |
 | cli | `src/allomix/cli.py` | `allomix monitor` and `allomix timeline` wired end-to-end with all options |
 
-### Test coverage: 192 tests passing
+### Test coverage: 213 tests passing
 
 - 29 genotype tests (parsing real VCFs, classification, filtering)
 - 55 chimerism tests (MLE math, estimation accuracy at multiple fractions, CI coverage, edge cases)
@@ -98,6 +98,7 @@ Full plan in `claude/step5_implementation_plan.md`. Defines:
 - 17 report tests (TSV/JSON format, timeline)
 - 64 simulate tests (blending logic, round-trips)
 - 15 integration tests (full pipeline: synthetic VCF → genotype → chimerism → qc → report → CLI)
+- Additional bias tests
 
 ### What works now:
 
@@ -113,6 +114,12 @@ allomix timeline --host host.vcf --donor donor.vcf --sample d30.vcf --sample d60
 
 # Verbose per-marker detail
 allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf --verbose
+
+# Estimate per-marker bias from training samples
+allomix estimate-bias --vcfs *.vcf.gz -o bias_table.tsv
+
+# Monitor with bias correction
+allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf --bias-table bias.tsv
 ```
 
 ---
@@ -131,57 +138,63 @@ allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf --verbose
 
 ---
 
-## Step 8: Implement Bias Correction 🔲 TODO
+## Step 8: Implement Bias Correction ✅ COMPLETE
 
-**Goal:** Per-marker amplification bias correction (Vynck et al.).
+Implemented in `src/allomix/bias.py`.
 
-- `src/allomix/bias.py` — estimate bias from training VCFs, apply correction
-- Bias = median(VAF_het - 0.5) per marker across a training set
-- Analytic correction formulas for each Vynck marker type
+- `estimate_bias()` — estimate bias from training VCFs: bias = median(VAF_het - 0.5) per marker
+- `load_bias_table()` / `save_bias_table()` — TSV I/O for bias tables
+- Bias correction integrated into MLE: adjusts expected reference allele weight per marker
 - CLI: `allomix estimate-bias --vcfs *.vcf.gz -o bias_table.tsv`
 - CLI: `allomix monitor --bias-table bias.tsv ...`
-- Optional — tool works without bias correction, just less accurate
+- Validation shows bias correction reduces MAE ~15% and max error ~25% at 2000x depth with realistic biases
 
 ---
 
-## Step 9: In-Silico Validation 🟡 PARTIALLY COMPLETE
+## Step 9: In-Silico Validation ✅ COMPLETE
 
-### Done
+### Simulation framework
 
-Test data infrastructure and initial validation are complete:
+The simulator (`src/allomix/simulate.py`) models four sources of measurement noise, all calibrated from empirical panel characterisation (210 joint-called VCFs, 18,047 samples, 76-SNP rhAmpSeq panel — results in `paper/empirical_results/`):
 
-- `scripts/make_synthetic_genotypes.py` — generates 100-SNP synthetic host + donor VCFs (80 informative markers)
-- `scripts/generate_test_data.py` — blends host + donor at specified fractions, outputs `host_X_donor_Y.vcf` naming. Supports `--bias-sd` for simulating per-marker capture/amplification bias.
-- `scripts/generate_timeline_data.py` — generates 7-timepoint engraftment + relapse scenario (`day030_donor_95.vcf` through `day300_donor_40.vcf`)
-- `scripts/run_validation.py` — reads truth table, runs allomix on each sample, computes accuracy metrics (bias, MAE, RMSE, CI coverage), produces validation_results.tsv, validation_summary.tsv, and 3 plots (scatter, residuals, CI coverage)
-- `tests/test_data/` — 11 chimeric VCFs at 0–100% in 10% steps + timeline data (7 timepoints)
-- Capture bias simulation added to `simulate.py` via `marker_bias_sd` parameter (0.0 = ideal, 0.02 = realistic)
+1. **Per-marker amplification bias** — heavy-tailed Gaussian mixture: 95% from N(0, 0.012), 5% from N(0, 0.08), yielding overall SD ~0.018 matching the empirical distribution (median |bias| 0.005, 95th pct 0.041, max 0.10)
+2. **Non-uniform depth across markers** — per-marker depths drawn from log-normal distribution matching empirical CV=0.43 (mean 1,732x, range 285–2,789x)
+3. **Sequencing errors** — symmetric error model at ε=0.01
+4. **Locus dropout** — 1.6% per-marker dropout rate matching empirical no-call rate
 
-### Validation Results (100 markers, 2000x depth, bias_sd=0.02)
+### Validation scripts (in `paper/scripts/`)
 
-| Metric | Value |
-|--------|-------|
-| Mean signed error | +0.08% |
-| Mean absolute error | 0.30% |
-| RMSE | 0.37% |
-| Max absolute error | 0.59% |
-| CI coverage rate | **55%** (target: 95%) |
-| Mean CI width | 0.51% |
+| Script | What it tests |
+|--------|--------------|
+| `run_depth_validation.py` | Accuracy across 5 depths (50x–1000x), 12 donor fractions |
+| `run_relatedness_validation.py` | Accuracy across 4 relatedness levels (unrelated to sibling), 10 replicates each |
+| `compare_bias_correction.py` | Side-by-side comparison with/without bias correction |
+| `generate_paper_facts.py` | Generates all facts CSVs for the paper |
 
-**Accuracy is excellent. CI coverage is the known gap.** The 95% profile likelihood CIs only cover the truth ~55% of the time because the model assumes pure binomial sampling variance but does not account for:
-1. Per-marker capture/amplification bias (systematic VAF shifts, ~2% SD per marker)
-2. Overdispersion beyond binomial (real sequencing data is slightly overdispersed)
+### Key results
 
-**Expected fix:** Step 8 (Vynck bias correction) should correct the systematic per-marker shifts. Additionally, a variance inflation factor or empirical CI calibration will be needed to achieve proper coverage.
+**Depth validation** (100 markers, 80 informative, realistic noise):
 
-### Remaining
+| Depth | MAE (%) | RMSE (%) | Max Error (%) |
+|:---:|:---:|:---:|:---:|
+| 50x | 0.97 | 1.09 | 2.04 |
+| 100x | 0.69 | 0.79 | 1.30 |
+| 200x | 0.66 | 0.73 | 1.10 |
+| 500x | 0.62 | 0.66 | 1.03 |
+| 1,000x | 0.61 | 0.68 | 0.96 |
 
-- Run at finer fractions near the sensitivity limit (0.1%, 0.5%, 1%, 2%, 5%) to characterise low-fraction performance
-- Generate multiple donor-host pairs (different genotype distributions, related pairs with fewer informative markers)
-- Vary depth (500x, 1000x, 2000x, 5000x) to measure depth effect on CI width and accuracy
-- Vary marker count (10, 20, 50, 100) to measure panel size effect
-- Implement CI calibration/inflation after Step 8 bias correction
-- Validate on real data (Step 11)
+**Relatedness validation** (100 markers, 500x, 10 replicates):
+
+| Relatedness | Mean Informative | MAE (%) |
+|:---|:---:|:---:|
+| Unrelated | 58 | 0.99 |
+| 1st cousin | 55 | 1.04 |
+| Half-sibling | 52 | 0.98 |
+| Full sibling | 38 | 1.16 |
+
+All MAE values sub-2% (clinically acceptable). Even sibling donors maintain sufficient informative markers (min 27, well above the minimum 3 required).
+
+**CI coverage** is 25–58% (below nominal 95%). This is expected: the binomial likelihood does not model the systematic biases and non-uniform depth. The paper discusses this and notes approaches for improvement (bias correction, beta-binomial likelihoods, empirical recalibration).
 
 ---
 
@@ -227,12 +240,13 @@ Implementation notes:
 
 ---
 
-## Step 13: Publication 🔲 IN PROGRESS
+## Step 13: Publication 🟡 IN PROGRESS
 
 - Method paper describing the approach — framework set up with vibepaper
 - Target journal: Journal of Molecular Diagnostics (Technical Advance)
 - Paper sections in `paper/`, analysis scripts in `paper/scripts/`
 - Cite: Crysup & Woerner 2022 (Demixtify MLE framework), Vynck et al. (bias correction)
 - In silico validation complete (depth series, relatedness, bias correction)
-- Validation with real samples (Steps 9 + 11) still needed
+- Simulation calibrated from empirical panel characterisation (210 VCFs, 18,047 samples)
+- Validation with real samples (Steps 11) still needed
 - Open-source tool release (MIT license, PyPI)

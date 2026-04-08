@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from allomix.genotype import MarkerGenotypes
-from allomix.qc import ChimerismResult, MarkerResult, assess_quality
+import math
+import random
+import re
+
+from allomix.chimerism import estimate_single_donor
+from allomix.genotype import InformativeMarker, MarkerGenotypes
+from allomix.qc import ChimerismResult, MarkerResult, _compute_gof_pval, assess_quality
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -156,7 +161,7 @@ class TestGoodData:
                 dp=1500,
                 ad_ref=1350,
                 ad_alt=150,
-                residual=0.1,
+                residual=0.005,
             )
             for i in range(20)
         ]
@@ -218,7 +223,7 @@ class TestGoodnessOfFit:
             _make_marker_result(
                 pos=i * 100,
                 dp=1000,
-                residual=0.1,
+                residual=0.005,
                 included=True,
             )
             for i in range(10)
@@ -244,3 +249,138 @@ class TestGoodnessOfFit:
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes, min_informative=1)
         assert qc.goodness_of_fit_pval is None
+
+
+# ---------------------------------------------------------------------------
+# Pearson GoF statistic tests
+# ---------------------------------------------------------------------------
+
+
+def _make_informative_marker(
+    host_gt,
+    donor_gt,
+    ad_ref,
+    ad_alt,
+    marker_type=0,
+    chrom="chr1",
+    pos=100,
+):
+    return InformativeMarker(
+        chrom=chrom,
+        pos=pos,
+        ref="A",
+        alt="T",
+        host_gt=host_gt,
+        donor_gts=[donor_gt],
+        marker_type=marker_type,
+        admix_ad_ref=ad_ref,
+        admix_ad_alt=ad_alt,
+        admix_dp=ad_ref + ad_alt,
+    )
+
+
+class TestPearsonGoF:
+    """Pearson chi-squared GoF should detect model–data mismatch."""
+
+    def test_detects_systematic_vaf_shift(self):
+        """A 5% systematic shift at dp=2000 across 20 markers should be detected."""
+        markers = [
+            _make_marker_result(
+                pos=i * 100, dp=2000, expected_vaf=0.10, observed_vaf=0.15,
+                residual=0.05, ad_ref=1700, ad_alt=300, included=True,
+            )
+            for i in range(20)
+        ]
+        pval = _compute_gof_pval(markers)
+        assert pval is not None
+        assert pval < 0.01
+
+    def test_detects_single_outlier_marker(self):
+        """One marker with residual=0.40 among 19 good ones should be detected."""
+        good = [
+            _make_marker_result(pos=i * 100, dp=2000, residual=0.001, included=True)
+            for i in range(19)
+        ]
+        bad = [
+            _make_marker_result(
+                pos=1900, dp=2000, expected_vaf=0.10, observed_vaf=0.50,
+                residual=0.40, included=True,
+            )
+        ]
+        pval = _compute_gof_pval(good + bad)
+        assert pval is not None
+        assert pval < 0.01
+
+    def test_calibration_under_null(self):
+        """Under the null, p should not always be ~1.0."""
+        rng = random.Random(42)
+        markers = []
+        for i in range(30):
+            exp_vaf = 0.10
+            dp = 2000
+            sd = math.sqrt(exp_vaf * (1 - exp_vaf) / dp)
+            obs_vaf = max(0.0, min(1.0, rng.gauss(exp_vaf, sd)))
+            markers.append(
+                _make_marker_result(
+                    pos=i * 100, dp=dp, expected_vaf=exp_vaf,
+                    observed_vaf=obs_vaf, residual=obs_vaf - exp_vaf, included=True,
+                )
+            )
+        pval = _compute_gof_pval(markers)
+        assert pval is not None
+        assert pval < 0.999, f"GoF p-value is {pval:.6f} — not calibrated"
+
+
+class TestGoFEndToEnd:
+    """GoF should catch a swapped genotype through the full estimation pipeline."""
+
+    def test_catches_wrong_genotype(self):
+        rng = random.Random(42)
+        true_f = 0.20
+        dp = 2000
+        markers = []
+
+        for i in range(19):
+            alt_count = sum(1 for _ in range(dp) if rng.random() < true_f)
+            markers.append(
+                _make_informative_marker(
+                    host_gt=(0, 0), donor_gt=(1, 1),
+                    ad_ref=dp - alt_count, ad_alt=alt_count,
+                    marker_type=0, chrom=f"chr{i + 1}", pos=1000 * (i + 1),
+                )
+            )
+
+        # One marker with swapped host/donor genotypes
+        alt_count = sum(1 for _ in range(dp) if rng.random() < true_f)
+        markers.append(
+            _make_informative_marker(
+                host_gt=(1, 1), donor_gt=(0, 0),
+                ad_ref=dp - alt_count, ad_alt=alt_count,
+                marker_type=1, chrom="chr20", pos=20000,
+            )
+        )
+
+        result = estimate_single_donor(markers)
+        genotypes = MarkerGenotypes(
+            informative=[], non_informative=[], n_total=20, n_shared=20, n_filtered=0,
+        )
+        qc = assess_quality(result, genotypes)
+        assert qc.goodness_of_fit_pval is not None
+        assert qc.goodness_of_fit_pval < 0.01
+
+
+# ---------------------------------------------------------------------------
+# Version consistency
+# ---------------------------------------------------------------------------
+
+
+class TestVersionConsistency:
+    def test_versions_match(self):
+        """pyproject.toml version should match __init__.py __version__."""
+        import allomix
+
+        with open("pyproject.toml") as f:
+            content = f.read()
+        match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
+        assert match is not None, "Could not find version in pyproject.toml"
+        assert match.group(1) == allomix.__version__

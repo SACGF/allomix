@@ -194,6 +194,7 @@ def classify_markers(
     min_dp: int = 100,
     min_gq: int = 20,
     pass_only: bool = True,
+    sample_name: str = "",
 ) -> MarkerGenotypes:
     """Classify shared markers as informative or non-informative.
 
@@ -285,11 +286,6 @@ def classify_markers(
             )
         else:
             non_informative.append(a)
-
-    # Extract sample name from admixture VCF path if available
-    sample_name = ""
-    if admixture:
-        sample_name = admixture[0].chrom  # placeholder; set by caller
 
     return MarkerGenotypes(
         informative=informative,

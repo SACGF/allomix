@@ -794,10 +794,6 @@ def blend_vcfs(
         if host_rec.ref != donor_rec.ref:
             continue
 
-        num_markers += 1
-        if is_informative(host_gt, donor_gt):
-            num_informative += 1
-
         # Determine depth
         if marker_depths is not None:
             depth = marker_depths[bias_idx]
@@ -810,6 +806,10 @@ def blend_vcfs(
         if locus_dropout_rate > 0 and rng.random() < locus_dropout_rate:
             bias_idx += 1
             continue
+
+        num_markers += 1
+        if is_informative(host_gt, donor_gt):
+            num_informative += 1
 
         # Calculate expected VAF, apply per-marker capture bias, then sample
         vaf = expected_vaf(host_gt, donor_gt, donor_fraction)

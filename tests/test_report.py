@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import io
 import json
 
@@ -328,3 +329,54 @@ class TestTimelineJson:
     def test_timeline_empty(self):
         tl = timeline_json([])
         assert tl == {"timepoints": []}
+
+
+# ---------------------------------------------------------------------------
+# TSV sample_name support
+# ---------------------------------------------------------------------------
+
+
+class TestTsvSampleName:
+    """to_tsv should accept a sample_name parameter like to_json."""
+
+    def test_default_sample_name_not_hardcoded(self):
+        """TSV default should not be the literal string 'sample'."""
+        result = _make_chimerism_result()
+        qc = _make_qc_report()
+        buf = io.StringIO()
+        to_tsv(result, qc, buf)
+        lines = buf.getvalue().strip().split("\n")
+        first_col = lines[1].split("\t")[0]
+        assert first_col != "sample"
+
+    def test_accepts_sample_name_parameter(self):
+        """to_tsv should accept a sample_name keyword argument."""
+        sig = inspect.signature(to_tsv)
+        assert "sample_name" in sig.parameters
+
+    def test_sample_name_appears_in_output(self):
+        """Passing sample_name should put it in the TSV data line."""
+        result = _make_chimerism_result()
+        qc = _make_qc_report()
+        buf = io.StringIO()
+        to_tsv(result, qc, buf, sample_name="patient_001")
+        lines = buf.getvalue().strip().split("\n")
+        first_col = lines[1].split("\t")[0]
+        assert first_col == "patient_001"
+
+
+class TestOutputConsistency:
+    """JSON and TSV should produce consistent output for the same input."""
+
+    def test_json_and_tsv_donor_fractions_match(self):
+        result = _make_chimerism_result(donor_fraction=0.1234, ci=(0.10, 0.15))
+        qc = _make_qc_report()
+
+        json_out = to_json(result, qc, sample_name="patient_001")
+        buf = io.StringIO()
+        to_tsv(result, qc, buf, sample_name="patient_001")
+        tsv_cols = buf.getvalue().strip().split("\n")[1].split("\t")
+
+        assert json_out["donor_pct"] == pytest.approx(float(tsv_cols[1]), abs=0.01)
+        assert json_out["sample"] == "patient_001"
+        assert tsv_cols[0] == "patient_001"

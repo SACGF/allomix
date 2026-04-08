@@ -101,7 +101,11 @@ def _compute_gof_pval(per_marker: list[MarkerResult]) -> float | None:
     if len(included) < 2:
         return None
 
-    chi_sq = sum(m.residual**2 for m in included)
+    # Pearson chi-squared: standardise residuals by binomial variance
+    chi_sq = 0.0
+    for m in included:
+        ev = max(1e-6, min(1.0 - 1e-6, m.expected_vaf))
+        chi_sq += m.residual**2 * m.dp / (ev * (1.0 - ev))
     df = len(included) - 1
     pval: float = chi2.sf(chi_sq, df)
     return pval

@@ -438,6 +438,12 @@ def estimate_multi_donor(
     Returns:
         MultiDonorResult with per-donor fractions and CIs.
     """
+    if n_donors > 2:
+        raise ValueError(
+            f"n_donors={n_donors} not supported; "
+            "estimate_multi_donor currently supports up to 2 donors"
+        )
+
     n_informative = len(markers)
 
     if n_informative == 0:

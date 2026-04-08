@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import random
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -14,10 +16,12 @@ from allomix.simulate import (
     expected_vaf,
     extract_depth,
     extract_gt,
+    generate_related_genotypes,
     gt_from_counts,
     is_informative,
     parse_vcf,
     sample_allele_counts,
+    write_genotype_vcf,
     write_vcf,
 )
 
@@ -522,3 +526,27 @@ class TestParseRealVcf:
         for rec in records:
             depth = extract_depth(rec)
             assert depth is not None and depth > 0, f"No depth at {rec.locus}"
+
+
+class TestBlendVcfLocusDropout:
+    """num_markers should match len(records) when dropout occurs."""
+
+    def test_num_markers_matches_records_with_dropout(self):
+        rng = random.Random(42)
+        geno = generate_related_genotypes(50, "unrelated", rng)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            host_path = os.path.join(tmpdir, "host.vcf")
+            donor_path = os.path.join(tmpdir, "donor.vcf")
+            write_genotype_vcf(geno, host_path, "HOST", key="host_gt")
+            write_genotype_vcf(geno, donor_path, "DONOR", key="donor_gt")
+
+            result = blend_vcfs(
+                host_path, donor_path,
+                donor_fraction=0.20, target_depth=1000,
+                seed=42, locus_dropout_rate=0.20,
+            )
+            assert result.num_markers == len(result.records), (
+                f"num_markers={result.num_markers} but "
+                f"len(records)={len(result.records)}"
+            )

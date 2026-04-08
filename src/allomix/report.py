@@ -29,6 +29,7 @@ def to_tsv(
     qc: QCReport,
     output: Path | TextIO,
     verbose: bool = False,
+    sample_name: str = "",
 ) -> None:
     """Write chimerism result and QC report as a TSV file.
 
@@ -45,14 +46,14 @@ def to_tsv(
     if isinstance(output, (str, Path)):
         with open(output, "w") as fh:
             if _is_multi_donor(result):
-                _write_tsv_multi(result, qc, fh, verbose)
+                _write_tsv_multi(result, qc, fh, verbose, sample_name)
             else:
-                _write_tsv(result, qc, fh, verbose)
+                _write_tsv(result, qc, fh, verbose, sample_name)
     else:
         if _is_multi_donor(result):
-            _write_tsv_multi(result, qc, output, verbose)
+            _write_tsv_multi(result, qc, output, verbose, sample_name)
         else:
-            _write_tsv(result, qc, output, verbose)
+            _write_tsv(result, qc, output, verbose, sample_name)
 
 
 def _write_tsv(
@@ -60,6 +61,7 @@ def _write_tsv(
     qc: QCReport,
     fh: TextIO,
     verbose: bool,
+    sample_name: str = "sample",
 ) -> None:
     """Write TSV content to an open file handle.
 
@@ -80,7 +82,7 @@ def _write_tsv(
     qc_pass_str = "PASS" if qc.pass_ else "FAIL"
 
     summary_line = (
-        f"sample\t"
+        f"{sample_name}\t"
         f"{result.donor_fraction * 100:.2f}\t"
         f"{ci_lo * 100:.2f}\t"
         f"{ci_hi * 100:.2f}\t"
@@ -114,6 +116,7 @@ def _write_tsv_multi(
     qc: QCReport,
     fh: TextIO,
     verbose: bool,
+    sample_name: str = "sample",
 ) -> None:
     """Write multi-donor TSV content to an open file handle."""
     n_donors = len(result.donor_fractions)
@@ -130,7 +133,7 @@ def _write_tsv_multi(
     gof_str = f"{qc.goodness_of_fit_pval:.4f}" if qc.goodness_of_fit_pval is not None else "NA"
     qc_pass_str = "PASS" if qc.pass_ else "FAIL"
 
-    vals = ["sample"]
+    vals = [sample_name]
     for i in range(n_donors):
         ci_lo, ci_hi = result.donor_fraction_cis[i]
         vals.extend(

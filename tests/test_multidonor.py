@@ -659,3 +659,30 @@ class TestClassifyMarkersMultiDonor:
         assert m.informative_for == [False, True]
         assert m.marker_types[0] is None  # not informative for donor1
         assert m.marker_types[1] is not None  # informative for donor2
+
+
+class TestThreeDonorValidation:
+    """estimate_multi_donor should reject n_donors > 2 with a clear error."""
+
+    def test_three_donors_raises_value_error(self):
+        rng = random.Random(42)
+        markers = []
+        for i in range(30):
+            ad_alt = sum(1 for _ in range(2000) if rng.random() < 0.30)
+            markers.append(
+                InformativeMarker(
+                    chrom=f"chr{i + 1}",
+                    pos=1000 * (i + 1),
+                    ref="A",
+                    alt="T",
+                    host_gt=(0, 0),
+                    donor_gts=[(1, 1), (0, 1), (0, 1)],
+                    marker_type=0,
+                    admix_ad_ref=2000 - ad_alt,
+                    admix_ad_alt=ad_alt,
+                    admix_dp=2000,
+                    informative_for=[True, True, True],
+                )
+            )
+        with pytest.raises(ValueError, match="not supported"):
+            estimate_multi_donor(markers, n_donors=3)

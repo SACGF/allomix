@@ -8,6 +8,11 @@ import sys
 from pathlib import Path
 
 from allomix import __version__
+from allomix.bias import estimate_biases, load_bias_table, save_bias_table
+from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
+from allomix.genotype import classify_markers, parse_vcf
+from allomix.qc import assess_quality
+from allomix.report import timeline_json, to_json, to_tsv
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -63,10 +68,6 @@ def _run_single_sample(
 
     Returns (ChimerismResult | MultiDonorResult, QCReport, MarkerGenotypes).
     """
-    from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
-    from allomix.genotype import classify_markers, parse_vcf
-    from allomix.qc import assess_quality
-
     host = parse_vcf(host_path, min_gq=min_gq)
     donors = [parse_vcf(d, min_gq=min_gq) for d in donor_paths]
     admix = parse_vcf(sample_path, min_dp=0)  # depth filter applied in classify
@@ -102,16 +103,12 @@ def _open_output(path: str):
 def _load_biases(args: argparse.Namespace) -> dict | None:
     """Load bias table if specified and not disabled."""
     if args.bias_table and not args.no_bias_correction:
-        from allomix.bias import load_bias_table
-
         return load_bias_table(args.bias_table)
     return None
 
 
 def cmd_monitor(args: argparse.Namespace) -> int:
     """Run the monitor subcommand."""
-    from allomix.report import to_json, to_tsv
-
     marker_biases = _load_biases(args)
     out = _open_output(args.output)
     try:
@@ -140,8 +137,6 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
 def cmd_timeline(args: argparse.Namespace) -> int:
     """Run the timeline subcommand."""
-    from allomix.report import timeline_json
-
     marker_biases = _load_biases(args)
     results = []
     for sample_path in args.sample:
@@ -170,9 +165,6 @@ def cmd_timeline(args: argparse.Namespace) -> int:
 
 def cmd_estimate_bias(args: argparse.Namespace) -> int:
     """Run the estimate-bias subcommand."""
-    from allomix.bias import estimate_biases, save_bias_table
-    from allomix.genotype import parse_vcf
-
     marker_lists = []
     for vcf_path in args.vcfs:
         markers = parse_vcf(vcf_path, min_dp=0, min_gq=0)

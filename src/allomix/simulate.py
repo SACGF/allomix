@@ -14,6 +14,8 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
@@ -285,12 +287,8 @@ def sample_allele_counts(
     if hasattr(rng, "binomialvariate"):
         alt_count = rng.binomialvariate(depth, p)
     else:
-        # numpy is a runtime dependency — use its binomial instead of
-        # a hand-rolled normal approximation which is inaccurate at extreme p.
-        import numpy as _np
-
         seed = rng.getrandbits(32)
-        alt_count = int(_np.random.default_rng(seed).binomial(depth, p))
+        alt_count = int(np.random.default_rng(seed).binomial(depth, p))
     ref_count = depth - alt_count
     return (ref_count, alt_count)
 

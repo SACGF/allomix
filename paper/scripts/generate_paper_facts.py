@@ -190,6 +190,12 @@ def main():
             "max_abs_error_pct": round(m["max_abs_error"] * 100, 4),
             "ci_coverage_pct": round(all_m["ci_coverage"] * 100, 1),
             "mean_ci_width_pct": round(all_m["mean_ci_width"] * 100, 4),
+            "est_0pct": round(
+                next(r["est_frac"] for r in rows if r["true_frac"] == 0.0) * 100, 2
+            ),
+            "est_100pct": round(
+                next(r["est_frac"] for r in rows if r["true_frac"] == 1.0) * 100, 2
+            ),
         })
 
     # --- Tool landscape facts ---

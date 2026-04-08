@@ -47,7 +47,7 @@ where $n_{ref,i}$ and $n_{alt,i}$ are the observed reference and alternative all
 
 $$\mathcal{L}(f) = \sum_{i=1}^{M} \ell_i(f)$$
 
-This formulation is adapted from the mixture deconvolution model of Crysup and Woerner,[@CrysupWoerner2022] simplified for the case of known contributor genotypes.
+This formulation is adapted from the mixture deconvolution model of Crysup and Woerner,[@CrysupWoerner2023] simplified for the case of known contributor genotypes.
 
 Optimization proceeds in two stages. First, a grid search evaluates the likelihood at 1,001 evenly spaced points across the interval [0, 1], identifying the approximate maximum. Second, bounded Brent optimization (via scipy.optimize.minimize_scalar) refines the estimate within a ±1% window around the grid maximum, yielding the MLE point estimate $\hat{f}$.
 
@@ -57,7 +57,7 @@ A 95% profile likelihood confidence interval is constructed by identifying the b
 
 $$2[\mathcal{L}(\hat{f}) - \mathcal{L}(f)] = \chi^2_{1, 0.95} \approx 3.84$$
 
-The lower and upper bounds are found by scanning outward from the MLE in steps of 0.001, following standard profile likelihood methodology.[@Wilks1938]
+The lower and upper bounds are found using Brent's root-finding method (scipy.optimize.brentq) to locate the fractions where the log-likelihood ratio equals the threshold, following standard profile likelihood methodology.[@Wilks1938]
 
 ### Multi-Donor Extension
 

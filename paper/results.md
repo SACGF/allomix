@@ -42,7 +42,7 @@ Table 2 summarises available NGS-based chimerism tools. allomix is the only open
 | Devyser Chimerism | 24 indels | 0.05% | No | No | Proprietary |
 | NGStrack | 34 indels | 0.1% | No | No | Proprietary |
 | ScisGo Chimerism MD | SNPs + indels | 0.2–0.5% | No | No | Proprietary |
-| **allomix** | **Any biallelic** | **<1%** | **Yes (MIT)** | **Yes** | **VCF** |
+| **allomix** | **Any biallelic** | **~0.6% MAE (in silico)** | **Yes (MIT)** | **Yes** | **VCF** |
 
 **Table 2.** Comparison of NGS-based chimerism monitoring tools. LOD = limit of detection.
 

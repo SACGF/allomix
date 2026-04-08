@@ -34,7 +34,7 @@ The 95% profile likelihood confidence intervals showed coverage well below the n
 
 ### Comparison with Existing Tools
 
-Table 2 summarises the landscape of available NGS-based chimerism tools. allomix is the only open-source option that works with arbitrary marker panels from standard VCF files.
+Table 2 summarises available NGS-based chimerism tools. allomix is the only open-source option that works with arbitrary marker panels from standard VCF files.
 
 | Tool | Markers | LOD | Open Source | Panel Agnostic | Input |
 |:---|:---:|:---:|:---:|:---:|:---:|
@@ -48,7 +48,7 @@ Table 2 summarises the landscape of available NGS-based chimerism tools. allomix
 
 ### Effect of Donor-Host Relatedness
 
-In clinical HSCT, donors may be unrelated, or may be relatives of the host — siblings being the most common related donor type. Increased relatedness reduces the number of informative markers (where donor and host genotypes differ), potentially degrading chimerism estimation. To evaluate this, we generated synthetic donor-host pairs at four relatedness levels (unrelated, first cousin, half-sibling, full sibling) using population allele frequencies (MAF 0.2–0.5), with {{ rel_unrelated.n_replicates }} replicate pairs per level and {{ rel_unrelated.n_markers }} markers at 500x depth (Figure 4, Table 3).
+In clinical HSCT, donors may be unrelated, or may be relatives of the host, with siblings being the most common related donor type. Increased relatedness reduces the number of informative markers (where donor and host genotypes differ), potentially degrading chimerism estimation. To evaluate this, we generated synthetic donor-host pairs at four relatedness levels (unrelated, first cousin, half-sibling, full sibling) using population allele frequencies (MAF 0.2–0.5), with {{ rel_unrelated.n_replicates }} replicate pairs per level and {{ rel_unrelated.n_markers }} markers at 500x depth (Figure 4, Table 3).
 
 The mean number of informative markers decreased with increasing relatedness, from {{ rel_unrelated.mean_informative }} (unrelated) to {{ rel_sibling.mean_informative }} (full sibling). Despite this reduction, allomix maintained sub-2% mean absolute error across all relatedness levels: {{ rel_unrelated.mean_mae_pct }}% (unrelated), {{ rel_cousin.mean_mae_pct }}% (cousin), {{ rel_half_sibling.mean_mae_pct }}% (half-sibling), and {{ rel_sibling.mean_mae_pct }}% (sibling). Even in the worst case (sibling donors), the minimum number of informative markers observed was {{ rel_sibling.min_informative }}, well above the minimum of 3 required for estimation.
 

@@ -17,6 +17,20 @@ from pathlib import Path
 import numpy as np
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _chrom_sort_key(chrom: str) -> tuple[int, int]:
+    """Sort key for chromosome names (chr1, chr2, ... chr22, chrX, chrY)."""
+    name = chrom.replace("chr", "")
+    try:
+        return (0, int(name))
+    except ValueError:
+        return (1, ord(name[0]) if name else 0)
+
+
+# ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
 
@@ -641,9 +655,12 @@ def write_genotype_vcf(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    chroms = sorted(set(m["chrom"] for m in markers), key=_chrom_sort_key)
+
     with open(path, "w", encoding="utf-8") as f:
         f.write("##fileformat=VCFv4.2\n")
-        f.write("##contig=<ID=chr1,length=248956422>\n")
+        for chrom in chroms:
+            f.write(f"##contig=<ID={chrom}>\n")
         f.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">\n')
         f.write('##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count">\n')
         f.write('##INFO=<ID=AN,Number=1,Type=Integer,Description="Total alleles">\n')
@@ -931,9 +948,10 @@ def blend_from_genotype_dicts(
         depths = [target_depth] * n
 
     # Build header
+    chroms = sorted(set(m["chrom"] for m in markers), key=_chrom_sort_key)
     header = [
         "##fileformat=VCFv4.2",
-        "##contig=<ID=chr1,length=248956422>",
+        *[f"##contig=<ID={c}>" for c in chroms],
         '##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">',
         '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
         '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele depths">',

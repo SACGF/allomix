@@ -8,6 +8,8 @@ NGS-based donor chimerism monitoring for hematopoietic stem cell transplantation
 
 The tool is panel-agnostic — it operates on whatever markers are present in the input VCFs. Bring your own panel: whether that's 24 indels, 76 SNPs, 202 SNPs, or any other set of bi-allelic loci with sufficient depth.
 
+Chimerism MLE methodology based on [Crysup & Woerner](https://pubmed.ncbi.nlm.nih.gov/36152508/) (2022)
+
 ## Clinical Context
 
 After HSCT, patients carry a mixture of their own (host) and transplanted (donor) cells. Monitoring the ratio of donor to host cells over time — **chimerism monitoring** — is critical for detecting graft rejection or disease relapse. Early detection allows early intervention.
@@ -207,5 +209,3 @@ Single-donor and multi-donor (up to 2 donors) chimerism estimation is implemente
 ## License
 
 MIT
-
-Chimerism MLE methodology based on Crysup & Woerner (2022) — independently reimplemented, not derived from Demixtify source code.

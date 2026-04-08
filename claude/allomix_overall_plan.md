@@ -204,9 +204,35 @@ Test data infrastructure and initial validation are complete:
 
 ---
 
-## Step 12: Publication 🔲 TODO
+## Step 12: Per-Base Quality-Aware Likelihood 🔲 TODO
 
-- Method paper describing the approach
+The current MLE uses a flat sequencing error rate (default 1%) for all reads at all
+markers. A more accurate model would weight each read's contribution to the likelihood
+by its base quality (BQ/QUAL), following the approach used by Conpair (Bergmann et al.):
+
+- Parse per-read base qualities from the VCF (if available) or BAM pileup
+- Replace the flat error rate `e` in the likelihood with a per-read error probability
+  derived from the Phred quality score: `e_i = 10^(-Q_i/10)`
+- Per-marker likelihood becomes a product over individual reads rather than a binomial
+  with aggregate counts
+- This gives more weight to high-quality reads and down-weights low-quality bases,
+  improving accuracy at low depths and near the detection limit
+- Requires either BQ annotation in VCF FORMAT fields, or falling back to BAM access
+- Profile likelihood CIs should improve as the model better captures per-read uncertainty
+
+Implementation notes:
+- Add optional `--bq-aware` flag to CLI (default off for backwards compatibility)
+- If BQ data unavailable, fall back to current flat error rate
+- Benchmark accuracy improvement vs computational cost on real data
+
+---
+
+## Step 13: Publication 🔲 IN PROGRESS
+
+- Method paper describing the approach — framework set up with vibepaper
+- Target journal: Journal of Molecular Diagnostics (Technical Advance)
+- Paper sections in `paper/`, analysis scripts in `paper/scripts/`
 - Cite: Crysup & Woerner 2022 (Demixtify MLE framework), Vynck et al. (bias correction)
-- Validation results from Steps 9 + 11
+- In silico validation complete (depth series, relatedness, bias correction)
+- Validation with real samples (Steps 9 + 11) still needed
 - Open-source tool release (MIT license, PyPI)

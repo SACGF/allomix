@@ -20,52 +20,6 @@ Current STR-based methods have limited sensitivity (~3-5% LOD) and require separ
 - Support **up to 3 genomes** (host + 2 donors) for patients with multiple transplants
 - Provide **timeline tracking** of chimerism across serial post-HSCT timepoints
 
-## Workflow
-
-```
-1. GENOTYPE           Sequence host and each donor individually
-                        → VCF with genotypes at marker loci
-
-2. ESTIMATE-BIAS      (optional) Estimate per-marker amplification
-   (allomix)          bias from genotyping VCFs
-                        → bias table TSV
-
-3. SEQUENCE           Sequence post-HSCT admixture samples at
-                      serial timepoints (≥3 per patient)
-                        → VCF with allele depths at marker loci
-
-4. ANALYSE            Identify informative markers, estimate donor
-   (allomix)          fraction by MLE, and report results with
-                      confidence intervals and QC metrics
-
-                      allomix monitor   → per-sample TSV or JSON
-                      allomix timeline  → multi-timepoint JSON
-```
-
-## Input / Output
-
-### Inputs
-
-| Input | Format | Description |
-|---|---|---|
-| Host genotype | VCF (.vcf.gz) | Per-sample VCF at marker loci. Must contain GT and AD fields. |
-| Donor genotype(s) | VCF (.vcf.gz) | One VCF per donor (up to 2 donors). Same format as host. |
-| Admixture sample(s) | VCF (.vcf.gz) | Post-HSCT monitoring samples. One or more timepoints. Must contain AD (allele depth) fields. |
-
-The tool works with VCFs from any variant calling pipeline (GATK, DeepVariant, etc.) as long as GT and AD fields are present. Higher depth improves sensitivity — panels with >1000x coverage will give the best results at low chimerism fractions.
-
-### Outputs
-
-| Output | Description |
-|---|---|
-| % chimerism | Estimated fraction of donor cells (per donor if multi-donor) |
-| Confidence interval | 95% CI on the chimerism estimate |
-| Per-marker details | Allele depths, expected vs observed VAF, and informativeness flag for each marker |
-| QC metrics | Number of informative markers used, mean depth, markers excluded and why, goodness-of-fit |
-| Timeline report | Chimerism trend across serial timepoints for a patient |
-
-Output formats: TSV (machine-readable), JSON (for programmatic consumption), and optionally a summary plot.
-
 ## Installation
 
 ```bash
@@ -80,35 +34,26 @@ cd allomix
 pip install -e ".[dev]"
 ```
 
-## Project Structure
+## Workflow
 
 ```
-src/allomix/          # Installable library and CLI — the shipped product
-scripts/              # Development and validation utilities
-paper/scripts/        # Publication-specific analysis and figures
-tests/                # pytest tests
-data/                 # De-identified example VCFs
+1. Genotyping            Sequence host and each donor individually
+   (upstream)              → VCF with genotypes at marker loci
+
+2. allomix estimate-bias (optional) Estimate per-marker amplification
+                         bias from genotyping VCFs
+                           → bias table TSV
+
+3. Sequencing            Sequence post-HSCT admixture samples at
+   (upstream)            serial timepoints (>=3 per patient)
+                           → VCF with allele depths at marker loci
+
+4. allomix monitor       Calculate chimerism for each sample
+                           → per-sample TSV or JSON
+
+   allomix timeline      Track chimerism across timepoints
+                           → multi-timepoint JSON
 ```
-
-**`src/allomix/`** contains everything a user gets when they `pip install allomix`: the core library modules (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point.
-
-**`scripts/`** contains developer-facing tools that support building and testing allomix: generating synthetic test data, measuring panel bias from empirical data, and running validation suites. These are not part of the installed package.
-
-**`paper/scripts/`** contains scripts that produce the specific figures, validation experiments, and statistics for the publication. They use allomix as a library and are intended to make the paper's results fully reproducible.
-
-### Building the Paper
-
-The paper build is orchestrated by Snakemake. All validation and figure scripts run in parallel, then vibepaper renders the final Word document from the facts they produce.
-
-```bash
-pip install snakemake                          # if not already installed
-snakemake -s paper/Snakefile -j 7              # run all 7 scripts in parallel, then build paper
-snakemake -s paper/Snakefile -j 7 --forceall   # force rerun everything from scratch
-snakemake -s paper/Snakefile paper             # just render the paper (assumes facts already exist)
-snakemake -s paper/Snakefile clean             # remove all generated output
-```
-
-Snakemake tracks file timestamps, so editing a script or its input data reruns only the affected rule and the downstream paper build.
 
 ## Usage
 
@@ -174,6 +119,30 @@ Both `monitor` and `timeline` accept these additional options:
 
 `monitor` also accepts `--format tsv|json` (default: tsv). `timeline` always outputs JSON.
 
+## Input / Output
+
+### Inputs
+
+| Input | Format | Description |
+|---|---|---|
+| Host genotype | VCF (.vcf.gz) | Per-sample VCF at marker loci. Must contain GT and AD fields. |
+| Donor genotype(s) | VCF (.vcf.gz) | One VCF per donor (up to 2 donors). Same format as host. |
+| Admixture sample(s) | VCF (.vcf.gz) | Post-HSCT monitoring samples. One or more timepoints. Must contain AD (allele depth) fields. |
+
+The tool works with VCFs from any variant calling pipeline (GATK, DeepVariant, etc.) as long as GT and AD fields are present. Higher depth improves sensitivity — panels with >1000x coverage will give the best results at low chimerism fractions.
+
+### Outputs
+
+| Output | Description |
+|---|---|
+| % chimerism | Estimated fraction of donor cells (per donor if multi-donor) |
+| Confidence interval | 95% CI on the chimerism estimate |
+| Per-marker details | Allele depths, expected vs observed VAF, and informativeness flag for each marker |
+| QC metrics | Number of informative markers used, mean depth, markers excluded and why, goodness-of-fit |
+| Timeline report | Chimerism trend across serial timepoints for a patient |
+
+Output formats: TSV (machine-readable), JSON (for programmatic consumption), and optionally a summary plot.
+
 ## Comparison with Commercial Products
 
 | Feature | allomix | AlloSeq HCT (CareDx) | Devyser Chimerism (Thermo Fisher) |
@@ -188,7 +157,7 @@ Both `monitor` and `timeline` accept these additional options:
 
 Validation follows a two-phase approach:
 
-1. **In silico validation** (current): Synthetic chimeric VCFs with realistic noise models — per-marker bias, depth coefficient of variation, and locus dropout — calibrated from empirical panel data. All experiments use multiple independent replicates (N≥5) with different random seeds to capture sampling variability.
+1. **In silico validation** (current): Synthetic chimeric VCFs with realistic noise models — per-marker bias, depth coefficient of variation, and locus dropout — calibrated from empirical panel data. All experiments use multiple independent replicates (N>=5) with different random seeds to capture sampling variability.
 2. **Wet-lab validation** (planned): Real patient samples and controlled dilution series.
 
 ## Project Status
@@ -205,6 +174,36 @@ Single-donor and multi-donor (up to 2 donors) chimerism estimation is implemente
 - 274 automated tests, in-silico validation at 0-100% donor fractions (RMSE ~0.3%)
 
 **Not yet implemented:** VariantGrid integration.
+
+## Project Structure
+
+```
+src/allomix/          # Installable library and CLI — the shipped product
+scripts/              # Development and validation utilities
+paper/scripts/        # Publication-specific analysis and figures
+tests/                # pytest tests
+data/                 # De-identified example VCFs
+```
+
+**`src/allomix/`** contains everything a user gets when they `pip install allomix`: the core library modules (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point.
+
+**`scripts/`** contains developer-facing tools that support building and testing allomix: generating synthetic test data, measuring panel bias from empirical data, and running validation suites. These are not part of the installed package.
+
+**`paper/scripts/`** contains scripts that produce the specific figures, validation experiments, and statistics for the publication. They use allomix as a library and are intended to make the paper's results fully reproducible.
+
+### Building the Paper
+
+The paper build is orchestrated by Snakemake. All validation and figure scripts run in parallel, then vibepaper renders the final Word document from the facts they produce.
+
+```bash
+pip install snakemake                          # if not already installed
+snakemake -s paper/Snakefile -j 7              # run all 7 scripts in parallel, then build paper
+snakemake -s paper/Snakefile -j 7 --forceall   # force rerun everything from scratch
+snakemake -s paper/Snakefile paper             # just render the paper (assumes facts already exist)
+snakemake -s paper/Snakefile clean             # remove all generated output
+```
+
+Snakemake tracks file timestamps, so editing a script or its input data reruns only the affected rule and the downstream paper build.
 
 ## License
 

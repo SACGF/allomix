@@ -233,17 +233,23 @@ def sample_allele_counts(
     """Sample allele counts from a binomial distribution with sequencing errors.
 
     When ``error_rate`` > 0, each simulated read has a chance of being
-    mis-called: a true REF read becomes ALT (or vice-versa) with
-    probability ``error_rate``.  This mirrors the flat error model used
-    in the MLE estimator.
+    mis-called using the 4-state (trinucleotide) model: a correct read
+    is called correctly with probability ``(1 - error_rate)``; when an
+    error occurs, it is equally likely to produce any of the 3 other
+    bases.  Only one of those 3 is the alternative allele at a biallelic
+    site, so the effective per-read REF->ALT (or ALT->REF) error rate
+    is ``error_rate / 3``.
+
+    This matches the error model in ``chimerism.log_likelihood_marker()``,
+    ensuring that in-silico validation uses a consistent generative model.
 
     Args:
         vaf: Expected variant allele frequency (before sequencing error).
         depth: Total read depth to simulate.
         rng: Optional Random instance for reproducibility.
-        error_rate: Per-read sequencing error probability (0.0–1.0).
-            Each read of the wrong allele is flipped with this probability.
-            Default 0.0 (no sequencing error).
+        error_rate: Per-read total sequencing error probability (0.0-1.0).
+            The probability of a specific substitution (e.g. REF->ALT)
+            is ``error_rate / 3``.  Default 0.0 (no sequencing error).
 
     Returns:
         Tuple of (ref_count, alt_count).
@@ -255,11 +261,26 @@ def sample_allele_counts(
     # Clamp VAF to valid probability range
     p = max(0.0, min(1.0, vaf))
 
-    # Apply sequencing error: a read from the true allele is mis-called
-    # with probability error_rate.  The effective observed ALT probability
-    # becomes: p_obs = p*(1-e) + (1-p)*e  (symmetric error model).
+    # Apply sequencing error using the 4-state (trinucleotide) model,
+    # matching chimerism.log_likelihood_marker().  A correct read is
+    # called correctly with probability (1-e); when wrong, the error is
+    # uniform over the 3 other bases, so P(REF->ALT) = e/3.
+    #
+    # The estimator's 4-state model allocates probability to 4 bases:
+    #   p_alt = p*(1-e) + (1-p)*e/3
+    #   p_ref = (1-p)*(1-e) + p*e/3
+    #   p_alt + p_ref = 1 - 2e/3  (remainder goes to 2 non-REF/ALT bases)
+    #
+    # Since a binomial simulator classifies every read as REF or ALT,
+    # we normalise to the conditional probability:
+    #   p_binomial = p_alt / (p_ref + p_alt) = p_alt / (1 - 2e/3)
+    #
+    # This gives symmetric error floors (e/3 at both extremes) and
+    # produces an unbiased MLE under the estimator's likelihood.
     if error_rate > 0:
-        p = p * (1.0 - error_rate) + (1.0 - p) * error_rate
+        e = error_rate
+        p_alt = p * (1.0 - e) + (1.0 - p) * e / 3.0
+        p = p_alt / (1.0 - 2.0 * e / 3.0)
 
     if hasattr(rng, "binomialvariate"):
         alt_count = rng.binomialvariate(depth, p)

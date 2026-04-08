@@ -91,7 +91,15 @@ For validation, allomix includes a simulation module that generates synthetic ch
 
 $$\text{VAF}_{expected} = \frac{(1-f) \cdot a_h + f \cdot a_d}{2}$$
 
-where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and donor, respectively. Per-marker capture biases are optionally added, sampled from $\mathcal{N}(0, \sigma_{bias})$. We empirically measured $\sigma_{bias}$ = 0.019 from 6,500 heterozygous observations across 71 markers in 210 joint-called VCFs from a 76-SNP rhAmpSeq sample identification panel; all simulations in this study use $\sigma_{bias}$ = 0.02. Sequencing errors are modelled symmetrically: each read is mis-called with probability $\varepsilon$ (default 0.01), matching the error rate used in the likelihood model. Alternative allele counts are then drawn from a binomial distribution with the biased, error-adjusted expected frequency and target depth. This produces realistic synthetic data that reflects stochastic sampling noise, systematic panel-specific biases, and sequencing errors.
+where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and donor, respectively. The simulation incorporates three sources of measurement noise calibrated from empirical data:
+
+1. **Per-marker amplification bias**: Each marker receives a fixed bias drawn from $\mathcal{N}(0, \sigma_{bias})$, modelling systematic allele capture efficiency differences. We measured $\sigma_{bias}$ from {{ panel_empirical.n_het_total | commas }} heterozygous observations across {{ panel_empirical.n_bias_markers | fmt('g') }} markers in {{ panel_empirical.n_vcfs | fmt('g') }} joint-called VCFs ({{ panel_empirical.n_samples | commas }} samples) from a 76-SNP rhAmpSeq sample identification panel, obtaining $\sigma_{bias}$ = {{ panel_empirical.sd_bias }}. All simulations use $\sigma_{bias}$ = 0.02.
+
+2. **Sequencing errors**: Each read is mis-called with probability $\varepsilon$ = 0.01, matching the error rate used in the likelihood model.
+
+3. **Locus dropout**: Each marker has a probability of producing zero reads, set to {{ panel_empirical.mean_nocall_pct }}% based on the empirical no-call rate.
+
+Alternative allele counts are drawn from a binomial distribution with the biased, error-adjusted expected frequency and target depth. Empirical characterisation of the panel also showed mean sequencing depth of {{ panel_empirical.mean_depth | commas }}x (range {{ panel_empirical.min_depth | fmt('g') }}–{{ panel_empirical.max_depth | fmt('g') }}x), per-sample depth coefficient of variation of {{ panel_empirical.mean_sample_depth_cv }}, and a mean observed-to-expected heterozygosity ratio of {{ panel_empirical.mean_het_ratio }}, indicating negligible allele dropout at these depths.
 
 ### Software Availability
 

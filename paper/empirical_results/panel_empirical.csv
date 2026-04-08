@@ -1,0 +1,2 @@
+n_vcfs,n_samples,n_markers,n_bias_markers,n_het_total,mean_nocall_rate,mean_nocall_pct,markers_gt5pct_nocall,mean_depth,median_depth,min_depth,max_depth,mean_sample_depth_cv,sd_bias,mean_abs_bias,median_abs_bias,p95_abs_bias,max_abs_bias,mean_het_ratio,markers_low_het,ado_estimate
+210,18047,71,71,574395,0.016,1.6,1,1732,1848,285,2789,0.429,0.0175,0.0097,0.0051,0.0408,0.1005,0.984,1,0.0156

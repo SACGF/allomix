@@ -90,15 +90,16 @@ Full plan in `claude/step5_implementation_plan.md`. Defines:
 | report | `src/allomix/report.py` | TSV output (summary + verbose per-marker detail), JSON, timeline format |
 | cli | `src/allomix/cli.py` | `allomix monitor` and `allomix timeline` wired end-to-end with all options |
 
-### Test coverage: 213 tests passing
+### Test coverage: 261 tests passing
 
 - 29 genotype tests (parsing real VCFs, classification, filtering)
 - 55 chimerism tests (MLE math, estimation accuracy at multiple fractions, CI coverage, edge cases)
+- 48 multi-donor tests (unit + integration + CLI)
+- 21 bias tests
 - 12 QC tests (pass/fail conditions, warnings)
 - 17 report tests (TSV/JSON format, timeline)
 - 64 simulate tests (blending logic, round-trips)
 - 15 integration tests (full pipeline: synthetic VCF → genotype → chimerism → qc → report → CLI)
-- Additional bias tests
 
 ### What works now:
 
@@ -124,7 +125,7 @@ allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf --bias-tabl
 
 ---
 
-## Step 7: Implement Multi-Donor Support ✅ CODE COMPLETE — 📝 PAPER TODO
+## Step 7: Implement Multi-Donor Support ✅ COMPLETE
 
 **Goal:** Extend chimerism estimation to host + 2 donors.
 
@@ -150,9 +151,9 @@ Detailed plan: `claude/multi_donor_plan.md`
 
 **Validation** — Estimation accuracy on sibling donors at 1000x: pure host <1%, balanced 25/25 → 24.3/26.0%, asymmetric 30/10 correctly distinguished, pure donor1 >98%.
 
-### Paper updates (TODO)
+### Paper updates ✅ COMPLETE
 
-See notes below in the paper section for what needs updating.
+All paper sections updated: methods (multi-donor extension subsection), results (sibling donor validation), discussion (moved from limitation to capability), abstract (multi-donor mention), README. Validation script (`paper/scripts/run_multidonor_validation.py`) and figure (`paper/scripts/generate_multidonor_figure.py`, `paper/figures/fig_multidonor.png`) complete.
 
 ---
 
@@ -264,41 +265,8 @@ Implementation notes:
 - Target journal: Journal of Molecular Diagnostics (Technical Advance)
 - Paper sections in `paper/`, analysis scripts in `paper/scripts/`
 - Cite: Crysup & Woerner 2022 (Demixtify MLE framework), Vynck et al. (bias correction)
-- In silico validation complete (depth series, relatedness, bias correction)
+- In silico validation complete (depth series, relatedness, bias correction, multi-donor)
+- Multi-donor paper updates complete (methods, results, discussion, abstract, figures)
 - Simulation calibrated from empirical panel characterisation (210 VCFs, 18,047 samples)
-- Validation with real samples (Steps 11) still needed
+- Validation with real samples (Step 11) still needed
 - Open-source tool release (MIT license, PyPI)
-
-### Paper updates needed for multi-donor (Step 7)
-
-**`paper/methods.md`** — needs new subsection after the single-donor MLE section:
-- Multi-donor likelihood formula: $w_i(f_1, f_2) = (1-f_1-f_2) \frac{g_{h,i}}{2} + f_1 \frac{g_{d1,i}}{2} + f_2 \frac{g_{d2,i}}{2}$
-- Optimization: triangular grid search (101 steps, ~5k evaluations) → Nelder-Mead refinement
-- Profile likelihood CIs use chi2(df=1) per donor (profiling one parameter at a time, not df=2 joint region)
-- Marker informativity: a marker contributes if host differs from *any* donor; per-donor informative counts tracked
-- Genotype simulation for related donors: Mendelian segregation from shared parents (not independent pairwise IBD)
-- Note constraint: f1 + f2 ≤ 1
-
-**`paper/results.md`** — needs new subsection "Multi-Donor Estimation with Sibling Donors":
-- Describe the 3-brothers scenario (100 markers, sibling IBD, 1000x)
-- Report informativity: 61 informative for any donor, 46/41 per donor individually
-- Accuracy table across the (f1, f2) grid — use `tests/test_data/multidonor/truth_table.tsv`
-- Need to run a systematic validation script (like `run_depth_validation.py` but for multi-donor) to generate facts
-- Key results to highlight: sub-2% MAE per donor, correct distinction of major vs minor donor in asymmetric mixes, constraint f1+f2≤1 always satisfied
-
-**`paper/results.md`** — figure (Figure 5 or similar):
-- Panel A: per-donor accuracy scatter (true vs estimated for donor1 and donor2) with identity line and CIs
-- Panel B: 2D log-likelihood contour for one example mixture (e.g., 50% host / 30% d1 / 20% d2), showing MLE point, 95% CI contour, and triangular feasible region
-- Alternative simpler option: single panel with true vs estimated for both donors on same axes (different colors)
-- Figure generation script needed: `paper/scripts/generate_multidonor_figure.py`
-- Facts generation script needed: `paper/scripts/run_multidonor_validation.py`
-
-**`paper/discussion.md`** — update the paragraph that says multi-donor is "architecturally supported but not yet implemented" → now implemented, with validation results
-
-**`paper/introduction.md`** — minor: update where it says multi-donor is a future direction → now supported
-
-**`paper/abstract.md`** — add mention of multi-donor support (host + 2 donors)
-
-**Comparison table** in results.md — update "Max genomes: 3 (host + 2 donors)" to reflect this is now implemented
-
-**README.md** — remove line 128 "Not yet implemented: multi-donor support (host + 2 donors)"

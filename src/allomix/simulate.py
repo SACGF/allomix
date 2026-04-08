@@ -184,6 +184,30 @@ def expected_vaf(
     return ((1.0 - donor_fraction) * h + donor_fraction * d) / 2.0
 
 
+def expected_vaf_multi(
+    host_gt: tuple[int, int],
+    donor_gts: list[tuple[int, int]],
+    donor_fractions: list[float],
+) -> float:
+    """Calculate the expected ALT VAF in a multi-donor chimeric mixture.
+
+    VAF = ((1 - f1 - f2 - ...) * host_dose + f1 * d1_dose + f2 * d2_dose + ...) / 2
+
+    Args:
+        host_gt: Host diploid genotype.
+        donor_gts: List of donor diploid genotypes.
+        donor_fractions: List of donor fractions (must sum to <= 1.0).
+
+    Returns:
+        Expected ALT allele frequency (0.0 to 1.0).
+    """
+    f_host = 1.0 - sum(donor_fractions)
+    vaf = f_host * alt_dose(host_gt)
+    for dgt, f in zip(donor_gts, donor_fractions):
+        vaf += f * alt_dose(dgt)
+    return vaf / 2.0
+
+
 def is_informative(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> bool:
     """Determine whether a marker is informative for chimerism detection.
 
@@ -423,10 +447,10 @@ def generate_marker_biases_realistic(
 # IBD sharing probabilities: (P(IBD=0), P(IBD=1), P(IBD=2))
 RELATEDNESS_IBD = {
     "unrelated": (1.0, 0.0, 0.0),
-    "cousin": (0.75, 0.25, 0.0),        # first cousins: 1/8 kinship
-    "half-sibling": (0.5, 0.5, 0.0),     # half-siblings: 1/4 kinship
-    "parent-child": (0.0, 1.0, 0.0),     # parent-child: always share 1 allele
-    "sibling": (0.25, 0.5, 0.25),        # full siblings: 1/4 kinship
+    "cousin": (0.75, 0.25, 0.0),  # first cousins: 1/8 kinship
+    "half-sibling": (0.5, 0.5, 0.0),  # half-siblings: 1/4 kinship
+    "parent-child": (0.0, 1.0, 0.0),  # parent-child: always share 1 allele
+    "sibling": (0.25, 0.5, 0.25),  # full siblings: 1/4 kinship
 }
 
 
@@ -500,8 +524,7 @@ def generate_related_genotypes(
     """
     if relatedness not in RELATEDNESS_IBD:
         raise ValueError(
-            f"Unknown relatedness '{relatedness}'. "
-            f"Choose from: {list(RELATEDNESS_IBD.keys())}"
+            f"Unknown relatedness '{relatedness}'. Choose from: {list(RELATEDNESS_IBD.keys())}"
         )
     ibd_probs = RELATEDNESS_IBD[relatedness]
 
@@ -511,16 +534,100 @@ def generate_related_genotypes(
         host_gt = _draw_genotype(p_alt, rng)
         donor_gt = _draw_related_genotype(host_gt, p_alt, ibd_probs, rng)
 
-        markers.append({
-            "chrom": "chr1",
-            "pos": 10000 + i * 1000,
-            "ref": "A",
-            "alt": "G",
-            "host_gt": host_gt,
-            "donor_gt": donor_gt,
-            "p_alt": p_alt,
-            "informative": alt_dose(host_gt) != alt_dose(donor_gt),
-        })
+        markers.append(
+            {
+                "chrom": "chr1",
+                "pos": 10000 + i * 1000,
+                "ref": "A",
+                "alt": "G",
+                "host_gt": host_gt,
+                "donor_gt": donor_gt,
+                "p_alt": p_alt,
+                "informative": alt_dose(host_gt) != alt_dose(donor_gt),
+            }
+        )
+
+    return markers
+
+
+def _mendelian_child(
+    parent1: tuple[int, int],
+    parent2: tuple[int, int],
+    rng: random.Random,
+) -> tuple[int, int]:
+    """Draw a child genotype by Mendelian segregation from two parents.
+
+    Each parent transmits one allele (chosen uniformly at random).
+
+    Args:
+        parent1: First parent diploid genotype.
+        parent2: Second parent diploid genotype.
+        rng: Random instance.
+
+    Returns:
+        Child diploid genotype (sorted so smaller allele first).
+    """
+    a1 = parent1[rng.randint(0, 1)]
+    a2 = parent2[rng.randint(0, 1)]
+    return (min(a1, a2), max(a1, a2))
+
+
+def generate_sibling_trio_genotypes(
+    n_markers: int,
+    rng: random.Random,
+    maf_range: tuple[float, float] = (0.2, 0.5),
+) -> list[dict]:
+    """Generate genotypes for 3 siblings (host + 2 donors) from shared parents.
+
+    For each marker:
+    1. Draw population ALT allele frequency
+    2. Draw two parent genotypes from Hardy-Weinberg
+    3. Derive each sibling independently by Mendelian segregation
+
+    This preserves the correct 3-way sibling correlation structure:
+    each pair has IBD distribution (0.25, 0.5, 0.25) and the three
+    genotypes are correlated through shared parents.
+
+    Args:
+        n_markers: Number of biallelic markers to generate.
+        rng: Random instance for reproducibility.
+        maf_range: (min, max) minor allele frequency range for markers.
+
+    Returns:
+        List of dicts with keys: chrom, pos, ref, alt, host_gt, donor1_gt,
+        donor2_gt, p_alt, informative_d1, informative_d2, informative_any,
+        donors_distinguishable.
+    """
+    markers = []
+    for i in range(n_markers):
+        p_alt = rng.uniform(*maf_range)
+
+        parent1 = _draw_genotype(p_alt, rng)
+        parent2 = _draw_genotype(p_alt, rng)
+
+        host_gt = _mendelian_child(parent1, parent2, rng)
+        donor1_gt = _mendelian_child(parent1, parent2, rng)
+        donor2_gt = _mendelian_child(parent1, parent2, rng)
+
+        markers.append(
+            {
+                "chrom": f"chr{(i % 22) + 1}",
+                "pos": 1_000_000 + i * 100_000,
+                "ref": "A",
+                "alt": "G",
+                "host_gt": host_gt,
+                "donor1_gt": donor1_gt,
+                "donor2_gt": donor2_gt,
+                "p_alt": p_alt,
+                "informative_d1": alt_dose(host_gt) != alt_dose(donor1_gt),
+                "informative_d2": alt_dose(host_gt) != alt_dose(donor2_gt),
+                "informative_any": (
+                    alt_dose(host_gt) != alt_dose(donor1_gt)
+                    or alt_dose(host_gt) != alt_dose(donor2_gt)
+                ),
+                "donors_distinguishable": alt_dose(donor1_gt) != alt_dose(donor2_gt),
+            }
+        )
 
     return markers
 
@@ -546,7 +653,7 @@ def write_genotype_vcf(
 
     with open(path, "w") as f:
         f.write("##fileformat=VCFv4.2\n")
-        f.write('##contig=<ID=chr1,length=248956422>\n')
+        f.write("##contig=<ID=chr1,length=248956422>\n")
         f.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">\n')
         f.write('##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count">\n')
         f.write('##INFO=<ID=AN,Number=1,Type=Integer,Description="Total alleles">\n')
@@ -794,3 +901,88 @@ def write_vcf(result: BlendResult, path: str | Path) -> None:
             fh.write(line + "\n")
         for line in result.records:
             fh.write(line + "\n")
+
+
+def blend_from_genotype_dicts(
+    markers: list[dict],
+    donor_fractions: list[float],
+    target_depth: int = 1000,
+    seed: int | None = None,
+    error_rate: float = 0.01,
+    depth_cv: float = 0.0,
+    sample_name: str = "simulated",
+) -> BlendResult:
+    """Create a synthetic chimeric VCF directly from genotype dicts.
+
+    Designed for use with generate_sibling_trio_genotypes() output.
+    Supports 1 or 2 donors via donor_fractions length.
+
+    Args:
+        markers: List of marker dicts with host_gt, donor1_gt, donor2_gt.
+        donor_fractions: [f_donor1] or [f_donor1, f_donor2].
+        target_depth: Mean sequencing depth.
+        seed: Random seed.
+        error_rate: Sequencing error rate.
+        depth_cv: Depth CV across markers.
+        sample_name: Sample name for VCF header.
+
+    Returns:
+        BlendResult with synthetic chimeric VCF data.
+    """
+    if sum(donor_fractions) > 1.0 + 1e-9:
+        raise ValueError(f"donor_fractions sum to {sum(donor_fractions):.4f}, must be <= 1.0")
+
+    rng = random.Random(seed)
+    n = len(markers)
+
+    if depth_cv > 0:
+        depths = sample_marker_depths(n, target_depth, depth_cv, rng)
+    else:
+        depths = [target_depth] * n
+
+    # Build header
+    header = [
+        "##fileformat=VCFv4.2",
+        "##contig=<ID=chr1,length=248956422>",
+        '##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">',
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+        '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele depths">',
+        '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">',
+        '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">',
+        '##FORMAT=<ID=AF,Number=A,Type=Float,Description="Allele frequency">',
+        f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample_name}",
+    ]
+
+    out_records = []
+    n_informative = 0
+
+    n_donors = len(donor_fractions)
+    donor_keys = [f"donor{i + 1}_gt" for i in range(n_donors)]
+
+    for i, m in enumerate(markers):
+        host_gt = m["host_gt"]
+        donor_gts = [m[k] for k in donor_keys]
+
+        vaf = expected_vaf_multi(host_gt, donor_gts, donor_fractions)
+        ref_count, alt_count = sample_allele_counts(vaf, depths[i], rng, error_rate)
+
+        if m.get("informative_any", False):
+            n_informative += 1
+
+        total = ref_count + alt_count
+        gt = gt_from_counts(ref_count, alt_count)
+        af_val = f"{alt_count / total:.4f}" if total > 0 else "0"
+        sample_field = f"{gt}:{ref_count},{alt_count}:{total}:99:{af_val}"
+
+        line = (
+            f"{m['chrom']}\t{m['pos']}\t.\t{m['ref']}\t{m['alt']}\t"
+            f".\tPASS\tDP={total}\tGT:AD:DP:GQ:AF\t{sample_field}"
+        )
+        out_records.append(line)
+
+    return BlendResult(
+        header=header,
+        records=out_records,
+        num_markers=n,
+        num_informative=n_informative,
+    )

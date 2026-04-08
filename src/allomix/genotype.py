@@ -39,10 +39,12 @@ class InformativeMarker:
     alt: str
     host_gt: tuple[int, int]
     donor_gts: list[tuple[int, int]]
-    marker_type: int  # Vynck classification: 0,1,10,11,20,21
+    marker_type: int  # Vynck classification for first donor: 0,1,10,11,20,21
     admix_ad_ref: int
     admix_ad_alt: int
     admix_dp: int
+    marker_types: list[int | None] | None = None  # Vynck type per donor (None = non-informative)
+    informative_for: list[bool] | None = None  # True per donor if informative
 
 
 @dataclass
@@ -119,18 +121,20 @@ def parse_vcf(path: Path | str, min_dp: int = 0, min_gq: int = 0) -> list[Marker
         if filt is None:
             filt = "PASS"
 
-        markers.append(MarkerData(
-            chrom=variant.CHROM,
-            pos=variant.POS,
-            ref=variant.REF,
-            alt=alt,
-            gt=gt,
-            ad_ref=ad_ref,
-            ad_alt=ad_alt,
-            dp=dp,
-            gq=gq,
-            filter=filt,
-        ))
+        markers.append(
+            MarkerData(
+                chrom=variant.CHROM,
+                pos=variant.POS,
+                ref=variant.REF,
+                alt=alt,
+                gt=gt,
+                ad_ref=ad_ref,
+                ad_alt=ad_alt,
+                dp=dp,
+                gq=gq,
+                filter=filt,
+            )
+        )
 
     vcf.close()
     return markers
@@ -255,21 +259,30 @@ def classify_markers(
 
         # Classify: informative if host differs from ANY donor
         donor_gts = [d.gt for d in ds]
-        mtype = marker_type(h.gt, ds[0].gt)
+        mtypes = [marker_type(h.gt, d.gt) for d in ds]
+        any_informative = any(mt is not None for mt in mtypes)
 
-        if mtype is not None:
-            informative.append(InformativeMarker(
-                chrom=key[0],
-                pos=key[1],
-                ref=key[2],
-                alt=key[3],
-                host_gt=h.gt,
-                donor_gts=donor_gts,
-                marker_type=mtype,
-                admix_ad_ref=a.ad_ref,
-                admix_ad_alt=a.ad_alt,
-                admix_dp=a.dp,
-            ))
+        if any_informative:
+            # Use first donor's type for backward compat; fall back to first non-None
+            mtype_first = mtypes[0]
+            if mtype_first is None:
+                mtype_first = next(mt for mt in mtypes if mt is not None)
+            informative.append(
+                InformativeMarker(
+                    chrom=key[0],
+                    pos=key[1],
+                    ref=key[2],
+                    alt=key[3],
+                    host_gt=h.gt,
+                    donor_gts=donor_gts,
+                    marker_type=mtype_first,
+                    admix_ad_ref=a.ad_ref,
+                    admix_ad_alt=a.ad_alt,
+                    admix_dp=a.dp,
+                    marker_types=mtypes,
+                    informative_for=[mt is not None for mt in mtypes],
+                )
+            )
         else:
             non_informative.append(a)
 

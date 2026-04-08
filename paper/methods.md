@@ -59,6 +59,16 @@ $$2[\mathcal{L}(\hat{f}) - \mathcal{L}(f)] = \chi^2_{1, 0.95} \approx 3.84$$
 
 The lower and upper bounds are found by scanning outward from the MLE in steps of 0.001, following standard profile likelihood methodology.[@Wilks1938]
 
+### Multi-Donor Extension
+
+The single-donor model generalises naturally to multiple donors. For two donors with fractions $f_1$ and $f_2$ (subject to the constraint $f_1 + f_2 \leq 1$), the expected reference allele weight at marker $i$ becomes:
+
+$$w_i(f_1, f_2) = (1 - f_1 - f_2) \cdot \frac{g_{h,i}}{2} + f_1 \cdot \frac{g_{d1,i}}{2} + f_2 \cdot \frac{g_{d2,i}}{2}$$
+
+where $g_{d1,i}$ and $g_{d2,i}$ are the reference allele doses for donors 1 and 2. The per-marker and total log-likelihoods follow identically from the single-donor case, with $w_i$ now a function of two parameters. A marker is considered informative if the host genotype differs from that of any donor; per-donor informative counts are tracked separately.
+
+Optimization proceeds by triangular grid search over the simplex $\{(f_1, f_2) : f_1, f_2 \geq 0,\; f_1 + f_2 \leq 1\}$ at 101 steps per dimension (~5,150 evaluations), followed by Nelder-Mead refinement from the grid maximum. Profile likelihood 95% confidence intervals are computed per donor using a $\chi^2$ threshold with 1 degree of freedom ($\chi^2_{1,0.95} \approx 3.84$), since each CI profiles one donor fraction while optimising the other.
+
 ### Per-Marker Bias Correction
 
 Capture and amplicon-based sequencing panels exhibit systematic per-marker amplification biases that cause observed variant allele frequencies to deviate from their true values.[@Vynck2023bias] allomix supports optional per-marker bias correction following the approach of De Vynck et al.
@@ -102,6 +112,13 @@ where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and
 4. **Locus dropout**: Each marker has a probability of producing zero reads, set to {{ panel_empirical.mean_nocall_pct }}% based on the empirical no-call rate.
 
 Alternative allele counts are drawn from a binomial distribution with the biased, error-adjusted expected frequency and per-marker depth. Empirical characterisation also showed a mean observed-to-expected heterozygosity ratio of {{ panel_empirical.mean_het_ratio }}, indicating negligible allele dropout at these depths.
+
+{# TODO: Real sequencing data validation methods #}
+{# Add subsection "### Clinical Sample Validation" describing: #}
+{# - Sample cohort (retrospective post-HSCT patients from /tau) #}
+{# - STR chimerism comparison methodology #}
+{# - Concordance analysis approach #}
+{# - LOD characterisation with dilution series if available #}
 
 ### Software Availability
 

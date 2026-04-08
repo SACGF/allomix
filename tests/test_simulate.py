@@ -57,6 +57,7 @@ def _write_test_vcf(
 # Tests: alt_dose
 # ---------------------------------------------------------------------------
 
+
 class TestAltDose:
     def test_hom_ref(self) -> None:
         assert alt_dose((0, 0)) == 0
@@ -72,6 +73,7 @@ class TestAltDose:
 # ---------------------------------------------------------------------------
 # Tests: expected_vaf
 # ---------------------------------------------------------------------------
+
 
 class TestExpectedVaf:
     """Test expected VAF for all 9 genotype combinations."""
@@ -132,6 +134,7 @@ class TestExpectedVaf:
 # Tests: is_informative
 # ---------------------------------------------------------------------------
 
+
 class TestIsInformative:
     """Informative = different alt dose between host and donor."""
 
@@ -139,13 +142,13 @@ class TestIsInformative:
         "host_gt, donor_gt, expected",
         [
             ((0, 0), (0, 0), False),  # same dose 0
-            ((0, 0), (0, 1), True),   # 0 vs 1
-            ((0, 0), (1, 1), True),   # 0 vs 2
-            ((0, 1), (0, 0), True),   # 1 vs 0
+            ((0, 0), (0, 1), True),  # 0 vs 1
+            ((0, 0), (1, 1), True),  # 0 vs 2
+            ((0, 1), (0, 0), True),  # 1 vs 0
             ((0, 1), (0, 1), False),  # same dose 1
-            ((0, 1), (1, 1), True),   # 1 vs 2
-            ((1, 1), (0, 0), True),   # 2 vs 0
-            ((1, 1), (0, 1), True),   # 2 vs 1
+            ((0, 1), (1, 1), True),  # 1 vs 2
+            ((1, 1), (0, 0), True),  # 2 vs 0
+            ((1, 1), (0, 1), True),  # 2 vs 1
             ((1, 1), (1, 1), False),  # same dose 2
         ],
     )
@@ -161,6 +164,7 @@ class TestIsInformative:
 # ---------------------------------------------------------------------------
 # Tests: sample_allele_counts
 # ---------------------------------------------------------------------------
+
 
 class TestSampleAlleleCounts:
     def test_zero_depth(self) -> None:
@@ -199,6 +203,7 @@ class TestSampleAlleleCounts:
 # Tests: gt_from_counts
 # ---------------------------------------------------------------------------
 
+
 class TestGtFromCounts:
     def test_hom_ref(self) -> None:
         assert gt_from_counts(1000, 0) == "0/0"
@@ -225,41 +230,62 @@ class TestGtFromCounts:
 # Tests: extract_gt and extract_depth
 # ---------------------------------------------------------------------------
 
+
 class TestExtractGt:
     def test_simple_het(self, tmp_path: Path) -> None:
-        _write_test_vcf(tmp_path / "test.vcf", "SAMPLE", [
-            ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "0/1:500,500:1000:99:100,0,100:0.5"),
-        ])
+        _write_test_vcf(
+            tmp_path / "test.vcf",
+            "SAMPLE",
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "0/1:500,500:1000:99:100,0,100:0.5"),
+            ],
+        )
         _, records = parse_vcf(tmp_path / "test.vcf")
         assert extract_gt(records[0]) == (0, 1)
 
     def test_hom_alt(self, tmp_path: Path) -> None:
-        _write_test_vcf(tmp_path / "test.vcf", "SAMPLE", [
-            ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "1/1:0,1000:1000:99:100,100,0:1.0"),
-        ])
+        _write_test_vcf(
+            tmp_path / "test.vcf",
+            "SAMPLE",
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "1/1:0,1000:1000:99:100,100,0:1.0"),
+            ],
+        )
         _, records = parse_vcf(tmp_path / "test.vcf")
         assert extract_gt(records[0]) == (1, 1)
 
     def test_nocall(self, tmp_path: Path) -> None:
-        _write_test_vcf(tmp_path / "test.vcf", "SAMPLE", [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "./.:.:."),
-        ])
+        _write_test_vcf(
+            tmp_path / "test.vcf",
+            "SAMPLE",
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "./.:.:."),
+            ],
+        )
         _, records = parse_vcf(tmp_path / "test.vcf")
         assert extract_gt(records[0]) is None
 
 
 class TestExtractDepth:
     def test_from_dp(self, tmp_path: Path) -> None:
-        _write_test_vcf(tmp_path / "test.vcf", "SAMPLE", [
-            ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "0/1:500,500:1000:99:100,0,100:0.5"),
-        ])
+        _write_test_vcf(
+            tmp_path / "test.vcf",
+            "SAMPLE",
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "0/1:500,500:1000:99:100,0,100:0.5"),
+            ],
+        )
         _, records = parse_vcf(tmp_path / "test.vcf")
         assert extract_depth(records[0]) == 1000
 
     def test_from_ad_fallback(self, tmp_path: Path) -> None:
-        _write_test_vcf(tmp_path / "test.vcf", "SAMPLE", [
-            ("chr1", 100, "A", "T", "GT:AD", "0/1:600,400"),
-        ])
+        _write_test_vcf(
+            tmp_path / "test.vcf",
+            "SAMPLE",
+            [
+                ("chr1", 100, "A", "T", "GT:AD", "0/1:600,400"),
+            ],
+        )
         _, records = parse_vcf(tmp_path / "test.vcf")
         assert extract_depth(records[0]) == 1000
 
@@ -267,6 +293,7 @@ class TestExtractDepth:
 # ---------------------------------------------------------------------------
 # Tests: blend_vcfs end-to-end
 # ---------------------------------------------------------------------------
+
 
 def _make_pair_vcfs(
     tmp_path: Path,
@@ -284,15 +311,19 @@ def _make_pair_vcfs(
 class TestBlendVcfs:
     def test_fraction_zero_matches_host(self, tmp_path: Path) -> None:
         """At f=0, output should match host genotypes."""
-        host_path, donor_path = _make_pair_vcfs(tmp_path, [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-            ("chr1", 300, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-        ], [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-            ("chr1", 300, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-        ])
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+                ("chr1", 300, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 300, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+            ],
+        )
 
         result = blend_vcfs(host_path, donor_path, 0.0, target_depth=2000, seed=42)
         assert result.num_markers == 3
@@ -307,15 +338,19 @@ class TestBlendVcfs:
 
     def test_fraction_one_matches_donor(self, tmp_path: Path) -> None:
         """At f=1, output should match donor genotypes."""
-        host_path, donor_path = _make_pair_vcfs(tmp_path, [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-            ("chr1", 300, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-        ], [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-            ("chr1", 300, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-        ])
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+                ("chr1", 300, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 300, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+            ],
+        )
 
         result = blend_vcfs(host_path, donor_path, 1.0, target_depth=2000, seed=42)
         gts = []
@@ -327,14 +362,18 @@ class TestBlendVcfs:
 
     def test_only_shared_loci(self, tmp_path: Path) -> None:
         """Only loci present in both VCFs should appear in output."""
-        host_path, donor_path = _make_pair_vcfs(tmp_path, [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-            ("chr1", 999, "G", "C", "GT:AD:DP", "1/1:0,1000:1000"),
-        ], [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-            ("chr1", 300, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-        ])
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 999, "G", "C", "GT:AD:DP", "1/1:0,1000:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 300, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+            ],
+        )
 
         result = blend_vcfs(host_path, donor_path, 0.5, target_depth=1000, seed=1)
         # Only chr1:100 is shared
@@ -342,15 +381,26 @@ class TestBlendVcfs:
 
     def test_informative_count(self, tmp_path: Path) -> None:
         """Informative markers = those where host and donor differ in alt dose."""
-        host_path, donor_path = _make_pair_vcfs(tmp_path, [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),  # vs 1/1 -> informative
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),  # vs 0/1 -> not informative
-            ("chr1", 300, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),  # vs 0/0 -> informative
-        ], [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-            ("chr1", 300, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-        ])
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),  # vs 1/1 -> informative
+                (
+                    "chr1",
+                    200,
+                    "A",
+                    "T",
+                    "GT:AD:DP",
+                    "0/1:500,500:1000",
+                ),  # vs 0/1 -> not informative
+                ("chr1", 300, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),  # vs 0/0 -> informative
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+                ("chr1", 300, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+            ],
+        )
 
         result = blend_vcfs(host_path, donor_path, 0.5, target_depth=1000, seed=1)
         assert result.num_markers == 3
@@ -358,17 +408,25 @@ class TestBlendVcfs:
 
     def test_write_and_reparse(self, tmp_path: Path) -> None:
         """Write a blended VCF and verify it can be re-parsed."""
-        host_path, donor_path = _make_pair_vcfs(tmp_path, [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-        ], [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-        ])
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+            ],
+        )
 
         result = blend_vcfs(
-            host_path, donor_path, 0.5,
-            target_depth=1000, sample_name="test_blend", seed=99,
+            host_path,
+            donor_path,
+            0.5,
+            target_depth=1000,
+            sample_name="test_blend",
+            seed=99,
         )
         out_path = tmp_path / "blended.vcf"
         write_vcf(result, out_path)
@@ -386,23 +444,31 @@ class TestBlendVcfs:
             assert gt is not None
 
     def test_invalid_fraction_raises(self, tmp_path: Path) -> None:
-        host_path, donor_path = _make_pair_vcfs(tmp_path, [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-        ], [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-        ])
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+            ],
+        )
         with pytest.raises(ValueError, match="donor_fraction"):
             blend_vcfs(host_path, donor_path, 1.5)
 
     def test_reproducible_with_seed(self, tmp_path: Path) -> None:
         """Same seed should produce identical output."""
-        host_path, donor_path = _make_pair_vcfs(tmp_path, [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
-        ], [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-            ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
-        ])
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+            ],
+        )
 
         r1 = blend_vcfs(host_path, donor_path, 0.5, target_depth=1000, seed=42)
         r2 = blend_vcfs(host_path, donor_path, 0.5, target_depth=1000, seed=42)
@@ -410,11 +476,15 @@ class TestBlendVcfs:
 
     def test_ref_only_host_with_variant_donor(self, tmp_path: Path) -> None:
         """When host has ALT='.', donor's ALT allele should be used."""
-        host_path, donor_path = _make_pair_vcfs(tmp_path, [
-            ("chr1", 100, "A", ".", "GT:AD:DP", "0/0:1000:1000"),
-        ], [
-            ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
-        ])
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", ".", "GT:AD:DP", "0/0:1000:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+            ],
+        )
 
         result = blend_vcfs(host_path, donor_path, 0.5, target_depth=1000, seed=1)
         assert result.num_markers == 1
@@ -427,12 +497,11 @@ class TestBlendVcfs:
 # Tests: parse_vcf with real example data
 # ---------------------------------------------------------------------------
 
+
 class TestParseRealVcf:
     """Test parsing against the example VCF shipped with the project."""
 
-    EXAMPLE_VCF = (
-        Path(__file__).resolve().parent.parent / "data" / "idt_rhampseq_sid_example.vcf"
-    )
+    EXAMPLE_VCF = Path(__file__).resolve().parent.parent / "data" / "idt_rhampseq_sid_example.vcf"
 
     @pytest.mark.skipif(
         not EXAMPLE_VCF.exists(),

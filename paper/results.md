@@ -63,9 +63,25 @@ The mean number of informative markers decreased with increasing relatedness, fr
 
 ![**Figure 4.** Effect of donor-host relatedness on allomix performance. Left: number of informative markers by relatedness level (dots = individual replicates, bars = means). Centre: mean absolute error. Right: truth versus estimated donor fraction across all replicates. Simulated with {{ rel_unrelated.n_markers }} markers, 500x mean depth (CV = 0.43), 1% sequencing error rate, empirically calibrated per-marker bias, and 1.6% locus dropout.]({{ facts_dir }}/fig4_relatedness.png)
 
-{# TODO: Validation with real sequencing data #}
-{# Once real patient/control data is processed through the pipeline, add: #}
-{# - Concordance with STR-based chimerism results #}
-{# - Dilution series from cell line mixing experiments #}
-{# - Multi-donor detection capability #}
+### Multi-Donor Estimation with Sibling Donors
+
+To evaluate the multi-donor extension, we generated a three-sibling scenario: host and two donors sharing both parents, with genotypes produced by Mendelian segregation from parental haplotypes across {{ multidonor.n_markers }} biallelic markers at {{ multidonor.depth | commas }}x depth. Of {{ multidonor.n_markers }} total markers, {{ multidonor.n_informative_any }} were informative for at least one donor ({{ multidonor.n_informative_d1 }} for donor 1, {{ multidonor.n_informative_d2 }} for donor 2), reflecting the expected reduction due to full-sibling relatedness.
+
+allomix was run on {{ multidonor.n_samples }} chimeric samples spanning the simplex of (donor 1, donor 2) fractions, including pure host, pure single-donor, balanced mixes, and asymmetric mixes (Table 4, Figure 5). Per-donor mean absolute error was {{ multidonor.mae_d1_pct }}% for donor 1 (RMSE {{ multidonor.rmse_d1_pct }}%) and {{ multidonor.mae_d2_pct }}% for donor 2 (RMSE {{ multidonor.rmse_d2_pct }}%), both well below 2%. The total donor fraction (f1 + f2) was estimated with {{ multidonor.mae_total_pct }}% MAE. All {{ multidonor.n_asymmetric }} asymmetric mixes were correctly ranked (the donor with the higher true fraction was estimated as the larger contributor in every case). Profile likelihood CI coverage was {{ multidonor.ci_coverage_d1_pct }}% for donor 1 and {{ multidonor.ci_coverage_d2_pct }}% for donor 2, showing the same undercoverage pattern observed in single-donor estimation.
+
+| Metric | Donor 1 | Donor 2 | Total |
+|:---|:---:|:---:|:---:|
+| MAE (%) | {{ multidonor.mae_d1_pct }} | {{ multidonor.mae_d2_pct }} | {{ multidonor.mae_total_pct }} |
+| RMSE (%) | {{ multidonor.rmse_d1_pct }} | {{ multidonor.rmse_d2_pct }} | {{ multidonor.rmse_total_pct }} |
+| Max error (%) | {{ multidonor.max_error_d1_pct }} | {{ multidonor.max_error_d2_pct }} | {{ multidonor.max_error_total_pct }} |
+| CI coverage (%) | {{ multidonor.ci_coverage_d1_pct }} | {{ multidonor.ci_coverage_d2_pct }} | — |
+
+**Table 4.** Multi-donor chimerism accuracy with sibling donors. {{ multidonor.n_markers }} markers ({{ multidonor.n_informative_any }} informative), {{ multidonor.depth | commas }}x depth. Error metrics computed on interior fractions (excluding 0% and 100%).
+
+![**Figure 5.** Multi-donor chimerism estimation. (A) Per-donor accuracy: true versus estimated donor fraction for donor 1 (circles, blue) and donor 2 (triangles, orange), with 95% profile likelihood CIs. (B) Two-dimensional log-likelihood surface for a representative mixture (60% host, 30% donor 1, 10% donor 2). Coloured contours show delta log-likelihood from maximum; dashed red line marks the 95% joint CI (chi-squared, df=2). Grey region is infeasible (f1 + f2 > 1). Star = true value, circle = MLE.]({{ facts_dir }}/fig_multidonor.png)
+
+{# TODO: Add subsection "### Validation with Clinical Sequencing Data" #}
+{# - Concordance with STR-based chimerism results (scatter, Bland-Altman) #}
+{# - LOD characterisation from dilution series or low-fraction samples #}
+{# - Multi-donor validation with real cord blood / dual-transplant cases if available #}
 {# - Lineage-specific chimerism (CD3, CD33, etc.) if sorted fractions available #}

@@ -21,6 +21,7 @@ JOINT_VCF = DATA_DIR / "joint_called_example.vcf"
 # marker_type classification
 # ---------------------------------------------------------------------------
 
+
 class TestMarkerType:
     """Test Vynck marker type classification."""
 
@@ -56,6 +57,7 @@ class TestMarkerType:
 # _alt_dose
 # ---------------------------------------------------------------------------
 
+
 class TestAltDose:
     def test_hom_ref(self):
         assert _alt_dose((0, 0)) == 0
@@ -70,6 +72,7 @@ class TestAltDose:
 # ---------------------------------------------------------------------------
 # parse_vcf — single-sample example
 # ---------------------------------------------------------------------------
+
 
 class TestParseVcfSingleSample:
     """Test parsing the de-identified single-sample example VCF."""
@@ -125,15 +128,21 @@ class TestParseVcfSingleSample:
 # classify_markers
 # ---------------------------------------------------------------------------
 
+
 class TestClassifyMarkers:
     """Test marker classification with synthetic MarkerData."""
 
-    def _make_marker(
-        self, chrom="chr1", pos=100, gt=(0, 0), ad_ref=1000, ad_alt=0, dp=1000
-    ):
+    def _make_marker(self, chrom="chr1", pos=100, gt=(0, 0), ad_ref=1000, ad_alt=0, dp=1000):
         return MarkerData(
-            chrom=chrom, pos=pos, ref="A", alt="G", gt=gt,
-            ad_ref=ad_ref, ad_alt=ad_alt, dp=dp, gq=99,
+            chrom=chrom,
+            pos=pos,
+            ref="A",
+            alt="G",
+            gt=gt,
+            ad_ref=ad_ref,
+            ad_alt=ad_alt,
+            dp=dp,
+            gq=99,
         )
 
     def test_fully_informative_type_0(self):

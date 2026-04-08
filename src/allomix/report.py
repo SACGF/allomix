@@ -44,7 +44,7 @@ def to_tsv(
         verbose: If True, include per-marker detail section.
     """
     if isinstance(output, (str, Path)):
-        with open(output, "w") as fh:
+        with open(output, "w", encoding="utf-8") as fh:
             if _is_multi_donor(result):
                 _write_tsv_multi(result, qc, fh, verbose, sample_name)
             else:
@@ -207,11 +207,11 @@ def to_json(
 
     if _is_multi_donor(result):
         donors = []
-        for i in range(len(result.donor_fractions)):
+        for i, frac in enumerate(result.donor_fractions):
             ci_lo, ci_hi = result.donor_fraction_cis[i]
             d: dict = {
                 "label": f"donor{i + 1}",
-                "donor_pct": round(result.donor_fractions[i] * 100, 4),
+                "donor_pct": round(frac * 100, 4),
                 "ci_lo": round(ci_lo * 100, 4),
                 "ci_hi": round(ci_hi * 100, 4),
             }
@@ -286,12 +286,12 @@ def timeline_json(
                 ),
                 "qc_pass": qc.pass_,
             }
-            for i in range(len(result.donor_fractions)):
+            for i, frac in enumerate(result.donor_fractions):
                 ci_lo, ci_hi = result.donor_fraction_cis[i]
                 tp["donors"].append(
                     {
                         "label": f"donor{i + 1}",
-                        "donor_pct": round(result.donor_fractions[i] * 100, 4),
+                        "donor_pct": round(frac * 100, 4),
                         "ci_lo": round(ci_lo * 100, 4),
                         "ci_hi": round(ci_hi * 100, 4),
                     }

@@ -83,7 +83,7 @@ def main():
     for frac in STANDARD_FRACTIONS:
         name = fraction_to_name(frac)
         vcf_path = f"tests/test_data/{name}.vcf"
-        result, genotypes = run_sample(host_vcf, donor_vcf, vcf_path)
+        result, _genotypes = run_sample(host_vcf, donor_vcf, vcf_path)
         error = result.donor_fraction - frac
         ci_covers = result.donor_fraction_ci[0] <= frac <= result.donor_fraction_ci[1]
         ci_width = result.donor_fraction_ci[1] - result.donor_fraction_ci[0]
@@ -169,7 +169,7 @@ def main():
         for frac in BIAS_FRACTIONS:
             name = fraction_to_name(frac)
             vcf_path = str(outdir / f"{name}.vcf")
-            res, gen = run_sample(host_vcf, donor_vcf, vcf_path, marker_biases=mb)
+            res, _gen = run_sample(host_vcf, donor_vcf, vcf_path, marker_biases=mb)
             error = res.donor_fraction - frac
             ci_covers = res.donor_fraction_ci[0] <= frac <= res.donor_fraction_ci[1]
             ci_width = res.donor_fraction_ci[1] - res.donor_fraction_ci[0]

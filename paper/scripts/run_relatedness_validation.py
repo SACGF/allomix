@@ -22,7 +22,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from allomix.chimerism import estimate_single_donor
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.simulate import (
-    RELATEDNESS_IBD,
     blend_vcfs,
     generate_related_genotypes,
     write_genotype_vcf,

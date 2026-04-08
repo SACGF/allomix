@@ -34,12 +34,6 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=0.01,
         help="Sequencing error rate (default: 0.01)",
     )
-    parser.add_argument(
-        "--format",
-        choices=["tsv", "json"],
-        default="tsv",
-        help="Output format (default: tsv)",
-    )
     parser.add_argument("--verbose", action="store_true", help="Include per-marker detail")
     parser.add_argument(
         "--bias-table",
@@ -209,6 +203,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Calculate chimerism for one or more samples",
     )
     _add_common_args(monitor_parser)
+    monitor_parser.add_argument(
+        "--format",
+        choices=["tsv", "json"],
+        default="tsv",
+        help="Output format (default: tsv)",
+    )
 
     timeline_parser = subparsers.add_parser(
         "timeline",

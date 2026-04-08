@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from allomix.chimerism import estimate_single_donor_bb
+from allomix.cli import main
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.qc import assess_quality
 from allomix.report import timeline_json, to_json, to_tsv
@@ -267,7 +268,6 @@ class TestCLIIntegration:
     """Test CLI wiring runs without error."""
 
     def test_monitor_tsv(self, tmp_path):
-        from allomix.cli import main
 
         donor_vcf = _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
         chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
@@ -295,7 +295,6 @@ class TestCLIIntegration:
         assert "donor_pct" in content
 
     def test_monitor_json(self, tmp_path):
-        from allomix.cli import main
 
         donor_vcf = _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
         chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
@@ -325,7 +324,6 @@ class TestCLIIntegration:
         assert "donor_pct" in data
 
     def test_timeline(self, tmp_path):
-        from allomix.cli import main
 
         donor_vcf = _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
         c1 = _make_chimeric_vcf(tmp_path, 0.05, seed=1)

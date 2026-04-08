@@ -15,6 +15,12 @@ from allomix.chimerism import (
     log_likelihood_marker_bb,
 )
 from allomix.genotype import InformativeMarker
+from allomix.simulate import (
+    expected_vaf,
+    generate_marker_biases_realistic,
+    sample_allele_counts,
+    sample_marker_depths,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -91,13 +97,6 @@ def _make_markers_overdispersed(
 
     These are the noise sources that cause the binomial CI to fail.
     """
-    from allomix.simulate import (
-        expected_vaf,
-        generate_marker_biases_realistic,
-        sample_allele_counts,
-        sample_marker_depths,
-    )
-
     rng = random.Random(seed)
     biases = generate_marker_biases_realistic(n_markers, rng, sd=bias_sd * 0.6)
     depths = sample_marker_depths(n_markers, dp, depth_cv, rng)

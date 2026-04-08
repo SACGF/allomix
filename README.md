@@ -21,22 +21,23 @@ Current STR-based methods have limited sensitivity (~3-5% LOD) and require separ
 ## Workflow
 
 ```
-1. GENOTYPE    Sequence host and each donor individually
-                 → VCF with genotypes at marker loci
+1. GENOTYPE           Sequence host and each donor individually
+                        → VCF with genotypes at marker loci
 
-2. COMPARE     Identify informative markers (sites where
-               donor and host genotypes differ)
+2. ESTIMATE-BIAS      (optional) Estimate per-marker amplification
+   (allomix)          bias from genotyping VCFs
+                        → bias table TSV
 
-3. MONITOR     Sequence post-HSCT admixture samples at
-               serial timepoints (≥3 per patient)
-                 → VCF with allele depths at marker loci
+3. SEQUENCE           Sequence post-HSCT admixture samples at
+                      serial timepoints (≥3 per patient)
+                        → VCF with allele depths at marker loci
 
-4. CALCULATE   At each informative marker, use observed
-               allele frequencies to estimate the fraction
-               of donor vs host DNA
+4. ANALYSE            Identify informative markers, estimate donor
+   (allomix)          fraction by MLE, and report results with
+                      confidence intervals and QC metrics
 
-5. REPORT      Output % chimerism with confidence intervals,
-               per-marker details, and QC metrics
+                      allomix monitor   → per-sample TSV or JSON
+                      allomix timeline  → multi-timepoint JSON
 ```
 
 ## Input / Output
@@ -125,7 +126,15 @@ allomix monitor \
     --sample post_hsct_day30.vcf.gz \
     --output results.tsv
 
-# Timeline across multiple timepoints
+# JSON output with per-marker detail
+allomix monitor \
+    --host host_genotype.vcf.gz \
+    --donor donor_genotype.vcf.gz \
+    --sample post_hsct_day30.vcf.gz \
+    --format json --verbose \
+    --output results.json
+
+# Timeline across multiple timepoints (always JSON)
 allomix timeline \
     --host host_genotype.vcf.gz \
     --donor donor_genotype.vcf.gz \
@@ -133,7 +142,35 @@ allomix timeline \
     --sample day60.vcf.gz \
     --sample day90.vcf.gz \
     --output timeline.json
+
+# Estimate per-marker amplification bias from genotyping VCFs
+allomix estimate-bias \
+    --vcfs sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
+    --output bias_table.tsv
+
+# Use bias correction during monitoring
+allomix monitor \
+    --host host_genotype.vcf.gz \
+    --donor donor_genotype.vcf.gz \
+    --sample post_hsct_day30.vcf.gz \
+    --bias-table bias_table.tsv \
+    --output results.tsv
 ```
+
+### Common Options
+
+Both `monitor` and `timeline` accept these additional options:
+
+| Option | Default | Description |
+|---|---|---|
+| `--min-dp` | 100 | Minimum read depth to use a marker |
+| `--min-gq` | 20 | Minimum genotype quality for host/donor genotyping |
+| `--error-rate` | 0.01 | Sequencing error rate for the likelihood model |
+| `--bias-table` | none | Per-marker bias table TSV (from `estimate-bias`) |
+| `--no-bias-correction` | off | Disable bias correction even when a bias table is provided |
+| `--verbose` | off | Include per-marker detail in output |
+
+`monitor` also accepts `--format tsv|json` (default: tsv). `timeline` always outputs JSON.
 
 ## Comparison with Commercial Products
 

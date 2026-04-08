@@ -53,6 +53,7 @@ def generate_and_run(
     outdir: Path,
     depth_cv: float = 0.43,
     locus_dropout_rate: float = 0.016,
+    bias_correction: bool = False,
 ) -> list[dict]:
     """Generate synthetic data at a given depth and run allomix on it."""
     vcf_dir = outdir / f"depth_{depth}" / f"seed_{seed}"
@@ -66,7 +67,8 @@ def generate_and_run(
     bias_rng = random.Random(seed)
     fixed_biases = generate_marker_biases_realistic(n_shared, bias_rng)
 
-    # Generate blended VCFs
+    # Generate blended VCFs and capture bias mapping
+    bias_dict = None
     for frac in FRACTIONS:
         name = fraction_to_name(frac)
         sample_seed = seed + hash(str(frac)) % (2**31)
@@ -78,8 +80,12 @@ def generate_and_run(
             depth_cv=depth_cv,
         )
         write_vcf(result, vcf_dir / f"{name}.vcf")
+        # Capture bias dict from first blend (same biases for all fractions)
+        if bias_dict is None and result.marker_biases is not None:
+            bias_dict = {(c, p, r, a): b for c, p, r, a, b in result.marker_biases}
 
     # Run allomix on each
+    marker_biases = bias_dict if bias_correction else None
     rows = []
     for frac in FRACTIONS:
         name = fraction_to_name(frac)
@@ -90,7 +96,9 @@ def generate_and_run(
         admix = parse_vcf(vcf_path, min_dp=0, min_gq=0)
 
         genotypes = classify_markers(host, [donor], admix, min_dp=0, min_gq=0, pass_only=False)
-        result = estimate_single_donor(genotypes.informative, error_rate=0.01)
+        result = estimate_single_donor(
+            genotypes.informative, error_rate=0.01, marker_biases=marker_biases,
+        )
 
         error = result.donor_fraction - frac
         ci_covers = result.donor_fraction_ci[0] <= frac <= result.donor_fraction_ci[1]
@@ -355,6 +363,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--outdir", default="output/depth_validation")
+    parser.add_argument(
+        "--bias-correction", action="store_true",
+        help="Pass known marker biases to the estimator for bias correction",
+    )
     args = parser.parse_args(argv)
 
     outdir = Path(args.outdir)
@@ -378,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
             rep_seed = args.seed + rep * 1000
             rows = generate_and_run(
                 args.host, args.donor, depth, seed=rep_seed, outdir=outdir,
+                bias_correction=args.bias_correction,
             )
             all_results[depth].append(rows)
 

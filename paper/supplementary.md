@@ -8,22 +8,22 @@ Per-marker amplification bias, depth distribution, locus dropout, and allele dro
 |:---|:---:|:---:|:---|
 | **Amplification bias** | | | |
 | Per-marker bias SD ($\sigma_{bias}$) | {{ panel_empirical.sd_bias }} | 0.02 | Close match |
-| Mean \|bias\| | {{ panel_empirical.mean_abs_bias }} | — | |
-| Median \|bias\| | {{ panel_empirical.median_abs_bias }} | — | |
-| 95th percentile \|bias\| | {{ panel_empirical.p95_abs_bias }} | — | Heavy tail |
-| Max \|bias\| | {{ panel_empirical.max_abs_bias }} | — | Single outlier marker |
+| Mean \|bias\| | {{ panel_empirical.mean_abs_bias }} | | |
+| Median \|bias\| | {{ panel_empirical.median_abs_bias }} | | |
+| 95th percentile \|bias\| | {{ panel_empirical.p95_abs_bias }} | | Heavy tail |
+| Max \|bias\| | {{ panel_empirical.max_abs_bias }} | | Single outlier marker |
 | **Sequencing depth** | | | |
 | Mean depth | {{ panel_empirical.mean_depth | commas }}x | 50–1,000x | Sims test lower depths |
-| Median depth | {{ panel_empirical.median_depth | commas }}x | — | |
-| Min mean depth | {{ panel_empirical.min_depth | fmt('g') }}x | — | Weakest marker |
-| Max mean depth | {{ panel_empirical.max_depth | fmt('g') }}x | — | |
-| Per-sample depth CV | {{ panel_empirical.mean_sample_depth_cv }} | 0 (uniform) | {# TODO: add to sims #} |
+| Median depth | {{ panel_empirical.median_depth | commas }}x | | |
+| Min mean depth | {{ panel_empirical.min_depth | fmt('g') }}x | | Weakest marker |
+| Max mean depth | {{ panel_empirical.max_depth | fmt('g') }}x | | |
+| Per-sample depth CV | {{ panel_empirical.mean_sample_depth_cv }} | 0 (uniform) | Not yet modelled |
 | **Locus dropout** | | | |
-| Mean no-call rate | {{ panel_empirical.mean_nocall_pct }}% | 0% | {# TODO: add to sims #} |
-| Markers with >5% no-call | {{ panel_empirical.markers_gt5pct_nocall | fmt('g') }}/{{ panel_empirical.n_bias_markers | fmt('g') }} | — | Single problematic marker |
+| Mean no-call rate | {{ panel_empirical.mean_nocall_pct }}% | 0% | Not yet modelled |
+| Markers with >5% no-call | {{ panel_empirical.markers_gt5pct_nocall | fmt('g') }}/{{ panel_empirical.n_bias_markers | fmt('g') }} | | Single problematic marker |
 | **Allele dropout** | | | |
-| Mean het/HWE ratio | {{ panel_empirical.mean_het_ratio }} | — | 1.0 = no ADO |
-| Markers with ratio < 0.8 | {{ panel_empirical.markers_low_het | fmt('g') }}/{{ panel_empirical.n_bias_markers | fmt('g') }} | — | Negligible at high depth |
+| Mean het/HWE ratio | {{ panel_empirical.mean_het_ratio }} | | 1.0 = no ADO |
+| Markers with ratio < 0.8 | {{ panel_empirical.markers_low_het | fmt('g') }}/{{ panel_empirical.n_bias_markers | fmt('g') }} | | Negligible at high depth |
 | Estimated ADO rate | {{ panel_empirical.ado_estimate }} | 0 | Negligible |
 
 ## Supplementary Table S2. Per-Marker Detail

@@ -1,22 +1,14 @@
 ## Discussion
 
-We have presented allomix, an open-source tool that enables donor chimerism monitoring by repurposing biallelic polymorphic markers already present in clinical NGS panels. By extracting chimerism information from existing sequencing data, allomix allows laboratories to add post-HSCT monitoring to their workflows without a dedicated assay, additional reagents, or proprietary software.
+allomix enables laboratories to add post-HSCT chimerism monitoring to existing NGS workflows by repurposing polymorphic markers they are already sequencing, without a dedicated assay or proprietary software.
 
 ### Accuracy and Performance
 
-In silico validation demonstrated <1% mean absolute error across all sequencing depths tested (50x to 1,000x), with MAE ranging from {{ depth_50.mean_abs_error_pct | dp(2) }}% at 50x to {{ depth_1000.mean_abs_error_pct | dp(2) }}% at 1,000x depth. Maximum single-sample errors ranged from {{ depth_50.max_abs_error_pct | dp(2) }}% at 50x to {{ depth_1000.max_abs_error_pct | dp(2) }}% at 1,000x. This level of accuracy is competitive with published performance metrics from commercial tools. Kakodkar et al. reported mean absolute errors of 0.3–1.5% for AlloSeq HCT across various donor fractions,[@Kakodkar2023alloseq] while Pedini et al. demonstrated comparable precision for the Devyser system at high sequencing depths.[@Pedini2021devyser]
-
-The largest estimation errors were observed at boundary fractions (0% and 100% donor), where per-marker amplification biases have the greatest relative impact. This is consistent with the observations of De Vynck et al., who demonstrated that systematic capture biases cause the largest quantitative distortion when the true minor component is near zero.[@Vynck2023bias] When bias correction was applied with known per-marker biases, boundary estimates improved (e.g., 0% donor: {{ bias_no_bias.est_0pct }}% uncorrected vs {{ bias_with_bias.est_0pct }}% corrected).
-
-### Statistical Framework
-
-The MLE framework employed by allomix, adapted from Crysup and Woerner's mixture deconvolution model,[@CrysupWoerner2022] is well suited to the clinical chimerism setting. The use of known donor and host genotypes, available from pre-transplant samples, greatly simplifies the estimation problem compared to forensic mixture analysis, where contributor profiles must be jointly inferred. This simplification yields faster computation, more interpretable results, and tighter confidence intervals.
-
-The two-stage optimization strategy (coarse grid search followed by Brent refinement) provides reliable convergence to the global optimum without the risk of converging to local optima, which can occur with gradient-based methods alone. Profile likelihood confidence intervals provide a principled measure of estimation uncertainty that naturally accounts for the information content of the marker panel and sequencing depth.
+The <1% MAE across all depths tested is competitive with published performance data for commercial tools: Kakodkar et al. reported 0.3--1.5% MAE for AlloSeq HCT,[@Kakodkar2023alloseq] and Pedini et al. demonstrated comparable precision for the Devyser system.[@Pedini2021devyser] The largest errors occurred at boundary fractions (0% and 100% donor), where per-marker amplification biases have the greatest relative impact, consistent with De Vynck et al.[@Vynck2023bias] Bias correction reduced these boundary errors (e.g., 0% donor: {{ bias_no_bias.est_0pct }}% uncorrected vs {{ bias_with_bias.est_0pct }}% corrected).
 
 ### Confidence Interval Calibration
 
-The observed CI coverage ({{ depth_1000.ci_coverage_pct }}–{{ depth_50.ci_coverage_pct }}% across depths, versus a nominal 95%) reflects the impact of systematic noise sources (per-marker capture biases, non-uniform depth, and locus dropout) that the binomial likelihood model does not account for. The current model assumes that allele counts are drawn from a binomial distribution with a single error rate parameter, but does not model marker-specific systematic shifts in allele efficiency. This is a known limitation shared with other MLE-based approaches.[@Vynck2023bias] Approaches to improving CI calibration include incorporating bias correction (demonstrated here), overdispersion modeling via beta-binomial likelihoods, and empirical CI recalibration from training data.
+The observed CI undercoverage ({{ depth_1000.ci_coverage_pct }}--{{ depth_50.ci_coverage_pct }}% versus a nominal 95%) reflects systematic noise sources that the binomial likelihood model does not capture, a known limitation of MLE-based approaches.[@Vynck2023bias] Bias correction (demonstrated here) partially addresses this; beta-binomial likelihoods and empirical recalibration are planned improvements.
 
 ### Repurposing Existing Panels
 
@@ -26,9 +18,7 @@ De Vynck et al. have shown that as few as 3 informative markers are sufficient f
 
 ### Clinical Workflow Considerations
 
-allomix is designed for integration into standard clinical genomics pipelines. By accepting VCF files as input rather than raw sequencing data, it decouples chimerism analysis from upstream alignment and variant calling, allowing laboratories to use their established bioinformatics infrastructure. The tool's output formats (TSV and JSON) support integration with laboratory information management systems and clinical reporting workflows. For longitudinal monitoring, the `timeline` subcommand consolidates serial timepoint estimates into a single report, directly supporting the clinical workflow of tracking engraftment trajectory over weeks to months post-transplant.
-
-A critical implementation consideration is the requirement for joint variant calling of admixture samples alongside donor and host genotyping samples. When admixture samples are called independently, sites where the minor component is below the variant calling threshold may be reported as homozygous-reference with only a single-element AD field, losing the informative read count data. Joint calling ensures that all markers genotyped in the donor are represented with full AD information in the admixture sample, even at very low donor fractions.
+By accepting standard VCF files, allomix decouples chimerism analysis from upstream alignment and variant calling, allowing laboratories to use their existing bioinformatics infrastructure. One implementation requirement is that admixture samples should be joint-called alongside donor and host samples (see Methods); this is straightforward where GATK pipelines are already in place but does require pipeline configuration.
 
 ### Limitations and Future Directions
 

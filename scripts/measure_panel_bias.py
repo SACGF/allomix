@@ -29,6 +29,13 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Thresholds for panel characterisation
+EXPECTED_HET_VAF = 0.5  # ideal heterozygous variant allele frequency
+MIN_CALLED_FOR_HWE = 10  # minimum genotyped samples to compute HWE het ratio
+LOW_HET_RATIO_THRESHOLD = 0.8  # het/HWE ratio below this flags allele dropout
+HIGH_NOCALL_RATE = 0.05  # markers above this no-call rate are flagged
+NEGLIGIBLE_ADO_THRESHOLD = 0.001  # allele dropout estimate below this is "negligible"
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -253,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         het_vafs = marker_het_vafs.get(key, [])
         n_het = len(het_vafs)
         if n_het > 0:
-            devs = [v - 0.5 for v in het_vafs]
+            devs = [v - EXPECTED_HET_VAF for v in het_vafs]
             median_bias = sorted(devs)[n_het // 2]
             mean_bias = sum(devs) / n_het
             sd_within = _sd(devs)
@@ -263,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         # HWE het ratio: compare observed het rate to expected
         # Expected het = 2pq where p = (2*hom_ref + het) / (2*n_called)
         het_ratio = float("nan")
-        if n_called >= 10:
+        if n_called >= MIN_CALLED_FOR_HWE:
             p = (2 * counts["hom_ref"] + counts["het"]) / (2 * n_called)
             q = 1 - p
             expected_het = 2 * p * q * n_called
@@ -331,8 +338,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  Median no-call rate:       {_percentile(nocall_sorted, 50):.4f}")
     print(f"  95th pct no-call rate:     {_percentile(nocall_sorted, 95):.4f}")
     print(f"  Max no-call rate:          {max(all_nocall_rates):.4f}")
-    markers_gt5pct_nocall = sum(1 for r in all_nocall_rates if r > 0.05)
-    print(f"  Markers with >5% no-call:  {markers_gt5pct_nocall}/{n_markers}")
+    markers_high_nocall = sum(1 for r in all_nocall_rates if r > HIGH_NOCALL_RATE)
+    print(f"  Markers with >{HIGH_NOCALL_RATE:.0%} no-call:  {markers_high_nocall}/{n_markers}")
 
     if sample_nocall_rates:
         sample_nc_sorted = sorted(sample_nocall_rates)
@@ -381,15 +388,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Median het ratio:          {_percentile(hr_sorted, 50):.3f}")
         print(f"  5th pct het ratio:         {_percentile(hr_sorted, 5):.3f}")
         print(f"  Min het ratio:             {min(all_het_ratios):.3f}")
-        markers_low_het = sum(1 for r in all_het_ratios if r < 0.8)
-        print(f"  Markers with ratio < 0.8:  {markers_low_het}/{len(all_het_ratios)}")
+        markers_low_het = sum(1 for r in all_het_ratios if r < LOW_HET_RATIO_THRESHOLD)
+        print(f"  Markers with ratio < {LOW_HET_RATIO_THRESHOLD}:  {markers_low_het}/{len(all_het_ratios)}")
 
     print(f"\n--- SIMULATION PARAMETERS ---")
     if n_bias_markers > 0:
         print(f"  >>> --bias-sd {overall_sd_bias:.3f}")
     print(f"  >>> --locus-dropout-rate {mean_nocall:.4f}")
     ado_estimate = max(0.0, 1.0 - (sum(all_het_ratios) / len(all_het_ratios))) if all_het_ratios else 0.0
-    if ado_estimate > 0.001:
+    if ado_estimate > NEGLIGIBLE_ADO_THRESHOLD:
         print(f"  >>> --allele-dropout-rate ~{ado_estimate:.3f}  (estimated from het deficit)")
     else:
         print(f"  >>> allele dropout: negligible (het ratio ~{mean_hr:.2f})")
@@ -446,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
             "n_het_total": n_het_total,
             "mean_nocall_rate": round(mean_nocall, 4),
             "mean_nocall_pct": round(mean_nocall * 100, 2),
-            "markers_gt5pct_nocall": markers_gt5pct_nocall,
+            "markers_gt5pct_nocall": markers_high_nocall,
             "mean_depth": round(mean_depth_val),
             "median_depth": round(_percentile(sorted(all_mean_depths), 50)) if all_mean_depths else 0,
             "min_depth": round(min(all_mean_depths)) if all_mean_depths else 0,
@@ -458,7 +465,7 @@ def main(argv: list[str] | None = None) -> int:
             "p95_abs_bias": round(_percentile(abs_biases_sorted, 95), 4) if abs_biases_sorted else "",
             "max_abs_bias": round(max(all_abs_biases), 4) if all_abs_biases else "",
             "mean_het_ratio": round(mean_hr_val, 3) if not math.isnan(mean_hr_val) else "",
-            "markers_low_het": sum(1 for r in all_het_ratios if r < 0.8) if all_het_ratios else 0,
+            "markers_low_het": sum(1 for r in all_het_ratios if r < LOW_HET_RATIO_THRESHOLD) if all_het_ratios else 0,
             "ado_estimate": round(ado_estimate, 4),
         }
         with open(facts_path, "w", newline="") as f:

@@ -16,18 +16,21 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
 # Allow running from the repo root without installing
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from script_utils import write_truth_table  # noqa: E402
+
 from allomix.simulate import blend_vcfs, write_vcf  # noqa: E402
 
 DEFAULT_FRACTIONS = [
     0.0, 0.001, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 0.80, 0.95, 0.99, 1.0,
 ]
+
+SEED_HASH_MODULUS = 2**31
 
 
 def _fraction_to_filename(donor_fraction: float) -> str:
@@ -93,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             target_depth=args.depth,
             sample_name=sample_name,
             marker_bias_sd=args.bias_sd,
-            seed=args.seed + hash(str(frac)) % (2**31),
+            seed=args.seed + hash(str(frac)) % SEED_HASH_MODULUS,
         )
 
         write_vcf(result, outdir / vcf_name)
@@ -107,14 +110,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # Write truth table
     truth_path = outdir / "truth_table.tsv"
-    with open(truth_path, "w", newline="") as fh:
-        writer = csv.DictWriter(
-            fh,
-            fieldnames=["sample_name", "true_donor_fraction", "num_markers", "num_informative"],
-            delimiter="\t",
-        )
-        writer.writeheader()
-        writer.writerows(truth_rows)
+    write_truth_table(
+        truth_rows,
+        truth_path,
+        fieldnames=["sample_name", "true_donor_fraction", "num_markers", "num_informative"],
+    )
 
     print(f"\nGenerated {len(fractions)} VCFs in {outdir}/", file=sys.stderr)
     print(f"Truth table: {truth_path}", file=sys.stderr)

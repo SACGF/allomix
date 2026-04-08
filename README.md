@@ -171,4 +171,4 @@ Single-donor and multi-donor (up to 2 donors) chimerism estimation is implemente
 
 MIT
 
-Chimerism MLE methodology based on Crysup & Woerner (2022) — independently reimplemented, not derived from Demixtify source code.
+Chimerism MLE methodology based on Crysup & Woerner (2022)

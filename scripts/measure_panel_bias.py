@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""Measure per-marker amplification bias from real genotyping VCFs.
+"""Measure per-marker panel characteristics from joint-called genotyping VCFs.
 
-For each heterozygous call at a biallelic site, computes the deviation of
-observed VAF from 0.5. Reports per-marker bias statistics and an overall
-summary suitable for calibrating allomix simulation parameters.
+Collects per-marker statistics from heterozygous and all genotype calls:
+  - Amplification bias (het VAF deviation from 0.5)
+  - Locus dropout rate (no-call / ./.  frequency)
+  - Per-marker call rate
+  - Depth distribution per marker and across panel
+  - Het/hom ratio vs HWE expectation (allele dropout signal)
 
 Input: a text file listing VCF paths (one per line), from e.g.:
-    find /tau/data/clinical_hg38/idt_rhampseq_sid/ -name '*.vcf.gz' > vcf_list.txt
+    find /tau/data/clinical_hg38/idt_rhampseq_sid/ -path '*/2_variants/*.gatk.hg38.vcf.gz' \
+        -not -path '*/gatk_per_sample/*' > vcf_list.txt
 
-Output (to stdout): tab-separated summary statistics (no patient identifiers,
+Output (to stdout): summary statistics (no patient identifiers,
 no genomic coordinates — safe to share outside /tau).
 
 Usage:
     python scripts/measure_panel_bias.py vcf_list.txt
     python scripts/measure_panel_bias.py vcf_list.txt --min-dp 100 --min-gq 20
+    python scripts/measure_panel_bias.py vcf_list.txt --output output/panel_stats
 """
 
 from __future__ import annotations
@@ -27,23 +32,46 @@ from pathlib import Path
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Measure per-marker amplification bias from het sites in VCFs.",
+        description="Measure per-marker panel characteristics from genotyping VCFs.",
     )
     p.add_argument("vcf_list", help="Text file with one VCF path per line")
-    p.add_argument("--min-dp", type=int, default=100, help="Min depth (default: 100)")
-    p.add_argument("--min-gq", type=int, default=20, help="Min genotype quality (default: 20)")
+    p.add_argument("--min-dp", type=int, default=100, help="Min depth for bias stats (default: 100)")
+    p.add_argument("--min-gq", type=int, default=20, help="Min GQ for bias stats (default: 20)")
     p.add_argument(
         "--output", default=None,
-        help="Output file (default: stdout). Two files are written: "
-             "<output>_per_marker.tsv and <output>_summary.tsv",
+        help="Output file prefix. Writes <output>_per_marker.tsv and <output>_summary.tsv",
     )
     return p.parse_args(argv)
+
+
+def _percentile(sorted_vals: list[float], pct: float) -> float:
+    """Simple percentile from a pre-sorted list."""
+    if not sorted_vals:
+        return float("nan")
+    idx = min(len(sorted_vals) - 1, int(pct / 100.0 * len(sorted_vals)))
+    return sorted_vals[idx]
+
+
+def _sd(vals: list[float]) -> float:
+    if len(vals) < 2:
+        return 0.0
+    mean = sum(vals) / len(vals)
+    return math.sqrt(sum((v - mean) ** 2 for v in vals) / len(vals))
+
+
+def _cv(vals: list[float]) -> float:
+    """Coefficient of variation."""
+    if len(vals) < 2:
+        return 0.0
+    mean = sum(vals) / len(vals)
+    if mean == 0:
+        return 0.0
+    return _sd(vals) / mean
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    # Read VCF list
     vcf_paths = []
     with open(args.vcf_list) as f:
         for line in f:
@@ -63,18 +91,26 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR: cyvcf2 required. Install with: pip install cyvcf2", file=sys.stderr)
         return 1
 
-    # Collect per-marker het VAF deviations
-    # Key: marker_index (sequential, no genomic coords in output)
-    # We track by (chrom, pos, ref, alt) internally but only output anonymised index
-    marker_deviations: dict[tuple, list[float]] = defaultdict(list)
+    # --- Per-marker accumulators ---
+    # key = (chrom, pos, ref, alt)
+    marker_het_vafs: dict[tuple, list[float]] = defaultdict(list)
     marker_depths: dict[tuple, list[int]] = defaultdict(list)
-    n_samples = 0
+    marker_gt_counts: dict[tuple, dict[str, int]] = defaultdict(
+        lambda: {"hom_ref": 0, "het": 0, "hom_alt": 0, "no_call": 0, "total": 0}
+    )
+
+    # --- Per-sample accumulators ---
+    sample_depth_cvs: list[float] = []  # depth CV across markers within each sample
+    sample_nocall_rates: list[float] = []  # fraction of markers with no-call per sample
+
+    n_vcfs = 0
+    n_total_samples = 0
     n_het_total = 0
     n_skipped_dp = 0
     n_skipped_gq = 0
-    n_skipped_multiallelic = 0
+    n_skipped_multi = 0
 
-    for i, vcf_path in enumerate(vcf_paths):
+    for vi, vcf_path in enumerate(vcf_paths):
         if not Path(vcf_path).exists():
             print(f"  WARNING: {vcf_path} not found, skipping", file=sys.stderr)
             continue
@@ -85,181 +121,352 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  WARNING: failed to open {vcf_path}: {e}", file=sys.stderr)
             continue
 
-        n_samples += 1
-        sample_hets = 0
+        n_vcfs += 1
+        n_samples_in_vcf = len(vcf.samples)
+        n_total_samples += n_samples_in_vcf
+
+        # Per-sample trackers for this VCF (one list per sample)
+        sample_depths_this_vcf: list[list[int]] = [[] for _ in range(n_samples_in_vcf)]
+        sample_nocalls_this_vcf: list[int] = [0] * n_samples_in_vcf
+        sample_total_markers: list[int] = [0] * n_samples_in_vcf
 
         for variant in vcf:
             # Skip multiallelic
             if len(variant.ALT) != 1:
-                n_skipped_multiallelic += 1
+                n_skipped_multi += 1
                 continue
-
-            # Get genotype
-            gt = variant.genotypes[0]  # first (only) sample
-            alleles = (gt[0], gt[1])
-
-            # Skip non-het
-            if alleles[0] == alleles[1]:
-                continue
-            if alleles[0] < 0 or alleles[1] < 0:
-                continue
-
-            # Must be 0/1 het
-            if set(alleles) != {0, 1}:
-                continue
-
-            # Check depth
-            dp = variant.format("DP")
-            if dp is not None:
-                depth = int(dp[0][0])
-                if depth < args.min_dp:
-                    n_skipped_dp += 1
-                    continue
-            else:
-                n_skipped_dp += 1
-                continue
-
-            # Check GQ
-            gq = variant.format("GQ")
-            if gq is not None:
-                gq_val = int(gq[0][0])
-                if gq_val < args.min_gq:
-                    n_skipped_gq += 1
-                    continue
-
-            # Get AD
-            ad = variant.format("AD")
-            if ad is None:
-                continue
-            ref_count = int(ad[0][0])
-            alt_count = int(ad[0][1])
-            total = ref_count + alt_count
-            if total == 0:
-                continue
-
-            vaf = alt_count / total
-            deviation = vaf - 0.5
 
             key = (variant.CHROM, variant.POS, variant.REF, variant.ALT[0])
-            marker_deviations[key].append(deviation)
-            marker_depths[key].append(total)
-            sample_hets += 1
 
-        n_het_total += sample_hets
-        if (i + 1) % 10 == 0 or (i + 1) == len(vcf_paths):
-            print(f"  Processed {i+1}/{len(vcf_paths)} VCFs, "
-                  f"{n_het_total} het observations so far", file=sys.stderr)
+            # Process each sample
+            for si in range(n_samples_in_vcf):
+                gt = variant.genotypes[si]
+                alleles = (gt[0], gt[1])
+                counts = marker_gt_counts[key]
+                counts["total"] += 1
+                sample_total_markers[si] += 1
 
-    if not marker_deviations:
-        print("ERROR: no heterozygous observations found", file=sys.stderr)
+                # No-call
+                if alleles[0] < 0 or alleles[1] < 0:
+                    counts["no_call"] += 1
+                    sample_nocalls_this_vcf[si] += 1
+                    continue
+
+                # Classify genotype
+                a_set = (alleles[0], alleles[1])
+                is_het = a_set[0] != a_set[1]
+
+                if is_het:
+                    counts["het"] += 1
+                elif alleles[0] == 0:
+                    counts["hom_ref"] += 1
+                else:
+                    counts["hom_alt"] += 1
+
+                # Get depth (for all calls, not just het)
+                dp = variant.format("DP")
+                if dp is not None:
+                    depth = int(dp[si][0])
+                    marker_depths[key].append(depth)
+                    sample_depths_this_vcf[si].append(depth)
+
+                # Het-specific: collect VAF for bias measurement
+                if is_het and set(alleles) == {0, 1}:
+                    # Apply filters for bias measurement only
+                    if dp is not None:
+                        depth = int(dp[si][0])
+                        if depth < args.min_dp:
+                            n_skipped_dp += 1
+                            continue
+                    else:
+                        n_skipped_dp += 1
+                        continue
+
+                    gq = variant.format("GQ")
+                    if gq is not None:
+                        gq_val = int(gq[si][0])
+                        if gq_val < args.min_gq:
+                            n_skipped_gq += 1
+                            continue
+
+                    ad = variant.format("AD")
+                    if ad is None:
+                        continue
+                    ref_count = int(ad[si][0])
+                    alt_count = int(ad[si][1])
+                    total = ref_count + alt_count
+                    if total == 0:
+                        continue
+
+                    vaf = alt_count / total
+                    marker_het_vafs[key].append(vaf)
+                    n_het_total += 1
+
+        # Compute per-sample stats for this VCF
+        for si in range(n_samples_in_vcf):
+            if sample_depths_this_vcf[si]:
+                sample_depth_cvs.append(_cv(sample_depths_this_vcf[si]))
+            if sample_total_markers[si] > 0:
+                sample_nocall_rates.append(sample_nocalls_this_vcf[si] / sample_total_markers[si])
+
+        if (vi + 1) % 10 == 0 or (vi + 1) == len(vcf_paths):
+            print(
+                f"  Processed {vi+1}/{len(vcf_paths)} VCFs "
+                f"({n_total_samples} samples, {n_het_total} het obs)",
+                file=sys.stderr,
+            )
+
+    if not marker_gt_counts:
+        print("ERROR: no variant observations found", file=sys.stderr)
         return 1
 
+    # =====================================================================
     # Compute per-marker statistics
+    # =====================================================================
+    all_markers = sorted(marker_gt_counts.keys())
+    n_markers = len(all_markers)
+
     marker_stats = []
     all_biases = []
     all_abs_biases = []
+    all_call_rates = []
+    all_nocall_rates = []
+    all_mean_depths = []
+    all_het_ratios = []  # observed het / expected het under HWE
+    all_depth_cvs_marker = []
 
-    for key in sorted(marker_deviations.keys()):
-        devs = marker_deviations[key]
-        depths = marker_depths[key]
-        n = len(devs)
-        if n == 0:
-            continue
+    for key in all_markers:
+        counts = marker_gt_counts[key]
+        total = counts["total"]
+        n_called = counts["hom_ref"] + counts["het"] + counts["hom_alt"]
+        n_nocall = counts["no_call"]
 
-        median_dev = sorted(devs)[n // 2]
-        mean_dev = sum(devs) / n
-        abs_devs = [abs(d) for d in devs]
-        mean_abs_dev = sum(abs_devs) / n
-        sd_dev = math.sqrt(sum((d - mean_dev) ** 2 for d in devs) / n) if n > 1 else 0.0
-        mean_depth = sum(depths) / n
+        call_rate = n_called / total if total > 0 else 0.0
+        nocall_rate = n_nocall / total if total > 0 else 0.0
 
-        marker_stats.append({
-            "n_het": n,
-            "median_bias": median_dev,
-            "mean_bias": mean_dev,
-            "mean_abs_bias": mean_abs_dev,
-            "sd_within": sd_dev,
+        # Depth stats for this marker
+        depths = marker_depths.get(key, [])
+        mean_depth = sum(depths) / len(depths) if depths else 0.0
+        depth_cv = _cv(depths)
+
+        # Bias from het VAFs
+        het_vafs = marker_het_vafs.get(key, [])
+        n_het = len(het_vafs)
+        if n_het > 0:
+            devs = [v - 0.5 for v in het_vafs]
+            median_bias = sorted(devs)[n_het // 2]
+            mean_bias = sum(devs) / n_het
+            sd_within = _sd(devs)
+        else:
+            median_bias = mean_bias = sd_within = float("nan")
+
+        # HWE het ratio: compare observed het rate to expected
+        # Expected het = 2pq where p = (2*hom_ref + het) / (2*n_called)
+        het_ratio = float("nan")
+        if n_called >= 10:
+            p = (2 * counts["hom_ref"] + counts["het"]) / (2 * n_called)
+            q = 1 - p
+            expected_het = 2 * p * q * n_called
+            if expected_het > 0:
+                het_ratio = counts["het"] / expected_het
+
+        stat = {
+            "total_obs": total,
+            "n_called": n_called,
+            "n_nocall": n_nocall,
+            "call_rate": call_rate,
+            "nocall_rate": nocall_rate,
+            "n_hom_ref": counts["hom_ref"],
+            "n_het": counts["het"],
+            "n_hom_alt": counts["hom_alt"],
+            "het_ratio_vs_hwe": het_ratio,
             "mean_depth": mean_depth,
-        })
-        all_biases.append(median_dev)
-        all_abs_biases.append(abs(median_dev))
+            "depth_cv": depth_cv,
+            "n_het_for_bias": n_het,
+            "median_bias": median_bias,
+            "mean_bias": mean_bias,
+            "sd_within": sd_within,
+        }
+        marker_stats.append(stat)
 
-    # Overall summary
-    n_markers = len(marker_stats)
+        all_call_rates.append(call_rate)
+        all_nocall_rates.append(nocall_rate)
+        if depths:
+            all_mean_depths.append(mean_depth)
+            all_depth_cvs_marker.append(depth_cv)
+        if not math.isnan(median_bias):
+            all_biases.append(median_bias)
+            all_abs_biases.append(abs(median_bias))
+        if not math.isnan(het_ratio):
+            all_het_ratios.append(het_ratio)
+
+    # =====================================================================
+    # Print summary
+    # =====================================================================
+    n_bias_markers = len(all_biases)
     biases_sorted = sorted(all_biases)
     abs_biases_sorted = sorted(all_abs_biases)
 
-    overall_mean_bias = sum(all_biases) / n_markers
-    overall_median_bias = biases_sorted[n_markers // 2]
-    overall_sd_bias = math.sqrt(
-        sum((b - overall_mean_bias) ** 2 for b in all_biases) / n_markers
-    )
-    overall_mean_abs_bias = sum(all_abs_biases) / n_markers
-    overall_median_abs_bias = abs_biases_sorted[n_markers // 2]
-
-    # Percentiles of absolute bias
-    p25_idx = max(0, n_markers // 4)
-    p75_idx = min(n_markers - 1, 3 * n_markers // 4)
-    p95_idx = min(n_markers - 1, int(0.95 * n_markers))
-
-    # Print summary to stdout (no patient identifiers, no coordinates)
-    print("=" * 60)
-    print("PANEL AMPLIFICATION BIAS SUMMARY")
-    print("=" * 60)
-    print(f"VCFs processed:              {n_samples}")
-    print(f"Markers with het obs:        {n_markers}")
-    print(f"Total het observations:      {n_het_total}")
-    print(f"Skipped (low depth):         {n_skipped_dp}")
-    print(f"Skipped (low GQ):            {n_skipped_gq}")
-    print(f"Skipped (multiallelic):      {n_skipped_multiallelic}")
-    print()
-    print("Per-marker bias (median het VAF - 0.5):")
-    print(f"  Mean bias:                 {overall_mean_bias:+.4f}")
-    print(f"  Median bias:               {overall_median_bias:+.4f}")
-    print(f"  SD of per-marker biases:   {overall_sd_bias:.4f}")
-    print(f"  Mean |bias|:               {overall_mean_abs_bias:.4f}")
-    print(f"  Median |bias|:             {overall_median_abs_bias:.4f}")
-    print(f"  25th pct |bias|:           {abs_biases_sorted[p25_idx]:.4f}")
-    print(f"  75th pct |bias|:           {abs_biases_sorted[p75_idx]:.4f}")
-    print(f"  95th pct |bias|:           {abs_biases_sorted[p95_idx]:.4f}")
-    print(f"  Max |bias|:                {max(all_abs_biases):.4f}")
-    print()
-    print(">>> For allomix simulation, use --bias-sd {:.3f}".format(overall_sd_bias))
-    print("=" * 60)
-
-    # Write per-marker detail (anonymised — sequential index only)
-    if args.output:
-        per_marker_path = f"{args.output}_per_marker.tsv"
-        summary_path = f"{args.output}_summary.tsv"
+    if n_bias_markers > 0:
+        overall_mean_bias = sum(all_biases) / n_bias_markers
+        overall_median_bias = biases_sorted[n_bias_markers // 2]
+        overall_sd_bias = _sd(all_biases)
     else:
-        per_marker_path = None
-        summary_path = None
+        overall_mean_bias = overall_median_bias = overall_sd_bias = float("nan")
 
-    if per_marker_path:
-        Path(per_marker_path).parent.mkdir(parents=True, exist_ok=True)
+    print()
+    print("=" * 65)
+    print("PANEL CHARACTERISATION SUMMARY")
+    print("=" * 65)
+
+    print(f"\n--- DATA ---")
+    print(f"VCF files processed:         {n_vcfs}")
+    print(f"Total samples:               {n_total_samples}")
+    print(f"Total markers (biallelic):    {n_markers}")
+
+    print(f"\n--- LOCUS DROPOUT ---")
+    nocall_sorted = sorted(all_nocall_rates)
+    mean_nocall = sum(all_nocall_rates) / len(all_nocall_rates) if all_nocall_rates else 0
+    print(f"  Mean no-call rate/marker:  {mean_nocall:.4f} ({mean_nocall*100:.2f}%)")
+    print(f"  Median no-call rate:       {_percentile(nocall_sorted, 50):.4f}")
+    print(f"  95th pct no-call rate:     {_percentile(nocall_sorted, 95):.4f}")
+    print(f"  Max no-call rate:          {max(all_nocall_rates):.4f}")
+    markers_gt5pct_nocall = sum(1 for r in all_nocall_rates if r > 0.05)
+    print(f"  Markers with >5% no-call:  {markers_gt5pct_nocall}/{n_markers}")
+
+    if sample_nocall_rates:
+        sample_nc_sorted = sorted(sample_nocall_rates)
+        print(f"\n  Per-sample no-call rate:")
+        print(f"    Mean:                    {sum(sample_nocall_rates)/len(sample_nocall_rates):.4f}")
+        print(f"    Median:                  {_percentile(sample_nc_sorted, 50):.4f}")
+        print(f"    95th pct:                {_percentile(sample_nc_sorted, 95):.4f}")
+        print(f"    Max:                     {max(sample_nocall_rates):.4f}")
+
+    print(f"\n--- DEPTH ---")
+    if all_mean_depths:
+        depths_sorted = sorted(all_mean_depths)
+        print(f"  Mean depth/marker:         {sum(all_mean_depths)/len(all_mean_depths):.0f}x")
+        print(f"  Median depth/marker:       {_percentile(depths_sorted, 50):.0f}x")
+        print(f"  5th pct depth:             {_percentile(depths_sorted, 5):.0f}x")
+        print(f"  Min mean depth:            {min(all_mean_depths):.0f}x")
+        print(f"  Max mean depth:            {max(all_mean_depths):.0f}x")
+    if all_depth_cvs_marker:
+        print(f"  Mean depth CV/marker:      {sum(all_depth_cvs_marker)/len(all_depth_cvs_marker):.3f}")
+    if sample_depth_cvs:
+        scv_sorted = sorted(sample_depth_cvs)
+        print(f"\n  Depth uniformity (per-sample CV across markers):")
+        print(f"    Mean CV:                 {sum(sample_depth_cvs)/len(sample_depth_cvs):.3f}")
+        print(f"    Median CV:               {_percentile(scv_sorted, 50):.3f}")
+        print(f"    95th pct CV:             {_percentile(scv_sorted, 95):.3f}")
+
+    print(f"\n--- AMPLIFICATION BIAS ---")
+    print(f"  Markers with het obs:      {n_bias_markers}")
+    print(f"  Total het observations:    {n_het_total}")
+    print(f"  Skipped (low depth):       {n_skipped_dp}")
+    print(f"  Skipped (low GQ):          {n_skipped_gq}")
+    if n_bias_markers > 0:
+        print(f"  Mean bias:                 {overall_mean_bias:+.4f}")
+        print(f"  Median bias:               {overall_median_bias:+.4f}")
+        print(f"  SD of per-marker biases:   {overall_sd_bias:.4f}")
+        print(f"  Mean |bias|:               {sum(all_abs_biases)/n_bias_markers:.4f}")
+        print(f"  Median |bias|:             {_percentile(abs_biases_sorted, 50):.4f}")
+        print(f"  95th pct |bias|:           {_percentile(abs_biases_sorted, 95):.4f}")
+        print(f"  Max |bias|:                {max(all_abs_biases):.4f}")
+
+    print(f"\n--- ALLELE DROPOUT SIGNAL (het/hom ratio vs HWE) ---")
+    if all_het_ratios:
+        hr_sorted = sorted(all_het_ratios)
+        mean_hr = sum(all_het_ratios) / len(all_het_ratios)
+        print(f"  Mean het ratio:            {mean_hr:.3f}  (1.0 = HWE, <1 = possible ADO)")
+        print(f"  Median het ratio:          {_percentile(hr_sorted, 50):.3f}")
+        print(f"  5th pct het ratio:         {_percentile(hr_sorted, 5):.3f}")
+        print(f"  Min het ratio:             {min(all_het_ratios):.3f}")
+        markers_low_het = sum(1 for r in all_het_ratios if r < 0.8)
+        print(f"  Markers with ratio < 0.8:  {markers_low_het}/{len(all_het_ratios)}")
+
+    print(f"\n--- SIMULATION PARAMETERS ---")
+    if n_bias_markers > 0:
+        print(f"  >>> --bias-sd {overall_sd_bias:.3f}")
+    print(f"  >>> --locus-dropout-rate {mean_nocall:.4f}")
+    ado_estimate = max(0.0, 1.0 - (sum(all_het_ratios) / len(all_het_ratios))) if all_het_ratios else 0.0
+    if ado_estimate > 0.001:
+        print(f"  >>> --allele-dropout-rate ~{ado_estimate:.3f}  (estimated from het deficit)")
+    else:
+        print(f"  >>> allele dropout: negligible (het ratio ~{mean_hr:.2f})")
+    print("=" * 65)
+
+    # =====================================================================
+    # Write output files
+    # =====================================================================
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        per_marker_path = f"{args.output}_per_marker.tsv"
+
         with open(per_marker_path, "w") as f:
-            f.write("marker_index\tn_het\tmedian_bias\tmean_bias\tmean_abs_bias\t"
-                    "sd_within\tmean_depth\n")
+            header = [
+                "marker_index", "total_obs", "n_called", "n_nocall", "call_rate",
+                "n_hom_ref", "n_het", "n_hom_alt", "het_ratio_vs_hwe",
+                "mean_depth", "depth_cv",
+                "n_het_for_bias", "median_bias", "mean_bias", "sd_within",
+            ]
+            f.write("\t".join(header) + "\n")
             for i, s in enumerate(marker_stats):
-                f.write(f"{i}\t{s['n_het']}\t{s['median_bias']:.6f}\t"
-                        f"{s['mean_bias']:.6f}\t{s['mean_abs_bias']:.6f}\t"
-                        f"{s['sd_within']:.6f}\t{s['mean_depth']:.0f}\n")
+                vals = [
+                    str(i),
+                    str(s["total_obs"]),
+                    str(s["n_called"]),
+                    str(s["n_nocall"]),
+                    f"{s['call_rate']:.4f}",
+                    str(s["n_hom_ref"]),
+                    str(s["n_het"]),
+                    str(s["n_hom_alt"]),
+                    f"{s['het_ratio_vs_hwe']:.4f}" if not math.isnan(s["het_ratio_vs_hwe"]) else "NA",
+                    f"{s['mean_depth']:.0f}",
+                    f"{s['depth_cv']:.4f}",
+                    str(s["n_het_for_bias"]),
+                    f"{s['median_bias']:.6f}" if not math.isnan(s["median_bias"]) else "NA",
+                    f"{s['mean_bias']:.6f}" if not math.isnan(s["mean_bias"]) else "NA",
+                    f"{s['sd_within']:.6f}" if not math.isnan(s["sd_within"]) else "NA",
+                ]
+                f.write("\t".join(vals) + "\n")
         print(f"\nPer-marker detail: {per_marker_path}", file=sys.stderr)
 
-    if summary_path:
-        with open(summary_path, "w") as f:
-            f.write("metric\tvalue\n")
-            f.write(f"n_vcfs\t{n_samples}\n")
-            f.write(f"n_markers\t{n_markers}\n")
-            f.write(f"n_het_total\t{n_het_total}\n")
-            f.write(f"mean_bias\t{overall_mean_bias:.6f}\n")
-            f.write(f"median_bias\t{overall_median_bias:.6f}\n")
-            f.write(f"sd_bias\t{overall_sd_bias:.6f}\n")
-            f.write(f"mean_abs_bias\t{overall_mean_abs_bias:.6f}\n")
-            f.write(f"median_abs_bias\t{overall_median_abs_bias:.6f}\n")
-            f.write(f"p95_abs_bias\t{abs_biases_sorted[p95_idx]:.6f}\n")
-            f.write(f"max_abs_bias\t{max(all_abs_biases):.6f}\n")
-        print(f"Summary: {summary_path}", file=sys.stderr)
+        # --- vibepaper facts CSV (single-row, horizontal format) ---
+        import csv
+        facts_path = f"{args.output}_facts.csv"
+        mean_depth_val = sum(all_mean_depths) / len(all_mean_depths) if all_mean_depths else 0
+        mean_sample_cv = sum(sample_depth_cvs) / len(sample_depth_cvs) if sample_depth_cvs else 0
+        mean_hr_val = sum(all_het_ratios) / len(all_het_ratios) if all_het_ratios else float("nan")
+
+        facts = {
+            "n_vcfs": n_vcfs,
+            "n_samples": n_total_samples,
+            "n_markers": n_markers,
+            "n_bias_markers": n_bias_markers,
+            "n_het_total": n_het_total,
+            "mean_nocall_rate": round(mean_nocall, 4),
+            "mean_nocall_pct": round(mean_nocall * 100, 2),
+            "markers_gt5pct_nocall": markers_gt5pct_nocall,
+            "mean_depth": round(mean_depth_val),
+            "median_depth": round(_percentile(sorted(all_mean_depths), 50)) if all_mean_depths else 0,
+            "min_depth": round(min(all_mean_depths)) if all_mean_depths else 0,
+            "max_depth": round(max(all_mean_depths)) if all_mean_depths else 0,
+            "mean_sample_depth_cv": round(mean_sample_cv, 3),
+            "sd_bias": round(overall_sd_bias, 4) if not math.isnan(overall_sd_bias) else "",
+            "mean_abs_bias": round(sum(all_abs_biases) / n_bias_markers, 4) if n_bias_markers else "",
+            "median_abs_bias": round(_percentile(abs_biases_sorted, 50), 4) if abs_biases_sorted else "",
+            "p95_abs_bias": round(_percentile(abs_biases_sorted, 95), 4) if abs_biases_sorted else "",
+            "max_abs_bias": round(max(all_abs_biases), 4) if all_abs_biases else "",
+            "mean_het_ratio": round(mean_hr_val, 3) if not math.isnan(mean_hr_val) else "",
+            "markers_low_het": sum(1 for r in all_het_ratios if r < 0.8) if all_het_ratios else 0,
+            "ado_estimate": round(ado_estimate, 4),
+        }
+        with open(facts_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
+            writer.writeheader()
+            writer.writerow(facts)
+        print(f"Facts CSV: {facts_path}", file=sys.stderr)
+        print(f"  Copy to output/facts/panel_empirical.csv for vibepaper", file=sys.stderr)
 
     return 0
 

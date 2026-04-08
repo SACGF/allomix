@@ -593,3 +593,117 @@ class TestProfileLikelihoodCIPrecision:
         result = estimate_single_donor(markers)
         ci_width = result.donor_fraction_ci[1] - result.donor_fraction_ci[0]
         assert ci_width < 0.008, f"CI width {ci_width:.6f} unexpectedly wide"
+
+
+class TestRoundtripWithErrorRate:
+    """Round-trip simulate -> estimate with matched error model (e=0.01)."""
+
+    def test_roundtrip_with_error_rate(self) -> None:
+        from allomix.simulate import expected_vaf, sample_allele_counts
+
+        error_rate = 0.01
+        fractions = [0.0, 0.10, 0.50, 0.90, 1.0]
+        dp = 5000
+        gt_pairs = [((0, 0), (1, 1))] * 15 + [((1, 1), (0, 0))] * 15
+
+        for true_f in fractions:
+            rng = random.Random(int(true_f * 1000) + 99)
+            markers = []
+
+            for i, (h_gt, d_gt) in enumerate(gt_pairs):
+                vaf = expected_vaf(h_gt, d_gt, true_f)
+                ref_count, alt_count = sample_allele_counts(
+                    vaf, dp, rng, error_rate=error_rate,
+                )
+                from allomix.genotype import marker_type as get_mtype
+
+                mtype = get_mtype(h_gt, d_gt)
+                markers.append(
+                    InformativeMarker(
+                        chrom=f"chr{i + 1}",
+                        pos=1000 * (i + 1),
+                        ref="A",
+                        alt="T",
+                        host_gt=h_gt,
+                        donor_gts=[d_gt],
+                        marker_type=mtype if mtype is not None else 0,
+                        admix_ad_ref=ref_count,
+                        admix_ad_alt=alt_count,
+                        admix_dp=ref_count + alt_count,
+                    )
+                )
+
+            result = estimate_single_donor(markers, error_rate=error_rate)
+            assert result.donor_fraction == pytest.approx(true_f, abs=0.03), (
+                f"At true_f={true_f}: estimated {result.donor_fraction}"
+            )
+
+
+class TestErrorModelMatchValidation:
+    """Validate that simulator + estimator produce unbiased results.
+
+    Generates data with error_rate=0.01 (where the old symmetric model had
+    measurable bias) and checks that the MLE is unbiased. Under the old
+    symmetric error model, the simulator generated ~1% ALT reads at hom-ref
+    sites while the estimator expected ~0.33%, producing a ~0.6% upward bias
+    at f=0. With matched models, the bias should be negligible.
+    """
+
+    def _run_replicates(
+        self, true_f: float, n_replicates: int = 20, seed_offset: int = 0,
+    ) -> list[float]:
+        from allomix.simulate import expected_vaf, sample_allele_counts
+
+        error_rate = 0.01
+        dp = 2000
+        gt_pairs = [((0, 0), (1, 1))] * 20 + [((1, 1), (0, 0))] * 20
+
+        estimates = []
+        for rep in range(n_replicates):
+            rng = random.Random(rep * 1000 + seed_offset)
+            markers = []
+            for i, (h_gt, d_gt) in enumerate(gt_pairs):
+                vaf = expected_vaf(h_gt, d_gt, true_f)
+                ref_count, alt_count = sample_allele_counts(
+                    vaf, dp, rng, error_rate=error_rate,
+                )
+                from allomix.genotype import marker_type as get_mtype
+
+                mtype = get_mtype(h_gt, d_gt)
+                markers.append(
+                    InformativeMarker(
+                        chrom=f"chr{i + 1}",
+                        pos=1000 * (i + 1),
+                        ref="A",
+                        alt="T",
+                        host_gt=h_gt,
+                        donor_gts=[d_gt],
+                        marker_type=mtype if mtype is not None else 0,
+                        admix_ad_ref=ref_count,
+                        admix_ad_alt=alt_count,
+                        admix_dp=ref_count + alt_count,
+                    )
+                )
+            result = estimate_single_donor(markers, error_rate=error_rate)
+            estimates.append(result.donor_fraction)
+        return estimates
+
+    def test_no_bias_at_zero_fraction(self) -> None:
+        """At f=0 with error_rate=0.01, estimate should be near 0, not ~0.6%."""
+        estimates = self._run_replicates(0.0, n_replicates=20, seed_offset=0)
+        mean_estimate = sum(estimates) / len(estimates)
+        # With matched models, mean should be near 0 (within sampling noise).
+        # Under the old mismatch, this would be ~0.006 (0.6%).
+        assert mean_estimate < 0.003, (
+            f"Mean estimate at f=0 is {mean_estimate:.4f}; "
+            "possible error model mismatch (old symmetric model gave ~0.006)"
+        )
+
+    def test_no_bias_at_full_fraction(self) -> None:
+        """At f=1.0 with error_rate=0.01, estimate should be near 1.0."""
+        estimates = self._run_replicates(1.0, n_replicates=20, seed_offset=500)
+        mean_estimate = sum(estimates) / len(estimates)
+        assert mean_estimate > 0.997, (
+            f"Mean estimate at f=1 is {mean_estimate:.4f}; "
+            "possible error model mismatch (old symmetric model gave ~0.994)"
+        )

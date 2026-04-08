@@ -203,6 +203,82 @@ class TestSampleAlleleCounts:
         assert 4800 < mean_alt < 5200
 
 
+class TestSampleAlleleCountsErrorModel:
+    """Verify the 4-state (trinucleotide) error model in sample_allele_counts."""
+
+    def test_error_model_pure_ref_floor(self) -> None:
+        """With vaf=0.0 and error_rate=0.03, expected ALT rate is e/3 = 0.01."""
+        rng = random.Random(42)
+        n_trials = 200
+        depth = 10000
+        alt_counts = [
+            sample_allele_counts(0.0, depth, rng, error_rate=0.03)[1]
+            for _ in range(n_trials)
+        ]
+        mean_alt_rate = sum(alt_counts) / (n_trials * depth)
+        # Expected: e/3 = 0.01.  Allow +/- 0.002 for sampling noise.
+        assert abs(mean_alt_rate - 0.01) < 0.002, (
+            f"Expected ALT rate ~0.01 (e/3), got {mean_alt_rate:.4f}"
+        )
+
+    def test_error_model_pure_alt_floor(self) -> None:
+        """With vaf=1.0 and error_rate=0.03, expected REF rate is e/3 = 0.01."""
+        rng = random.Random(42)
+        n_trials = 200
+        depth = 10000
+        ref_counts = [
+            sample_allele_counts(1.0, depth, rng, error_rate=0.03)[0]
+            for _ in range(n_trials)
+        ]
+        mean_ref_rate = sum(ref_counts) / (n_trials * depth)
+        assert abs(mean_ref_rate - 0.01) < 0.002, (
+            f"Expected REF rate ~0.01 (e/3), got {mean_ref_rate:.4f}"
+        )
+
+    def test_error_model_matches_estimator(self) -> None:
+        """The simulator's effective ALT probability should match the estimator.
+
+        For vaf=0.3 and error_rate=0.01, the 4-state conditional model gives:
+            p_alt = 0.3*(1-0.01) + 0.7*0.01/3 = 0.29933...
+            p_binomial = p_alt / (1 - 2*0.01/3) = 0.29933 / 0.99333 = 0.30133...
+        """
+        rng = random.Random(123)
+        n_trials = 500
+        depth = 10000
+        e = 0.01
+        p_alt = 0.3 * (1 - e) + 0.7 * e / 3.0
+        expected_p = p_alt / (1.0 - 2.0 * e / 3.0)
+        alt_counts = [
+            sample_allele_counts(0.3, depth, rng, error_rate=e)[1]
+            for _ in range(n_trials)
+        ]
+        mean_alt_rate = sum(alt_counts) / (n_trials * depth)
+        assert abs(mean_alt_rate - expected_p) < 0.001, (
+            f"Expected {expected_p:.6f}, got {mean_alt_rate:.6f}"
+        )
+
+    def test_not_symmetric_model(self) -> None:
+        """Verify we are NOT using the old symmetric model.
+
+        Under the old symmetric model, vaf=0.0 with error_rate=0.03 would give
+        p_obs = 0.03.  Under the 4-state model it should be 0.01.
+        """
+        rng = random.Random(42)
+        n_trials = 200
+        depth = 10000
+        alt_counts = [
+            sample_allele_counts(0.0, depth, rng, error_rate=0.03)[1]
+            for _ in range(n_trials)
+        ]
+        mean_alt_rate = sum(alt_counts) / (n_trials * depth)
+        # Under old symmetric model this would be ~0.03.
+        # Under 4-state model it should be ~0.01.
+        assert mean_alt_rate < 0.02, (
+            f"ALT rate {mean_alt_rate:.4f} is too high; "
+            "looks like the old symmetric error model"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Tests: gt_from_counts
 # ---------------------------------------------------------------------------

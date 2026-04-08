@@ -657,18 +657,18 @@ def _profile_likelihood_cis_multi(
     for donor_idx in range(n_donors):
         other_idx = 1 - donor_idx  # works for 2 donors
 
-        def profile_ll(fi: float, _other=other_idx) -> float:
+        def profile_ll(fi: float, _other=other_idx, _didx=donor_idx) -> float:
             """Max LL over the other donor, with donor_idx fixed at fi."""
             max_fj = max(0.0, 1.0 - fi)
             if max_fj < 1e-9:
                 fracs = [0.0, 0.0]
-                fracs[donor_idx] = fi
+                fracs[_didx] = fi
                 return total_log_likelihood_multi(markers, fracs, error_rate, marker_biases)
             res = minimize_scalar(
-                lambda fj: (
+                lambda fj, _di=_didx: (
                     -total_log_likelihood_multi(
                         markers,
-                        [fi, fj] if donor_idx == 0 else [fj, fi],
+                        [fi, fj] if _di == 0 else [fj, fi],
                         error_rate,
                         marker_biases,
                     )
@@ -678,8 +678,8 @@ def _profile_likelihood_cis_multi(
             )
             return -float(res.fun)
 
-        def ci_func(fi: float) -> float:
-            return ll_max - profile_ll(fi) - half_threshold
+        def ci_func(fi: float, _pll=profile_ll) -> float:
+            return ll_max - _pll(fi) - half_threshold
 
         fi_mle = f_mle[donor_idx]
 

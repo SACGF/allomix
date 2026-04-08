@@ -101,7 +101,7 @@ def save_bias_table(biases: dict[MarkerKey, MarkerBias], path: Path | str) -> No
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="") as fh:
+    with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh, delimiter="\t")
         writer.writerow(["chrom", "pos", "ref", "alt", "bias", "n_het"])
         for key in sorted(biases.keys()):
@@ -119,7 +119,7 @@ def load_bias_table(path: Path | str) -> dict[MarkerKey, float]:
         Dict mapping (chrom, pos, ref, alt) to bias float.
     """
     biases: dict[MarkerKey, float] = {}
-    with open(path) as fh:
+    with open(path, encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
         for row in reader:
             key: MarkerKey = (row["chrom"], int(row["pos"]), row["ref"], row["alt"])

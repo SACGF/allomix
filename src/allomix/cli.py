@@ -102,7 +102,7 @@ def _open_output(path: str):
     """Open output file or return stdout."""
     if path == "-":
         return sys.stdout
-    return open(path, "w")
+    return open(path, "w", encoding="utf-8")
 
 
 def _load_biases(args: argparse.Namespace) -> dict | None:
@@ -176,8 +176,6 @@ def cmd_timeline(args: argparse.Namespace) -> int:
 
 def cmd_estimate_bias(args: argparse.Namespace) -> int:
     """Run the estimate-bias subcommand."""
-    import sys
-
     from allomix.bias import estimate_biases, save_bias_table
     from allomix.genotype import parse_vcf
 
@@ -249,13 +247,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "monitor":
         return cmd_monitor(args)
-    elif args.command == "timeline":
+    if args.command == "timeline":
         return cmd_timeline(args)
-    elif args.command == "estimate-bias":
+    if args.command == "estimate-bias":
         return cmd_estimate_bias(args)
-    else:
-        parser.print_help()
-        return 1
+    parser.print_help()
+    return 1
 
 
 if __name__ == "__main__":

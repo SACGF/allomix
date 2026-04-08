@@ -89,7 +89,7 @@ def gt_to_ad(gt: str, depth: int, rng: random.Random) -> str:
         return f"{depth - alt},{alt}"
 
 
-def gt_to_af(gt: str, ad: str) -> str:
+def gt_to_af(_gt: str, ad: str) -> str:
     """Compute AF from AD."""
     parts = ad.split(",")
     ref_c, alt_c = int(parts[0]), int(parts[1])
@@ -148,7 +148,7 @@ def make_vcf(
     lines.append(f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample_name}")
 
     # Records
-    for i, ((chrom, pos, ref, alt), gt) in enumerate(zip(positions, genotypes)):
+    for (chrom, pos, ref, alt), gt in zip(positions, genotypes):
         depth = max(MIN_DEPTH, int(rng.gauss(depth_mean, DEPTH_SD)))
         ad = gt_to_ad(gt, depth, rng)
         af = gt_to_af(gt, ad)

@@ -29,6 +29,26 @@ TRANSITIONS = [("A", "G"), ("G", "A"), ("C", "T"), ("T", "C")]
 TRANSVERSIONS = [("A", "C"), ("A", "T"), ("G", "C"), ("G", "T"),
                  ("C", "A"), ("C", "G"), ("T", "A"), ("T", "G")]
 
+# Fraction of SNPs that are transitions (empirically ~67% in human genome)
+TRANSITION_FRACTION = 0.67
+
+# Sequencing parameters
+DEFAULT_DEPTH_MEAN = 2000
+DEPTH_SD = 300
+MIN_DEPTH = 500
+HOM_SEQUENCING_ERROR_RATE = 0.002  # error rate producing noise reads in hom calls
+HET_ALLELIC_IMBALANCE = 0.05  # max VAF deviation from 0.5 for realistic het calls
+EXPECTED_HET_VAF = 0.5
+
+# VCF output defaults
+DEFAULT_GQ = 99
+DEFAULT_QUAL = 10000
+CONTIG_LENGTH = 248_956_422  # hg38 chr1 length, used as placeholder for all contigs
+
+# Marker position layout
+START_POSITION = 1_000_000
+POSITION_SPACING = 100_000
+
 # Genotype distribution for a realistic population sample.
 # We want a good mix: ~50% het, ~25% hom-ref, ~25% hom-alt.
 # Assign host/donor genotypes to ensure high informativeness.
@@ -54,15 +74,15 @@ def gt_to_ad(gt: str, depth: int, rng: random.Random) -> str:
     """Generate realistic AD field for a genotype at a given depth."""
     if gt == "0/0":
         # Small noise: a few alt reads from sequencing error
-        alt = rng.binomialvariate(depth, 0.002)
+        alt = rng.binomialvariate(depth, HOM_SEQUENCING_ERROR_RATE)
         return f"{depth - alt},{alt}"
     elif gt == "1/1":
-        ref = rng.binomialvariate(depth, 0.002)
+        ref = rng.binomialvariate(depth, HOM_SEQUENCING_ERROR_RATE)
         return f"{ref},{depth - ref}"
     else:  # 0/1
         # Slight allelic imbalance is realistic
-        bias = rng.uniform(-0.05, 0.05)
-        alt = rng.binomialvariate(depth, 0.5 + bias)
+        bias = rng.uniform(-HET_ALLELIC_IMBALANCE, HET_ALLELIC_IMBALANCE)
+        alt = rng.binomialvariate(depth, EXPECTED_HET_VAF + bias)
         return f"{depth - alt},{alt}"
 
 
@@ -81,7 +101,7 @@ def make_vcf(
     genotypes: list[str],
     positions: list[tuple[str, int, str, str]],
     rng: random.Random,
-    depth_mean: int = 2000,
+    depth_mean: int = DEFAULT_DEPTH_MEAN,
 ) -> str:
     """Build a VCF string."""
     lines = []
@@ -121,23 +141,22 @@ def make_vcf(
         'Description="Approximate read depth">'
     )
     for c in CHROMS:
-        lines.append(f"##contig=<ID={c},length=248956422>")
+        lines.append(f"##contig=<ID={c},length={CONTIG_LENGTH}>")
     lines.append(f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample_name}")
 
     # Records
     for i, ((chrom, pos, ref, alt), gt) in enumerate(zip(positions, genotypes)):
-        depth = max(500, rng.gauss(depth_mean, 300))
-        depth = int(depth)
+        depth = max(MIN_DEPTH, int(rng.gauss(depth_mean, DEPTH_SD)))
         ad = gt_to_ad(gt, depth, rng)
         af = gt_to_af(gt, ad)
         dp = sum(int(x) for x in ad.split(","))
-        gq = 99
+        gq = DEFAULT_GQ
 
         info = f"AC=1;AF=0.5;AN=2;DP={dp * 100}"
         fmt = "GT:AD:DP:GQ:AF"
         sample = f"{gt}:{ad}:{dp}:{gq}:{af}"
 
-        lines.append(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t10000\tPASS\t{info}\t{fmt}\t{sample}")
+        lines.append(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t{DEFAULT_QUAL}\tPASS\t{info}\t{fmt}\t{sample}")
 
     return "\n".join(lines) + "\n"
 
@@ -162,9 +181,9 @@ def main(argv: list[str] | None = None) -> int:
     positions = []
     for i in range(n):
         chrom = CHROMS[i % len(CHROMS)]
-        pos = 1_000_000 + i * 100_000  # evenly spaced, fictional
+        pos = START_POSITION + i * POSITION_SPACING  # evenly spaced, fictional
         # Pick ref/alt — favour transitions (realistic)
-        if rng.random() < 0.67:
+        if rng.random() < TRANSITION_FRACTION:
             ref, alt = rng.choice(TRANSITIONS)
         else:
             ref, alt = rng.choice(TRANSVERSIONS)

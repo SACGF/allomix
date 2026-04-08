@@ -13,12 +13,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import csv
 import random
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from script_utils import write_truth_table  # noqa: E402
 
 from allomix.simulate import (  # noqa: E402
     blend_from_genotype_dicts,
@@ -26,6 +27,11 @@ from allomix.simulate import (  # noqa: E402
     write_genotype_vcf,
     write_vcf,
 )
+
+# Simulation parameters matching the allomix MLE error model
+DEFAULT_ERROR_RATE = 0.01  # per-read sequencing error probability
+DEFAULT_DEPTH_CV = 0.43  # empirical depth CV from rhAmpSeq panel characterisation
+SEED_HASH_MODULUS = 2**31
 
 # Mixture fraction grid points on the simplex f1 + f2 <= 1
 MIXTURE_GRID = [
@@ -106,9 +112,9 @@ def main(argv: list[str] | None = None) -> int:
             markers,
             [f1, f2],
             target_depth=args.depth,
-            seed=rng.randint(0, 2**31),
-            error_rate=0.01,
-            depth_cv=0.43,
+            seed=rng.randint(0, SEED_HASH_MODULUS),
+            error_rate=DEFAULT_ERROR_RATE,
+            depth_cv=DEFAULT_DEPTH_CV,
             sample_name=name,
         )
         write_vcf(result, outdir / f"{name}.vcf")
@@ -122,10 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         })
 
     # Write truth table
-    with open(outdir / "truth_table.tsv", "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=truth_rows[0].keys(), delimiter="\t")
-        writer.writeheader()
-        writer.writerows(truth_rows)
+    write_truth_table(truth_rows, outdir / "truth_table.tsv")
 
     print(f"\nGenerated {len(MIXTURE_GRID)} chimeric VCFs in {outdir}/", file=sys.stderr)
 

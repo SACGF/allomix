@@ -1,0 +1,186 @@
+"""Snakemake pipeline for the allomix paper.
+
+Runs all validation/figure scripts in parallel, then builds the paper with vibepaper.
+
+Usage (from repo root):
+    snakemake -s paper/Snakefile -j 7          # run all scripts in parallel
+    snakemake -s paper/Snakefile -j 1          # run sequentially
+    snakemake -s paper/Snakefile paper          # just build the paper (assumes facts exist)
+    snakemake -s paper/Snakefile clean          # remove all generated output
+"""
+
+workdir: os.path.dirname(workflow.basedir)
+
+FACTS_DIR = "output/facts"
+
+
+# --- Outputs produced by each script ----------------------------------------
+
+DEPTH_FACTS = expand(f"{FACTS_DIR}/depth_{{d}}.csv", d=[50, 100, 200, 500, 1000])
+DEPTH_FIGS = [
+    f"{FACTS_DIR}/fig1_depth_scatter.png",
+    f"{FACTS_DIR}/fig2_depth_boxplots.png",
+    f"{FACTS_DIR}/fig3_depth_summary.png",
+]
+
+RELATEDNESS_FACTS = expand(
+    f"{FACTS_DIR}/rel_{{r}}.csv",
+    r=["unrelated", "cousin", "half_sibling", "sibling"],
+)
+RELATEDNESS_FIGS = [f"{FACTS_DIR}/fig4_relatedness.png"]
+
+MULTIDONOR_FACTS = [
+    f"{FACTS_DIR}/multidonor.csv",
+    f"{FACTS_DIR}/multidonor_results.csv",
+]
+
+MULTIDONOR_FIGS = [f"{FACTS_DIR}/fig_multidonor.png"]
+
+BIAS_FIGS = ["output/bias_comparison/bias_correction_comparison.png"]
+
+TIMELINE_FACTS = [f"{FACTS_DIR}/timeline.csv"]
+TIMELINE_FIGS = [f"{FACTS_DIR}/fig_timeline.png"]
+
+PAPER_FACTS = [
+    f"{FACTS_DIR}/validation_summary.csv",
+    f"{FACTS_DIR}/bias_no_bias.csv",
+    f"{FACTS_DIR}/bias_with_bias.csv",
+    f"{FACTS_DIR}/tool_landscape.csv",
+    f"{FACTS_DIR}/panel_specs.csv",
+] + expand(
+    f"{FACTS_DIR}/val_host_{{h}}_donor_{{d}}.csv",
+    zip,
+    h=[100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0],
+    d=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+)
+
+ALL_FACTS = (
+    DEPTH_FACTS
+    + RELATEDNESS_FACTS
+    + MULTIDONOR_FACTS
+    + TIMELINE_FACTS
+    + PAPER_FACTS
+)
+
+ALL_FIGS = DEPTH_FIGS + RELATEDNESS_FIGS + MULTIDONOR_FIGS + BIAS_FIGS + TIMELINE_FIGS
+
+
+# --- Default target ----------------------------------------------------------
+
+rule all:
+    input:
+        "output/.paper_built",
+
+
+# --- Validation scripts (all independent, run in parallel) -------------------
+
+rule depth_validation:
+    input:
+        "tests/test_data/host.vcf",
+        "tests/test_data/donor.vcf",
+    output:
+        DEPTH_FACTS,
+        DEPTH_FIGS,
+    shell:
+        "python paper/scripts/run_depth_validation.py"
+
+
+rule relatedness_validation:
+    input:
+        "tests/test_data/host.vcf",
+        "tests/test_data/donor.vcf",
+    output:
+        RELATEDNESS_FACTS,
+        RELATEDNESS_FIGS,
+    shell:
+        "python paper/scripts/run_relatedness_validation.py"
+
+
+rule multidonor_validation:
+    input:
+        "tests/test_data/multidonor/host.vcf",
+        "tests/test_data/multidonor/donor1.vcf",
+        "tests/test_data/multidonor/donor2.vcf",
+        "tests/test_data/multidonor/truth_table.tsv",
+    output:
+        MULTIDONOR_FACTS,
+    shell:
+        "python paper/scripts/run_multidonor_validation.py"
+
+
+rule bias_comparison:
+    input:
+        "tests/test_data/host.vcf",
+        "tests/test_data/donor.vcf",
+    output:
+        BIAS_FIGS,
+    shell:
+        "python paper/scripts/compare_bias_correction.py"
+
+
+rule paper_facts:
+    input:
+        "tests/test_data/host.vcf",
+        "tests/test_data/donor.vcf",
+    output:
+        PAPER_FACTS,
+    shell:
+        "python paper/scripts/generate_paper_facts.py"
+
+
+rule timeline_figure:
+    input:
+        "tests/test_data/host.vcf",
+        "tests/test_data/donor.vcf",
+    output:
+        TIMELINE_FACTS,
+        TIMELINE_FIGS,
+    shell:
+        "python paper/scripts/generate_timeline_figure.py"
+
+
+rule multidonor_figure:
+    input:
+        "tests/test_data/multidonor/host.vcf",
+        "tests/test_data/multidonor/donor1.vcf",
+        "tests/test_data/multidonor/donor2.vcf",
+        "tests/test_data/multidonor/truth_table.tsv",
+    output:
+        MULTIDONOR_FIGS,
+    shell:
+        "python paper/scripts/generate_multidonor_figure.py"
+
+
+# --- Paper build (depends on all facts and figures) --------------------------
+
+PAPER_SECTIONS = [
+    "paper/abstract.md",
+    "paper/introduction.md",
+    "paper/methods.md",
+    "paper/results.md",
+    "paper/discussion.md",
+    "paper/acknowledgements.md",
+    "paper/supplementary.md",
+]
+
+rule paper:
+    input:
+        ALL_FACTS,
+        ALL_FIGS,
+        "paper.toml",
+        PAPER_SECTIONS,
+    output:
+        touch("output/.paper_built"),
+    shell:
+        "vibepaper build --md --pdf"
+
+
+# --- Housekeeping ------------------------------------------------------------
+
+rule clean:
+    shell:
+        """
+        rm -rf output/facts/ output/depth_validation/ output/relatedness_validation/
+        rm -rf output/bias_comparison/ output/timeline/ output/.paper_built
+        rm -rf build/
+        """

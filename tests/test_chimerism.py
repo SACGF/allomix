@@ -63,15 +63,17 @@ def _make_markers_for_fraction(
         # Expected REF weight = 1 - f_donor, so ALT count ~ Binomial(dp, f_donor)
         alt_count = sum(1 for _ in range(dp) if rng.random() < f_donor)
         ref_count = dp - alt_count
-        markers.append(_make_marker(
-            host_gt=(0, 0),
-            donor_gt=(1, 1),
-            ad_ref=ref_count,
-            ad_alt=alt_count,
-            marker_type=0,
-            chrom=f"chr{i + 1}",
-            pos=1000 * (i + 1),
-        ))
+        markers.append(
+            _make_marker(
+                host_gt=(0, 0),
+                donor_gt=(1, 1),
+                ad_ref=ref_count,
+                ad_alt=alt_count,
+                marker_type=0,
+                chrom=f"chr{i + 1}",
+                pos=1000 * (i + 1),
+            )
+        )
     return markers
 
 
@@ -312,9 +314,7 @@ class TestEstimateSingleDonor:
         result = estimate_single_donor(markers)
 
         lo, hi = result.donor_fraction_ci
-        assert lo <= true_f <= hi, (
-            f"CI [{lo:.4f}, {hi:.4f}] does not contain true f={true_f}"
-        )
+        assert lo <= true_f <= hi, f"CI [{lo:.4f}, {hi:.4f}] does not contain true f={true_f}"
 
     def test_ci_narrows_with_depth(self) -> None:
         """CI should be narrower at higher depth."""
@@ -397,15 +397,17 @@ class TestEstimateSingleDonor:
         for i in range(10):
             ad_alt = sum(1 for _ in range(2000) if rng.random() < 0.80)
             ad_ref = 2000 - ad_alt
-            markers.append(_make_marker(
-                host_gt=(1, 1),
-                donor_gt=(0, 0),
-                ad_ref=ad_ref,
-                ad_alt=ad_alt,
-                marker_type=1,
-                chrom=f"chr{i + 1}",
-                pos=1000 * (i + 1),
-            ))
+            markers.append(
+                _make_marker(
+                    host_gt=(1, 1),
+                    donor_gt=(0, 0),
+                    ad_ref=ad_ref,
+                    ad_alt=ad_alt,
+                    marker_type=1,
+                    chrom=f"chr{i + 1}",
+                    pos=1000 * (i + 1),
+                )
+            )
 
         result = estimate_single_donor(markers)
         assert result.donor_fraction == pytest.approx(0.20, abs=0.02)
@@ -419,28 +421,32 @@ class TestEstimateSingleDonor:
         # Type-0: host 0/0, donor 1/1 -> expected ALT VAF = f
         for i in range(5):
             alt_count = sum(1 for _ in range(2000) if rng.random() < true_f)
-            markers.append(_make_marker(
-                host_gt=(0, 0),
-                donor_gt=(1, 1),
-                ad_ref=2000 - alt_count,
-                ad_alt=alt_count,
-                marker_type=0,
-                chrom=f"chr{i + 1}",
-                pos=1000 * (i + 1),
-            ))
+            markers.append(
+                _make_marker(
+                    host_gt=(0, 0),
+                    donor_gt=(1, 1),
+                    ad_ref=2000 - alt_count,
+                    ad_alt=alt_count,
+                    marker_type=0,
+                    chrom=f"chr{i + 1}",
+                    pos=1000 * (i + 1),
+                )
+            )
 
         # Type-1: host 1/1, donor 0/0 -> expected ALT VAF = 1-f
         for i in range(5):
             alt_count = sum(1 for _ in range(2000) if rng.random() < (1.0 - true_f))
-            markers.append(_make_marker(
-                host_gt=(1, 1),
-                donor_gt=(0, 0),
-                ad_ref=2000 - alt_count,
-                ad_alt=alt_count,
-                marker_type=1,
-                chrom=f"chr{i + 6}",
-                pos=1000 * (i + 6),
-            ))
+            markers.append(
+                _make_marker(
+                    host_gt=(1, 1),
+                    donor_gt=(0, 0),
+                    ad_ref=2000 - alt_count,
+                    ad_alt=alt_count,
+                    marker_type=1,
+                    chrom=f"chr{i + 6}",
+                    pos=1000 * (i + 6),
+                )
+            )
 
         result = estimate_single_donor(markers)
         assert result.donor_fraction == pytest.approx(true_f, abs=0.03)
@@ -456,15 +462,17 @@ class TestEstimateSingleDonor:
         for i in range(10):
             expected_alt_vaf = true_f * 0.5
             alt_count = sum(1 for _ in range(2000) if rng.random() < expected_alt_vaf)
-            markers.append(_make_marker(
-                host_gt=(0, 0),
-                donor_gt=(0, 1),
-                ad_ref=2000 - alt_count,
-                ad_alt=alt_count,
-                marker_type=20,
-                chrom=f"chr{i + 1}",
-                pos=1000 * (i + 1),
-            ))
+            markers.append(
+                _make_marker(
+                    host_gt=(0, 0),
+                    donor_gt=(0, 1),
+                    ad_ref=2000 - alt_count,
+                    ad_alt=alt_count,
+                    marker_type=20,
+                    chrom=f"chr{i + 1}",
+                    pos=1000 * (i + 1),
+                )
+            )
 
         result = estimate_single_donor(markers)
         # Less precise due to partial informativeness
@@ -522,18 +530,20 @@ class TestEndToEndWithSimulate:
                 from allomix.genotype import marker_type as get_mtype
 
                 mtype = get_mtype(h_gt, d_gt)
-                markers.append(InformativeMarker(
-                    chrom=f"chr{i + 1}",
-                    pos=1000 * (i + 1),
-                    ref="A",
-                    alt="T",
-                    host_gt=h_gt,
-                    donor_gts=[d_gt],
-                    marker_type=mtype if mtype is not None else 0,
-                    admix_ad_ref=ref_count,
-                    admix_ad_alt=alt_count,
-                    admix_dp=ref_count + alt_count,
-                ))
+                markers.append(
+                    InformativeMarker(
+                        chrom=f"chr{i + 1}",
+                        pos=1000 * (i + 1),
+                        ref="A",
+                        alt="T",
+                        host_gt=h_gt,
+                        donor_gts=[d_gt],
+                        marker_type=mtype if mtype is not None else 0,
+                        admix_ad_ref=ref_count,
+                        admix_ad_alt=alt_count,
+                        admix_dp=ref_count + alt_count,
+                    )
+                )
 
             result = estimate_single_donor(markers)
 

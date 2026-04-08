@@ -123,9 +123,9 @@ Single-donor chimerism estimation is implemented and validated:
 - Grid search + Brent refinement, profile likelihood 95% confidence intervals
 - QC assessment (marker counts, depth, goodness-of-fit, outlier detection)
 - TSV and JSON output, including multi-timepoint timeline
-- 192 automated tests, in-silico validation at 0–100% donor fractions (RMSE ~0.3%)
+- 261 automated tests, in-silico validation at 0–100% donor fractions (RMSE ~0.3%)
 
-**Not yet implemented:** multi-donor support (host + 2 donors), per-marker bias correction (Vynck et al.), VariantGrid integration.
+**Not yet implemented:** VariantGrid integration.
 
 ## License
 

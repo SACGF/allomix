@@ -14,6 +14,7 @@ from allomix.report import timeline_json, to_json, to_tsv
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_marker_result(
     chrom: str = "chr1",
     pos: int = 100,
@@ -47,10 +48,7 @@ def _make_chimerism_result(
     per_marker: list[MarkerResult] | None = None,
 ) -> ChimerismResult:
     if per_marker is None:
-        per_marker = [
-            _make_marker_result(pos=i * 100)
-            for i in range(n_informative)
-        ]
+        per_marker = [_make_marker_result(pos=i * 100) for i in range(n_informative)]
     n_used = sum(1 for m in per_marker if m.included)
     return ChimerismResult(
         donor_fraction=donor_fraction,
@@ -91,6 +89,7 @@ def _make_qc_report(
 # ---------------------------------------------------------------------------
 # TSV output
 # ---------------------------------------------------------------------------
+
 
 class TestTsvOutput:
     """Test TSV summary output."""
@@ -173,9 +172,7 @@ class TestTsvVerbose:
         assert "observed_vaf" in detail_header
 
         # Detail data lines follow
-        detail_lines = [
-            line for line in lines[blank_idx + 2:] if line.strip()
-        ]
+        detail_lines = [line for line in lines[blank_idx + 2 :] if line.strip()]
         assert len(detail_lines) == 3
 
     def test_non_verbose_has_no_detail(self):
@@ -191,6 +188,7 @@ class TestTsvVerbose:
 # JSON output
 # ---------------------------------------------------------------------------
 
+
 class TestJsonOutput:
     """Test JSON dict output."""
 
@@ -200,9 +198,17 @@ class TestJsonOutput:
         d = to_json(result, qc, sample_name="day30")
 
         required_keys = {
-            "sample", "donor_pct", "ci_lo", "ci_hi",
-            "n_informative", "n_used", "mean_depth",
-            "gof_pval", "qc_pass", "warnings", "markers",
+            "sample",
+            "donor_pct",
+            "ci_lo",
+            "ci_hi",
+            "n_informative",
+            "n_used",
+            "mean_depth",
+            "gof_pval",
+            "qc_pass",
+            "warnings",
+            "markers",
         }
         assert required_keys <= set(d.keys())
 
@@ -268,6 +274,7 @@ class TestJsonOutput:
 # ---------------------------------------------------------------------------
 # Timeline JSON
 # ---------------------------------------------------------------------------
+
 
 class TestTimelineJson:
     """Test multi-timepoint timeline output."""

@@ -9,6 +9,7 @@ from allomix.qc import ChimerismResult, MarkerResult, assess_quality
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_marker_result(
     chrom: str = "chr1",
     pos: int = 100,
@@ -42,10 +43,7 @@ def _make_chimerism_result(
     per_marker: list[MarkerResult] | None = None,
 ) -> ChimerismResult:
     if per_marker is None:
-        per_marker = [
-            _make_marker_result(pos=i * 100, dp=1000)
-            for i in range(n_informative)
-        ]
+        per_marker = [_make_marker_result(pos=i * 100, dp=1000) for i in range(n_informative)]
     n_used = sum(1 for m in per_marker if m.included)
     return ChimerismResult(
         donor_fraction=donor_fraction,
@@ -78,30 +76,37 @@ def _make_genotypes(
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestInsufficientMarkers:
     """n_informative < min_informative should cause pass_=False."""
 
     def test_too_few_markers_fails(self):
-        result = _make_chimerism_result(n_informative=2, per_marker=[
-            _make_marker_result(pos=100),
-            _make_marker_result(pos=200),
-        ])
+        result = _make_chimerism_result(
+            n_informative=2,
+            per_marker=[
+                _make_marker_result(pos=100),
+                _make_marker_result(pos=200),
+            ],
+        )
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes, min_informative=3)
         assert qc.pass_ is False
 
     def test_warning_message_present(self):
-        result = _make_chimerism_result(n_informative=1, per_marker=[
-            _make_marker_result(pos=100),
-        ])
+        result = _make_chimerism_result(
+            n_informative=1,
+            per_marker=[
+                _make_marker_result(pos=100),
+            ],
+        )
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes, min_informative=3)
         assert any("Insufficient" in w for w in qc.warnings)
 
     def test_exact_threshold_passes(self):
-        result = _make_chimerism_result(n_informative=3, per_marker=[
-            _make_marker_result(pos=i * 100) for i in range(3)
-        ])
+        result = _make_chimerism_result(
+            n_informative=3, per_marker=[_make_marker_result(pos=i * 100) for i in range(3)]
+        )
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes, min_informative=3)
         assert qc.pass_ is True
@@ -111,20 +116,14 @@ class TestLowDepth:
     """Mean depth < 100 should produce a warning."""
 
     def test_low_depth_warning(self):
-        markers = [
-            _make_marker_result(pos=i * 100, dp=50, ad_ref=45, ad_alt=5)
-            for i in range(5)
-        ]
+        markers = [_make_marker_result(pos=i * 100, dp=50, ad_ref=45, ad_alt=5) for i in range(5)]
         result = _make_chimerism_result(n_informative=5, per_marker=markers)
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes)
         assert any("depth" in w.lower() for w in qc.warnings)
 
     def test_adequate_depth_no_warning(self):
-        markers = [
-            _make_marker_result(pos=i * 100, dp=500)
-            for i in range(5)
-        ]
+        markers = [_make_marker_result(pos=i * 100, dp=500) for i in range(5)]
         result = _make_chimerism_result(n_informative=5, per_marker=markers)
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes)
@@ -173,10 +172,7 @@ class TestGoodData:
         assert len(qc.warnings) == 0
 
     def test_counts_are_correct(self):
-        markers = [
-            _make_marker_result(pos=i * 100, dp=1000)
-            for i in range(10)
-        ]
+        markers = [_make_marker_result(pos=i * 100, dp=1000) for i in range(10)]
         # Mark two as excluded
         markers[0].included = False
         markers[1].included = False

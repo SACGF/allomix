@@ -64,9 +64,12 @@ def _run_single_sample(
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
-    Returns (ChimerismResult, QCReport, MarkerGenotypes).
+    Automatically uses multi-donor estimation when more than one donor
+    VCF is provided.
+
+    Returns (ChimerismResult | MultiDonorResult, QCReport, MarkerGenotypes).
     """
-    from allomix.chimerism import estimate_single_donor
+    from allomix.chimerism import estimate_multi_donor, estimate_single_donor
     from allomix.genotype import classify_markers, parse_vcf
     from allomix.qc import assess_quality
 
@@ -77,11 +80,19 @@ def _run_single_sample(
     genotypes = classify_markers(host, donors, admix, min_dp=min_dp, min_gq=min_gq)
     genotypes.sample_name = Path(sample_path).stem
 
-    result = estimate_single_donor(
-        genotypes.informative,
-        error_rate=error_rate,
-        marker_biases=marker_biases,
-    )
+    if len(donor_paths) == 1:
+        result = estimate_single_donor(
+            genotypes.informative,
+            error_rate=error_rate,
+            marker_biases=marker_biases,
+        )
+    else:
+        result = estimate_multi_donor(
+            genotypes.informative,
+            n_donors=len(donor_paths),
+            error_rate=error_rate,
+            marker_biases=marker_biases,
+        )
     qc = assess_quality(result, genotypes)
 
     return result, qc, genotypes

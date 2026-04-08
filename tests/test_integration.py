@@ -118,7 +118,12 @@ def _run_pipeline(host_path, donor_path, admix_path, min_dp=0, min_gq=0):
     admix = parse_vcf(admix_path, min_dp=0, min_gq=0)
 
     genotypes = classify_markers(
-        host, [donor], admix, min_dp=min_dp, min_gq=min_gq, pass_only=False,
+        host,
+        [donor],
+        admix,
+        min_dp=min_dp,
+        min_gq=min_gq,
+        pass_only=False,
     )
     genotypes.sample_name = Path(admix_path).stem
 
@@ -130,6 +135,7 @@ def _run_pipeline(host_path, donor_path, admix_path, min_dp=0, min_gq=0):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestFullPipeline:
     """End-to-end: synthetic VCF → genotype → chimerism → QC."""
@@ -177,7 +183,10 @@ class TestFullPipeline:
         """
         for f_true in [0.10, 0.25, 0.50]:
             chimeric = _make_chimeric_vcf(
-                tmp_path, f_true, seed=int(f_true * 1000) + 7, depth=3000,
+                tmp_path,
+                f_true,
+                seed=int(f_true * 1000) + 7,
+                depth=3000,
             )
             result, _, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
             lo, hi = result.donor_fraction_ci
@@ -264,15 +273,23 @@ class TestCLIIntegration:
         chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
         out = tmp_path / "cli_out.tsv"
 
-        rc = main([
-            "monitor",
-            "--host", str(EXAMPLE_VCF),
-            "--donor", str(donor_vcf),
-            "--sample", str(chimeric),
-            "--output", str(out),
-            "--min-dp", "0",
-            "--min-gq", "0",
-        ])
+        rc = main(
+            [
+                "monitor",
+                "--host",
+                str(EXAMPLE_VCF),
+                "--donor",
+                str(donor_vcf),
+                "--sample",
+                str(chimeric),
+                "--output",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+            ]
+        )
         assert rc == 0
         content = out.read_text()
         assert "donor_pct" in content
@@ -284,16 +301,25 @@ class TestCLIIntegration:
         chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
         out = tmp_path / "cli_out.json"
 
-        rc = main([
-            "monitor",
-            "--host", str(EXAMPLE_VCF),
-            "--donor", str(donor_vcf),
-            "--sample", str(chimeric),
-            "--output", str(out),
-            "--format", "json",
-            "--min-dp", "0",
-            "--min-gq", "0",
-        ])
+        rc = main(
+            [
+                "monitor",
+                "--host",
+                str(EXAMPLE_VCF),
+                "--donor",
+                str(donor_vcf),
+                "--sample",
+                str(chimeric),
+                "--output",
+                str(out),
+                "--format",
+                "json",
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+            ]
+        )
         assert rc == 0
         data = json.loads(out.read_text())
         assert "donor_pct" in data
@@ -306,16 +332,25 @@ class TestCLIIntegration:
         c2 = _make_chimeric_vcf(tmp_path, 0.10, seed=2)
         out = tmp_path / "timeline.json"
 
-        rc = main([
-            "timeline",
-            "--host", str(EXAMPLE_VCF),
-            "--donor", str(donor_vcf),
-            "--sample", str(c1),
-            "--sample", str(c2),
-            "--output", str(out),
-            "--min-dp", "0",
-            "--min-gq", "0",
-        ])
+        rc = main(
+            [
+                "timeline",
+                "--host",
+                str(EXAMPLE_VCF),
+                "--donor",
+                str(donor_vcf),
+                "--sample",
+                str(c1),
+                "--sample",
+                str(c2),
+                "--output",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+            ]
+        )
         assert rc == 0
         data = json.loads(out.read_text())
         assert len(data["timepoints"]) == 2

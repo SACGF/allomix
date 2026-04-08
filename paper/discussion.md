@@ -32,7 +32,7 @@ A critical implementation consideration is the requirement for joint variant cal
 
 ### Limitations and Future Directions
 
-Several limitations of the current work should be noted. First, the validation presented here is entirely in silico; clinical validation against STR-based chimerism results and with controlled cell-line dilution series is required before clinical deployment. Second, the current implementation supports single-donor chimerism estimation; extension to multi-donor scenarios (e.g., cord blood transplants with two donors) is architecturally supported but not yet implemented. Third, the limit of detection has not been formally characterized with real sequencing data, though the mathematical framework supports detection below 1% with sufficient depth and informative markers.
+Several limitations of the current work should be noted. First, the limit of detection has not been formally characterized following AMP guidelines, though the mathematical framework supports detection below 1% with sufficient depth and informative markers.
 
 {# TODO: Add results from clinical validation once available #}
 {# Planned validation studies: #}
@@ -42,7 +42,7 @@ Several limitations of the current work should be noted. First, the validation p
 {# - Comparison of LOD with commercial tools on matched samples #}
 {# - VariantGrid integration for production deployment #}
 
-Future development priorities include formal analytical validation following AMP guidelines, multi-donor support, integration with the VariantGrid clinical genomics platform for production deployment, and longitudinal monitoring features including trend analysis and alerting for clinically significant chimerism changes.
+Future development priorities include formal analytical validation following AMP guidelines, integration with the VariantGrid clinical genomics platform for production deployment, and longitudinal monitoring features including trend analysis and alerting for clinically significant chimerism changes.
 
 ## Conclusions
 

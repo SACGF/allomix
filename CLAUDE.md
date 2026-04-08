@@ -114,9 +114,9 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 The paper build uses Snakemake (`Snakefile` in repo root). All 7 validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
 ```bash
-snakemake -s paper/Snakefile -j 7              # full parallel build
-snakemake -s paper/Snakefile -j 7 --forceall   # force rerun everything
-snakemake -s paper/Snakefile paper             # render paper only (facts must exist)
+snakemake -s paper/Snakefile --cores $(nproc)              # full parallel build
+snakemake -s paper/Snakefile --cores $(nproc) --forceall   # force rerun everything
+snakemake -s paper/Snakefile --cores 1 paper               # render paper only (facts must exist)
 snakemake -s paper/Snakefile clean             # remove generated output
 ```
 

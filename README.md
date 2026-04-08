@@ -31,7 +31,7 @@ For development:
 ```bash
 git clone https://github.com/dlawrence/allomix.git
 cd allomix
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
 
 ## Workflow
@@ -196,10 +196,10 @@ data/                 # De-identified example VCFs
 The paper build is orchestrated by Snakemake. All validation and figure scripts run in parallel, then vibepaper renders the final Word document from the facts they produce.
 
 ```bash
-pip install snakemake                          # if not already installed
-snakemake -s paper/Snakefile -j 7              # run all 7 scripts in parallel, then build paper
-snakemake -s paper/Snakefile -j 7 --forceall   # force rerun everything from scratch
-snakemake -s paper/Snakefile paper             # just render the paper (assumes facts already exist)
+uv pip install -e ".[paper]"                   # install paper dependencies (matplotlib, snakemake, vibepaper)
+snakemake -s paper/Snakefile --cores $(nproc)              # run all scripts in parallel, then build paper
+snakemake -s paper/Snakefile --cores $(nproc) --forceall   # force rerun everything from scratch
+snakemake -s paper/Snakefile --cores 1 paper               # just render the paper (assumes facts already exist)
 snakemake -s paper/Snakefile clean             # remove all generated output
 ```
 

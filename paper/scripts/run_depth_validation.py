@@ -236,7 +236,7 @@ def plot_results(
         box_data.append(abs_errors)
         box_labels.append(f"{depth}x")
 
-    bp = ax.boxplot(
+    ax.boxplot(
         box_data, tick_labels=box_labels, patch_artist=True,
         boxprops=dict(facecolor="steelblue", alpha=0.6),
         medianprops=dict(color="firebrick", linewidth=2),

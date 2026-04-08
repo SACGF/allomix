@@ -20,7 +20,7 @@ def write_truth_table(
     """
     if fieldnames is None:
         fieldnames = list(rows[0].keys())
-    with open(path, "w", newline="") as fh:
+    with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         writer.writerows(rows)

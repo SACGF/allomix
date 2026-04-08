@@ -333,12 +333,12 @@ def main(argv: list[str] | None = None) -> int:
     print("PANEL CHARACTERISATION SUMMARY")
     print("=" * 65)
 
-    print(f"\n--- DATA ---")
+    print("\n--- DATA ---")
     print(f"VCF files processed:         {n_vcfs}")
     print(f"Total samples:               {n_total_samples}")
     print(f"Total markers (biallelic):    {n_markers}")
 
-    print(f"\n--- LOCUS DROPOUT ---")
+    print("\n--- LOCUS DROPOUT ---")
     nocall_sorted = sorted(all_nocall_rates)
     mean_nocall = sum(all_nocall_rates) / len(all_nocall_rates) if all_nocall_rates else 0
     print(f"  Mean no-call rate/marker:  {mean_nocall:.4f} ({mean_nocall*100:.2f}%)")
@@ -350,13 +350,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if sample_nocall_rates:
         sample_nc_sorted = sorted(sample_nocall_rates)
-        print(f"\n  Per-sample no-call rate:")
+        print("\n  Per-sample no-call rate:")
         print(f"    Mean:                    {sum(sample_nocall_rates)/len(sample_nocall_rates):.4f}")
         print(f"    Median:                  {_percentile(sample_nc_sorted, 50):.4f}")
         print(f"    95th pct:                {_percentile(sample_nc_sorted, 95):.4f}")
         print(f"    Max:                     {max(sample_nocall_rates):.4f}")
 
-    print(f"\n--- DEPTH ---")
+    print("\n--- DEPTH ---")
     if all_mean_depths:
         depths_sorted = sorted(all_mean_depths)
         print(f"  Mean depth/marker:         {sum(all_mean_depths)/len(all_mean_depths):.0f}x")
@@ -368,12 +368,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Mean depth CV/marker:      {sum(all_depth_cvs_marker)/len(all_depth_cvs_marker):.3f}")
     if sample_depth_cvs:
         scv_sorted = sorted(sample_depth_cvs)
-        print(f"\n  Depth uniformity (per-sample CV across markers):")
+        print("\n  Depth uniformity (per-sample CV across markers):")
         print(f"    Mean CV:                 {sum(sample_depth_cvs)/len(sample_depth_cvs):.3f}")
         print(f"    Median CV:               {_percentile(scv_sorted, 50):.3f}")
         print(f"    95th pct CV:             {_percentile(scv_sorted, 95):.3f}")
 
-    print(f"\n--- AMPLIFICATION BIAS ---")
+    print("\n--- AMPLIFICATION BIAS ---")
     print(f"  Markers with het obs:      {n_bias_markers}")
     print(f"  Total het observations:    {n_het_total}")
     print(f"  Skipped (low depth):       {n_skipped_dp}")
@@ -387,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  95th pct |bias|:           {_percentile(abs_biases_sorted, 95):.4f}")
         print(f"  Max |bias|:                {max(all_abs_biases):.4f}")
 
-    print(f"\n--- ALLELE DROPOUT SIGNAL (het/hom ratio vs HWE) ---")
+    print("\n--- ALLELE DROPOUT SIGNAL (het/hom ratio vs HWE) ---")
     if all_het_ratios:
         hr_sorted = sorted(all_het_ratios)
         mean_hr = sum(all_het_ratios) / len(all_het_ratios)
@@ -398,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         markers_low_het = sum(1 for r in all_het_ratios if r < LOW_HET_RATIO_THRESHOLD)
         print(f"  Markers with ratio < {LOW_HET_RATIO_THRESHOLD}:  {markers_low_het}/{len(all_het_ratios)}")
 
-    print(f"\n--- SIMULATION PARAMETERS ---")
+    print("\n--- SIMULATION PARAMETERS ---")
     if n_bias_markers > 0:
         print(f"  >>> --bias-sd {overall_sd_bias:.3f}")
     print(f"  >>> --locus-dropout-rate {mean_nocall:.4f}")

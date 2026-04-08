@@ -57,7 +57,7 @@ def parse_vcf(path: str | Path) -> tuple[list[str], list[VcfRecord]]:
     """
     header: list[str] = []
     records: list[VcfRecord] = []
-    with open(path) as fh:
+    with open(path, encoding="utf-8") as fh:
         for line in fh:
             line = line.rstrip("\n")
             if line.startswith("#"):
@@ -290,10 +290,9 @@ def gt_from_counts(ref_count: int, alt_count: int) -> str:
     af = alt_count / total
     if af < 0.05:
         return "0/0"
-    elif af > 0.95:
+    if af > 0.95:
         return "1/1"
-    else:
-        return "0/1"
+    return "0/1"
 
 
 # ---------------------------------------------------------------------------
@@ -463,14 +462,13 @@ def _draw_related_genotype(
     if r < ibd_probs[0]:
         # IBD=0: independent draw
         return _draw_genotype(p_alt, rng)
-    elif r < ibd_probs[0] + ibd_probs[1]:
+    if r < ibd_probs[0] + ibd_probs[1]:
         # IBD=1: share one allele, draw the other independently
         shared = host_gt[rng.randint(0, 1)]
         other = 1 if rng.random() < p_alt else 0
         return (shared, other) if rng.random() < 0.5 else (other, shared)
-    else:
-        # IBD=2: identical genotype
-        return host_gt
+    # IBD=2: identical genotype
+    return host_gt
 
 
 def generate_related_genotypes(
@@ -624,7 +622,7 @@ def write_genotype_vcf(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("##fileformat=VCFv4.2\n")
         f.write("##contig=<ID=chr1,length=248956422>\n")
         f.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">\n')
@@ -869,7 +867,7 @@ def write_vcf(result: BlendResult, path: str | Path) -> None:
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         for line in result.header:
             fh.write(line + "\n")
         for line in result.records:

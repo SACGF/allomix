@@ -88,8 +88,6 @@ def statsmodels_dispersion(markers, f_donor, error_rate):
     # Binomial GLM: endog = successes/trials, offset = logit(expected_p)
     # No covariates (intercept-free) — the offset fully specifies the expected value
     endog = np.column_stack([successes, trials - successes])
-    exog = np.zeros((len(successes), 0))  # no covariates
-
     # Use GLM with offset only — fit with 0 free parameters
     model = sm.GLM(
         endog,
@@ -167,9 +165,8 @@ def main() -> int:
     if all_match:
         log.info("All fractions match — allomix overdispersion agrees with statsmodels GLM.")
         return 0
-    else:
-        log.error("MISMATCH detected — investigate differences above.")
-        return 1
+    log.error("MISMATCH detected — investigate differences above.")
+    return 1
 
 
 if __name__ == "__main__":

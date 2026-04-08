@@ -73,7 +73,8 @@ Dev: `pytest`, `pytest-cov`, `ruff`
 Install for development:
 
 ```bash
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"  # preferred if uv is available
+pip install -e ".[dev]"     # fallback
 ```
 
 ### Testing
@@ -88,6 +89,12 @@ pip install -e ".[dev]"
 - Use `ruff` for linting and formatting: `ruff check src/ tests/` and `ruff format src/ tests/`
 - Config is in `pyproject.toml` — line length 100, target py310
 - Lint rules: E, F, I (isort), W, UP (pyupgrade)
+
+### Writing Style (Paper and Comments)
+
+- Do not use em-dashes. Use commas, parentheses, or separate sentences instead.
+- Avoid other common AI tells: "furthermore", "moreover", "notably", "importantly", "leveraging", "harnessing", "utilizing", "seamlessly", "robust", "comprehensive", "delve", "pivotal", "crucial", "multifaceted", "holistic", "nuanced", "underscores", "landscape" (when not literal).
+- Write in plain, direct scientific English.
 
 ### Code Style
 

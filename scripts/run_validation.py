@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import math
 import sys
 from pathlib import Path
@@ -40,6 +41,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from allomix.chimerism import estimate_single_donor  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.qc import assess_quality  # noqa: E402
+
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
+log = logging.getLogger(__name__)
 
 
 def run_sample(
@@ -147,11 +158,7 @@ def write_summary_tsv(metrics: dict, path: Path) -> None:
 
 def try_plot(rows: list[dict], outdir: Path) -> bool:
     """Generate validation plots. Returns False if matplotlib unavailable."""
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
+    if not HAS_MATPLOTLIB:
         return False
 
     truths = [r["true_donor_fraction"] * 100 for r in rows]
@@ -230,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
         "--error-rate", type=float, default=0.01, help="Sequencing error rate",
     )
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -248,10 +256,10 @@ def main(argv: list[str] | None = None) -> int:
         vcf_path = vcf_dir / f"{sample_name}.vcf"
 
         if not vcf_path.exists():
-            print(f"WARNING: {vcf_path} not found, skipping", file=sys.stderr)
+            log.warning("%s not found, skipping", vcf_path)
             continue
 
-        print(f"Running {sample_name} (truth={true_frac * 100:.1f}%) ...", file=sys.stderr)
+        log.info("Running %s (truth=%.1f%%) ...", sample_name, true_frac * 100)
 
         result = run_sample(
             args.host, args.donor, str(vcf_path),
@@ -278,41 +286,40 @@ def main(argv: list[str] | None = None) -> int:
         })
 
     if not rows:
-        print("ERROR: No samples processed", file=sys.stderr)
+        log.error("No samples processed")
         return 1
 
     # Write per-sample results
     results_path = outdir / "validation_results.tsv"
     write_results_tsv(rows, results_path)
-    print(f"\nPer-sample results: {results_path}", file=sys.stderr)
+    log.info("Per-sample results: %s", results_path)
 
     # Compute and write summary
     metrics = compute_metrics(rows)
     summary_path = outdir / "validation_summary.tsv"
     write_summary_tsv(metrics, summary_path)
-    print(f"Summary metrics: {summary_path}", file=sys.stderr)
+    log.info("Summary metrics: %s", summary_path)
 
-    # Print summary to stderr
-    print(f"\n{'='*50}", file=sys.stderr)
-    print("VALIDATION SUMMARY", file=sys.stderr)
-    print(f"{'='*50}", file=sys.stderr)
-    print(f"  Samples:            {metrics['n_samples']}", file=sys.stderr)
-    print(f"  Mean signed error:  {metrics['mean_signed_error_pct']:+.4f}%", file=sys.stderr)
-    print(f"  Mean abs error:     {metrics['mean_abs_error_pct']:.4f}%", file=sys.stderr)
-    print(f"  RMSE:               {metrics['rmse_pct']:.4f}%", file=sys.stderr)
-    print(f"  Max abs error:      {metrics['max_abs_error_pct']:.4f}%", file=sys.stderr)
-    print(f"  CI coverage rate:   {metrics['ci_coverage_rate']:.1%}", file=sys.stderr)
-    print(f"  Mean CI width:      {metrics['mean_ci_width_pct']:.4f}%", file=sys.stderr)
-    print(f"{'='*50}", file=sys.stderr)
+    # Log summary
+    log.info("")
+    log.info("=" * 50)
+    log.info("VALIDATION SUMMARY")
+    log.info("=" * 50)
+    log.info("  Samples:            %d", metrics["n_samples"])
+    log.info("  Mean signed error:  %+.4f%%", metrics["mean_signed_error_pct"])
+    log.info("  Mean abs error:     %.4f%%", metrics["mean_abs_error_pct"])
+    log.info("  RMSE:               %.4f%%", metrics["rmse_pct"])
+    log.info("  Max abs error:      %.4f%%", metrics["max_abs_error_pct"])
+    log.info("  CI coverage rate:   %.1f%%", metrics["ci_coverage_rate"] * 100)
+    log.info("  Mean CI width:      %.4f%%", metrics["mean_ci_width_pct"])
+    log.info("=" * 50)
 
     # Try to generate plots
     if try_plot(rows, outdir):
-        print(f"\nPlots saved to {outdir}/", file=sys.stderr)
+        log.info("Plots saved to %s/", outdir)
     else:
-        print(
-            "\nmatplotlib not available — skipping plots. "
-            "Install with: pip install matplotlib",
-            file=sys.stderr,
+        log.warning(
+            "matplotlib not available — skipping plots. Install with: pip install matplotlib"
         )
 
     return 0

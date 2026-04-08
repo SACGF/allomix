@@ -24,10 +24,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
+import logging
 import math
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+try:
+    from cyvcf2 import VCF
+except ImportError:
+    VCF = None
+
+log = logging.getLogger(__name__)
 
 # Thresholds for panel characterisation
 EXPECTED_HET_VAF = 0.5  # ideal heterozygous variant allele frequency
@@ -78,6 +87,11 @@ def _cv(vals: list[float]) -> float:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    if VCF is None:
+        log.error("cyvcf2 required. Install with: pip install cyvcf2")
+        return 1
 
     vcf_paths = []
     with open(args.vcf_list) as f:
@@ -87,16 +101,10 @@ def main(argv: list[str] | None = None) -> int:
                 vcf_paths.append(line)
 
     if not vcf_paths:
-        print("ERROR: no VCF paths found in input file", file=sys.stderr)
+        log.error("no VCF paths found in input file")
         return 1
 
-    print(f"Processing {len(vcf_paths)} VCFs ...", file=sys.stderr)
-
-    try:
-        from cyvcf2 import VCF
-    except ImportError:
-        print("ERROR: cyvcf2 required. Install with: pip install cyvcf2", file=sys.stderr)
-        return 1
+    log.info("Processing %d VCFs ...", len(vcf_paths))
 
     # --- Per-marker accumulators ---
     # key = (chrom, pos, ref, alt)
@@ -119,13 +127,13 @@ def main(argv: list[str] | None = None) -> int:
 
     for vi, vcf_path in enumerate(vcf_paths):
         if not Path(vcf_path).exists():
-            print(f"  WARNING: {vcf_path} not found, skipping", file=sys.stderr)
+            log.warning("%s not found, skipping", vcf_path)
             continue
 
         try:
             vcf = VCF(vcf_path)
         except Exception as e:
-            print(f"  WARNING: failed to open {vcf_path}: {e}", file=sys.stderr)
+            log.warning("failed to open %s: %s", vcf_path, e)
             continue
 
         n_vcfs += 1
@@ -217,14 +225,13 @@ def main(argv: list[str] | None = None) -> int:
                 sample_nocall_rates.append(sample_nocalls_this_vcf[si] / sample_total_markers[si])
 
         if (vi + 1) % 10 == 0 or (vi + 1) == len(vcf_paths):
-            print(
-                f"  Processed {vi+1}/{len(vcf_paths)} VCFs "
-                f"({n_total_samples} samples, {n_het_total} het obs)",
-                file=sys.stderr,
+            log.info(
+                "Processed %d/%d VCFs (%d samples, %d het obs)",
+                vi + 1, len(vcf_paths), n_total_samples, n_het_total,
             )
 
     if not marker_gt_counts:
-        print("ERROR: no variant observations found", file=sys.stderr)
+        log.error("no variant observations found")
         return 1
 
     # =====================================================================
@@ -436,10 +443,9 @@ def main(argv: list[str] | None = None) -> int:
                     f"{s['sd_within']:.6f}" if not math.isnan(s["sd_within"]) else "NA",
                 ]
                 f.write("\t".join(vals) + "\n")
-        print(f"\nPer-marker detail: {per_marker_path}", file=sys.stderr)
+        log.info("Per-marker detail: %s", per_marker_path)
 
         # --- vibepaper facts CSV (single-row, horizontal format) ---
-        import csv
         facts_path = f"{args.output}_facts.csv"
         mean_depth_val = sum(all_mean_depths) / len(all_mean_depths) if all_mean_depths else 0
         mean_sample_cv = sum(sample_depth_cvs) / len(sample_depth_cvs) if sample_depth_cvs else 0
@@ -472,8 +478,8 @@ def main(argv: list[str] | None = None) -> int:
             writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
             writer.writeheader()
             writer.writerow(facts)
-        print(f"Facts CSV: {facts_path}", file=sys.stderr)
-        print(f"  Copy to output/facts/panel_empirical.csv for vibepaper", file=sys.stderr)
+        log.info("Facts CSV: %s", facts_path)
+        log.info("  Copy to output/facts/panel_empirical.csv for vibepaper")
 
     return 0
 

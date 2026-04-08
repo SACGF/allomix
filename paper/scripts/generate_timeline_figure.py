@@ -19,13 +19,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor
+from allomix.chimerism import estimate_single_donor_bb
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.simulate import (
     blend_vcfs,
     generate_marker_biases_realistic,
-    parse_vcf as sim_parse_vcf,
     write_vcf,
+)
+from allomix.simulate import (
+    parse_vcf as sim_parse_vcf,
 )
 
 FACTS_DIR = Path("output/facts")
@@ -100,7 +102,7 @@ def run_timeline(
             genotypes = classify_markers(
                 host, [donor], admix, min_dp=0, min_gq=0, pass_only=False
             )
-            est = estimate_single_donor(genotypes.informative, error_rate=ERROR_RATE)
+            est = estimate_single_donor_bb(genotypes.informative, error_rate=ERROR_RATE)
 
             error = est.donor_fraction - tp["donor_frac"]
             ci_covers = est.donor_fraction_ci[0] <= tp["donor_frac"] <= est.donor_fraction_ci[1]

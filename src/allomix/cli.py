@@ -63,7 +63,7 @@ def _run_single_sample(
 
     Returns (ChimerismResult | MultiDonorResult, QCReport, MarkerGenotypes).
     """
-    from allomix.chimerism import estimate_multi_donor, estimate_single_donor
+    from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
     from allomix.genotype import classify_markers, parse_vcf
     from allomix.qc import assess_quality
 
@@ -75,7 +75,7 @@ def _run_single_sample(
     genotypes.sample_name = Path(sample_path).stem
 
     if len(donor_paths) == 1:
-        result = estimate_single_donor(
+        result = estimate_single_donor_bb(
             genotypes.informative,
             error_rate=error_rate,
             marker_biases=marker_biases,

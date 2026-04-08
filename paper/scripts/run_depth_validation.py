@@ -24,13 +24,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor
+from allomix.chimerism import estimate_single_donor_bb
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.simulate import (
     blend_vcfs,
     generate_marker_biases_realistic,
-    parse_vcf as sim_parse_vcf,
     write_vcf,
+)
+from allomix.simulate import (
+    parse_vcf as sim_parse_vcf,
 )
 
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
@@ -96,7 +98,7 @@ def generate_and_run(
         admix = parse_vcf(vcf_path, min_dp=0, min_gq=0)
 
         genotypes = classify_markers(host, [donor], admix, min_dp=0, min_gq=0, pass_only=False)
-        result = estimate_single_donor(
+        result = estimate_single_donor_bb(
             genotypes.informative, error_rate=0.01, marker_biases=marker_biases,
         )
 

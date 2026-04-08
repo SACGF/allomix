@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -25,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from script_utils import write_truth_table  # noqa: E402
 
 from allomix.simulate import blend_vcfs, write_vcf  # noqa: E402
+
+log = logging.getLogger(__name__)
 
 DEFAULT_FRACTIONS = [
     0.0, 0.001, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 0.80, 0.95, 0.99, 1.0,
@@ -76,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     fractions = args.fractions if args.fractions is not None else DEFAULT_FRACTIONS
     outdir = Path(args.outdir)
@@ -87,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         sample_name = _fraction_to_filename(frac)
         vcf_name = f"{sample_name}.vcf"
 
-        print(f"Generating {vcf_name} (donor fraction = {frac:.4f}) ...", file=sys.stderr)
+        log.info("Generating %s (donor fraction = %.4f) ...", vcf_name, frac)
 
         result = blend_vcfs(
             host_path=args.host,
@@ -116,8 +120,8 @@ def main(argv: list[str] | None = None) -> int:
         fieldnames=["sample_name", "true_donor_fraction", "num_markers", "num_informative"],
     )
 
-    print(f"\nGenerated {len(fractions)} VCFs in {outdir}/", file=sys.stderr)
-    print(f"Truth table: {truth_path}", file=sys.stderr)
+    log.info("Generated %d VCFs in %s/", len(fractions), outdir)
+    log.info("Truth table: %s", truth_path)
     return 0
 
 

@@ -17,12 +17,15 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import numpy as np
+import statsmodels.api as sm
+from scipy.special import logit
 
 from allomix.chimerism import (
     _compute_overdispersion,
@@ -31,6 +34,8 @@ from allomix.chimerism import (
 )
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.simulate import blend_vcfs, write_vcf
+
+log = logging.getLogger(__name__)
 
 
 def allomix_overdispersion(markers, f_donor, error_rate):
@@ -59,9 +64,6 @@ def statsmodels_dispersion(markers, f_donor, error_rate):
     expected probability from our mixture model) and no free parameters,
     then extract pearson_chi2 / df_resid.
     """
-    import statsmodels.api as sm
-    from scipy.special import logit
-
     successes = []
     trials = []
     offsets = []
@@ -103,7 +105,8 @@ def statsmodels_dispersion(markers, f_donor, error_rate):
 
 
 def main() -> int:
-    print("Verifying allomix overdispersion against statsmodels GLM...\n")
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    log.info("Verifying allomix overdispersion against statsmodels GLM...")
 
     host_vcf = "tests/test_data/host.vcf"
     donor_vcf = "tests/test_data/donor.vcf"
@@ -153,16 +156,19 @@ def main() -> int:
         if status == "FAIL":
             all_match = False
 
-        print(f"  f_true={frac:.2f}  f_mle={f_mle:.4f}  n_markers={len(resid_sq)}")
-        print(f"    allomix:     chi2={chi2_allomix:.4f}  df={df_allomix}  phi={phi_allomix:.4f}")
-        print(f"    statsmodels: chi2={chi2_sm:.4f}  df={df_sm:.0f}  phi={phi_sm:.4f}")
-        print(f"    [{status}]\n")
+        log.info("  f_true=%.2f  f_mle=%.4f  n_markers=%d", frac, f_mle, len(resid_sq))
+        log.info(
+            "    allomix:     chi2=%.4f  df=%d  phi=%.4f",
+            chi2_allomix, df_allomix, phi_allomix,
+        )
+        log.info("    statsmodels: chi2=%.4f  df=%d  phi=%.4f", chi2_sm, int(df_sm), phi_sm)
+        log.info("    [%s]", status)
 
     if all_match:
-        print("All fractions match — allomix overdispersion agrees with statsmodels GLM.")
+        log.info("All fractions match — allomix overdispersion agrees with statsmodels GLM.")
         return 0
     else:
-        print("MISMATCH detected — investigate differences above.")
+        log.error("MISMATCH detected — investigate differences above.")
         return 1
 
 

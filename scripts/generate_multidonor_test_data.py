@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import random
 import sys
 from pathlib import Path
@@ -27,6 +28,8 @@ from allomix.simulate import (  # noqa: E402
     write_genotype_vcf,
     write_vcf,
 )
+
+log = logging.getLogger(__name__)
 
 # Simulation parameters matching the allomix MLE error model
 DEFAULT_ERROR_RATE = 0.01  # per-read sequencing error probability
@@ -80,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--depth", type=int, default=1000, help="Mean sequencing depth")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -98,11 +102,11 @@ def main(argv: list[str] | None = None) -> int:
     n_inf_d2 = sum(1 for m in markers if m["informative_d2"])
     n_inf_any = sum(1 for m in markers if m["informative_any"])
     n_distinguishable = sum(1 for m in markers if m["donors_distinguishable"])
-    print(f"Markers: {args.n_markers}", file=sys.stderr)
-    print(f"  Informative for donor1: {n_inf_d1}", file=sys.stderr)
-    print(f"  Informative for donor2: {n_inf_d2}", file=sys.stderr)
-    print(f"  Informative for any donor: {n_inf_any}", file=sys.stderr)
-    print(f"  Donors distinguishable: {n_distinguishable}", file=sys.stderr)
+    log.info("Markers: %d", args.n_markers)
+    log.info("  Informative for donor1: %d", n_inf_d1)
+    log.info("  Informative for donor2: %d", n_inf_d2)
+    log.info("  Informative for any donor: %d", n_inf_any)
+    log.info("  Donors distinguishable: %d", n_distinguishable)
 
     # Generate chimeric VCFs at grid points
     truth_rows = []
@@ -130,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     # Write truth table
     write_truth_table(truth_rows, outdir / "truth_table.tsv")
 
-    print(f"\nGenerated {len(MIXTURE_GRID)} chimeric VCFs in {outdir}/", file=sys.stderr)
+    log.info("Generated %d chimeric VCFs in %s/", len(MIXTURE_GRID), outdir)
 
     return 0
 

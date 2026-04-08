@@ -4,7 +4,7 @@ We have presented allomix, an open-source tool that enables donor chimerism moni
 
 ### Accuracy and Performance
 
-In silico validation demonstrated sub-percentage-point mean absolute error across all sequencing depths tested (50x to 1,000x), with MAE ranging from {{ depth_50.mean_abs_error_pct | dp(2) }}% at 50x to {{ depth_1000.mean_abs_error_pct | dp(2) }}% at 1,000x depth. Maximum single-sample errors ranged from {{ depth_50.max_abs_error_pct | dp(2) }}% at 50x to {{ depth_1000.max_abs_error_pct | dp(2) }}% at 1,000x. This level of accuracy is competitive with published performance metrics from commercial tools. Kakodkar et al. reported mean absolute errors of 0.3–1.5% for AlloSeq HCT across various donor fractions,[@Kakodkar2023alloseq] while Pedini et al. demonstrated comparable precision for the Devyser system at high sequencing depths.[@Pedini2021devyser]
+In silico validation demonstrated <1% mean absolute error across all sequencing depths tested (50x to 1,000x), with MAE ranging from {{ depth_50.mean_abs_error_pct | dp(2) }}% at 50x to {{ depth_1000.mean_abs_error_pct | dp(2) }}% at 1,000x depth. Maximum single-sample errors ranged from {{ depth_50.max_abs_error_pct | dp(2) }}% at 50x to {{ depth_1000.max_abs_error_pct | dp(2) }}% at 1,000x. This level of accuracy is competitive with published performance metrics from commercial tools. Kakodkar et al. reported mean absolute errors of 0.3–1.5% for AlloSeq HCT across various donor fractions,[@Kakodkar2023alloseq] while Pedini et al. demonstrated comparable precision for the Devyser system at high sequencing depths.[@Pedini2021devyser]
 
 The largest estimation errors were observed at boundary fractions (0% and 100% donor), where per-marker amplification biases have the greatest relative impact. This is consistent with the observations of De Vynck et al., who demonstrated that systematic capture biases cause the largest quantitative distortion when the true minor component is near zero.[@Vynck2023bias] When bias correction was applied with known per-marker biases, boundary estimates improved (e.g., 0% donor: {{ bias_no_bias.est_0pct }}% uncorrected vs {{ bias_with_bias.est_0pct }}% corrected).
 
@@ -26,7 +26,7 @@ De Vynck et al. have shown that as few as 3 informative markers are sufficient f
 
 ### Clinical Workflow Considerations
 
-allomix is designed for integration into standard clinical genomics pipelines. By accepting VCF files as input rather than raw sequencing data, it decouples chimerism analysis from upstream alignment and variant calling, allowing laboratories to use their established bioinformatics infrastructure. The tool's output formats (TSV and JSON) support integration with laboratory information management systems and clinical reporting workflows.
+allomix is designed for integration into standard clinical genomics pipelines. By accepting VCF files as input rather than raw sequencing data, it decouples chimerism analysis from upstream alignment and variant calling, allowing laboratories to use their established bioinformatics infrastructure. The tool's output formats (TSV and JSON) support integration with laboratory information management systems and clinical reporting workflows. For longitudinal monitoring, the `timeline` subcommand consolidates serial timepoint estimates into a single report, directly supporting the clinical workflow of tracking engraftment trajectory over weeks to months post-transplant.
 
 A critical implementation consideration is the requirement for joint variant calling of admixture samples alongside donor and host genotyping samples. When admixture samples are called independently, sites where the minor component is below the variant calling threshold may be reported as homozygous-reference with only a single-element AD field, losing the informative read count data. Joint calling ensures that all markers genotyped in the donor are represented with full AD information in the admixture sample, even at very low donor fractions.
 
@@ -46,4 +46,4 @@ Future development priorities include formal analytical validation following AMP
 
 ## Conclusions
 
-allomix enables laboratories to repurpose polymorphic markers already present in their clinical NGS panels for donor chimerism monitoring after HSCT, achieving sub-percentage-point accuracy in silico without requiring a dedicated assay, additional reagents, or proprietary software. Clinical validation studies are underway.
+allomix enables laboratories to repurpose polymorphic markers already present in their clinical NGS panels for donor chimerism monitoring after HSCT, achieving <1% mean absolute error in silico without requiring a dedicated assay, additional reagents, or proprietary software. Clinical validation studies are underway.

@@ -11,39 +11,7 @@ from dataclasses import dataclass, field
 
 from scipy.stats import chi2
 
-try:
-    from allomix.chimerism import ChimerismResult, MarkerResult
-except ImportError:
-
-    @dataclass
-    class MarkerResult:
-        """Per-marker result from chimerism estimation."""
-
-        chrom: str
-        pos: int
-        marker_type: int
-        expected_vaf: float
-        observed_vaf: float
-        residual: float
-        ad_ref: int
-        ad_alt: int
-        dp: int
-        included: bool
-
-    @dataclass
-    class ChimerismResult:
-        """Result of single-donor chimerism estimation."""
-
-        donor_fraction: float
-        donor_fraction_ci: tuple[float, float]
-        host_fraction: float
-        log_likelihood: float
-        n_informative: int
-        n_markers_used: int
-        per_marker: list[MarkerResult]
-        error_rate: float
-
-
+from allomix.chimerism import ChimerismResult, MarkerResult
 from allomix.genotype import MarkerGenotypes
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from allomix.bias import (
@@ -275,8 +277,6 @@ class TestTotalLogLikelihoodWithBias:
 class TestEstimateSingleDonorWithBias:
     def _make_biased_markers(self, true_f, biases_map, depth=2000):
         """Create markers where observed counts reflect a systematic bias."""
-        import random
-
         rng = random.Random(42)
         markers = []
         # Create type 0 markers (host 0/0, donor 1/1)
@@ -362,8 +362,6 @@ class TestEstimateSingleDonorWithBias:
 
     def test_ci_coverage_improves_with_bias_correction(self):
         """Bias correction should help CIs cover the truth more often."""
-        import random
-
         rng = random.Random(123)
 
         covers_no_bias = 0

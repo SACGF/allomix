@@ -9,13 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TextIO
 
-try:
-    from allomix.chimerism import ChimerismResult, MultiDonorResult
-except ImportError:
-    from allomix.qc import ChimerismResult  # type: ignore[assignment]
-
-    MultiDonorResult = None  # type: ignore[assignment,misc]
-
+from allomix.chimerism import ChimerismResult, MultiDonorResult
 from allomix.qc import QCReport
 
 

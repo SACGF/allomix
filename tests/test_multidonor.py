@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import random
+import tempfile
 from io import StringIO
 from pathlib import Path
 
@@ -25,7 +26,8 @@ from allomix.chimerism import (
     expected_weight_multi,
     total_log_likelihood_multi_bb,
 )
-from allomix.genotype import InformativeMarker, classify_markers, parse_vcf
+from allomix.cli import main
+from allomix.genotype import InformativeMarker, classify_markers, marker_type, parse_vcf
 from allomix.qc import assess_quality
 from allomix.report import timeline_json, to_json, to_tsv
 from allomix.simulate import (
@@ -56,8 +58,6 @@ def _make_marker(
     pos: int = 100,
 ) -> InformativeMarker:
     """Create an InformativeMarker for testing."""
-    from allomix.genotype import marker_type
-
     mt1 = marker_type(host_gt, donor1_gt)
     mt2 = marker_type(host_gt, donor2_gt)
     mtype = mt1 if mt1 is not None else mt2
@@ -97,8 +97,6 @@ def _make_sibling_markers_and_blend(
     )
 
     # Write to tmp files and parse with cyvcf2 via genotype module
-    import tempfile
-
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         write_genotype_vcf(markers, tmpdir / "host.vcf", "HOST", key="host_gt")
@@ -487,8 +485,6 @@ class TestMultiDonorCLI:
     """Test CLI with multi-donor inputs."""
 
     def test_monitor_json(self, tmp_path):
-        from allomix.cli import main
-
         out = tmp_path / "result.json"
         rc = main(
             [
@@ -517,8 +513,6 @@ class TestMultiDonorCLI:
         assert len(data["donors"]) == 2
 
     def test_monitor_tsv(self, tmp_path):
-        from allomix.cli import main
-
         out = tmp_path / "result.tsv"
         rc = main(
             [
@@ -544,8 +538,6 @@ class TestMultiDonorCLI:
         assert "donor1_pct" in content
 
     def test_timeline(self, tmp_path):
-        from allomix.cli import main
-
         out = tmp_path / "timeline.json"
         rc = main(
             [
@@ -574,8 +566,6 @@ class TestMultiDonorCLI:
 
     def test_single_donor_still_works(self, tmp_path):
         """Single --donor should still use the single-donor estimator."""
-        from allomix.cli import main
-
         out = tmp_path / "single.json"
         rc = main(
             [

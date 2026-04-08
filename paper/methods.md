@@ -107,11 +107,11 @@ where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and
 
 2. **Non-uniform depth**: Per-marker depths are drawn from a log-normal distribution matching the empirically observed CV of {{ panel_empirical.mean_sample_depth_cv }} (Supplementary Table S1).
 
-3. **Sequencing errors**: Each read is mis-called with probability $\varepsilon$ = 0.01, matching the error rate in the likelihood model.
+3. **Sequencing errors**: The same 4-state (trinucleotide) error model used in the likelihood function is applied in simulation. Each read has probability $\varepsilon$ = 0.01 of being mis-called, with errors distributed uniformly among the three non-observed bases. Since only reference and alternative alleles are counted in VCF allele-depth fields, the observed alternative probability is the conditional $p_{alt} / (p_{ref} + p_{alt})$, where $p_{ref}$ and $p_{alt}$ are as defined in the likelihood model. This ensures the simulator and estimator use a consistent generative model.
 
 4. **Locus dropout**: Each marker has a {{ panel_empirical.mean_nocall_pct }}% probability of producing zero reads, based on the empirical no-call rate.
 
-Alternative allele counts are drawn from a binomial distribution with the biased, error-adjusted expected frequency and per-marker depth.
+Alternative allele counts are drawn from a binomial distribution with the biased, error-adjusted, and conditionally normalised expected frequency and per-marker depth.
 
 To evaluate longitudinal monitoring, we simulated a six-timepoint post-HSCT engraftment trajectory (day +14 to day +365) with true donor fractions ranging from 15% (early engraftment) to 97% (full donor chimerism), including a clinically relevant 3-percentage-point dip at day +180. Each timepoint was generated at 500x depth with the same noise model parameters as the depth validation, and five independent replicates were run with different random seeds.
 

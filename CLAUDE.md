@@ -80,6 +80,7 @@ pip install -e ".[dev]"     # fallback
 ### Testing
 
 - Use `pytest` for all tests: `pytest` from repo root
+- The full test suite is slow. During general development, run only the tests relevant to your changes (e.g. `pytest tests/test_cli.py -x -q` or `pytest -k "monitor" -x -q`). Only run the full suite when explicitly asked.
 - Tests go in `tests/` mirroring the `src/allomix/` module structure (e.g. `tests/test_genotype.py` for `allomix/genotype.py`)
 - Aim for unit tests on core calculation logic with known expected outputs
 - Use synthetic/fixture data rather than real patient data in tests

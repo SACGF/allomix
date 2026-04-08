@@ -267,6 +267,37 @@ def total_log_likelihood_bb(
     return ll
 
 
+def total_log_likelihood_multi_bb(
+    markers: list[InformativeMarker],
+    donor_fractions: list[float],
+    error_rate: float = 0.01,
+    rho: float = 100.0,
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+) -> float:
+    """Sum of per-marker beta-binomial log-likelihoods for multi-donor model.
+
+    Args:
+        markers: Informative markers (for at least one donor).
+        donor_fractions: [f_donor1, f_donor2, ...].
+        error_rate: Sequencing error rate.
+        rho: Beta-binomial concentration parameter.
+        marker_biases: Optional per-marker bias dict.
+
+    Returns:
+        Total log-likelihood.
+    """
+    ll = 0.0
+    for m in markers:
+        bias = 0.0
+        if marker_biases is not None:
+            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
+        ll += log_likelihood_marker_bb(
+            m.admix_ad_ref, m.admix_ad_alt, w, error_rate, rho
+        )
+    return ll
+
+
 def expected_weight_multi(
     host_gt: tuple[int, int],
     donor_gts: list[tuple[int, int]],
@@ -754,10 +785,13 @@ def estimate_multi_donor(
 ) -> MultiDonorResult:
     """Estimate multi-donor chimerism fractions via maximum likelihood.
 
+    Uses a beta-binomial likelihood to handle overdispersion, jointly
+    estimating donor fractions and the concentration parameter rho.
+
     Algorithm:
-        1. Triangular grid search over (f1, f2) with f1 + f2 <= 1
-        2. Nelder-Mead refinement from grid maximum
-        3. Profile likelihood CI per donor (chi-squared df=1 per donor)
+        1. Triangular grid search over (f1, f2) at fixed rho
+        2. Nelder-Mead refinement over (f1, f2, log_rho)
+        3. Profile likelihood CI per donor, profiling out other f and rho
         4. Per-marker residuals and outlier flagging
 
     Args:
@@ -791,7 +825,8 @@ def estimate_multi_donor(
             per_donor_n_informative=[0] * n_donors,
         )
 
-    # Step 1: Triangular grid search
+    # Step 1: Triangular grid search at fixed rho
+    rho_init = 100.0
     best_ll = -math.inf
     best_f = [0.0] * n_donors
     step = 1.0 / (grid_steps - 1)
@@ -806,37 +841,41 @@ def estimate_multi_donor(
             f2 = j * step
             if f1 + f2 > 1.0 + 1e-9:
                 break
-            ll = total_log_likelihood_multi(markers, [f1, f2], error_rate, marker_biases)
+            ll = total_log_likelihood_multi_bb(
+                markers, [f1, f2], error_rate, rho_init, marker_biases
+            )
             if ll > best_ll:
                 best_ll = ll
                 best_f = [f1, f2]
 
-    # Step 2: Nelder-Mead refinement
+    # Step 2: Nelder-Mead refinement over (f1, f2, log_rho)
     def neg_ll(x):
-        f1, f2 = x
+        f1, f2, log_rho = x
         if f1 < 0 or f2 < 0 or f1 + f2 > 1.0:
             return 1e30
-        return -total_log_likelihood_multi(markers, [f1, f2], error_rate, marker_biases)
+        rho = math.exp(log_rho)
+        if rho < 0.5 or rho > 50000:
+            return 1e30
+        return -total_log_likelihood_multi_bb(
+            markers, [f1, f2], error_rate, rho, marker_biases
+        )
 
     opt = minimize(
         neg_ll,
-        x0=best_f,
+        x0=[best_f[0], best_f[1], math.log(rho_init)],
         method="Nelder-Mead",
-        options={"xatol": 1e-5, "fatol": 1e-8, "maxiter": 2000},
+        options={"xatol": 1e-5, "fatol": 1e-8, "maxiter": 5000},
     )
 
-    f_mle = [max(0.0, float(x)) for x in opt.x]
+    f_mle = [max(0.0, float(x)) for x in opt.x[:2]]
     if sum(f_mle) > 1.0:
         scale = 1.0 / sum(f_mle)
         f_mle = [f * scale for f in f_mle]
     ll_max = -float(opt.fun)
 
-    # Compute overdispersion for robust CIs
-    phi = max(1.0, _compute_overdispersion_multi(markers, f_mle, error_rate, marker_biases))
-
-    # Step 3: Profile likelihood CIs per donor
+    # Step 3: Profile likelihood CIs per donor (profiling out other f and rho)
     cis = _profile_likelihood_cis_multi(
-        markers, f_mle, ll_max, n_donors, error_rate, marker_biases, phi
+        markers, f_mle, ll_max, n_donors, error_rate, marker_biases
     )
 
     # Step 4: Per-marker residuals
@@ -875,15 +914,15 @@ def _profile_likelihood_cis_multi(
     n_donors: int,
     error_rate: float,
     marker_biases: dict[tuple[str, int, str, str], float] | None,
-    phi: float = 1.0,
 ) -> list[tuple[float, float]]:
     """Profile likelihood CIs for each donor fraction.
 
-    For donor_i, scan f_i while optimizing f_j (j != i) at each point.
-    Uses chi2(df=1) threshold since we profile one parameter at a time,
-    inflated by phi to account for overdispersion.
+    For donor_i, scan f_i while optimizing f_j (j != i) and rho at each
+    point. Uses chi2(df=1) threshold since we profile one parameter at
+    a time. Overdispersion is handled by the beta-binomial likelihood
+    (via rho profiling) rather than by inflating the threshold.
     """
-    threshold = float(chi2.ppf(0.95, df=1)) * phi
+    threshold = float(chi2.ppf(0.95, df=1))
     half_threshold = threshold / 2.0
     cis: list[tuple[float, float]] = []
 
@@ -891,25 +930,41 @@ def _profile_likelihood_cis_multi(
         other_idx = 1 - donor_idx  # works for 2 donors
 
         def profile_ll(fi: float, _other=other_idx, _didx=donor_idx) -> float:
-            """Max LL over the other donor, with donor_idx fixed at fi."""
+            """Max LL over the other donor and rho, with donor_idx fixed at fi."""
             max_fj = max(0.0, 1.0 - fi)
             if max_fj < 1e-9:
+                # Only rho to optimise
                 fracs = [0.0, 0.0]
                 fracs[_didx] = fi
-                return total_log_likelihood_multi(markers, fracs, error_rate, marker_biases)
-            res = minimize_scalar(
-                lambda fj, _di=_didx: (
-                    -total_log_likelihood_multi(
-                        markers,
-                        [fi, fj] if _di == 0 else [fj, fi],
-                        error_rate,
-                        marker_biases,
-                    )
-                ),
-                bounds=(0.0, max_fj),
-                method="bounded",
+                opt_rho = minimize_scalar(
+                    lambda log_r: -total_log_likelihood_multi_bb(
+                        markers, fracs, error_rate, math.exp(log_r), marker_biases
+                    ),
+                    bounds=(math.log(1.0), math.log(10000.0)),
+                    method="bounded",
+                )
+                return -float(opt_rho.fun)
+
+            # Optimise over (fj, log_rho) jointly
+            def neg_ll_inner(x, _di=_didx):
+                fj, log_r = x
+                if fj < 0 or fj > max_fj:
+                    return 1e30
+                rho = math.exp(log_r)
+                if rho < 0.5 or rho > 50000:
+                    return 1e30
+                fracs = [fi, fj] if _di == 0 else [fj, fi]
+                return -total_log_likelihood_multi_bb(
+                    markers, fracs, error_rate, rho, marker_biases
+                )
+
+            opt = minimize(
+                neg_ll_inner,
+                x0=[f_mle[_other], math.log(100.0)],
+                method="Nelder-Mead",
+                options={"xatol": 1e-5, "fatol": 1e-8, "maxiter": 2000},
             )
-            return -float(res.fun)
+            return -float(opt.fun)
 
         def ci_func(fi: float, _pll=profile_ll) -> float:
             return ll_max - _pll(fi) - half_threshold

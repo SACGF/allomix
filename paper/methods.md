@@ -25,39 +25,51 @@ Types 0 and 1 are fully informative (maximum allelic contrast between host and d
 
 ### Maximum Likelihood Estimation
 
-The donor fraction is estimated by maximum likelihood. For a proposed donor fraction *f*, the expected reference allele weight at each informative marker is:
+The donor fraction is estimated by maximum likelihood using a beta-binomial model that accounts for extra-binomial variance (overdispersion) arising from per-marker amplification bias and depth variability.
+
+For a proposed donor fraction *f*, the expected reference allele weight at each informative marker is:
 
 $$w_i(f) = (1 - f) \cdot \frac{g_{h,i}}{2} + f \cdot \frac{g_{d,i}}{2}$$
 
 where $g_{h,i}$ and $g_{d,i}$ are the reference allele doses (0, 1, or 2) for the host and donor at marker *i*, respectively.
 
-To account for sequencing errors (base substitutions, polymerase errors), the observed allele probabilities are modeled as:
+To account for sequencing errors (base substitutions, polymerase errors), the observed allele probabilities are modeled using a 4-state (trinucleotide) error model:
 
-$$p_{ref,i} = w_i(1 - \varepsilon) + (1 - w_i)\frac{\varepsilon}{3}$$
+$$p_{alt,i} = (1 - w_i)(1 - \varepsilon) + w_i\frac{\varepsilon}{3}, \qquad p_{ref,i} = w_i(1 - \varepsilon) + (1 - w_i)\frac{\varepsilon}{3}$$
 
-$$p_{alt,i} = (1 - w_i)(1 - \varepsilon) + w_i\frac{\varepsilon}{3}$$
-
-where $\varepsilon$ is the per-base sequencing error rate (default 0.01). The factor of 3 distributes error probability among the three non-reference (or non-alternative) bases.
-
-The per-marker log-likelihood is:
-
-$$\ell_i(f) = n_{ref,i} \cdot \log(p_{ref,i}) + n_{alt,i} \cdot \log(p_{alt,i})$$
-
-where $n_{ref,i}$ and $n_{alt,i}$ are the observed reference and alternative allele read counts at marker *i*. The total log-likelihood across all *M* informative markers is:
-
-$$\mathcal{L}(f) = \sum_{i=1}^{M} \ell_i(f)$$
+where $\varepsilon$ is the per-base sequencing error rate (default 0.01). The factor of 3 distributes error probability among the three non-observed bases. Since VCF allele-depth fields count only reference and alternative alleles, the conditional probability used in the likelihood is $\tilde{p}_i = p_{alt,i} / (p_{ref,i} + p_{alt,i})$.
 
 This formulation uses the mixture genotype likelihood of Crysup and Woerner,[@CrysupWoerner2023] applied in the inverse direction. Crysup and Woerner derived Formula 5 for genotyping unknown contributors at a known mixture fraction; here we apply the same likelihood to estimate the mixture fraction given known contributor genotypes, a simplification afforded by the clinical chimerism setting where host and donor are genotyped independently before transplant.
 
-Optimization proceeds in two stages. First, a grid search evaluates the likelihood at 1,001 evenly spaced points across the interval [0, 1], identifying the approximate maximum. Second, bounded Brent optimization (via scipy.optimize.minimize_scalar) refines the estimate within a ±1% window around the grid maximum, yielding the MLE point estimate $\hat{f}$.
+#### Beta-binomial likelihood
+
+A standard binomial model assumes all variance in allele counts comes from random sampling. In practice, per-marker amplification bias and depth variability produce overdispersion: the observed variance exceeds the binomial prediction. allomix uses a beta-binomial likelihood, the standard conjugate model for overdispersed count data,[@HindeDemetrio1998] to account for this. The beta-binomial models the true success probability at each marker as drawn from a Beta distribution centred on the expected probability, rather than being fixed.
+
+The model is parameterised by the donor fraction *f* and a shared concentration parameter $\rho > 0$. For marker *i* with alternative allele count $k_i$ out of $n_i = n_{ref,i} + n_{alt,i}$ total reads, the per-marker log-likelihood (up to a constant) is:
+
+$$\ell_i(f, \rho) = \log\Gamma(k_i + \alpha_i) + \log\Gamma(n_i - k_i + \beta_i) - \log\Gamma(n_i + \rho) - \log\Gamma(\alpha_i) - \log\Gamma(\beta_i) + \log\Gamma(\rho)$$
+
+where $\alpha_i = \tilde{p}_i \cdot \rho$ and $\beta_i = (1 - \tilde{p}_i) \cdot \rho$. As $\rho \to \infty$, the beta-binomial converges to the binomial (no overdispersion); smaller values of $\rho$ produce flatter likelihoods and wider confidence intervals.
+
+The total log-likelihood across all *M* informative markers is:
+
+$$\mathcal{L}(f, \rho) = \sum_{i=1}^{M} \ell_i(f, \rho)$$
+
+#### Optimization
+
+Both *f* and $\rho$ are estimated jointly from the data. Optimization proceeds in two stages. First, a grid search evaluates the likelihood at 1,001 evenly spaced values of *f* across the interval [0, 1], with $\rho$ profiled out (optimised on the log-scale via bounded Brent) at each grid point. Second, Nelder-Mead refinement over both (*f*, log $\rho$) from the grid maximum yields the MLE point estimates $\hat{f}$ and $\hat{\rho}$.
 
 ### Confidence Intervals
 
-A 95% profile likelihood confidence interval is constructed by identifying the bounds where the log-likelihood drops by a threshold derived from the chi-squared distribution:
+A 95% profile likelihood confidence interval for *f* is constructed by profiling out $\rho$ at each candidate value of *f*. The profile log-likelihood is:
 
-$$2[\mathcal{L}(\hat{f}) - \mathcal{L}(f)] = \chi^2_{1, 0.95} \approx 3.84$$
+$$\mathcal{L}_P(f) = \max_{\rho} \mathcal{L}(f, \rho)$$
 
-The lower and upper bounds are found using Brent's root-finding method (scipy.optimize.brentq) to locate the fractions where the log-likelihood ratio equals the threshold, following standard profile likelihood methodology.[@Wilks1938]
+The CI bounds are the values of *f* where the profile log-likelihood ratio reaches the chi-squared threshold:
+
+$$2[\mathcal{L}_P(\hat{f}) - \mathcal{L}_P(f)] = \chi^2_{1, 0.95} \approx 3.84$$
+
+The lower and upper bounds are found using Brent's root-finding method (scipy.optimize.brentq), following standard profile likelihood methodology.[@Wilks1938] By profiling out $\rho$, the confidence interval automatically adapts to the level of overdispersion in the data: panels with high marker-to-marker variability produce wider intervals, while well-behaved panels produce intervals close to the binomial baseline.
 
 ### Multi-Donor Extension
 

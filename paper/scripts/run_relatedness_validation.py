@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor
+from allomix.chimerism import estimate_single_donor_bb
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.simulate import (
     blend_vcfs,
@@ -97,7 +97,7 @@ def run_one_replicate(
             })
             continue
 
-        result = estimate_single_donor(genotypes.informative, error_rate=0.01)
+        result = estimate_single_donor_bb(genotypes.informative, error_rate=0.01)
         error = result.donor_fraction - frac
         ci_covers = result.donor_fraction_ci[0] <= frac <= result.donor_fraction_ci[1]
 

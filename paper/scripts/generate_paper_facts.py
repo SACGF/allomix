@@ -155,6 +155,7 @@ def main():
             host_path=host_vcf, donor_path=donor_vcf,
             donor_fraction=frac, target_depth=depth,
             sample_name=name, seed=sample_seed, fixed_biases=fixed_biases,
+            locus_dropout_rate=0.016, depth_cv=0.43,
         )
         write_vcf(result, outdir / f"{name}.vcf")
 

@@ -21,7 +21,6 @@ from allomix.chimerism import estimate_multi_donor, total_log_likelihood_multi_b
 from allomix.genotype import classify_markers, parse_vcf
 
 DATA_DIR = Path("tests/test_data/multidonor")
-FIGURES_DIR = Path("paper/figures")
 FACTS_DIR = Path("output/facts")
 
 # Representative interior mixture for contour plot
@@ -295,18 +294,11 @@ def plot_figure(results: list[dict]) -> None:
     fig.tight_layout()
 
     # Save
-    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    fig_path = FIGURES_DIR / "fig_multidonor.png"
+    FACTS_DIR.mkdir(parents=True, exist_ok=True)
+    fig_path = FACTS_DIR / "fig_multidonor.png"
     fig.savefig(fig_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {fig_path}", file=sys.stderr)
-
-    # Copy to facts dir
-    import shutil
-
-    FACTS_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(fig_path, FACTS_DIR / "fig_multidonor.png")
-    print(f"Copied to {FACTS_DIR / 'fig_multidonor.png'}", file=sys.stderr)
 
 
 def main() -> int:

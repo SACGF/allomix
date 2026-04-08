@@ -24,11 +24,12 @@ Output:
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from script_utils import write_truth_table  # noqa: E402
 
 from allomix.simulate import blend_vcfs, write_vcf  # noqa: E402
 
@@ -94,17 +95,14 @@ def main(argv: list[str] | None = None) -> int:
         })
 
     truth_path = outdir / "truth_table.tsv"
-    with open(truth_path, "w", newline="") as fh:
-        writer = csv.DictWriter(
-            fh,
-            fieldnames=[
-                "sample_name", "day", "true_donor_fraction",
-                "num_markers", "num_informative",
-            ],
-            delimiter="\t",
-        )
-        writer.writeheader()
-        writer.writerows(truth_rows)
+    write_truth_table(
+        truth_rows,
+        truth_path,
+        fieldnames=[
+            "sample_name", "day", "true_donor_fraction",
+            "num_markers", "num_informative",
+        ],
+    )
 
     print(f"\nGenerated {len(TIMEPOINTS)} timepoint VCFs in {outdir}/", file=sys.stderr)
     print(f"Truth table: {truth_path}", file=sys.stderr)

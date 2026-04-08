@@ -234,6 +234,101 @@ def total_log_likelihood_multi(
     return ll
 
 
+def _compute_overdispersion(
+    markers: list[InformativeMarker],
+    f_donor: float,
+    error_rate: float,
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+) -> float:
+    """Compute Pearson overdispersion factor for CI calibration.
+
+    Compares observed per-marker residual variance to expected binomial
+    variance. Values > 1 indicate model misspecification (e.g. uncorrected
+    per-marker amplification bias) and are used to inflate the profile
+    likelihood CI threshold proportionally.
+
+    Args:
+        markers: Informative markers with admixture allele counts.
+        f_donor: MLE donor fraction.
+        error_rate: Sequencing error rate.
+        marker_biases: Optional per-marker bias corrections.
+
+    Returns:
+        Pearson overdispersion factor (phi).
+    """
+    if len(markers) <= 1:
+        return 1.0
+
+    pearson_sum = 0.0
+    n_valid = 0
+
+    for m in markers:
+        dp = m.admix_ad_ref + m.admix_ad_alt
+        if dp == 0:
+            continue
+
+        bias = 0.0
+        if marker_biases is not None:
+            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        w = expected_weight(m.host_gt, m.donor_gts[0], f_donor, bias=bias)
+
+        e = error_rate
+        p_alt = (1.0 - w) * (1.0 - e) + w * e / 3.0
+        var_vaf = p_alt * (1.0 - p_alt) / dp
+        if var_vaf < 1e-12:
+            continue
+
+        observed_alt_frac = m.admix_ad_alt / dp
+        residual = observed_alt_frac - p_alt
+        pearson_sum += residual * residual / var_vaf
+        n_valid += 1
+
+    if n_valid <= 1:
+        return 1.0
+
+    return pearson_sum / (n_valid - 1)
+
+
+def _compute_overdispersion_multi(
+    markers: list[InformativeMarker],
+    donor_fractions: list[float],
+    error_rate: float,
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+) -> float:
+    """Compute Pearson overdispersion factor for multi-donor model."""
+    if len(markers) <= 1:
+        return 1.0
+
+    pearson_sum = 0.0
+    n_valid = 0
+
+    for m in markers:
+        dp = m.admix_ad_ref + m.admix_ad_alt
+        if dp == 0:
+            continue
+
+        bias = 0.0
+        if marker_biases is not None:
+            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
+
+        e = error_rate
+        p_alt = (1.0 - w) * (1.0 - e) + w * e / 3.0
+        var_vaf = p_alt * (1.0 - p_alt) / dp
+        if var_vaf < 1e-12:
+            continue
+
+        observed_alt_frac = m.admix_ad_alt / dp
+        residual = observed_alt_frac - p_alt
+        pearson_sum += residual * residual / var_vaf
+        n_valid += 1
+
+    if n_valid <= 1:
+        return 1.0
+
+    return pearson_sum / (n_valid - 1)
+
+
 # ---------------------------------------------------------------------------
 # MLE estimation
 # ---------------------------------------------------------------------------
@@ -312,9 +407,13 @@ def estimate_single_donor(
     f_mle = float(result.x)
     ll_max = -float(result.fun)
 
+    # Compute overdispersion for robust CIs
+    phi = max(1.0, _compute_overdispersion(markers, f_mle, error_rate, marker_biases))
+
     # Step 3: Profile likelihood CI
-    # Threshold: 2 * (LL_max - LL(f)) = chi2.ppf(0.95, df=1)
-    threshold = chi2.ppf(0.95, df=1)  # ~3.84
+    # Threshold: 2 * (LL_max - LL(f)) = chi2.ppf(0.95, df=1) * phi
+    # phi > 1 inflates CIs to account for model misspecification (e.g. marker bias)
+    threshold = chi2.ppf(0.95, df=1) * phi
     half_threshold = threshold / 2.0
 
     # Scan left from MLE
@@ -499,8 +598,13 @@ def estimate_multi_donor(
         f_mle = [f * scale for f in f_mle]
     ll_max = -float(opt.fun)
 
+    # Compute overdispersion for robust CIs
+    phi = max(1.0, _compute_overdispersion_multi(markers, f_mle, error_rate, marker_biases))
+
     # Step 3: Profile likelihood CIs per donor
-    cis = _profile_likelihood_cis_multi(markers, f_mle, ll_max, n_donors, error_rate, marker_biases)
+    cis = _profile_likelihood_cis_multi(
+        markers, f_mle, ll_max, n_donors, error_rate, marker_biases, phi
+    )
 
     # Step 4: Per-marker residuals
     per_marker = _per_marker_results_multi(markers, f_mle, error_rate, marker_biases)
@@ -538,13 +642,15 @@ def _profile_likelihood_cis_multi(
     n_donors: int,
     error_rate: float,
     marker_biases: dict[tuple[str, int, str, str], float] | None,
+    phi: float = 1.0,
 ) -> list[tuple[float, float]]:
     """Profile likelihood CIs for each donor fraction.
 
     For donor_i, scan f_i while optimizing f_j (j != i) at each point.
-    Uses chi2(df=1) threshold since we profile one parameter at a time.
+    Uses chi2(df=1) threshold since we profile one parameter at a time,
+    inflated by phi to account for overdispersion.
     """
-    threshold = float(chi2.ppf(0.95, df=1))  # ~3.84
+    threshold = float(chi2.ppf(0.95, df=1)) * phi
     half_threshold = threshold / 2.0
     step = 0.001
     cis: list[tuple[float, float]] = []

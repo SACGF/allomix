@@ -204,13 +204,22 @@ def sample_allele_counts(
     vaf: float,
     depth: int,
     rng: random.Random | None = None,
+    error_rate: float = 0.0,
 ) -> tuple[int, int]:
-    """Sample allele counts from a binomial distribution.
+    """Sample allele counts from a binomial distribution with sequencing errors.
+
+    When ``error_rate`` > 0, each simulated read has a chance of being
+    mis-called: a true REF read becomes ALT (or vice-versa) with
+    probability ``error_rate``.  This mirrors the flat error model used
+    in the MLE estimator.
 
     Args:
-        vaf: Expected variant allele frequency.
+        vaf: Expected variant allele frequency (before sequencing error).
         depth: Total read depth to simulate.
         rng: Optional Random instance for reproducibility.
+        error_rate: Per-read sequencing error probability (0.0–1.0).
+            Each read of the wrong allele is flipped with this probability.
+            Default 0.0 (no sequencing error).
 
     Returns:
         Tuple of (ref_count, alt_count).
@@ -221,6 +230,13 @@ def sample_allele_counts(
         return (0, 0)
     # Clamp VAF to valid probability range
     p = max(0.0, min(1.0, vaf))
+
+    # Apply sequencing error: a read from the true allele is mis-called
+    # with probability error_rate.  The effective observed ALT probability
+    # becomes: p_obs = p*(1-e) + (1-p)*e  (symmetric error model).
+    if error_rate > 0:
+        p = p * (1.0 - error_rate) + (1.0 - p) * error_rate
+
     if hasattr(rng, "binomialvariate"):
         alt_count = rng.binomialvariate(depth, p)
     else:
@@ -329,6 +345,161 @@ def generate_marker_biases(
     return [rng.gauss(0.0, bias_sd) for _ in range(n_markers)]
 
 
+# ---------------------------------------------------------------------------
+# Relatedness-based genotype generation
+# ---------------------------------------------------------------------------
+
+# IBD sharing probabilities: (P(IBD=0), P(IBD=1), P(IBD=2))
+RELATEDNESS_IBD = {
+    "unrelated": (1.0, 0.0, 0.0),
+    "cousin": (0.75, 0.25, 0.0),        # first cousins: 1/8 kinship
+    "half-sibling": (0.5, 0.5, 0.0),     # half-siblings: 1/4 kinship
+    "parent-child": (0.0, 1.0, 0.0),     # parent-child: always share 1 allele
+    "sibling": (0.25, 0.5, 0.25),        # full siblings: 1/4 kinship
+}
+
+
+def _draw_genotype(p_alt: float, rng: random.Random) -> tuple[int, int]:
+    """Draw a diploid genotype from Hardy-Weinberg equilibrium.
+
+    Args:
+        p_alt: Population ALT allele frequency.
+        rng: Random instance.
+
+    Returns:
+        Diploid genotype as (allele1, allele2), each 0 or 1.
+    """
+    a1 = 1 if rng.random() < p_alt else 0
+    a2 = 1 if rng.random() < p_alt else 0
+    return (a1, a2)
+
+
+def _draw_related_genotype(
+    host_gt: tuple[int, int],
+    p_alt: float,
+    ibd_probs: tuple[float, float, float],
+    rng: random.Random,
+) -> tuple[int, int]:
+    """Draw a donor genotype conditional on host genotype and IBD sharing.
+
+    Args:
+        host_gt: Host diploid genotype.
+        p_alt: Population ALT allele frequency.
+        ibd_probs: (P(IBD=0), P(IBD=1), P(IBD=2)).
+        rng: Random instance.
+
+    Returns:
+        Donor diploid genotype.
+    """
+    r = rng.random()
+    if r < ibd_probs[0]:
+        # IBD=0: independent draw
+        return _draw_genotype(p_alt, rng)
+    elif r < ibd_probs[0] + ibd_probs[1]:
+        # IBD=1: share one allele, draw the other independently
+        shared = host_gt[rng.randint(0, 1)]
+        other = 1 if rng.random() < p_alt else 0
+        return (shared, other) if rng.random() < 0.5 else (other, shared)
+    else:
+        # IBD=2: identical genotype
+        return host_gt
+
+
+def generate_related_genotypes(
+    n_markers: int,
+    relatedness: str,
+    rng: random.Random,
+    maf_range: tuple[float, float] = (0.2, 0.5),
+) -> list[dict]:
+    """Generate synthetic host-donor genotype pairs with specified relatedness.
+
+    Marker allele frequencies are drawn uniformly from ``maf_range``, then
+    host and donor genotypes are generated with appropriate IBD sharing.
+
+    Args:
+        n_markers: Number of markers to generate.
+        relatedness: One of 'unrelated', 'cousin', 'half-sibling',
+            'parent-child', 'sibling'.
+        rng: Random instance for reproducibility.
+        maf_range: (min, max) minor allele frequency range for markers.
+
+    Returns:
+        List of dicts with keys: chrom, pos, ref, alt, host_gt, donor_gt,
+        p_alt, informative.
+    """
+    if relatedness not in RELATEDNESS_IBD:
+        raise ValueError(
+            f"Unknown relatedness '{relatedness}'. "
+            f"Choose from: {list(RELATEDNESS_IBD.keys())}"
+        )
+    ibd_probs = RELATEDNESS_IBD[relatedness]
+
+    markers = []
+    for i in range(n_markers):
+        p_alt = rng.uniform(*maf_range)
+        host_gt = _draw_genotype(p_alt, rng)
+        donor_gt = _draw_related_genotype(host_gt, p_alt, ibd_probs, rng)
+
+        markers.append({
+            "chrom": "chr1",
+            "pos": 10000 + i * 1000,
+            "ref": "A",
+            "alt": "G",
+            "host_gt": host_gt,
+            "donor_gt": donor_gt,
+            "p_alt": p_alt,
+            "informative": alt_dose(host_gt) != alt_dose(donor_gt),
+        })
+
+    return markers
+
+
+def write_genotype_vcf(
+    markers: list[dict],
+    path: str | Path,
+    sample_name: str,
+    key: str = "host_gt",
+    depth: int = 100,
+) -> None:
+    """Write a synthetic genotype VCF from generated marker data.
+
+    Args:
+        markers: List of marker dicts from generate_related_genotypes().
+        path: Output VCF path.
+        sample_name: Sample name for VCF header.
+        key: Which genotype to write ('host_gt' or 'donor_gt').
+        depth: Simulated read depth for FORMAT fields.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "w") as f:
+        f.write("##fileformat=VCFv4.2\n")
+        f.write('##contig=<ID=chr1,length=248956422>\n')
+        f.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">\n')
+        f.write('##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count">\n')
+        f.write('##INFO=<ID=AN,Number=1,Type=Integer,Description="Total alleles">\n')
+        f.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
+        f.write('##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele depths">\n')
+        f.write('##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">\n')
+        f.write('##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">\n')
+        f.write('##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred-scaled likelihoods">\n')
+        f.write('##FORMAT=<ID=AF,Number=A,Type=Float,Description="Allele frequency">\n')
+        f.write(f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample_name}\n")
+
+        for m in markers:
+            gt = m[key]
+            gt_str = f"{gt[0]}/{gt[1]}"
+            n_alt = alt_dose(gt)
+            ad_alt = round(depth * n_alt / 2)
+            ad_ref = depth - ad_alt
+            sample_field = f"{gt_str}:{ad_ref},{ad_alt}:{depth}:99"
+            f.write(
+                f"{m['chrom']}\t{m['pos']}\t.\t{m['ref']}\t{m['alt']}\t"
+                f".\tPASS\t.\tGT:AD:DP:GQ\t{sample_field}\n"
+            )
+
+
 def blend_vcfs(
     host_path: str | Path,
     donor_path: str | Path,
@@ -338,6 +509,9 @@ def blend_vcfs(
     seed: int | None = None,
     marker_bias_sd: float = 0.0,
     fixed_biases: list[float] | None = None,
+    error_rate: float = 0.01,
+    allele_dropout_rate: float = 0.0,
+    locus_dropout_rate: float = 0.0,
 ) -> BlendResult:
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
 
@@ -356,6 +530,13 @@ def blend_vcfs(
         fixed_biases: Pre-generated per-marker bias values. When provided,
             these biases are used directly instead of generating random ones.
             Length must match the number of shared markers.
+        error_rate: Per-read sequencing error rate (default 0.01 = 1%).
+            Each read has this probability of being mis-called.
+        allele_dropout_rate: Per-marker probability of allele dropout
+            (0.0–1.0). When dropout occurs at a heterozygous site, one
+            allele's reads are entirely lost, making a het look like a hom.
+        locus_dropout_rate: Per-marker probability of complete locus
+            dropout (0.0–1.0). Affected markers produce zero reads.
 
     Returns:
         BlendResult containing the header, VCF record lines, and statistics.
@@ -426,6 +607,11 @@ def blend_vcfs(
         else:
             depth = extract_depth(host_rec) or 1000
 
+        # Locus dropout: marker produces zero reads
+        if locus_dropout_rate > 0 and rng.random() < locus_dropout_rate:
+            bias_idx += 1
+            continue
+
         # Calculate expected VAF, apply per-marker capture bias, then sample
         vaf = expected_vaf(host_gt, donor_gt, donor_fraction)
         this_bias = marker_biases[bias_idx]
@@ -433,7 +619,14 @@ def blend_vcfs(
         alt_allele_bias = host_rec.alt if host_rec.alt != "." else donor_rec.alt
         bias_info.append((host_rec.chrom, host_rec.pos, host_rec.ref, alt_allele_bias, this_bias))
         bias_idx += 1
-        ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng)
+
+        # Allele dropout: at a het-like site, one allele is entirely lost.
+        # This pushes the observed VAF to 0.0 or 1.0.
+        if allele_dropout_rate > 0 and 0.05 < vaf_biased < 0.95:
+            if rng.random() < allele_dropout_rate:
+                vaf_biased = 0.0 if rng.random() < 0.5 else 1.0
+
+        ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng, error_rate)
 
         # Build output record
         gt = gt_from_counts(ref_count, alt_count)

@@ -16,9 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor
-from allomix.genotype import classify_markers, parse_vcf
 from allomix.bias import load_bias_table
+from allomix.chimerism import estimate_single_donor_bb
+from allomix.genotype import classify_markers, parse_vcf
 
 FACTS_DIR = Path("output/facts")
 
@@ -47,7 +47,7 @@ def run_sample(host_path, donor_path, sample_path, error_rate=0.01, marker_biase
     donor = parse_vcf(donor_path, min_dp=0, min_gq=0)
     admix = parse_vcf(sample_path, min_dp=0, min_gq=0)
     genotypes = classify_markers(host, [donor], admix, min_dp=0, min_gq=0, pass_only=False)
-    result = estimate_single_donor(
+    result = estimate_single_donor_bb(
         genotypes.informative, error_rate=error_rate, marker_biases=marker_biases,
     )
     return result, genotypes
@@ -132,8 +132,10 @@ def main():
     # --- Bias correction comparison ---
     # Generate biased data first
     print("Running bias correction comparison...")
-    from allomix.simulate import blend_vcfs, generate_marker_biases, parse_vcf as sim_parse_vcf, write_vcf
     import random
+
+    from allomix.simulate import blend_vcfs, generate_marker_biases, write_vcf
+    from allomix.simulate import parse_vcf as sim_parse_vcf
 
     bias_sd = 0.02
     depth = 2000

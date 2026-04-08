@@ -47,7 +47,7 @@ where $n_{ref,i}$ and $n_{alt,i}$ are the observed reference and alternative all
 
 $$\mathcal{L}(f) = \sum_{i=1}^{M} \ell_i(f)$$
 
-This formulation is adapted from the mixture deconvolution model of Crysup and Woerner,[@CrysupWoerner2023] simplified for the case of known contributor genotypes.
+This formulation uses the mixture genotype likelihood of Crysup and Woerner,[@CrysupWoerner2023] applied in the inverse direction. Crysup and Woerner derived Formula 5 for genotyping unknown contributors at a known mixture fraction; here we apply the same likelihood to estimate the mixture fraction given known contributor genotypes, a simplification afforded by the clinical chimerism setting where host and donor are genotyped independently before transplant.
 
 Optimization proceeds in two stages. First, a grid search evaluates the likelihood at 1,001 evenly spaced points across the interval [0, 1], identifying the approximate maximum. Second, bounded Brent optimization (via scipy.optimize.minimize_scalar) refines the estimate within a ±1% window around the grid maximum, yielding the MLE point estimate $\hat{f}$.
 

@@ -6,6 +6,10 @@ allomix enables laboratories to add post-HSCT chimerism monitoring to existing N
 
 The <1% MAE across all depths tested is competitive with published performance data for commercial tools: Kakodkar et al. reported 0.3--1.5% MAE for AlloSeq HCT,[@Kakodkar2023alloseq] and Pedini et al. demonstrated comparable precision for the Devyser system.[@Pedini2021devyser] The largest errors occurred at boundary fractions (0% and 100% donor), where per-marker amplification biases have the greatest relative impact, consistent with De Vynck et al.[@Vynck2023bias] Bias correction reduced these boundary errors (e.g., 0% donor: {{ bias_no_bias.est_0pct }}% uncorrected vs {{ bias_with_bias.est_0pct }}% corrected).
 
+### High-Depth Regime and Overdispersion
+
+The likelihood model of Crysup and Woerner was evaluated at read depths of 2--100, where sampling noise dominates. Clinical targeted panels operate at 500--2,000x or higher, a regime where per-marker systematic biases (amplification efficiency, GC content, capture probe affinity) become the dominant source of variance. This motivates the per-marker bias correction and overdispersion modelling in allomix, which are not addressed in the original derivation.
+
 ### Confidence Interval Calibration
 
 The observed CI undercoverage ({{ depth_1000.ci_coverage_pct }}--{{ depth_50.ci_coverage_pct }}% versus a nominal 95%) reflects systematic noise sources that the binomial likelihood model does not capture, a known limitation of MLE-based approaches.[@Vynck2023bias] Bias correction (demonstrated here) partially addresses this; beta-binomial likelihoods and empirical recalibration are planned improvements.

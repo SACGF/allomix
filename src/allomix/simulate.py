@@ -334,7 +334,8 @@ def generate_marker_biases(
         n_markers: Number of markers.
         rng: Random instance for reproducibility.
         bias_sd: Standard deviation of the bias distribution. Typical values:
-            0.0 = no bias (ideal), 0.02 = moderate (typical for capture panels),
+            0.0 = no bias (ideal), 0.02 = realistic (empirically measured as
+            0.019 on 76-SNP rhAmpSeq panel across 210 joint-called VCFs),
             0.05 = high (poor panel design).
 
     Returns:

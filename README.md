@@ -115,9 +115,18 @@ allomix timeline \
 | Additional wet-lab | None (uses existing data) | Dedicated kit | Dedicated kit |
 | Software | Open-source CLI | Web-based (HCT Software) | Desktop (Advyser) |
 
+## Validation Strategy
+
+Validation follows a two-phase approach:
+
+1. **In silico validation** (current): Synthetic chimeric VCFs with realistic noise models — per-marker bias, depth coefficient of variation, and locus dropout — calibrated from empirical panel data. All experiments use multiple independent replicates (N≥5) with different random seeds to capture sampling variability.
+2. **Wet-lab validation** (planned): Real patient samples and controlled dilution series.
+
 ## Project Status
 
-Single-donor chimerism estimation is implemented and validated:
+This project is under active development. The repository is currently private; an empty package has been published to [PyPI](https://pypi.org/project/allomix/) to reserve the name.
+
+Single-donor chimerism estimation is implemented and validated (in silico):
 
 - MLE-based estimation using Crysup & Woerner (2022) likelihood framework with known genotypes
 - Grid search + Brent refinement, profile likelihood 95% confidence intervals

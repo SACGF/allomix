@@ -37,6 +37,10 @@ Our specific deployment uses the 76 Sample ID SNPs from the IDT rhAmpSeq panel i
 - Code is independently reimplemented. Do NOT copy code from AGPL (Demixtify), non-commercial (Conpair, chimerism_smmip), or unlicensed repos. The math is published science and freely reimplementable.
 - MIT-licensed repos (All-FIT, FABCASE, somalier) can be referenced/adapted.
 
+## Validation Strategy
+
+In silico validation comes first: synthetic chimeric VCFs with realistic noise models (per-marker bias, depth CV, locus dropout) calibrated from empirical panel data. All in silico experiments use multiple independent replicates (N>=5) with different random seeds to capture sampling variability. Wetlab validation with real patient samples and controlled dilution series is planned as the next phase.
+
 ## Background Materials
 
 - `claude/` — Planning documents, decision records, and reference tool analysis

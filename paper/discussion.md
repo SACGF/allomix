@@ -32,7 +32,7 @@ A critical implementation consideration is the requirement for joint variant cal
 
 ### Limitations and Future Directions
 
-Several limitations of the current work should be noted. First, the limit of detection has not been formally characterized following AMP guidelines, though the mathematical framework supports detection below 1% with sufficient depth and informative markers.
+Several limitations of the current work should be noted. First, the validation presented here is entirely in silico; clinical validation against STR-based chimerism results and with controlled cell-line dilution series is required before clinical deployment. Second, the limit of detection has not been formally characterized following AMP guidelines, though the mathematical framework supports detection below 1% with sufficient depth and informative markers.
 
 {# TODO: Add results from clinical validation once available #}
 {# Planned validation studies: #}

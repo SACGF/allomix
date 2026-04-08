@@ -142,13 +142,14 @@ Validation follows a two-phase approach:
 
 This project is under active development. The repository is currently private; an empty package has been published to [PyPI](https://pypi.org/project/allomix/) to reserve the name.
 
-Single-donor chimerism estimation is implemented and validated (in silico):
+Single-donor and multi-donor (up to 2 donors) chimerism estimation is implemented and validated (in silico):
 
-- MLE-based estimation using Crysup & Woerner (2022) likelihood framework with known genotypes
+- MLE-based estimation using Crysup & Woerner (2023) likelihood framework with known genotypes
 - Grid search + Brent refinement, profile likelihood 95% confidence intervals
+- Multi-donor support with triangular grid search under the f1 + f2 <= 1 constraint
 - QC assessment (marker counts, depth, goodness-of-fit, outlier detection)
 - TSV and JSON output, including multi-timepoint timeline
-- 261 automated tests, in-silico validation at 0–100% donor fractions (RMSE ~0.3%)
+- 274 automated tests, in-silico validation at 0-100% donor fractions (RMSE ~0.3%)
 
 **Not yet implemented:** VariantGrid integration.
 

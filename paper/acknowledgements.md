@@ -5,8 +5,6 @@
 
 ## Author Contributions
 
-{# TODO: Add author contributions using CRediT taxonomy #}
-{# DL: Conceptualization, Methodology, Software, Validation, Writing - Original Draft #}
 
 ## Disclosures
 

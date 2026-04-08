@@ -113,6 +113,8 @@ where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and
 
 Alternative allele counts are drawn from a binomial distribution with the biased, error-adjusted expected frequency and per-marker depth. Empirical characterisation also showed a mean observed-to-expected heterozygosity ratio of {{ panel_empirical.mean_het_ratio }}, indicating negligible allele dropout at these depths.
 
+To evaluate longitudinal monitoring, we simulated a six-timepoint post-HSCT engraftment trajectory (day +14 to day +365) with true donor fractions ranging from 15% (early engraftment) to 97% (full donor chimerism), including a clinically relevant 3-percentage-point dip at day +180. Each timepoint was generated at 500x depth with the same noise model parameters as the depth validation, and five independent replicates were run with different random seeds.
+
 {# TODO: Real sequencing data validation methods #}
 {# Add subsection "### Clinical Sample Validation" describing: #}
 {# - Sample cohort (retrospective post-HSCT patients from /tau) #}

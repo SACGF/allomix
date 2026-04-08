@@ -6,13 +6,13 @@ NGS-based donor chimerism monitoring for hematopoietic stem cell transplantation
 
 **allomix** calculates donor chimerism percentages from NGS data, replacing traditional STR-based analysis with a higher-sensitivity SNP-based approach. It works with any panel of bi-allelic markers (SNPs or indels) and is designed for clinical laboratories monitoring engraftment and relapse after HSCT.
 
-The tool is panel-agnostic — it operates on whatever markers are present in the input VCFs. Bring your own panel: whether that's 24 indels, 76 SNPs, 202 SNPs, or any other set of bi-allelic loci with sufficient depth.
+The tool is panel-agnostic: it operates on whatever markers are present in the input VCFs. Bring your own panel: whether that's 24 indels, 76 SNPs, 202 SNPs, or any other set of bi-allelic loci with sufficient depth.
 
 Chimerism MLE methodology based on [Crysup & Woerner](https://pubmed.ncbi.nlm.nih.gov/36152508/) (2022)
 
 ## Clinical Context
 
-After HSCT, patients carry a mixture of their own (host) and transplanted (donor) cells. Monitoring the ratio of donor to host cells over time — **chimerism monitoring** — is critical for detecting graft rejection or disease relapse. Early detection allows early intervention.
+After HSCT, patients carry a mixture of their own (host) and transplanted (donor) cells. Monitoring the ratio of donor to host cells over time (**chimerism monitoring**) is critical for detecting graft rejection or disease relapse. Early detection allows early intervention.
 
 Current STR-based methods have limited sensitivity (~3-5% LOD) and require separate workflows. allomix aims to:
 
@@ -129,7 +129,7 @@ Both `monitor` and `timeline` accept these additional options:
 | Donor genotype(s) | VCF (.vcf.gz) | One VCF per donor (up to 2 donors). Same format as host. |
 | Admixture sample(s) | VCF (.vcf.gz) | Post-HSCT monitoring samples. One or more timepoints. Must contain AD (allele depth) fields. |
 
-The tool works with VCFs from any variant calling pipeline (GATK, DeepVariant, etc.) as long as GT and AD fields are present. Higher depth improves sensitivity — panels with >1000x coverage will give the best results at low chimerism fractions.
+The tool works with VCFs from any variant calling pipeline (GATK, DeepVariant, etc.) as long as GT and AD fields are present. Higher depth improves sensitivity. Panels with >1000x coverage will give the best results at low chimerism fractions.
 
 ### Outputs
 
@@ -157,7 +157,7 @@ Output formats: TSV (machine-readable), JSON (for programmatic consumption), and
 
 Validation follows a two-phase approach:
 
-1. **In silico validation** (current): Synthetic chimeric VCFs with realistic noise models — per-marker bias, depth coefficient of variation, and locus dropout — calibrated from empirical panel data. All experiments use multiple independent replicates (N>=5) with different random seeds to capture sampling variability.
+1. **In silico validation** (current): Synthetic chimeric VCFs with realistic noise models (per-marker bias, depth coefficient of variation, and locus dropout) calibrated from empirical panel data. All experiments use multiple independent replicates (N>=5) with different random seeds to capture sampling variability.
 2. **Wet-lab validation** (planned): Real patient samples and controlled dilution series.
 
 ## Project Status
@@ -178,7 +178,7 @@ Single-donor and multi-donor (up to 2 donors) chimerism estimation is implemente
 ## Project Structure
 
 ```
-src/allomix/          # Installable library and CLI — the shipped product
+src/allomix/          # Installable library and CLI, the shipped product
 scripts/              # Development and validation utilities
 paper/scripts/        # Publication-specific analysis and figures
 tests/                # pytest tests

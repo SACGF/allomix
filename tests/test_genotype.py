@@ -228,3 +228,11 @@ class TestClassifyMarkers:
         result = classify_markers(host, [donor1, donor2], admix, min_dp=0, min_gq=0)
         assert len(result.informative) == 1
         assert result.informative[0].donor_gts == [(1, 1), (0, 0)]
+
+    def test_sample_name_not_chromosome(self):
+        """classify_markers should not set sample_name to a chromosome."""
+        host = [MarkerData("chr7", 100, "A", "T", (0, 0), 100, 0, 100, 99)]
+        donor = [MarkerData("chr7", 100, "A", "T", (1, 1), 0, 100, 100, 99)]
+        admix = [MarkerData("chr7", 100, "A", "T", (0, 1), 50, 50, 100, 99)]
+        result = classify_markers(host, [donor], admix, min_dp=0, min_gq=0)
+        assert result.sample_name != "chr7"

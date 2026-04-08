@@ -559,3 +559,32 @@ class TestEndToEndWithSimulate:
             assert lo <= true_f + 0.01 and hi >= true_f - 0.01, (
                 f"At true_f={true_f}: CI [{lo:.4f}, {hi:.4f}]"
             )
+
+
+class TestProfileLikelihoodCIPrecision:
+    """CI width should not be inflated by step-size artifacts."""
+
+    def test_ci_precision_at_high_depth(self):
+        """With 50 type-0 markers at dp=5000, CI width should be tight (~0.004)."""
+        rng = random.Random(42)
+        true_f = 0.50
+        markers = []
+        for i in range(50):
+            alt_count = sum(1 for _ in range(5000) if rng.random() < true_f)
+            markers.append(
+                InformativeMarker(
+                    chrom=f"chr{i + 1}",
+                    pos=1000 * (i + 1),
+                    ref="A",
+                    alt="T",
+                    host_gt=(0, 0),
+                    donor_gts=[(1, 1)],
+                    marker_type=0,
+                    admix_ad_ref=5000 - alt_count,
+                    admix_ad_alt=alt_count,
+                    admix_dp=5000,
+                )
+            )
+        result = estimate_single_donor(markers)
+        ci_width = result.donor_fraction_ci[1] - result.donor_fraction_ci[0]
+        assert ci_width < 0.005, f"CI width {ci_width:.6f} unexpectedly wide"

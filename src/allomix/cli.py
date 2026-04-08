@@ -136,7 +136,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 data = to_json(result, qc, sample_name=genotypes.sample_name)
                 out.write(json.dumps(data, indent=2) + "\n")
             else:
-                to_tsv(result, qc, out, verbose=args.verbose)
+                to_tsv(result, qc, out, verbose=args.verbose, sample_name=genotypes.sample_name)
     finally:
         if out is not sys.stdout:
             out.close()

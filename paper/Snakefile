@@ -47,6 +47,7 @@ PAPER_FACTS = [
     f"{FACTS_DIR}/bias_with_bias.csv",
     f"{FACTS_DIR}/tool_landscape.csv",
     f"{FACTS_DIR}/panel_specs.csv",
+    f"{FACTS_DIR}/panel_empirical.csv",
 ] + expand(
     f"{FACTS_DIR}/val_host_{{h}}_donor_{{d}}.csv",
     zip,
@@ -122,6 +123,7 @@ rule paper_facts:
     input:
         "tests/test_data/host.vcf",
         "tests/test_data/donor.vcf",
+        "paper/empirical_results/panel_empirical.csv",  # generated on TAU via scripts/measure_panel_bias.py
     output:
         PAPER_FACTS,
     shell:

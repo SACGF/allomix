@@ -34,6 +34,11 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
 ]
+paper = [
+    "matplotlib>=3.7",
+    "snakemake>=8.0",
+    "vibepaper",
+]
 
 [project.scripts]
 allomix = "allomix.cli:main"

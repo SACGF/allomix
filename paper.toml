@@ -11,6 +11,10 @@ sections = [
     "paper/acknowledgements.md",
 ]
 
+supplementary = [
+    "paper/supplementary.md",
+]
+
 [output]
 dir = "output"
 name = "allomix_paper"

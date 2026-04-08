@@ -247,6 +247,13 @@ def _compute_overdispersion(
     per-marker amplification bias) and are used to inflate the profile
     likelihood CI threshold proportionally.
 
+    This is the standard Pearson dispersion estimate, equivalent to
+    ``pearson_chi2 / df_resid`` from a statsmodels GLM with binomial
+    family. Computed directly here to avoid adding statsmodels as a
+    runtime dependency. Verified to agree with statsmodels to 4 decimal
+    places across donor fractions 5-95% (see
+    scripts/verify_overdispersion.py).
+
     Args:
         markers: Informative markers with admixture allele counts.
         f_donor: MLE donor fraction.
@@ -295,7 +302,10 @@ def _compute_overdispersion_multi(
     error_rate: float,
     marker_biases: dict[tuple[str, int, str, str], float] | None = None,
 ) -> float:
-    """Compute Pearson overdispersion factor for multi-donor model."""
+    """Compute Pearson overdispersion factor for multi-donor model.
+
+    See _compute_overdispersion docstring for methodology notes.
+    """
     if len(markers) <= 1:
         return 1.0
 

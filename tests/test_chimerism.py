@@ -707,3 +707,179 @@ class TestErrorModelMatchValidation:
             f"Mean estimate at f=1 is {mean_estimate:.4f}; "
             "possible error model mismatch (old symmetric model gave ~0.994)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Helpers: overdispersed marker generation
+# ---------------------------------------------------------------------------
+
+
+def _make_markers_overdispersed(
+    f_donor: float,
+    n_markers: int,
+    dp: int,
+    seed: int = 42,
+    bias_sd: float = 0.02,
+    depth_cv: float = 0.4,
+) -> list[InformativeMarker]:
+    """Create markers with realistic overdispersion sources.
+
+    Unlike _make_markers_for_fraction (pure binomial), this adds:
+    - Per-marker amplification bias drawn from a heavy-tailed distribution
+    - Per-marker depth variability (log-normal with given CV)
+
+    These are the noise sources that cause the binomial CI to fail.
+    """
+    from allomix.simulate import (
+        expected_vaf,
+        generate_marker_biases_realistic,
+        sample_allele_counts,
+        sample_marker_depths,
+    )
+
+    rng = random.Random(seed)
+    biases = generate_marker_biases_realistic(n_markers, rng, sd=bias_sd * 0.6)
+    depths = sample_marker_depths(n_markers, dp, depth_cv, rng)
+
+    markers = []
+    for i in range(n_markers):
+        # Alternate type-0 and type-1
+        if i % 2 == 0:
+            h_gt, d_gt, mtype = (0, 0), (1, 1), 0
+        else:
+            h_gt, d_gt, mtype = (1, 1), (0, 0), 1
+
+        vaf = expected_vaf(h_gt, d_gt, f_donor) + biases[i]
+        vaf = max(0.0, min(1.0, vaf))
+        ref_count, alt_count = sample_allele_counts(vaf, depths[i], rng)
+
+        markers.append(
+            _make_marker(
+                host_gt=h_gt,
+                donor_gt=d_gt,
+                ad_ref=ref_count,
+                ad_alt=alt_count,
+                marker_type=mtype,
+                chrom=f"chr{(i % 22) + 1}",
+                pos=1_000_000 + i * 100_000,
+            )
+        )
+    return markers
+
+
+# ---------------------------------------------------------------------------
+# Tests: beta-binomial likelihood
+# ---------------------------------------------------------------------------
+
+
+class TestBetaBinomialLikelihood:
+    """Test beta-binomial likelihood functions."""
+
+    def test_converges_to_binomial_at_high_rho(self) -> None:
+        """At rho -> inf, BB likelihood shape should match binomial.
+
+        The absolute values differ (BB has normalisation constants the
+        binomial drops), so we compare the *difference* in LL between
+        two w values. If the shape matches, the difference should be
+        the same.
+        """
+        from allomix.chimerism import log_likelihood_marker_bb
+
+        ad_ref, ad_alt, e = 700, 300, 0.01
+
+        ll_binom_a = log_likelihood_marker(ad_ref, ad_alt, w=0.7, error_rate=e)
+        ll_binom_b = log_likelihood_marker(ad_ref, ad_alt, w=0.5, error_rate=e)
+        ll_bb_a = log_likelihood_marker_bb(ad_ref, ad_alt, w=0.7, error_rate=e, rho=1e8)
+        ll_bb_b = log_likelihood_marker_bb(ad_ref, ad_alt, w=0.5, error_rate=e, rho=1e8)
+
+        delta_binom = ll_binom_a - ll_binom_b
+        delta_bb = ll_bb_a - ll_bb_b
+        assert delta_bb == pytest.approx(delta_binom, rel=0.01)
+
+    def test_lower_rho_gives_flatter_likelihood(self) -> None:
+        """Lower rho (more overdispersion) should flatten the likelihood.
+
+        The LL difference between the best and a wrong w value should
+        be smaller when rho is small (flat surface) vs large (sharp peak).
+        """
+        from allomix.chimerism import log_likelihood_marker_bb
+
+        ad_ref, ad_alt, e = 700, 300, 0.01
+
+        # Sharp (high rho, binomial-like)
+        diff_sharp = log_likelihood_marker_bb(
+            ad_ref, ad_alt, 0.7, e, rho=10000
+        ) - log_likelihood_marker_bb(ad_ref, ad_alt, 0.5, e, rho=10000)
+        # Flat (low rho, overdispersed)
+        diff_flat = log_likelihood_marker_bb(
+            ad_ref, ad_alt, 0.7, e, rho=10
+        ) - log_likelihood_marker_bb(ad_ref, ad_alt, 0.5, e, rho=10)
+
+        assert abs(diff_flat) < abs(diff_sharp), (
+            "Lower rho should produce a flatter likelihood surface"
+        )
+
+    def test_zero_reads_returns_zero(self) -> None:
+        from allomix.chimerism import log_likelihood_marker_bb
+
+        assert log_likelihood_marker_bb(0, 0, 0.5, 0.01, 100.0) == 0.0
+
+    def test_point_estimate_matches_binomial(self) -> None:
+        """Point estimates should agree on clean binomial data."""
+        from allomix.chimerism import estimate_single_donor_bb
+
+        markers = _make_markers_for_fraction(0.30, n_markers=20, dp=2000, seed=42)
+        res_binom = estimate_single_donor(markers)
+        res_bb = estimate_single_donor_bb(markers)
+
+        assert res_bb.donor_fraction == pytest.approx(
+            res_binom.donor_fraction, abs=0.01
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: CI coverage comparison (slow Monte Carlo)
+# ---------------------------------------------------------------------------
+
+
+class TestBetaBinomialEstimator:
+    """Smoke tests for estimate_single_donor_bb.
+
+    Monte Carlo CI coverage validation is in scripts/benchmark_ci_models.py.
+    These tests verify basic correctness without the multi-minute runtime.
+    """
+
+    def test_bb_on_overdispersed_data(self) -> None:
+        """BB estimator should produce a reasonable estimate on overdispersed data."""
+        from allomix.chimerism import estimate_single_donor_bb
+
+        markers = _make_markers_overdispersed(0.20, n_markers=30, dp=2000, seed=42)
+        res = estimate_single_donor_bb(markers)
+
+        assert res.donor_fraction == pytest.approx(0.20, abs=0.05)
+        lo, hi = res.donor_fraction_ci
+        assert lo < hi
+        assert hi - lo < 0.10  # CI should not be absurdly wide
+
+    def test_bb_ci_wider_than_binomial_on_overdispersed_data(self) -> None:
+        """BB CI should be at least as wide as binomial on overdispersed data.
+
+        Averaged over a few seeds to reduce noise.
+        """
+        from allomix.chimerism import estimate_single_donor_bb
+
+        bb_wider_count = 0
+        n_seeds = 10
+        for seed in range(n_seeds):
+            markers = _make_markers_overdispersed(0.20, n_markers=30, dp=2000, seed=seed + 100)
+            res_b = estimate_single_donor(markers)
+            res_bb = estimate_single_donor_bb(markers)
+            w_b = res_b.donor_fraction_ci[1] - res_b.donor_fraction_ci[0]
+            w_bb = res_bb.donor_fraction_ci[1] - res_bb.donor_fraction_ci[0]
+            if w_bb >= w_b:
+                bb_wider_count += 1
+
+        # BB should be wider in the majority of cases
+        assert bb_wider_count >= 6, (
+            f"BB CI wider than binomial in only {bb_wider_count}/{n_seeds} cases"
+        )

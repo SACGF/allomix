@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Run allomix validation across multiple sequencing depths.
+"""Run allomix validation across multiple sequencing depths with replicates.
 
-Generates synthetic chimeric VCFs at each depth, runs allomix, and produces:
-1. Per-depth validation results and summary metrics
-2. Multi-depth comparison figures
+Generates synthetic chimeric VCFs at each depth with N independent replicates
+(different random seeds for per-marker bias and sampling noise), runs allomix,
+and produces:
+1. Per-depth validation results and summary metrics (mean ± SD across replicates)
+2. Multi-depth comparison figures including boxplots
 3. Facts CSVs for vibepaper
 
 Usage:
     python scripts/run_depth_validation.py
-    python scripts/run_depth_validation.py --depths 50 100 200 500 1000 2000
+    python scripts/run_depth_validation.py --depths 50 100 200 500 1000 --n-replicates 5
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from allomix.simulate import (
 
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
 DEFAULT_DEPTHS = [50, 100, 200, 500, 1000]
+DEFAULT_N_REPLICATES = 5
 FACTS_DIR = Path("output/facts")
 
 
@@ -46,14 +49,13 @@ def generate_and_run(
     host_vcf: str,
     donor_vcf: str,
     depth: int,
-    bias_sd: float,
     seed: int,
     outdir: Path,
     depth_cv: float = 0.43,
     locus_dropout_rate: float = 0.016,
 ) -> list[dict]:
     """Generate synthetic data at a given depth and run allomix on it."""
-    vcf_dir = outdir / f"depth_{depth}"
+    vcf_dir = outdir / f"depth_{depth}" / f"seed_{seed}"
     vcf_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate consistent per-marker biases (same across depths, heavy-tailed)
@@ -96,6 +98,7 @@ def generate_and_run(
 
         rows.append({
             "depth": depth,
+            "seed": seed,
             "sample_name": name,
             "true_frac": frac,
             "est_frac": result.donor_fraction,
@@ -111,7 +114,7 @@ def generate_and_run(
 
 
 def compute_metrics(rows: list[dict]) -> dict:
-    """Compute aggregate metrics, excluding boundary fractions."""
+    """Compute aggregate metrics, excluding boundary fractions for error metrics."""
     interior = [r for r in rows if 0.0 < r["true_frac"] < 1.0]
     n = len(interior)
     if n == 0:
@@ -137,6 +140,21 @@ def compute_metrics(rows: list[dict]) -> dict:
     }
 
 
+def aggregate_replicate_metrics(replicate_metrics: list[dict]) -> dict:
+    """Compute mean and SD of metrics across replicates."""
+    n = len(replicate_metrics)
+    keys = ["mean_abs_error", "rmse", "max_abs_error", "ci_coverage", "mean_ci_width"]
+    agg = {}
+    for key in keys:
+        vals = [m[key] for m in replicate_metrics]
+        mean = sum(vals) / n
+        sd = math.sqrt(sum((v - mean) ** 2 for v in vals) / (n - 1)) if n > 1 else 0.0
+        agg[f"{key}_mean"] = mean
+        agg[f"{key}_sd"] = sd
+    agg["n_replicates"] = n
+    return agg
+
+
 def write_fact(name: str, data: dict) -> None:
     path = FACTS_DIR / f"{name}.csv"
     with open(path, "w", newline="") as f:
@@ -145,32 +163,38 @@ def write_fact(name: str, data: dict) -> None:
         writer.writerow(data)
 
 
-def plot_results(all_results: dict[int, list[dict]], outdir: Path) -> None:
-    """Generate multi-depth comparison figures."""
+def plot_results(
+    all_results: dict[int, list[list[dict]]],
+    all_metrics: dict[int, list[dict]],
+    outdir: Path,
+) -> None:
+    """Generate multi-depth comparison figures with replicate support."""
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        import matplotlib.colors as mcolors
     except ImportError:
         print("matplotlib not available, skipping plots", file=sys.stderr)
         return
 
     depths = sorted(all_results.keys())
-    colors = plt.cm.viridis_r([i / (len(depths) - 1) for i in range(len(depths))])
-
-    # --- Figure 1: Multi-panel scatter (truth vs estimated) ---
     n_depths = len(depths)
+
+    # --- Figure 1: Multi-panel scatter (truth vs estimated), all replicates overlaid ---
     fig, axes = plt.subplots(1, n_depths, figsize=(4 * n_depths, 4), sharey=True)
     if n_depths == 1:
         axes = [axes]
 
-    for ax, depth, color in zip(axes, depths, colors):
-        rows = all_results[depth]
-        truths = [r["true_frac"] * 100 for r in rows]
-        ests = [r["est_frac"] * 100 for r in rows]
+    colors = plt.cm.viridis_r([i / (len(depths) - 1) for i in range(len(depths))])
 
-        ax.scatter(truths, ests, c=[color], s=40, edgecolors="white", linewidth=0.5, zorder=3)
+    for ax, depth, color in zip(axes, depths, colors):
+        for rep_rows in all_results[depth]:
+            truths = [r["true_frac"] * 100 for r in rep_rows]
+            ests = [r["est_frac"] * 100 for r in rep_rows]
+            ax.scatter(
+                truths, ests, c=[color], s=25, alpha=0.5,
+                edgecolors="white", linewidth=0.3, zorder=3,
+            )
         ax.plot([0, 100], [0, 100], "k--", alpha=0.4, linewidth=1)
         ax.set_xlabel("True donor %")
         ax.set_title(f"{depth}x", fontsize=13, fontweight="bold")
@@ -180,51 +204,90 @@ def plot_results(all_results: dict[int, list[dict]], outdir: Path) -> None:
         ax.grid(True, alpha=0.2)
 
     axes[0].set_ylabel("Estimated donor %")
-    fig.suptitle("In silico validation across sequencing depths", fontsize=14, y=1.02)
+    n_reps = len(next(iter(all_results.values())))
+    fig.suptitle(
+        f"In silico validation across sequencing depths (N={n_reps} replicates)",
+        fontsize=14, y=1.02,
+    )
     fig.tight_layout()
     fig.savefig(outdir / "fig1_depth_scatter.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Figure 2: Residuals across depths ---
-    fig, axes = plt.subplots(1, n_depths, figsize=(4 * n_depths, 3.5), sharey=True)
-    if n_depths == 1:
-        axes = [axes]
+    # --- Figure 2: Boxplots of absolute error by depth ---
+    fig, ax = plt.subplots(figsize=(8, 5))
 
-    for ax, depth, color in zip(axes, depths, colors):
-        rows = all_results[depth]
-        truths = [r["true_frac"] * 100 for r in rows]
-        errors = [r["error"] * 100 for r in rows]
+    box_data = []
+    box_labels = []
+    for depth in depths:
+        # Collect absolute errors from interior fractions across all replicates
+        abs_errors = []
+        for rep_rows in all_results[depth]:
+            for r in rep_rows:
+                if 0.0 < r["true_frac"] < 1.0:
+                    abs_errors.append(abs(r["error"]) * 100)
+        box_data.append(abs_errors)
+        box_labels.append(f"{depth}x")
 
-        ax.scatter(truths, errors, c=[color], s=40, edgecolors="white", linewidth=0.5, zorder=3)
-        ax.axhline(0, color="k", linestyle="--", alpha=0.4)
-        ax.set_xlabel("True donor %")
-        ax.set_title(f"{depth}x", fontsize=13, fontweight="bold")
-        ax.grid(True, alpha=0.2)
-
-    axes[0].set_ylabel("Error (est - true) %")
-    fig.suptitle("Estimation error across sequencing depths", fontsize=14, y=1.02)
+    bp = ax.boxplot(
+        box_data, tick_labels=box_labels, patch_artist=True,
+        boxprops=dict(facecolor="steelblue", alpha=0.6),
+        medianprops=dict(color="firebrick", linewidth=2),
+        whiskerprops=dict(color="grey"),
+        capprops=dict(color="grey"),
+        flierprops=dict(marker="o", markerfacecolor="steelblue", alpha=0.4, markersize=4),
+    )
+    ax.set_xlabel("Sequencing depth", fontsize=12)
+    ax.set_ylabel("Absolute error (%)", fontsize=12)
+    ax.set_title(
+        f"Estimation error distribution by depth (N={n_reps} replicates)",
+        fontsize=13,
+    )
+    ax.grid(True, alpha=0.3, axis="y")
     fig.tight_layout()
-    fig.savefig(outdir / "fig2_depth_residuals.png", dpi=150, bbox_inches="tight")
+    fig.savefig(outdir / "fig2_depth_boxplots.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Figure 3: Summary metrics vs depth ---
+    # --- Figure 3: Summary metrics vs depth with error bars ---
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
 
-    metrics_by_depth = {}
-    for depth in depths:
-        metrics_by_depth[depth] = compute_metrics(all_results[depth])
+    mae_means = []
+    mae_sds = []
+    rmse_means = []
+    rmse_sds = []
+    max_means = []
+    max_sds = []
+    ci_cov_means = []
+    ci_cov_sds = []
+    ci_width_means = []
+    ci_width_sds = []
 
-    mae_vals = [metrics_by_depth[d]["mean_abs_error"] * 100 for d in depths]
-    rmse_vals = [metrics_by_depth[d]["rmse"] * 100 for d in depths]
-    max_vals = [metrics_by_depth[d]["max_abs_error"] * 100 for d in depths]
-    ci_cov_vals = [metrics_by_depth[d]["ci_coverage"] * 100 for d in depths]
-    ci_width_vals = [metrics_by_depth[d]["mean_ci_width"] * 100 for d in depths]
+    for depth in depths:
+        agg = aggregate_replicate_metrics(all_metrics[depth])
+        mae_means.append(agg["mean_abs_error_mean"] * 100)
+        mae_sds.append(agg["mean_abs_error_sd"] * 100)
+        rmse_means.append(agg["rmse_mean"] * 100)
+        rmse_sds.append(agg["rmse_sd"] * 100)
+        max_means.append(agg["max_abs_error_mean"] * 100)
+        max_sds.append(agg["max_abs_error_sd"] * 100)
+        ci_cov_means.append(agg["ci_coverage_mean"] * 100)
+        ci_cov_sds.append(agg["ci_coverage_sd"] * 100)
+        ci_width_means.append(agg["mean_ci_width_mean"] * 100)
+        ci_width_sds.append(agg["mean_ci_width_sd"] * 100)
 
     # Accuracy vs depth
     ax = axes[0]
-    ax.plot(depths, mae_vals, "o-", color="steelblue", linewidth=2, markersize=8, label="MAE")
-    ax.plot(depths, rmse_vals, "s-", color="darkorange", linewidth=2, markersize=8, label="RMSE")
-    ax.plot(depths, max_vals, "^-", color="firebrick", linewidth=2, markersize=8, label="Max error")
+    ax.errorbar(
+        depths, mae_means, yerr=mae_sds, fmt="o-",
+        color="steelblue", linewidth=2, markersize=8, capsize=4, label="MAE",
+    )
+    ax.errorbar(
+        depths, rmse_means, yerr=rmse_sds, fmt="s-",
+        color="darkorange", linewidth=2, markersize=8, capsize=4, label="RMSE",
+    )
+    ax.errorbar(
+        depths, max_means, yerr=max_sds, fmt="^-",
+        color="firebrick", linewidth=2, markersize=8, capsize=4, label="Max error",
+    )
     ax.set_xlabel("Sequencing depth (x)", fontsize=11)
     ax.set_ylabel("Error (%)", fontsize=11)
     ax.set_title("Accuracy vs depth", fontsize=12)
@@ -236,7 +299,10 @@ def plot_results(all_results: dict[int, list[dict]], outdir: Path) -> None:
 
     # CI coverage vs depth
     ax = axes[1]
-    ax.plot(depths, ci_cov_vals, "o-", color="steelblue", linewidth=2, markersize=8)
+    ax.errorbar(
+        depths, ci_cov_means, yerr=ci_cov_sds, fmt="o-",
+        color="steelblue", linewidth=2, markersize=8, capsize=4,
+    )
     ax.axhline(95, color="k", linestyle="--", alpha=0.4, label="Nominal 95%")
     ax.set_xlabel("Sequencing depth (x)", fontsize=11)
     ax.set_ylabel("CI coverage (%)", fontsize=11)
@@ -250,7 +316,10 @@ def plot_results(all_results: dict[int, list[dict]], outdir: Path) -> None:
 
     # CI width vs depth
     ax = axes[2]
-    ax.plot(depths, ci_width_vals, "o-", color="steelblue", linewidth=2, markersize=8)
+    ax.errorbar(
+        depths, ci_width_means, yerr=ci_width_sds, fmt="o-",
+        color="steelblue", linewidth=2, markersize=8, capsize=4,
+    )
     ax.set_xlabel("Sequencing depth (x)", fontsize=11)
     ax.set_ylabel("Mean CI width (%)", fontsize=11)
     ax.set_title("CI width vs depth", fontsize=12)
@@ -259,7 +328,10 @@ def plot_results(all_results: dict[int, list[dict]], outdir: Path) -> None:
     ax.set_xticklabels([str(d) for d in depths])
     ax.grid(True, alpha=0.3)
 
-    fig.suptitle("allomix performance vs sequencing depth", fontsize=14, y=1.02)
+    fig.suptitle(
+        f"allomix performance vs sequencing depth (N={n_reps}, mean ± SD)",
+        fontsize=14, y=1.02,
+    )
     fig.tight_layout()
     fig.savefig(outdir / "fig3_depth_summary.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -277,7 +349,10 @@ def main(argv: list[str] | None = None) -> int:
         "--depths", type=int, nargs="+", default=DEFAULT_DEPTHS,
         help=f"Depths to test (default: {DEFAULT_DEPTHS})",
     )
-    parser.add_argument("--bias-sd", type=float, default=0.02)
+    parser.add_argument(
+        "--n-replicates", "-n", type=int, default=DEFAULT_N_REPLICATES,
+        help=f"Number of replicates per depth (default: {DEFAULT_N_REPLICATES})",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--outdir", default="output/depth_validation")
     args = parser.parse_args(argv)
@@ -286,85 +361,125 @@ def main(argv: list[str] | None = None) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
     FACTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    all_results: dict[int, list[dict]] = {}
+    # all_results[depth] = list of replicate row-lists
+    # all_metrics[depth] = list of per-replicate metric dicts
+    all_results: dict[int, list[list[dict]]] = {}
+    all_metrics: dict[int, list[dict]] = {}
 
     for depth in sorted(args.depths):
         print(f"\n{'='*50}", file=sys.stderr)
-        print(f"Depth: {depth}x", file=sys.stderr)
+        print(f"Depth: {depth}x  ({args.n_replicates} replicates)", file=sys.stderr)
         print(f"{'='*50}", file=sys.stderr)
 
-        rows = generate_and_run(
-            args.host, args.donor, depth,
-            bias_sd=args.bias_sd, seed=args.seed, outdir=outdir,
+        all_results[depth] = []
+        all_metrics[depth] = []
+
+        for rep in range(args.n_replicates):
+            rep_seed = args.seed + rep * 1000
+            rows = generate_and_run(
+                args.host, args.donor, depth, seed=rep_seed, outdir=outdir,
+            )
+            all_results[depth].append(rows)
+
+            metrics = compute_metrics(rows)
+            all_metrics[depth].append(metrics)
+            print(
+                f"  Rep {rep}: MAE={metrics['mean_abs_error']*100:.4f}%  "
+                f"RMSE={metrics['rmse']*100:.4f}%  "
+                f"Max={metrics['max_abs_error']*100:.4f}%  "
+                f"CI={metrics['ci_coverage']:.1%}",
+                file=sys.stderr,
+            )
+
+        agg = aggregate_replicate_metrics(all_metrics[depth])
+        print(
+            f"  Mean MAE: {agg['mean_abs_error_mean']*100:.4f}% "
+            f"± {agg['mean_abs_error_sd']*100:.4f}%",
+            file=sys.stderr,
         )
-        all_results[depth] = rows
+        print(
+            f"  Mean RMSE: {agg['rmse_mean']*100:.4f}% "
+            f"± {agg['rmse_sd']*100:.4f}%",
+            file=sys.stderr,
+        )
 
-        metrics = compute_metrics(rows)
-        print(f"  MAE:          {metrics['mean_abs_error']*100:.4f}%", file=sys.stderr)
-        print(f"  RMSE:         {metrics['rmse']*100:.4f}%", file=sys.stderr)
-        print(f"  Max error:    {metrics['max_abs_error']*100:.4f}%", file=sys.stderr)
-        print(f"  CI coverage:  {metrics['ci_coverage']:.1%}", file=sys.stderr)
-        print(f"  CI width:     {metrics['mean_ci_width']*100:.4f}%", file=sys.stderr)
-
-        # Write per-depth facts
+        # Write per-depth facts (mean ± SD across replicates)
         write_fact(f"depth_{depth}", {
             "depth": depth,
-            "n_samples": metrics["n_samples"],
-            "mean_abs_error_pct": round(metrics["mean_abs_error"] * 100, 4),
-            "rmse_pct": round(metrics["rmse"] * 100, 4),
-            "max_abs_error_pct": round(metrics["max_abs_error"] * 100, 4),
-            "ci_coverage_pct": round(metrics["ci_coverage"] * 100, 1),
-            "mean_ci_width_pct": round(metrics["mean_ci_width"] * 100, 4),
+            "n_replicates": args.n_replicates,
+            "n_samples_per_rep": agg.get("n_replicates", args.n_replicates),
+            "mean_abs_error_pct": round(agg["mean_abs_error_mean"] * 100, 2),
+            "mean_abs_error_sd_pct": round(agg["mean_abs_error_sd"] * 100, 2),
+            "rmse_pct": round(agg["rmse_mean"] * 100, 2),
+            "rmse_sd_pct": round(agg["rmse_sd"] * 100, 2),
+            "max_abs_error_pct": round(agg["max_abs_error_mean"] * 100, 2),
+            "max_abs_error_sd_pct": round(agg["max_abs_error_sd"] * 100, 2),
+            "ci_coverage_pct": round(agg["ci_coverage_mean"] * 100, 1),
+            "ci_coverage_sd_pct": round(agg["ci_coverage_sd"] * 100, 1),
+            "mean_ci_width_pct": round(agg["mean_ci_width_mean"] * 100, 2),
+            "mean_ci_width_sd_pct": round(agg["mean_ci_width_sd"] * 100, 2),
         })
 
-    # Write combined summary table as facts
+    # Write combined summary table as TSV
     depths_sorted = sorted(args.depths)
     summary_rows = []
     for depth in depths_sorted:
-        m = compute_metrics(all_results[depth])
+        agg = aggregate_replicate_metrics(all_metrics[depth])
         summary_rows.append({
             "depth": depth,
-            "mae": round(m["mean_abs_error"] * 100, 2),
-            "rmse": round(m["rmse"] * 100, 2),
-            "max_err": round(m["max_abs_error"] * 100, 2),
-            "ci_cov": round(m["ci_coverage"] * 100, 1),
-            "ci_width": round(m["mean_ci_width"] * 100, 2),
+            "n_replicates": args.n_replicates,
+            "mae_mean": round(agg["mean_abs_error_mean"] * 100, 2),
+            "mae_sd": round(agg["mean_abs_error_sd"] * 100, 2),
+            "rmse_mean": round(agg["rmse_mean"] * 100, 2),
+            "rmse_sd": round(agg["rmse_sd"] * 100, 2),
+            "max_err_mean": round(agg["max_abs_error_mean"] * 100, 2),
+            "max_err_sd": round(agg["max_abs_error_sd"] * 100, 2),
+            "ci_cov_mean": round(agg["ci_coverage_mean"] * 100, 1),
+            "ci_width_mean": round(agg["mean_ci_width_mean"] * 100, 2),
         })
 
-    # Write summary table CSV (multi-row, not a vibepaper fact)
     summary_path = outdir / "depth_summary.tsv"
     with open(summary_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["depth", "mae", "rmse", "max_err", "ci_cov", "ci_width"],
-                           delimiter="\t")
+        w = csv.DictWriter(
+            f,
+            fieldnames=[
+                "depth", "n_replicates", "mae_mean", "mae_sd", "rmse_mean", "rmse_sd",
+                "max_err_mean", "max_err_sd", "ci_cov_mean", "ci_width_mean",
+            ],
+            delimiter="\t",
+        )
         w.writeheader()
         w.writerows(summary_rows)
     print(f"\nSummary table: {summary_path}", file=sys.stderr)
 
-    # Write per-sample results for each depth
+    # Write per-sample results for each depth and replicate
     for depth in depths_sorted:
-        results_path = outdir / f"results_{depth}x.tsv"
-        with open(results_path, "w", newline="") as f:
-            fields = ["sample_name", "true_pct", "est_pct", "error_pct",
-                       "ci_lo_pct", "ci_hi_pct", "ci_covers"]
-            w = csv.DictWriter(f, fieldnames=fields, delimiter="\t")
-            w.writeheader()
-            for r in all_results[depth]:
-                w.writerow({
-                    "sample_name": r["sample_name"],
-                    "true_pct": f"{r['true_frac']*100:.1f}",
-                    "est_pct": f"{r['est_frac']*100:.2f}",
-                    "error_pct": f"{r['error']*100:.4f}",
-                    "ci_lo_pct": f"{r['ci_lo']*100:.2f}",
-                    "ci_hi_pct": f"{r['ci_hi']*100:.2f}",
-                    "ci_covers": r["ci_covers"],
-                })
+        for rep_idx, rep_rows in enumerate(all_results[depth]):
+            results_path = outdir / f"results_{depth}x_rep{rep_idx}.tsv"
+            with open(results_path, "w", newline="") as f:
+                fields = [
+                    "sample_name", "true_pct", "est_pct", "error_pct",
+                    "ci_lo_pct", "ci_hi_pct", "ci_covers",
+                ]
+                w = csv.DictWriter(f, fieldnames=fields, delimiter="\t")
+                w.writeheader()
+                for r in rep_rows:
+                    w.writerow({
+                        "sample_name": r["sample_name"],
+                        "true_pct": f"{r['true_frac']*100:.1f}",
+                        "est_pct": f"{r['est_frac']*100:.2f}",
+                        "error_pct": f"{r['error']*100:.4f}",
+                        "ci_lo_pct": f"{r['ci_lo']*100:.2f}",
+                        "ci_hi_pct": f"{r['ci_hi']*100:.2f}",
+                        "ci_covers": r["ci_covers"],
+                    })
 
     # Generate plots
-    plot_results(all_results, outdir)
+    plot_results(all_results, all_metrics, outdir)
 
     # Copy figures to facts dir
     import shutil
-    for fig in ["fig1_depth_scatter.png", "fig2_depth_residuals.png", "fig3_depth_summary.png"]:
+    for fig in ["fig1_depth_scatter.png", "fig2_depth_boxplots.png", "fig3_depth_summary.png"]:
         src = outdir / fig
         if src.exists():
             shutil.copy2(src, FACTS_DIR / fig)

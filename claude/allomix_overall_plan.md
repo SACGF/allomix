@@ -30,7 +30,7 @@ Full analysis in `claude/step2_bam_vs_vcf_decision.md`. Key points:
 ### Example Data Available
 
 - `data/idt_rhampseq_sid_example.vcf` — single sample, 15 markers (de-identified coordinates)
-- `data/joint_called_example.vcf` — 114 samples, 9 markers, confirms joint-calling provides ref+alt AD at all sites
+- `data/joint_called_example.vcf` — 114 samples, 9 markers (de-identified coordinates) confirms joint-calling provides ref+alt AD at all sites
 
 ---
 
@@ -48,7 +48,7 @@ Built in `src/allomix/simulate.py` + `scripts/generate_test_data.py` + `tests/te
 
 ## Step 4: Clone and Examine Reference Open-Source Projects ✅ COMPLETE
 
-Full analysis in `claude/step4_reference_tool_analysis.md`. 9 repos examined.
+Full analysis in `claude/step4_reference_tool_analysis.md`. (now claude/historical/step4_reference_tool_analysis.md) 9 repos examined.
 
 **Key findings:**
 

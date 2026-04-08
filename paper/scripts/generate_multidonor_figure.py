@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 import numpy as np
 
-from allomix.chimerism import estimate_multi_donor, total_log_likelihood_multi
+from allomix.chimerism import estimate_multi_donor, total_log_likelihood_multi_bb
 from allomix.genotype import classify_markers, parse_vcf
 
 DATA_DIR = Path("tests/test_data/multidonor")
@@ -181,7 +181,7 @@ def plot_figure(results: list[dict]) -> None:
         for i, f1 in enumerate(f1_range):
             for j, f2 in enumerate(f2_range):
                 if f1 + f2 <= 1.0:
-                    ll_grid[j, i] = total_log_likelihood_multi(markers, [f1, f2], error_rate=0.01)
+                    ll_grid[j, i] = total_log_likelihood_multi_bb(markers, [f1, f2], error_rate=0.01)
 
         # Find maximum LL
         ll_max = np.nanmax(ll_grid)

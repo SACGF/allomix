@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from allomix.chimerism import estimate_single_donor
+from allomix.chimerism import estimate_single_donor_bb
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.qc import assess_quality
 from allomix.report import timeline_json, to_json, to_tsv
@@ -127,7 +127,7 @@ def _run_pipeline(host_path, donor_path, admix_path, min_dp=0, min_gq=0):
     )
     genotypes.sample_name = Path(admix_path).stem
 
-    result = estimate_single_donor(genotypes.informative, error_rate=0.01)
+    result = estimate_single_donor_bb(genotypes.informative, error_rate=0.01)
     qc = assess_quality(result, genotypes)
     return result, qc, genotypes
 

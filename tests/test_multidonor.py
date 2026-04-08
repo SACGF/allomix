@@ -23,7 +23,7 @@ from allomix.chimerism import (
     estimate_multi_donor,
     expected_weight,
     expected_weight_multi,
-    total_log_likelihood_multi,
+    total_log_likelihood_multi_bb,
 )
 from allomix.genotype import InformativeMarker, classify_markers, parse_vcf
 from allomix.qc import assess_quality
@@ -275,15 +275,15 @@ class TestMultiDonorLikelihood:
 
     def test_ll_is_finite(self):
         m = _make_marker((0, 0), (1, 1), (0, 1), ad_ref=800, ad_alt=200)
-        ll = total_log_likelihood_multi([m], [0.2, 0.1], error_rate=0.01)
+        ll = total_log_likelihood_multi_bb([m], [0.2, 0.1], error_rate=0.01)
         assert math.isfinite(ll)
 
     def test_ll_peaks_near_truth(self):
         """LL should be higher at the true fractions than far away."""
         markers = _make_sibling_markers_and_blend(0.30, 0.10, seed=42)
-        ll_truth = total_log_likelihood_multi(markers, [0.30, 0.10])
-        ll_wrong = total_log_likelihood_multi(markers, [0.10, 0.30])
-        ll_zero = total_log_likelihood_multi(markers, [0.0, 0.0])
+        ll_truth = total_log_likelihood_multi_bb(markers, [0.30, 0.10])
+        ll_wrong = total_log_likelihood_multi_bb(markers, [0.10, 0.30])
+        ll_zero = total_log_likelihood_multi_bb(markers, [0.0, 0.0])
         assert ll_truth > ll_wrong
         assert ll_truth > ll_zero
 

@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor, estimate_single_donor_bb
+from allomix.chimerism import estimate_single_donor_bb
 from allomix.genotype import InformativeMarker
 from allomix.simulate import (
     expected_vaf,
@@ -111,34 +111,18 @@ def run_benchmark(
                 true_f, n_markers, mean_depth, rng, bias_sd
             )
 
-            # Run both estimators WITHOUT bias correction.
-            # This tests the realistic scenario where per-marker biases
-            # exist but are unknown to the estimator, which is where
-            # the BB model's overdispersion handling matters.
-            res_binom = estimate_single_donor(markers)
-            ci_covers_binom = (
-                res_binom.donor_fraction_ci[0] <= true_f <= res_binom.donor_fraction_ci[1]
-            )
-            ci_width_binom = res_binom.donor_fraction_ci[1] - res_binom.donor_fraction_ci[0]
-
-            # Run beta-binomial estimator
-            res_bb = estimate_single_donor_bb(markers)
-            ci_covers_bb = res_bb.donor_fraction_ci[0] <= true_f <= res_bb.donor_fraction_ci[1]
-            ci_width_bb = res_bb.donor_fraction_ci[1] - res_bb.donor_fraction_ci[0]
+            res = estimate_single_donor_bb(markers)
+            ci_covers = res.donor_fraction_ci[0] <= true_f <= res.donor_fraction_ci[1]
+            ci_width = res.donor_fraction_ci[1] - res.donor_fraction_ci[0]
 
             rows.append({
                 "true_f": true_f,
                 "replicate": rep,
-                "est_binom": res_binom.donor_fraction,
-                "ci_lo_binom": res_binom.donor_fraction_ci[0],
-                "ci_hi_binom": res_binom.donor_fraction_ci[1],
-                "ci_covers_binom": ci_covers_binom,
-                "ci_width_binom": ci_width_binom,
-                "est_bb": res_bb.donor_fraction,
-                "ci_lo_bb": res_bb.donor_fraction_ci[0],
-                "ci_hi_bb": res_bb.donor_fraction_ci[1],
-                "ci_covers_bb": ci_covers_bb,
-                "ci_width_bb": ci_width_bb,
+                "estimate": res.donor_fraction,
+                "ci_lo": res.donor_fraction_ci[0],
+                "ci_hi": res.donor_fraction_ci[1],
+                "ci_covers": ci_covers,
+                "ci_width": ci_width,
             })
 
     # Write per-replicate results
@@ -150,56 +134,39 @@ def run_benchmark(
 
     # Compute summary per fraction
     with open(outdir / "ci_benchmark_summary.tsv", "w") as f:
-        f.write(
-            "true_f_pct\t"
-            "coverage_binom\tcoverage_bb\t"
-            "mean_ci_width_binom\tmean_ci_width_bb\t"
-            "mae_binom\tmae_bb\n"
-        )
+        f.write("true_f_pct\tcoverage\tmean_ci_width\tmae\n")
         for true_f in FRACTIONS:
             subset = [r for r in rows if r["true_f"] == true_f]
             n = len(subset)
-            cov_b = sum(r["ci_covers_binom"] for r in subset) / n
-            cov_bb = sum(r["ci_covers_bb"] for r in subset) / n
-            w_b = sum(r["ci_width_binom"] for r in subset) / n
-            w_bb = sum(r["ci_width_bb"] for r in subset) / n
-            mae_b = sum(abs(r["est_binom"] - true_f) for r in subset) / n
-            mae_bb = sum(abs(r["est_bb"] - true_f) for r in subset) / n
-            f.write(
-                f"{true_f * 100:.0f}\t"
-                f"{cov_b:.3f}\t{cov_bb:.3f}\t"
-                f"{w_b:.4f}\t{w_bb:.4f}\t"
-                f"{mae_b:.4f}\t{mae_bb:.4f}\n"
-            )
+            cov = sum(r["ci_covers"] for r in subset) / n
+            w = sum(r["ci_width"] for r in subset) / n
+            mae = sum(abs(r["estimate"] - true_f) for r in subset) / n
+            f.write(f"{true_f * 100:.0f}\t{cov:.3f}\t{w:.4f}\t{mae:.4f}\n")
 
     # Print summary and return pass/fail
-    cov_b_all = sum(r["ci_covers_binom"] for r in rows) / len(rows)
-    cov_bb_all = sum(r["ci_covers_bb"] for r in rows) / len(rows)
-    mae_b_all = sum(abs(r["est_binom"] - r["true_f"]) for r in rows) / len(rows)
-    mae_bb_all = sum(abs(r["est_bb"] - r["true_f"]) for r in rows) / len(rows)
-    w_bb_all = sum(r["ci_width_bb"] for r in rows) / len(rows)
+    cov_all = sum(r["ci_covers"] for r in rows) / len(rows)
+    mae_all = sum(abs(r["estimate"] - r["true_f"]) for r in rows) / len(rows)
+    w_all = sum(r["ci_width"] for r in rows) / len(rows)
 
     log.info("")
     log.info("=" * 60)
     log.info("BENCHMARK RESULTS")
     log.info("=" * 60)
-    log.info("  Binomial CI coverage:       %.1f%%", cov_b_all * 100)
-    log.info("  Beta-binomial CI coverage:  %.1f%%", cov_bb_all * 100)
-    log.info("  Binomial MAE:               %.4f", mae_b_all)
-    log.info("  Beta-binomial MAE:          %.4f", mae_bb_all)
-    log.info("  Beta-binomial mean CI width: %.4f", w_bb_all)
+    log.info("  CI coverage:      %.1f%%", cov_all * 100)
+    log.info("  MAE:              %.4f", mae_all)
+    log.info("  Mean CI width:    %.4f", w_all)
     log.info("=" * 60)
 
     # Automated pass/fail gate
     passed = True
-    if cov_bb_all < 0.85:
-        log.error("FAIL: BB coverage %.1f%% < 85%%", cov_bb_all * 100)
+    if cov_all < 0.85:
+        log.error("FAIL: coverage %.1f%% < 85%%", cov_all * 100)
         passed = False
-    if mae_bb_all > mae_b_all * 1.2:
-        log.error("FAIL: BB MAE %.4f > binomial MAE %.4f * 1.2", mae_bb_all, mae_b_all)
+    if mae_all > 0.005:
+        log.error("FAIL: MAE %.4f > 0.5%%", mae_all)
         passed = False
-    if w_bb_all > 0.10:
-        log.error("FAIL: BB mean CI width %.4f > 10%%", w_bb_all)
+    if w_all > 0.10:
+        log.error("FAIL: mean CI width %.4f > 10%%", w_all)
         passed = False
 
     if passed:

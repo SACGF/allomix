@@ -103,6 +103,7 @@ pip install -e ".[dev]"     # fallback
 - Docstrings on public modules and functions (Google style)
 - No unnecessary abstractions — keep it simple and direct
 - Prefer `cyvcf2` over `pysam` for VCF parsing (lighter, faster for read-only access)
+- Always place imports at module top level. No lazy imports inside functions, no `try/except ImportError` guards.
 
 ### CLI
 

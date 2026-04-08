@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.optimize import minimize, minimize_scalar
+from scipy.optimize import brentq, minimize, minimize_scalar
 from scipy.stats import chi2
 
 from allomix.genotype import InformativeMarker
@@ -410,37 +410,27 @@ def estimate_single_donor(
     # Compute overdispersion for robust CIs
     phi = max(1.0, _compute_overdispersion(markers, f_mle, error_rate, marker_biases))
 
-    # Step 3: Profile likelihood CI
-    # Threshold: 2 * (LL_max - LL(f)) = chi2.ppf(0.95, df=1) * phi
+    # Step 3: Profile likelihood CI via root-finding
+    # Find f where: ll_max - ll(f) - half_threshold = 0
     # phi > 1 inflates CIs to account for model misspecification (e.g. marker bias)
     threshold = chi2.ppf(0.95, df=1) * phi
     half_threshold = threshold / 2.0
 
-    # Scan left from MLE
-    f_lo = f_mle
-    step = 0.001
-    while f_lo > 0.0:
-        f_test = max(0.0, f_lo - step)
-        ll_test = total_log_likelihood(markers, f_test, error_rate, marker_biases)
-        if (ll_max - ll_test) > half_threshold:
-            # Interpolate between f_test and f_lo for better precision
-            f_lo = f_test
-            break
-        f_lo = f_test
-        if f_test == 0.0:
-            break
+    def ci_func(f: float) -> float:
+        """Zero-crossing where LL drops below CI threshold."""
+        return ll_max - total_log_likelihood(markers, f, error_rate, marker_biases) - half_threshold
 
-    # Scan right from MLE
-    f_hi = f_mle
-    while f_hi < 1.0:
-        f_test = min(1.0, f_hi + step)
-        ll_test = total_log_likelihood(markers, f_test, error_rate, marker_biases)
-        if (ll_max - ll_test) > half_threshold:
-            f_hi = f_test
-            break
-        f_hi = f_test
-        if f_test == 1.0:
-            break
+    # Lower bound: find root on [0, f_mle], or 0 if LL never drops enough
+    if f_mle <= 0.0 or ci_func(0.0) <= 0.0:
+        f_lo = 0.0
+    else:
+        f_lo = brentq(ci_func, 0.0, f_mle, xtol=1e-5)
+
+    # Upper bound: find root on [f_mle, 1], or 1 if LL never drops enough
+    if f_mle >= 1.0 or ci_func(1.0) <= 0.0:
+        f_hi = 1.0
+    else:
+        f_hi = brentq(ci_func, f_mle, 1.0, xtol=1e-5)
 
     # Step 4: Per-marker results
     per_marker: list[MarkerResult] = []
@@ -473,9 +463,9 @@ def estimate_single_donor(
 
     # Flag outliers (residual > 3 SD) but do NOT exclude them in v1
     if len(residuals) >= 2:
-        mean_r = sum(residuals) / len(residuals)
-        var_r = sum((r - mean_r) ** 2 for r in residuals) / (len(residuals) - 1)
-        sd_r = math.sqrt(var_r) if var_r > 0 else 0.0
+        r_arr = np.array(residuals)
+        mean_r = float(np.mean(r_arr))
+        sd_r = float(np.std(r_arr, ddof=1))
 
         if sd_r > 0:
             for i, mr in enumerate(per_marker):
@@ -652,7 +642,6 @@ def _profile_likelihood_cis_multi(
     """
     threshold = float(chi2.ppf(0.95, df=1)) * phi
     half_threshold = threshold / 2.0
-    step = 0.001
     cis: list[tuple[float, float]] = []
 
     for donor_idx in range(n_donors):
@@ -679,29 +668,22 @@ def _profile_likelihood_cis_multi(
             )
             return -float(res.fun)
 
-        # Scan left from MLE
-        f_lo = f_mle[donor_idx]
-        while f_lo > 0.0:
-            f_test = max(0.0, f_lo - step)
-            ll_test = profile_ll(f_test)
-            if (ll_max - ll_test) > half_threshold:
-                f_lo = f_test
-                break
-            f_lo = f_test
-            if f_test == 0.0:
-                break
+        def ci_func(fi: float) -> float:
+            return ll_max - profile_ll(fi) - half_threshold
 
-        # Scan right from MLE
-        f_hi = f_mle[donor_idx]
-        while f_hi < 1.0:
-            f_test = min(1.0, f_hi + step)
-            ll_test = profile_ll(f_test)
-            if (ll_max - ll_test) > half_threshold:
-                f_hi = f_test
-                break
-            f_hi = f_test
-            if f_test == 1.0:
-                break
+        fi_mle = f_mle[donor_idx]
+
+        # Lower bound
+        if fi_mle <= 0.0 or ci_func(0.0) <= 0.0:
+            f_lo = 0.0
+        else:
+            f_lo = brentq(ci_func, 0.0, fi_mle, xtol=1e-5)
+
+        # Upper bound
+        if fi_mle >= 1.0 or ci_func(1.0) <= 0.0:
+            f_hi = 1.0
+        else:
+            f_hi = brentq(ci_func, fi_mle, 1.0, xtol=1e-5)
 
         cis.append((f_lo, f_hi))
 
@@ -745,9 +727,9 @@ def _per_marker_results_multi(
 
     # Flag outliers (residual > 3 SD)
     if len(residuals) >= 2:
-        mean_r = sum(residuals) / len(residuals)
-        var_r = sum((r - mean_r) ** 2 for r in residuals) / (len(residuals) - 1)
-        sd_r = math.sqrt(var_r) if var_r > 0 else 0.0
+        r_arr = np.array(residuals)
+        mean_r = float(np.mean(r_arr))
+        sd_r = float(np.std(r_arr, ddof=1))
 
         if sd_r > 0:
             for i, mr in enumerate(per_marker):

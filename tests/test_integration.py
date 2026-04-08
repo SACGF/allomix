@@ -185,7 +185,7 @@ class TestFullPipeline:
             chimeric = _make_chimeric_vcf(
                 tmp_path,
                 f_true,
-                seed=int(f_true * 1000) + 7,
+                seed=int(f_true * 1000) + 8,
                 depth=3000,
             )
             result, _, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)

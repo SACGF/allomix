@@ -109,78 +109,6 @@ def expected_weight(
     return w
 
 
-def log_likelihood_marker(
-    ad_ref: int,
-    ad_alt: int,
-    w: float,
-    error_rate: float = 0.01,
-) -> float:
-    """Per-marker log-likelihood using Crysup & Woerner (2022) Formula 5.
-
-    LL = n_ref * log(w*(1-e) + (1-w)*e/3) + n_alt * log((1-w)*(1-e) + w*e/3)
-
-    The 4-state error model allocates probability to all four bases, so
-    p_ref + p_alt = 1 - 2e/3 (the remainder represents errors to the two
-    bases that are neither REF nor ALT).  Normalisation is unnecessary:
-    because 1 - 2e/3 is constant with respect to w and f, the MLE and
-    profile likelihood ratios are identical whether or not we normalise.
-
-    The error rate also prevents log(0) when w is exactly 0 or 1.
-
-    Args:
-        ad_ref: Reference allele read count.
-        ad_alt: Alternative allele read count.
-        w: Expected reference allele weight.
-        error_rate: Sequencing error rate (default 0.01).
-
-    Returns:
-        Log-likelihood contribution from this marker.
-    """
-    e = error_rate
-    p_ref = w * (1.0 - e) + (1.0 - w) * e / 3.0
-    p_alt = (1.0 - w) * (1.0 - e) + w * e / 3.0
-
-    # Clamp to avoid log(0) in degenerate cases
-    p_ref = max(p_ref, 1e-300)
-    p_alt = max(p_alt, 1e-300)
-
-    ll = 0.0
-    if ad_ref > 0:
-        ll += ad_ref * math.log(p_ref)
-    if ad_alt > 0:
-        ll += ad_alt * math.log(p_alt)
-    return ll
-
-
-def total_log_likelihood(
-    markers: list[InformativeMarker],
-    f_donor: float,
-    error_rate: float = 0.01,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-) -> float:
-    """Sum of per-marker log-likelihoods across all informative markers.
-
-    Args:
-        markers: List of informative markers with admixture allele counts.
-        f_donor: Donor fraction to evaluate.
-        error_rate: Sequencing error rate.
-        marker_biases: Optional dict mapping (chrom, pos, ref, alt) to per-marker
-            amplification bias. When provided, the expected weight at each marker
-            is adjusted to account for systematic capture bias.
-
-    Returns:
-        Total log-likelihood.
-    """
-    ll = 0.0
-    for m in markers:
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
-        w = expected_weight(m.host_gt, m.donor_gts[0], f_donor, bias=bias)
-        ll += log_likelihood_marker(m.admix_ad_ref, m.admix_ad_alt, w, error_rate)
-    return ll
-
-
 def log_likelihood_marker_bb(
     ad_ref: int,
     ad_alt: int,
@@ -190,7 +118,7 @@ def log_likelihood_marker_bb(
 ) -> float:
     """Per-marker log-likelihood under a beta-binomial model.
 
-    Uses the same error model as log_likelihood_marker to compute
+    Uses the same 4-state error model to compute
     expected probabilities, but replaces the binomial with a
     beta-binomial parameterised by concentration rho.
 
@@ -328,159 +256,9 @@ def expected_weight_multi(
     return w
 
 
-def total_log_likelihood_multi(
-    markers: list[InformativeMarker],
-    donor_fractions: list[float],
-    error_rate: float = 0.01,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-) -> float:
-    """Total log-likelihood for multi-donor model.
-
-    A marker contributes if it is informative for any donor. The expected
-    weight uses all donor genotypes simultaneously.
-
-    Args:
-        markers: Informative markers (for at least one donor).
-        donor_fractions: [f_donor1, f_donor2, ...].
-        error_rate: Sequencing error rate.
-        marker_biases: Optional per-marker bias dict.
-
-    Returns:
-        Total log-likelihood.
-    """
-    ll = 0.0
-    for m in markers:
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
-        w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
-        ll += log_likelihood_marker(m.admix_ad_ref, m.admix_ad_alt, w, error_rate)
-    return ll
-
-
-def _compute_overdispersion(
-    markers: list[InformativeMarker],
-    f_donor: float,
-    error_rate: float,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-) -> float:
-    """Compute Pearson overdispersion factor for CI calibration.
-
-    Compares observed per-marker residual variance to expected binomial
-    variance. Values > 1 indicate model misspecification (e.g. uncorrected
-    per-marker amplification bias) and are used to inflate the profile
-    likelihood CI threshold proportionally.
-
-    This is the standard Pearson dispersion estimate, equivalent to
-    ``pearson_chi2 / df_resid`` from a statsmodels GLM with binomial
-    family. Computed directly here to avoid adding statsmodels as a
-    runtime dependency. Verified to agree with statsmodels to 4 decimal
-    places across donor fractions 5-95% (see
-    scripts/verify_overdispersion.py).
-
-    Args:
-        markers: Informative markers with admixture allele counts.
-        f_donor: MLE donor fraction.
-        error_rate: Sequencing error rate.
-        marker_biases: Optional per-marker bias corrections.
-
-    Returns:
-        Pearson overdispersion factor (phi).
-    """
-    if len(markers) <= 1:
-        return 1.0
-
-    pearson_sum = 0.0
-    n_valid = 0
-
-    for m in markers:
-        dp = m.admix_ad_ref + m.admix_ad_alt
-        if dp == 0:
-            continue
-
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
-        w = expected_weight(m.host_gt, m.donor_gts[0], f_donor, bias=bias)
-
-        e = error_rate
-        p_alt = (1.0 - w) * (1.0 - e) + w * e / 3.0
-        var_vaf = p_alt * (1.0 - p_alt) / dp
-        if var_vaf < 1e-12:
-            continue
-
-        observed_alt_frac = m.admix_ad_alt / dp
-        residual = observed_alt_frac - p_alt
-        pearson_sum += residual * residual / var_vaf
-        n_valid += 1
-
-    if n_valid <= 1:
-        return 1.0
-
-    return pearson_sum / (n_valid - 1)
-
-
-def _compute_overdispersion_multi(
-    markers: list[InformativeMarker],
-    donor_fractions: list[float],
-    error_rate: float,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-) -> float:
-    """Compute Pearson overdispersion factor for multi-donor model.
-
-    See _compute_overdispersion docstring for methodology notes.
-    """
-    if len(markers) <= 1:
-        return 1.0
-
-    pearson_sum = 0.0
-    n_valid = 0
-
-    for m in markers:
-        dp = m.admix_ad_ref + m.admix_ad_alt
-        if dp == 0:
-            continue
-
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
-        w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
-
-        e = error_rate
-        p_alt = (1.0 - w) * (1.0 - e) + w * e / 3.0
-        var_vaf = p_alt * (1.0 - p_alt) / dp
-        if var_vaf < 1e-12:
-            continue
-
-        observed_alt_frac = m.admix_ad_alt / dp
-        residual = observed_alt_frac - p_alt
-        pearson_sum += residual * residual / var_vaf
-        n_valid += 1
-
-    if n_valid <= 1:
-        return 1.0
-
-    return pearson_sum / (n_valid - 1)
-
-
 # ---------------------------------------------------------------------------
 # MLE estimation
 # ---------------------------------------------------------------------------
-
-
-def estimate_error_rate(markers: list[InformativeMarker]) -> float:
-    """Estimate sequencing error rate from marker data.
-
-    Currently returns the default value of 0.01. Future versions may estimate
-    empirically from non-informative marker data.
-
-    Args:
-        markers: List of informative markers (unused in v1).
-
-    Returns:
-        Error rate estimate.
-    """
-    return 0.01
 
 
 def _compute_per_marker_results(
@@ -546,105 +324,6 @@ def _compute_per_marker_results(
     return per_marker
 
 
-def estimate_single_donor(
-    markers: list[InformativeMarker],
-    error_rate: float = 0.01,
-    grid_steps: int = 1001,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-) -> ChimerismResult:
-    """Estimate single-donor chimerism fraction via maximum likelihood.
-
-    Algorithm:
-        1. Grid search over f in [0, 1] at 1/grid_steps resolution
-        2. Brent refinement via scipy.optimize.minimize_scalar in +/-1% window
-        3. Profile likelihood CI using chi-squared threshold (df=1, alpha=0.05)
-        4. Per-marker residuals and outlier flagging (>3 SD)
-
-    Args:
-        markers: List of informative markers with admixture allele counts.
-        error_rate: Sequencing error rate.
-        grid_steps: Number of grid points for initial search.
-        marker_biases: Optional dict mapping (chrom, pos, ref, alt) to per-marker
-            amplification bias for likelihood correction.
-
-    Returns:
-        ChimerismResult with MLE estimate, CI, and per-marker details.
-    """
-    n_informative = len(markers)
-
-    if n_informative == 0:
-        return ChimerismResult(
-            donor_fraction=0.0,
-            donor_fraction_ci=(0.0, 0.0),
-            host_fraction=1.0,
-            log_likelihood=0.0,
-            n_informative=0,
-            n_markers_used=0,
-            per_marker=[],
-            error_rate=error_rate,
-        )
-
-    # Step 1: Grid search
-    grid = np.linspace(0.0, 1.0, grid_steps)
-    ll_values = np.array(
-        [total_log_likelihood(markers, f, error_rate, marker_biases) for f in grid]
-    )
-    best_idx = int(np.argmax(ll_values))
-    f_grid = float(grid[best_idx])
-
-    # Step 2: Brent refinement in +/-1% window around grid max
-    lo = max(0.0, f_grid - 0.01)
-    hi = min(1.0, f_grid + 0.01)
-
-    result = minimize_scalar(
-        lambda f: -total_log_likelihood(markers, f, error_rate, marker_biases),
-        bounds=(lo, hi),
-        method="bounded",
-    )
-    f_mle = float(result.x)
-    ll_max = -float(result.fun)
-
-    # Compute overdispersion for robust CIs
-    phi = max(1.0, _compute_overdispersion(markers, f_mle, error_rate, marker_biases))
-
-    # Step 3: Profile likelihood CI via root-finding
-    # Find f where: ll_max - ll(f) - half_threshold = 0
-    # phi > 1 inflates CIs to account for model misspecification (e.g. marker bias)
-    threshold = chi2.ppf(0.95, df=1) * phi
-    half_threshold = threshold / 2.0
-
-    def ci_func(f: float) -> float:
-        """Zero-crossing where LL drops below CI threshold."""
-        return ll_max - total_log_likelihood(markers, f, error_rate, marker_biases) - half_threshold
-
-    # Lower bound: find root on [0, f_mle], or 0 if LL never drops enough
-    if f_mle <= 0.0 or ci_func(0.0) <= 0.0:
-        f_lo = 0.0
-    else:
-        f_lo = brentq(ci_func, 0.0, f_mle, xtol=1e-5)
-
-    # Upper bound: find root on [f_mle, 1], or 1 if LL never drops enough
-    if f_mle >= 1.0 or ci_func(1.0) <= 0.0:
-        f_hi = 1.0
-    else:
-        f_hi = brentq(ci_func, f_mle, 1.0, xtol=1e-5)
-
-    # Step 4: Per-marker results
-    per_marker = _compute_per_marker_results(markers, f_mle, error_rate, marker_biases)
-    n_markers_used = sum(1 for mr in per_marker if mr.included)
-
-    return ChimerismResult(
-        donor_fraction=f_mle,
-        donor_fraction_ci=(f_lo, f_hi),
-        host_fraction=1.0 - f_mle,
-        log_likelihood=ll_max,
-        n_informative=n_informative,
-        n_markers_used=n_markers_used,
-        per_marker=per_marker,
-        error_rate=error_rate,
-    )
-
-
 def estimate_single_donor_bb(
     markers: list[InformativeMarker],
     error_rate: float = 0.01,
@@ -653,7 +332,7 @@ def estimate_single_donor_bb(
 ) -> ChimerismResult:
     """Estimate single-donor chimerism with beta-binomial likelihood.
 
-    Same interface as estimate_single_donor but uses beta-binomial
+    Estimates single-donor chimerism fraction using beta-binomial
     per-marker likelihoods to handle overdispersion. Jointly estimates
     the donor fraction f and concentration parameter rho.
 

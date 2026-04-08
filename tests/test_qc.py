@@ -6,7 +6,7 @@ import math
 import random
 import re
 
-from allomix.chimerism import estimate_single_donor
+from allomix.chimerism import estimate_single_donor_bb
 from allomix.genotype import InformativeMarker, MarkerGenotypes
 from allomix.qc import ChimerismResult, MarkerResult, _compute_gof_pval, assess_quality
 
@@ -360,7 +360,7 @@ class TestGoFEndToEnd:
             )
         )
 
-        result = estimate_single_donor(markers)
+        result = estimate_single_donor_bb(markers)
         genotypes = MarkerGenotypes(
             informative=[], non_informative=[], n_total=20, n_shared=20, n_filtered=0,
         )

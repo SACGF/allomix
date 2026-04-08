@@ -240,7 +240,7 @@ def sample_allele_counts(
     site, so the effective per-read REF->ALT (or ALT->REF) error rate
     is ``error_rate / 3``.
 
-    This matches the error model in ``chimerism.log_likelihood_marker()``,
+    This matches the error model in ``chimerism.log_likelihood_marker_bb()``,
     ensuring that in-silico validation uses a consistent generative model.
 
     Args:

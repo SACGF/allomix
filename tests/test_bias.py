@@ -12,9 +12,9 @@ from allomix.bias import (
     save_bias_table,
 )
 from allomix.chimerism import (
-    estimate_single_donor,
+    estimate_single_donor_bb,
     expected_weight,
-    total_log_likelihood,
+    total_log_likelihood_bb,
 )
 from allomix.genotype import InformativeMarker, MarkerData
 
@@ -247,9 +247,9 @@ class TestTotalLogLikelihoodWithBias:
         markers = [
             _make_informative_marker((0, 0), (1, 1), 700, 300, marker_type=0),
         ]
-        ll_no_bias = total_log_likelihood(markers, 0.3, 0.01)
+        ll_no_bias = total_log_likelihood_bb(markers, 0.3, 0.01)
         biases = {("chr1", 100, "A", "T"): 0.02}
-        ll_biased = total_log_likelihood(markers, 0.3, 0.01, marker_biases=biases)
+        ll_biased = total_log_likelihood_bb(markers, 0.3, 0.01, marker_biases=biases)
         assert ll_no_bias != ll_biased
 
     def test_correct_bias_improves_likelihood(self):
@@ -260,10 +260,10 @@ class TestTotalLogLikelihoodWithBias:
             _make_informative_marker((0, 0), (1, 1), 680, 320, marker_type=0),
         ]
         # Without bias correction, the MLE will be pulled toward 0.32
-        ll_uncorrected = total_log_likelihood(markers, 0.30, 0.01)
+        ll_uncorrected = total_log_likelihood_bb(markers, 0.30, 0.01)
         # With bias correction (0.02), the model expects VAF 0.32 at f=0.30
         biases = {("chr1", 100, "A", "T"): 0.02}
-        ll_corrected = total_log_likelihood(markers, 0.30, 0.01, marker_biases=biases)
+        ll_corrected = total_log_likelihood_bb(markers, 0.30, 0.01, marker_biases=biases)
         assert ll_corrected > ll_uncorrected
 
 
@@ -309,11 +309,11 @@ class TestEstimateSingleDonorWithBias:
         markers = self._make_biased_markers(true_f, biases_map)
 
         # Without bias correction
-        result_no_bias = estimate_single_donor(markers, error_rate=0.01)
+        result_no_bias = estimate_single_donor_bb(markers, error_rate=0.01)
 
         # With bias correction
         marker_biases = {("chr1", pos, "A", "T"): b for pos, b in biases_map.items()}
-        result_biased = estimate_single_donor(
+        result_biased = estimate_single_donor_bb(
             markers,
             error_rate=0.01,
             marker_biases=marker_biases,
@@ -329,8 +329,8 @@ class TestEstimateSingleDonorWithBias:
         markers = [
             _make_informative_marker((0, 0), (1, 1), 700, 300, marker_type=0),
         ]
-        result_none = estimate_single_donor(markers, error_rate=0.01)
-        result_empty = estimate_single_donor(
+        result_none = estimate_single_donor_bb(markers, error_rate=0.01)
+        result_empty = estimate_single_donor_bb(
             markers,
             error_rate=0.01,
             marker_biases={},
@@ -347,9 +347,9 @@ class TestEstimateSingleDonorWithBias:
         biases_map = {i * 1000: 0.03 for i in range(30)}
         markers = self._make_biased_markers(true_f, biases_map)
 
-        result_no_bias = estimate_single_donor(markers, error_rate=0.01)
+        result_no_bias = estimate_single_donor_bb(markers, error_rate=0.01)
         marker_biases = {("chr1", pos, "A", "T"): b for pos, b in biases_map.items()}
-        result_corrected = estimate_single_donor(
+        result_corrected = estimate_single_donor_bb(
             markers,
             error_rate=0.01,
             marker_biases=marker_biases,
@@ -376,12 +376,12 @@ class TestEstimateSingleDonorWithBias:
             biases_map = {i * 1000: rng.gauss(0, 0.02) for i in range(40)}
             markers = self._make_biased_markers(true_f, biases_map)
 
-            result_no = estimate_single_donor(markers, error_rate=0.01)
+            result_no = estimate_single_donor_bb(markers, error_rate=0.01)
             if result_no.donor_fraction_ci[0] <= true_f <= result_no.donor_fraction_ci[1]:
                 covers_no_bias += 1
 
             mb = {("chr1", p, "A", "T"): b for p, b in biases_map.items()}
-            result_yes = estimate_single_donor(
+            result_yes = estimate_single_donor_bb(
                 markers,
                 error_rate=0.01,
                 marker_biases=mb,

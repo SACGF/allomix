@@ -91,7 +91,7 @@ For validation, allomix includes a simulation module that generates synthetic ch
 
 $$\text{VAF}_{expected} = \frac{(1-f) \cdot a_h + f \cdot a_d}{2}$$
 
-where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and donor, respectively. Per-marker capture biases are optionally added, sampled from $\mathcal{N}(0, \sigma_{bias})$ where $\sigma_{bias}$ defaults to 0.02, consistent with empirical observations.[@Vynck2023bias] Alternative allele counts are then drawn from a binomial distribution with the biased expected frequency and target depth. This produces realistic synthetic data that reflects both stochastic sampling noise and systematic panel-specific biases.
+where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and donor, respectively. Per-marker capture biases are optionally added, sampled from $\mathcal{N}(0, \sigma_{bias})$. We empirically measured $\sigma_{bias}$ = 0.019 from 6,500 heterozygous observations across 71 markers in 210 joint-called VCFs from a 76-SNP rhAmpSeq sample identification panel; all simulations in this study use $\sigma_{bias}$ = 0.02. Sequencing errors are modelled symmetrically: each read is mis-called with probability $\varepsilon$ (default 0.01), matching the error rate used in the likelihood model. Alternative allele counts are then drawn from a binomial distribution with the biased, error-adjusted expected frequency and target depth. This produces realistic synthetic data that reflects stochastic sampling noise, systematic panel-specific biases, and sequencing errors.
 
 ### Software Availability
 

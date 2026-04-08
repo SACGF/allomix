@@ -264,41 +264,14 @@ def sample_allele_counts(
     if hasattr(rng, "binomialvariate"):
         alt_count = rng.binomialvariate(depth, p)
     else:
-        alt_count = _binomial(rng, depth, p)
+        # numpy is a runtime dependency — use its binomial instead of
+        # a hand-rolled normal approximation which is inaccurate at extreme p.
+        import numpy as _np
+
+        seed = rng.getrandbits(32)
+        alt_count = int(_np.random.default_rng(seed).binomial(depth, p))
     ref_count = depth - alt_count
     return (ref_count, alt_count)
-
-
-def _binomial(rng: random.Random, n: int, p: float) -> int:
-    """Fallback binomial sampling using inverse-transform for small n.
-
-    For large n, uses the normal approximation. This avoids depending on numpy
-    just for test infrastructure.
-
-    Args:
-        rng: Random instance.
-        n: Number of trials.
-        p: Probability of success.
-
-    Returns:
-        Number of successes.
-    """
-    if p <= 0.0:
-        return 0
-    if p >= 1.0:
-        return n
-    if n <= 100:
-        # Direct simulation
-        count = 0
-        for _ in range(n):
-            if rng.random() < p:
-                count += 1
-        return count
-    # Normal approximation for large n
-    mu = n * p
-    sigma = math.sqrt(n * p * (1 - p))
-    result = round(rng.gauss(mu, sigma))
-    return max(0, min(n, result))
 
 
 def gt_from_counts(ref_count: int, alt_count: int) -> str:

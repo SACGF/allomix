@@ -22,12 +22,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.bias import load_bias_table
 from allomix.chimerism import estimate_single_donor
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.simulate import (
     blend_vcfs,
-    generate_marker_biases,
+    generate_marker_biases_realistic,
     parse_vcf as sim_parse_vcf,
     write_vcf,
 )
@@ -50,18 +49,20 @@ def generate_and_run(
     bias_sd: float,
     seed: int,
     outdir: Path,
+    depth_cv: float = 0.43,
+    locus_dropout_rate: float = 0.016,
 ) -> list[dict]:
     """Generate synthetic data at a given depth and run allomix on it."""
     vcf_dir = outdir / f"depth_{depth}"
     vcf_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate consistent per-marker biases (same across depths)
+    # Generate consistent per-marker biases (same across depths, heavy-tailed)
     _, host_records = sim_parse_vcf(host_vcf)
     _, donor_records = sim_parse_vcf(donor_vcf)
     donor_loci = {r.locus for r in donor_records}
     n_shared = sum(1 for r in host_records if r.locus in donor_loci)
     bias_rng = random.Random(seed)
-    fixed_biases = generate_marker_biases(n_shared, bias_rng, bias_sd)
+    fixed_biases = generate_marker_biases_realistic(n_shared, bias_rng)
 
     # Generate blended VCFs
     for frac in FRACTIONS:
@@ -71,6 +72,8 @@ def generate_and_run(
             host_path=host_vcf, donor_path=donor_vcf,
             donor_fraction=frac, target_depth=depth,
             sample_name=name, seed=sample_seed, fixed_biases=fixed_biases,
+            locus_dropout_rate=locus_dropout_rate,
+            depth_cv=depth_cv,
         )
         write_vcf(result, vcf_dir / f"{name}.vcf")
 

@@ -89,6 +89,8 @@ def generate_biased_data(
             sample_name=name,
             seed=sample_seed,
             fixed_biases=fixed_biases,
+            locus_dropout_rate=0.016,
+            depth_cv=0.43,
         )
         write_vcf(result, outdir / f"{name}.vcf")
 

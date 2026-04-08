@@ -74,8 +74,10 @@ def run_one_replicate(
             target_depth=DEPTH,
             sample_name=name,
             seed=seed + hash(str(frac)) % (2**31),
-            marker_bias_sd=0.02,
+            realistic_biases=True,
             error_rate=0.01,
+            locus_dropout_rate=0.016,
+            depth_cv=0.43,
         )
         sample_vcf = rep_dir / f"{name}.vcf"
         write_vcf(blend_result, sample_vcf)

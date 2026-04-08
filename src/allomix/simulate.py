@@ -316,6 +316,37 @@ class BlendResult:
     # List of (chrom, pos, ref, alt, bias) for each shared marker, or None if no bias
 
 
+def sample_marker_depths(
+    n_markers: int,
+    mean_depth: int,
+    depth_cv: float,
+    rng: random.Random,
+) -> list[int]:
+    """Draw per-marker depths from a log-normal matching empirical CV.
+
+    In real sequencing panels, depth varies substantially across markers
+    (empirically CV=0.43 on 76-SNP rhAmpSeq panel). The log-normal is
+    parameterised so that E[X] = mean_depth and CV[X] = depth_cv.
+
+    Args:
+        n_markers: Number of markers.
+        mean_depth: Target mean depth across markers.
+        depth_cv: Coefficient of variation for depth across markers.
+            0.0 = uniform depth (all markers get mean_depth).
+        rng: Random instance for reproducibility.
+
+    Returns:
+        List of per-marker depths (integers, minimum 1).
+    """
+    if depth_cv <= 0:
+        return [mean_depth] * n_markers
+    # Log-normal parameters from desired mean and CV
+    sigma2 = math.log(1 + depth_cv**2)
+    mu = math.log(mean_depth) - sigma2 / 2
+    sigma = math.sqrt(sigma2)
+    return [max(1, round(math.exp(rng.gauss(mu, sigma)))) for _ in range(n_markers)]
+
+
 def generate_marker_biases(
     n_markers: int,
     rng: random.Random,
@@ -344,6 +375,45 @@ def generate_marker_biases(
     if bias_sd <= 0:
         return [0.0] * n_markers
     return [rng.gauss(0.0, bias_sd) for _ in range(n_markers)]
+
+
+def generate_marker_biases_realistic(
+    n_markers: int,
+    rng: random.Random,
+    sd: float = 0.012,
+    outlier_frac: float = 0.05,
+    outlier_sd: float = 0.08,
+) -> list[float]:
+    """Generate biases with a heavy-tailed distribution.
+
+    The empirical bias distribution is heavy-tailed: median |bias| is 0.005
+    but 95th percentile is 0.041 and max is 0.10. A simple Gaussian
+    underestimates the tails. This uses a mixture model:
+
+        95% of markers: N(0, sd)         — typical markers
+        5% of markers:  N(0, outlier_sd) — outlier markers with extreme bias
+
+    The default parameters are calibrated from 71 markers across 210
+    joint-called VCFs on a 76-SNP rhAmpSeq panel, yielding an overall
+    SD of ~0.018 matching the empirical measurement.
+
+    Args:
+        n_markers: Number of markers.
+        rng: Random instance for reproducibility.
+        sd: Standard deviation for the bulk of markers (default 0.012).
+        outlier_frac: Fraction of outlier markers (default 0.05).
+        outlier_sd: Standard deviation for outlier markers (default 0.08).
+
+    Returns:
+        List of per-marker bias values.
+    """
+    biases = []
+    for _ in range(n_markers):
+        if rng.random() < outlier_frac:
+            biases.append(rng.gauss(0, outlier_sd))
+        else:
+            biases.append(rng.gauss(0, sd))
+    return biases
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +583,8 @@ def blend_vcfs(
     error_rate: float = 0.01,
     allele_dropout_rate: float = 0.0,
     locus_dropout_rate: float = 0.0,
+    depth_cv: float = 0.0,
+    realistic_biases: bool = False,
 ) -> BlendResult:
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
 
@@ -527,7 +599,9 @@ def blend_vcfs(
         seed: Random seed for reproducibility.
         marker_bias_sd: Standard deviation of per-marker capture bias.
             0.0 = no bias (ideal simulation), 0.02 = realistic.
-            Ignored when ``fixed_biases`` is provided.
+            Ignored when ``fixed_biases`` is provided. When
+            ``realistic_biases`` is True, this is also ignored (the
+            realistic mixture model is used instead).
         fixed_biases: Pre-generated per-marker bias values. When provided,
             these biases are used directly instead of generating random ones.
             Length must match the number of shared markers.
@@ -538,6 +612,13 @@ def blend_vcfs(
             allele's reads are entirely lost, making a het look like a hom.
         locus_dropout_rate: Per-marker probability of complete locus
             dropout (0.0–1.0). Affected markers produce zero reads.
+        depth_cv: Coefficient of variation for per-marker depth
+            (0.0 = uniform depth, 0.43 = empirical value from rhAmpSeq).
+            When > 0 and target_depth is set, per-marker depths are drawn
+            from a log-normal distribution.
+        realistic_biases: If True, use the heavy-tailed mixture bias
+            distribution (generate_marker_biases_realistic) instead of
+            a simple Gaussian. Ignored when ``fixed_biases`` is provided.
 
     Returns:
         BlendResult containing the header, VCF record lines, and statistics.
@@ -575,8 +656,16 @@ def blend_vcfs(
                 f"fixed_biases length ({len(fixed_biases)}) != shared markers ({n_shared})"
             )
         marker_biases = fixed_biases
+    elif realistic_biases:
+        marker_biases = generate_marker_biases_realistic(n_shared, rng)
     else:
         marker_biases = generate_marker_biases(n_shared, rng, marker_bias_sd)
+
+    # Pre-generate per-marker depths
+    if depth_cv > 0 and target_depth is not None:
+        marker_depths = sample_marker_depths(n_shared, target_depth, depth_cv, rng)
+    else:
+        marker_depths = None  # use flat target_depth or host depth
 
     out_records: list[str] = []
     bias_info: list[tuple[str, int, str, str, float]] = []
@@ -603,7 +692,9 @@ def blend_vcfs(
             num_informative += 1
 
         # Determine depth
-        if target_depth is not None:
+        if marker_depths is not None:
+            depth = marker_depths[bias_idx]
+        elif target_depth is not None:
             depth = target_depth
         else:
             depth = extract_depth(host_rec) or 1000
@@ -683,7 +774,9 @@ def blend_vcfs(
         records=out_records,
         num_markers=num_markers,
         num_informative=num_informative,
-        marker_biases=bias_info if (marker_bias_sd > 0 or fixed_biases is not None) else None,
+        marker_biases=bias_info
+        if (marker_bias_sd > 0 or fixed_biases is not None or realistic_biases)
+        else None,
     )
 
 

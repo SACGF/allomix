@@ -15,9 +15,12 @@ Output:
 from __future__ import annotations
 
 import argparse
+import logging
 import random
 import sys
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 N_MARKERS = 100
 
@@ -171,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--n-markers", type=int, default=N_MARKERS, help="Number of SNPs")
     args = parser.parse_args(argv)
 
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     rng = random.Random(args.seed)
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -213,9 +217,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # Count informativeness
     n_informative = sum(1 for h, d in zip(host_gts, donor_gts) if h != d)
-    print(f"Created {n} markers ({n_informative} informative) in {outdir}/", file=sys.stderr)
-    print(f"  {host_path}", file=sys.stderr)
-    print(f"  {donor_path}", file=sys.stderr)
+    log.info("Created %d markers (%d informative) in %s/", n, n_informative, outdir)
+    log.info("  %s", host_path)
+    log.info("  %s", donor_path)
 
     return 0
 

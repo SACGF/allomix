@@ -24,6 +24,7 @@ Output:
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -32,6 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from script_utils import write_truth_table  # noqa: E402
 
 from allomix.simulate import blend_vcfs, write_vcf  # noqa: E402
+
+log = logging.getLogger(__name__)
 
 # (day, donor_fraction) — simulates engraftment then relapse
 TIMEPOINTS = [
@@ -62,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Per-marker capture bias SD (0=ideal, 0.02=realistic, default: 0)",
     )
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -73,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         sample_name = f"day{day:03d}_donor_{donor_pct}"
         vcf_name = f"{sample_name}.vcf"
 
-        print(f"Generating {vcf_name} (day {day}, {donor_pct}% donor) ...", file=sys.stderr)
+        log.info("Generating %s (day %d, %d%% donor) ...", vcf_name, day, donor_pct)
 
         result = blend_vcfs(
             host_path=args.host,
@@ -104,8 +108,8 @@ def main(argv: list[str] | None = None) -> int:
         ],
     )
 
-    print(f"\nGenerated {len(TIMEPOINTS)} timepoint VCFs in {outdir}/", file=sys.stderr)
-    print(f"Truth table: {truth_path}", file=sys.stderr)
+    log.info("Generated %d timepoint VCFs in %s/", len(TIMEPOINTS), outdir)
+    log.info("Truth table: %s", truth_path)
     return 0
 
 

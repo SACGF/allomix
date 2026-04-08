@@ -93,6 +93,20 @@ data/                 # De-identified example VCFs
 
 **`paper/scripts/`** contains scripts that produce the specific figures, validation experiments, and statistics for the publication. They use allomix as a library and are intended to make the paper's results fully reproducible.
 
+### Building the Paper
+
+The paper build is orchestrated by Snakemake. All validation and figure scripts run in parallel, then vibepaper renders the final Word document from the facts they produce.
+
+```bash
+pip install snakemake                          # if not already installed
+snakemake -s paper/Snakefile -j 7              # run all 7 scripts in parallel, then build paper
+snakemake -s paper/Snakefile -j 7 --forceall   # force rerun everything from scratch
+snakemake -s paper/Snakefile paper             # just render the paper (assumes facts already exist)
+snakemake -s paper/Snakefile clean             # remove all generated output
+```
+
+Snakemake tracks file timestamps, so editing a script or its input data reruns only the affected rule and the downstream paper build.
+
 ## Usage
 
 ```bash

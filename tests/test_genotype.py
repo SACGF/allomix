@@ -13,8 +13,9 @@ from allomix.genotype import (
 )
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 EXAMPLE_VCF = DATA_DIR / "idt_rhampseq_sid_example.vcf"
-JOINT_VCF = DATA_DIR / "joint_called_example.vcf"
+JOINT_VCF = TEST_DATA_DIR / "joint_single_donor.vcf"
 
 
 # ---------------------------------------------------------------------------
@@ -236,3 +237,53 @@ class TestClassifyMarkers:
         admix = [MarkerData("chr7", 100, "A", "T", (0, 1), 50, 50, 100, 99)]
         result = classify_markers(host, [donor], admix, min_dp=0, min_gq=0)
         assert result.sample_name != "chr7"
+
+
+# ---------------------------------------------------------------------------
+# parse_vcf — multi-sample joint VCF
+# ---------------------------------------------------------------------------
+
+
+class TestParseVcfMultiSample:
+    """Test parsing a multi-sample joint-called VCF with sample selection."""
+
+    def test_parse_by_name_host(self):
+        markers = parse_vcf(JOINT_VCF, sample="HOST")
+        assert len(markers) > 0
+
+    def test_parse_by_name_donor(self):
+        markers = parse_vcf(JOINT_VCF, sample="DONOR")
+        assert len(markers) > 0
+
+    def test_parse_by_name_admix(self):
+        markers = parse_vcf(JOINT_VCF, sample="ADMIX_F0.50")
+        assert len(markers) > 0
+
+    def test_different_samples_differ(self):
+        host = parse_vcf(JOINT_VCF, sample="HOST")
+        donor = parse_vcf(JOINT_VCF, sample="DONOR")
+        # Host and donor should have different genotypes at most markers
+        n_differ = sum(1 for h, d in zip(host, donor) if h.gt != d.gt)
+        assert n_differ > 0
+
+    def test_default_index_zero(self):
+        """Default sample=0 should return the same as sample='HOST'."""
+        by_idx = parse_vcf(JOINT_VCF, sample=0)
+        by_name = parse_vcf(JOINT_VCF, sample="HOST")
+        assert len(by_idx) == len(by_name)
+        for a, b in zip(by_idx, by_name):
+            assert a.gt == b.gt
+            assert a.ad_ref == b.ad_ref
+            assert a.ad_alt == b.ad_alt
+
+    def test_invalid_sample_raises(self):
+        with pytest.raises(ValueError, match="not found"):
+            parse_vcf(JOINT_VCF, sample="NONEXISTENT")
+
+    def test_admixture_at_zero_matches_host(self):
+        """ADMIX_F0.00 should have genotypes very similar to HOST."""
+        host = parse_vcf(JOINT_VCF, sample="HOST")
+        admix = parse_vcf(JOINT_VCF, sample="ADMIX_F0.00")
+        # At f=0, admixture GTs should mostly match host GTs
+        n_match = sum(1 for h, a in zip(host, admix) if h.gt == a.gt)
+        assert n_match > len(host) * 0.8

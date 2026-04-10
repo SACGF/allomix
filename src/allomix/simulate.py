@@ -994,3 +994,232 @@ def blend_from_genotype_dicts(
         num_markers=n,
         num_informative=n_informative,
     )
+
+
+# ---------------------------------------------------------------------------
+# Joint VCF generation (multi-sample)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class JointVcfResult:
+    """Result of building a multi-sample joint VCF."""
+
+    header: list[str]
+    records: list[str]
+    num_markers: int
+    num_informative: int
+    sample_names: list[str]
+
+
+def _simulate_genotype_sample(
+    gt: tuple[int, int],
+    depth: int,
+    rng: random.Random,
+) -> str:
+    """Simulate a realistic FORMAT sample field for a genotyping sample.
+
+    Draws allele counts from a binomial distribution given the true genotype,
+    simulating what sequencing of a pure (non-admixed) sample would produce.
+    """
+    vaf = alt_dose(gt) / 2.0
+    ref_count, alt_count = sample_allele_counts(vaf, depth, rng, error_rate=0.01)
+    total = ref_count + alt_count
+    gt_str = f"{gt[0]}/{gt[1]}"
+    af_val = f"{alt_count / total:.4f}" if total > 0 else "0"
+    return f"{gt_str}:{ref_count},{alt_count}:{total}:99:{af_val}"
+
+
+def build_joint_vcf(
+    host_path: str | Path,
+    donor_paths: list[str | Path],
+    admix_fractions: list[float],
+    admix_sample_names: list[str],
+    host_sample_name: str = "HOST",
+    donor_sample_names: list[str] | None = None,
+    target_depth: int | None = None,
+    seed: int | None = None,
+    error_rate: float = 0.01,
+    depth_cv: float = 0.0,
+    marker_bias_sd: float = 0.0,
+) -> JointVcfResult:
+    """Build a multi-sample joint VCF containing host, donor(s), and admixture samples.
+
+    Simulates what GATK joint calling would produce: all samples in one VCF,
+    with ALT alleles discovered anywhere propagated to every sample's AD field.
+
+    Args:
+        host_path: Host genotype VCF.
+        donor_paths: List of donor genotype VCFs.
+        admix_fractions: Donor fraction for each admixture sample. For single-donor,
+            each element is a float. For multi-donor, each element should be a list
+            of per-donor fractions (not yet supported; pass single floats).
+        admix_sample_names: Column name for each admixture sample.
+        host_sample_name: Column name for the host.
+        donor_sample_names: Column names for donors. Defaults to DONOR, DONOR1/DONOR2, etc.
+        target_depth: Fixed depth for all markers/samples. If None, uses host VCF depth.
+        seed: Random seed.
+        error_rate: Sequencing error rate for admixture simulation.
+        depth_cv: Coefficient of variation for per-marker depth.
+        marker_bias_sd: Per-marker capture bias SD.
+
+    Returns:
+        JointVcfResult with header lines and per-locus record lines.
+    """
+    if len(admix_fractions) != len(admix_sample_names):
+        raise ValueError(
+            f"admix_fractions length ({len(admix_fractions)}) != "
+            f"admix_sample_names length ({len(admix_sample_names)})"
+        )
+
+    rng = random.Random(seed)
+
+    # Parse host and donor VCFs
+    host_header, host_records = parse_vcf(host_path)
+    donor_record_lists = [parse_vcf(dp)[1] for dp in donor_paths]
+
+    # Default donor names
+    if donor_sample_names is None:
+        if len(donor_paths) == 1:
+            donor_sample_names = ["DONOR"]
+        else:
+            donor_sample_names = [f"DONOR{i + 1}" for i in range(len(donor_paths))]
+
+    all_sample_names = [host_sample_name] + donor_sample_names + admix_sample_names
+
+    # Index donor records by locus
+    donor_by_locus = [{rec.locus: rec for rec in donor_recs} for donor_recs in donor_record_lists]
+
+    # Find shared loci (present in host and all donors)
+    shared_loci = []
+    for host_rec in host_records:
+        if all(host_rec.locus in dbl for dbl in donor_by_locus):
+            shared_loci.append(host_rec)
+
+    n_shared = len(shared_loci)
+
+    # Pre-generate per-marker biases and depths
+    marker_biases = generate_marker_biases(n_shared, rng, marker_bias_sd)
+    if depth_cv > 0 and target_depth is not None:
+        marker_depths = sample_marker_depths(n_shared, target_depth, depth_cv, rng)
+    else:
+        marker_depths = None
+
+    # Build header
+    out_header = []
+    for line in host_header:
+        if line.startswith("#CHROM"):
+            parts = line.split("\t")[:9]
+            parts.extend(all_sample_names)
+            out_header.append("\t".join(parts))
+        else:
+            out_header.append(line)
+
+    out_records = []
+    num_informative = 0
+    format_field = "GT:AD:DP:GQ:AF"
+
+    for idx, host_rec in enumerate(shared_loci):
+        host_gt = extract_gt(host_rec)
+        donor_recs = [dbl[host_rec.locus] for dbl in donor_by_locus]
+        donor_gts = [extract_gt(dr) for dr in donor_recs]
+
+        if host_gt is None or any(dg is None for dg in donor_gts):
+            continue
+
+        # Check REF allele consistency
+        if any(dr.ref != host_rec.ref for dr in donor_recs):
+            continue
+
+        # Determine ALT allele: use first non-"." ALT from any sample
+        alt_allele = host_rec.alt
+        if alt_allele == ".":
+            for dr in donor_recs:
+                if dr.alt != ".":
+                    alt_allele = dr.alt
+                    break
+        if alt_allele == ".":
+            alt_allele = "."
+
+        # Determine depth for this marker
+        if marker_depths is not None:
+            depth = marker_depths[idx]
+        elif target_depth is not None:
+            depth = target_depth
+        else:
+            depth = extract_depth(host_rec) or 1000
+
+        bias = marker_biases[idx]
+
+        # Check informativeness (any donor differs from host)
+        if any(is_informative(host_gt, dg) for dg in donor_gts):
+            num_informative += 1
+
+        # Build sample columns
+        sample_fields = []
+
+        # Host column: simulate genotyping reads
+        sample_fields.append(_simulate_genotype_sample(host_gt, depth, rng))
+
+        # Donor columns: simulate genotyping reads
+        for dg in donor_gts:
+            sample_fields.append(_simulate_genotype_sample(dg, depth, rng))
+
+        # Admixture columns: simulate chimeric reads
+        for frac in admix_fractions:
+            if len(donor_gts) == 1:
+                vaf = expected_vaf(host_gt, donor_gts[0], frac)
+            else:
+                # For multi-donor with single fraction, split equally
+                per_donor = [frac / len(donor_gts)] * len(donor_gts)
+                vaf = expected_vaf_multi(host_gt, donor_gts, per_donor)
+
+            vaf_biased = max(0.0, min(1.0, vaf + bias))
+            ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng, error_rate)
+            total = ref_count + alt_count
+            gt = gt_from_counts(ref_count, alt_count)
+            af_val = f"{alt_count / total:.4f}" if total > 0 else "0"
+            sample_fields.append(f"{gt}:{ref_count},{alt_count}:{total}:99:{af_val}")
+
+        # Build info
+        info_parts = [f"DP={depth}"]
+
+        line = "\t".join(
+            [
+                host_rec.chrom,
+                str(host_rec.pos),
+                host_rec.id_,
+                host_rec.ref,
+                alt_allele,
+                str(host_rec.qual),
+                "PASS",
+                ";".join(info_parts),
+                format_field,
+                *sample_fields,
+            ]
+        )
+        out_records.append(line)
+
+    return JointVcfResult(
+        header=out_header,
+        records=out_records,
+        num_markers=len(out_records),
+        num_informative=num_informative,
+        sample_names=all_sample_names,
+    )
+
+
+def write_joint_vcf(result: JointVcfResult, path: str | Path) -> None:
+    """Write a JointVcfResult to a VCF file.
+
+    Args:
+        result: JointVcfResult from build_joint_vcf().
+        path: Output file path.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        for line in result.header:
+            fh.write(line + "\n")
+        for line in result.records:
+            fh.write(line + "\n")

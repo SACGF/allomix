@@ -13,6 +13,7 @@ import pytest
 from allomix.simulate import (
     alt_dose,
     blend_vcfs,
+    build_joint_vcf,
     expected_vaf,
     extract_depth,
     extract_gt,
@@ -22,6 +23,7 @@ from allomix.simulate import (
     parse_vcf,
     sample_allele_counts,
     write_genotype_vcf,
+    write_joint_vcf,
     write_vcf,
 )
 
@@ -212,8 +214,7 @@ class TestSampleAlleleCountsErrorModel:
         n_trials = 200
         depth = 10000
         alt_counts = [
-            sample_allele_counts(0.0, depth, rng, error_rate=0.03)[1]
-            for _ in range(n_trials)
+            sample_allele_counts(0.0, depth, rng, error_rate=0.03)[1] for _ in range(n_trials)
         ]
         mean_alt_rate = sum(alt_counts) / (n_trials * depth)
         # Expected: e/3 = 0.01.  Allow +/- 0.002 for sampling noise.
@@ -227,8 +228,7 @@ class TestSampleAlleleCountsErrorModel:
         n_trials = 200
         depth = 10000
         ref_counts = [
-            sample_allele_counts(1.0, depth, rng, error_rate=0.03)[0]
-            for _ in range(n_trials)
+            sample_allele_counts(1.0, depth, rng, error_rate=0.03)[0] for _ in range(n_trials)
         ]
         mean_ref_rate = sum(ref_counts) / (n_trials * depth)
         assert abs(mean_ref_rate - 0.01) < 0.002, (
@@ -249,8 +249,7 @@ class TestSampleAlleleCountsErrorModel:
         p_alt = 0.3 * (1 - e) + 0.7 * e / 3.0
         expected_p = p_alt / (1.0 - 2.0 * e / 3.0)
         alt_counts = [
-            sample_allele_counts(0.3, depth, rng, error_rate=e)[1]
-            for _ in range(n_trials)
+            sample_allele_counts(0.3, depth, rng, error_rate=e)[1] for _ in range(n_trials)
         ]
         mean_alt_rate = sum(alt_counts) / (n_trials * depth)
         assert abs(mean_alt_rate - expected_p) < 0.001, (
@@ -267,15 +266,13 @@ class TestSampleAlleleCountsErrorModel:
         n_trials = 200
         depth = 10000
         alt_counts = [
-            sample_allele_counts(0.0, depth, rng, error_rate=0.03)[1]
-            for _ in range(n_trials)
+            sample_allele_counts(0.0, depth, rng, error_rate=0.03)[1] for _ in range(n_trials)
         ]
         mean_alt_rate = sum(alt_counts) / (n_trials * depth)
         # Under old symmetric model this would be ~0.03.
         # Under 4-state model it should be ~0.01.
         assert mean_alt_rate < 0.02, (
-            f"ALT rate {mean_alt_rate:.4f} is too high; "
-            "looks like the old symmetric error model"
+            f"ALT rate {mean_alt_rate:.4f} is too high; looks like the old symmetric error model"
         )
 
 
@@ -618,11 +615,147 @@ class TestBlendVcfLocusDropout:
             write_genotype_vcf(geno, donor_path, "DONOR", key="donor_gt")
 
             result = blend_vcfs(
-                host_path, donor_path,
-                donor_fraction=0.20, target_depth=1000,
-                seed=42, locus_dropout_rate=0.20,
+                host_path,
+                donor_path,
+                donor_fraction=0.20,
+                target_depth=1000,
+                seed=42,
+                locus_dropout_rate=0.20,
             )
             assert result.num_markers == len(result.records), (
-                f"num_markers={result.num_markers} but "
-                f"len(records)={len(result.records)}"
+                f"num_markers={result.num_markers} but len(records)={len(result.records)}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Tests: build_joint_vcf
+# ---------------------------------------------------------------------------
+
+TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
+
+
+class TestBuildJointVcf:
+    """Test the multi-sample joint VCF builder."""
+
+    def test_basic_structure(self, tmp_path: Path) -> None:
+        """Joint VCF should have correct header and sample columns."""
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+            ],
+        )
+        result = build_joint_vcf(
+            host_path=str(host_path),
+            donor_paths=[str(donor_path)],
+            admix_fractions=[0.0, 0.5],
+            admix_sample_names=["TP1", "TP2"],
+            target_depth=1000,
+            seed=42,
+        )
+        assert result.num_markers == 2
+        assert result.sample_names == ["HOST", "DONOR", "TP1", "TP2"]
+        # Check header has all sample names
+        chrom_line = [line for line in result.header if line.startswith("#CHROM")][0]
+        assert "HOST" in chrom_line
+        assert "DONOR" in chrom_line
+        assert "TP1" in chrom_line
+        assert "TP2" in chrom_line
+
+    def test_write_and_parse(self, tmp_path: Path) -> None:
+        """Write joint VCF and verify it can be parsed back."""
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+            ],
+        )
+        result = build_joint_vcf(
+            host_path=str(host_path),
+            donor_paths=[str(donor_path)],
+            admix_fractions=[0.10],
+            admix_sample_names=["ADMIX"],
+            target_depth=2000,
+            seed=42,
+        )
+        out = tmp_path / "joint.vcf"
+        write_joint_vcf(result, out)
+
+        # Re-parse with simulate.parse_vcf (text-based parser)
+        header, records = parse_vcf(out)
+        assert len(records) == 2
+        chrom_line = [line for line in header if line.startswith("#CHROM")][0]
+        assert "HOST" in chrom_line
+        assert "DONOR" in chrom_line
+        assert "ADMIX" in chrom_line
+
+    def test_informative_count(self, tmp_path: Path) -> None:
+        """Informative markers should be counted correctly."""
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),  # informative
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),  # not informative
+                ("chr1", 300, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),  # informative
+            ],
+            [
+                ("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000"),
+                ("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000"),
+                ("chr1", 300, "A", "T", "GT:AD:DP", "0/0:1000,0:1000"),
+            ],
+        )
+        result = build_joint_vcf(
+            host_path=str(host_path),
+            donor_paths=[str(donor_path)],
+            admix_fractions=[0.10],
+            admix_sample_names=["ADMIX"],
+            target_depth=1000,
+            seed=42,
+        )
+        assert result.num_markers == 3
+        assert result.num_informative == 2
+
+    def test_mismatched_lengths_raises(self, tmp_path: Path) -> None:
+        """Mismatched fractions and names should raise ValueError."""
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [("chr1", 100, "A", "T", "GT:AD:DP", "0/0:1000,0:1000")],
+            [("chr1", 100, "A", "T", "GT:AD:DP", "1/1:0,1000:1000")],
+        )
+        with pytest.raises(ValueError, match="admix_fractions length"):
+            build_joint_vcf(
+                host_path=str(host_path),
+                donor_paths=[str(donor_path)],
+                admix_fractions=[0.10, 0.50],
+                admix_sample_names=["ONLY_ONE"],
+                target_depth=1000,
+                seed=42,
+            )
+
+    def test_from_existing_test_data(self) -> None:
+        """Build from the existing host/donor test data VCFs."""
+        host_path = TEST_DATA_DIR / "host.vcf"
+        donor_path = TEST_DATA_DIR / "donor.vcf"
+        if not host_path.exists():
+            pytest.skip("Test data not available")
+
+        result = build_joint_vcf(
+            host_path=str(host_path),
+            donor_paths=[str(donor_path)],
+            admix_fractions=[0.10],
+            admix_sample_names=["TP1"],
+            target_depth=2000,
+            seed=42,
+        )
+        assert result.num_markers > 0
+        assert result.num_informative > 0

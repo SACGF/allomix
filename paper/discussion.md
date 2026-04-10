@@ -12,7 +12,7 @@ The likelihood model of Crysup and Woerner was evaluated at read depths of 2--10
 
 ### Confidence Interval Calibration
 
-The observed CI undercoverage ({{ depth_1000.ci_coverage_pct }}--{{ depth_50.ci_coverage_pct }}% versus a nominal 95%) reflects systematic noise sources that the binomial likelihood model does not capture, a known limitation of MLE-based approaches.[@Vynck2023bias] Bias correction (demonstrated here) partially addresses this; beta-binomial likelihoods and empirical recalibration are planned improvements.
+The observed CI undercoverage ({{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}% versus a nominal 95%) persists despite the beta-binomial likelihood and per-marker bias correction already incorporated in allomix. The beta-binomial accounts for overdispersion via a shared concentration parameter, and bias correction raises coverage from {{ bias_no_bias.ci_coverage_pct }}% to {{ bias_with_bias.ci_coverage_pct }}% at 2,000x depth. The remaining gap reflects noise sources that a single shared overdispersion parameter cannot fully capture: locus dropout, heavy-tailed per-marker bias distributions, and depth non-uniformity.[@Vynck2023bias] Empirical CI recalibration from training data is a potential route to closing this gap.
 
 ### Repurposing Existing Panels
 

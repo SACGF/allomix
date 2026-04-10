@@ -41,6 +41,19 @@ BIAS_FIGS = ["output/bias_comparison/bias_correction_comparison.png"]
 TIMELINE_FACTS = [f"{FACTS_DIR}/timeline.csv"]
 TIMELINE_FIGS = [f"{FACTS_DIR}/fig_timeline.png"]
 
+CALIBRATION_BATCHES = expand("output/calibration/batch_{i}.csv", i=range(10))
+
+SUPP_SYNTHETIC_FIGS = [
+    f"{FACTS_DIR}/figS1_bias_distributions.png",
+    f"{FACTS_DIR}/figS2_depth_distributions.png",
+    f"{FACTS_DIR}/figS3_het_vaf.png",
+    f"{FACTS_DIR}/figS4_ablation.png",
+    f"{FACTS_DIR}/figS5_ci_calibration.png",
+    f"{FACTS_DIR}/figS6_residuals.png",
+    f"{FACTS_DIR}/fig_bias_stability.png",
+]
+SUPP_SYNTHETIC_FACTS = [f"{FACTS_DIR}/supp_synthetic.csv"]
+
 PAPER_FACTS = [
     f"{FACTS_DIR}/validation_summary.csv",
     f"{FACTS_DIR}/bias_no_bias.csv",
@@ -61,9 +74,17 @@ ALL_FACTS = (
     + MULTIDONOR_FACTS
     + TIMELINE_FACTS
     + PAPER_FACTS
+    + SUPP_SYNTHETIC_FACTS
 )
 
-ALL_FIGS = DEPTH_FIGS + RELATEDNESS_FIGS + MULTIDONOR_FIGS + BIAS_FIGS + TIMELINE_FIGS
+ALL_FIGS = (
+    DEPTH_FIGS
+    + RELATEDNESS_FIGS
+    + MULTIDONOR_FIGS
+    + BIAS_FIGS
+    + TIMELINE_FIGS
+    + SUPP_SYNTHETIC_FIGS
+)
 
 
 # --- Default target ----------------------------------------------------------
@@ -151,6 +172,32 @@ rule multidonor_figure:
         MULTIDONOR_FIGS,
     shell:
         "python paper/scripts/generate_multidonor_figure.py"
+
+
+rule calibration_batch:
+    input:
+        "tests/test_data/host.vcf",
+        "tests/test_data/donor.vcf",
+    output:
+        "output/calibration/batch_{i}.csv",
+    wildcard_constraints:
+        i="\d+",
+    shell:
+        "python paper/scripts/generate_supp_synthetic.py --calibration-batch {wildcards.i} 10"
+
+
+rule supp_synthetic:
+    input:
+        "tests/test_data/host.vcf",
+        "tests/test_data/donor.vcf",
+        "paper/empirical_results/panel_per_marker.tsv",
+        "paper/empirical_results/panel_empirical.csv",
+        CALIBRATION_BATCHES,
+    output:
+        SUPP_SYNTHETIC_FACTS,
+        SUPP_SYNTHETIC_FIGS,
+    shell:
+        "python paper/scripts/generate_supp_synthetic.py"
 
 
 # --- Paper build (depends on all facts and figures) --------------------------

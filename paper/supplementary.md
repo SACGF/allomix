@@ -33,3 +33,41 @@ Per-marker statistics are available in the allomix repository at `paper/empirica
 ## Supplementary Table S3. Per-Sample Validation Results by Depth
 
 Detailed per-sample validation results for each sequencing depth (50x, 100x, 200x, 500x, 1,000x) are available in the allomix repository at `output/depth_validation/`. For each depth, the true donor fraction, estimated fraction, error, and 95% confidence interval bounds are reported for all simulated mixture levels.
+
+## Supplementary Figures: Simulation Model Validation
+
+### S1. Amplification Bias Distribution
+
+![Figure S1](output/facts/figS1_bias_distributions.png)
+
+**Figure S1.** Per-marker amplification bias distribution. (A) Histogram of empirical per-marker bias (median het VAF deviation from 0.5) measured across {{ supp_synthetic.n_empirical_markers }} markers, with kernel density estimates from a simple Gaussian model and the heavy-tailed mixture model used in allomix simulations. The mixture model (95% N(0, 0.012), 5% N(0, 0.08)) captures the heavy tails observed in the empirical data, where the 95th percentile of |bias| reaches {{ supp_synthetic.empirical_p95_abs_bias }}. (B) Cumulative distribution of |bias| showing the mixture model tracks the empirical tail while the simple Gaussian underestimates extreme values.
+
+### S2. Depth Distribution
+
+![Figure S2](output/facts/figS2_depth_distributions.png)
+
+**Figure S2.** Per-marker sequencing depth. (A) Empirical mean depth per marker vs log-normal model draws at the same mean and CV. (B) Within-marker depth CV across samples for each marker, showing the range of per-marker depth variability.
+
+### S3. Heterozygous VAF Comparison
+
+![Figure S3](output/facts/figS3_het_vaf.png)
+
+**Figure S3.** Violin plots of median heterozygous VAF per marker: empirical measurements ({{ supp_synthetic.n_empirical_markers }} markers from 76-SNP rhAmpSeq panel) vs simulated values drawn from the heavy-tailed mixture bias model. Both distributions are centred on 0.5 with comparable spread, confirming that the simulation reproduces the per-marker VAF displacement observed in real sequencing data.
+
+### S4. Noise Component Ablation
+
+![Figure S4](output/facts/figS4_ablation.png)
+
+**Figure S4.** Effect of individual noise components on estimation accuracy (500x depth, 10 replicates per condition, 6 conditions). (A) Overall RMSE by noise condition. Under ideal conditions RMSE is {{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification bias alone raises it to {{ supp_synthetic.ablation_rmse_bias_only_pct }}%, which bias correction reduces to {{ supp_synthetic.ablation_rmse_bias_corrected_pct }}%. The full realistic model (all noise sources with bias correction) produces {{ supp_synthetic.ablation_rmse_full_pct }}% RMSE. (B) Mean absolute error by true donor fraction for each condition. Dashed lines indicate conditions with bias correction applied.
+
+### S5. Confidence Interval Calibration
+
+![Figure S5](output/facts/figS5_ci_calibration.png)
+
+**Figure S5.** CI calibration under the full noise model (100 replicates per fraction, run as 10 parallel batches of 10 via Snakemake). (A) Observed 95% CI coverage rate by true donor fraction; overall coverage is {{ supp_synthetic.cal_coverage_pct }}%. (B) Mean CI width by true donor fraction, with standard deviation bars.
+
+### S6. Per-Marker Residuals
+
+![Figure S6](output/facts/figS6_residuals.png)
+
+**Figure S6.** Per-marker residuals (observed minus expected VAF) from a simulated 30% donor mixture at 500x. (A) Residual histogram with normal fit. (B) Residuals plotted against expected VAF, showing no systematic trend across the VAF range.

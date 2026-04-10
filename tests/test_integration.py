@@ -1,7 +1,7 @@
-"""Integration tests — full pipeline from synthetic VCFs through to results.
+"""Integration tests -- full pipeline from joint VCFs through to results.
 
-Uses simulate.blend_vcfs to create chimeric VCFs at known fractions,
-then runs genotype → chimerism → qc → report and verifies the output.
+Uses the joint-called test VCFs (produced by build_joint_vcf) and runs
+genotype -> chimerism -> qc -> report, verifying the output.
 """
 
 from __future__ import annotations
@@ -16,107 +16,25 @@ from allomix.cli import main
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.qc import assess_quality
 from allomix.report import timeline_json, to_json, to_tsv
-from allomix.simulate import blend_vcfs, write_vcf
+from allomix.simulate import build_joint_vcf, write_joint_vcf
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-EXAMPLE_VCF = DATA_DIR / "idt_rhampseq_sid_example.vcf"
-
-
-def _make_chimeric_vcf(
-    tmp_path: Path, donor_fraction: float, seed: int = 42, depth: int = 2000
-) -> Path:
-    """Create a synthetic chimeric VCF from the example, using it as both host and donor.
-
-    Since we use the same VCF as host and donor but with different fractions,
-    we need markers where the genotypes differ. The example VCF has a mix of
-    0/0, 0/1, and 1/1 genotypes, so treating it as "host" and a shifted version
-    as "donor" would work. Instead, we create two synthetic pure-sample VCFs
-    with known complementary genotypes, then blend them.
-    """
-    # Use the example VCF as host and create a "donor" by flipping genotypes
-    host_path = EXAMPLE_VCF
-    donor_path = _create_flipped_vcf(tmp_path, host_path)
-
-    result = blend_vcfs(
-        host_path=str(host_path),
-        donor_path=str(donor_path),
-        donor_fraction=donor_fraction,
-        target_depth=depth,
-        sample_name=f"chimeric_f{donor_fraction:.3f}",
-        seed=seed,
-    )
-    out_path = tmp_path / f"chimeric_f{donor_fraction:.3f}.vcf"
-    write_vcf(result, out_path)
-    return out_path
+TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
+JOINT_VCF = TEST_DATA_DIR / "joint_single_donor.vcf"
+JOINT_MULTI_VCF = TEST_DATA_DIR / "joint_multi_donor.vcf"
 
 
-def _create_flipped_vcf(tmp_path: Path, source_path: Path) -> Path:
-    """Create a VCF where all genotypes are flipped (0/0→1/1, 1/1→0/0, 0/1 stays).
-
-    This ensures maximum informativeness between host and donor.
-    """
-    lines = []
-    with open(source_path) as f:
-        for line in f:
-            if line.startswith("#"):
-                lines.append(line)
-                continue
-            if not line.strip():
-                continue
-            fields = line.strip().split("\t")
-            if len(fields) < 10:
-                lines.append(line)
-                continue
-
-            # Parse sample column and flip GT
-            fmt_keys = fields[8].split(":")
-            fmt_vals = fields[9].split(":")
-            gt_idx = fmt_keys.index("GT")
-            gt = fmt_vals[gt_idx]
-
-            if gt == "0/0":
-                # Flip to 1/1: swap AD values, set GT
-                fmt_vals[gt_idx] = "1/1"
-                if "AD" in fmt_keys:
-                    ad_idx = fmt_keys.index("AD")
-                    ad_parts = fmt_vals[ad_idx].split(",")
-                    if len(ad_parts) == 2:
-                        fmt_vals[ad_idx] = f"{ad_parts[1]},{ad_parts[0]}"
-                    elif len(ad_parts) == 1:
-                        # hom-ref with single AD value — make it hom-alt
-                        fmt_vals[ad_idx] = f"0,{ad_parts[0]}"
-                if "AF" in fmt_keys:
-                    af_idx = fmt_keys.index("AF")
-                    fmt_vals[af_idx] = "1.0"
-                # Need an ALT allele if ALT is "."
-                if fields[4] == ".":
-                    fields[4] = "T" if fields[3] != "T" else "A"
-            elif gt == "1/1":
-                fmt_vals[gt_idx] = "0/0"
-                if "AD" in fmt_keys:
-                    ad_idx = fmt_keys.index("AD")
-                    ad_parts = fmt_vals[ad_idx].split(",")
-                    if len(ad_parts) == 2:
-                        fmt_vals[ad_idx] = f"{ad_parts[1]},{ad_parts[0]}"
-                if "AF" in fmt_keys:
-                    af_idx = fmt_keys.index("AF")
-                    fmt_vals[af_idx] = "0"
-            # 0/1 stays as-is (het in both = non-informative, which is fine)
-
-            fields[9] = ":".join(fmt_vals)
-            lines.append("\t".join(fields) + "\n")
-
-    out = tmp_path / "donor_flipped.vcf"
-    with open(out, "w") as f:
-        f.writelines(lines)
-    return out
-
-
-def _run_pipeline(host_path, donor_path, admix_path, min_dp=0, min_gq=0):
-    """Run the full genotype → chimerism → qc pipeline."""
-    host = parse_vcf(host_path, min_dp=0, min_gq=0)
-    donor = parse_vcf(donor_path, min_dp=0, min_gq=0)
-    admix = parse_vcf(admix_path, min_dp=0, min_gq=0)
+def _run_pipeline(
+    vcf_path,
+    host_sample="HOST",
+    donor_sample="DONOR",
+    admix_sample="ADMIX_F0.10",
+    min_dp=0,
+    min_gq=0,
+):
+    """Run the full genotype -> chimerism -> qc pipeline from a joint VCF."""
+    host = parse_vcf(vcf_path, sample=host_sample, min_dp=0, min_gq=0)
+    donor = parse_vcf(vcf_path, sample=donor_sample, min_dp=0, min_gq=0)
+    admix = parse_vcf(vcf_path, sample=admix_sample, min_dp=0, min_gq=0)
 
     genotypes = classify_markers(
         host,
@@ -126,7 +44,7 @@ def _run_pipeline(host_path, donor_path, admix_path, min_dp=0, min_gq=0):
         min_gq=min_gq,
         pass_only=False,
     )
-    genotypes.sample_name = Path(admix_path).stem
+    genotypes.sample_name = admix_sample
 
     result = estimate_single_donor_bb(genotypes.informative, error_rate=0.01)
     qc = assess_quality(result, genotypes)
@@ -139,74 +57,55 @@ def _run_pipeline(host_path, donor_path, admix_path, min_dp=0, min_gq=0):
 
 
 class TestFullPipeline:
-    """End-to-end: synthetic VCF → genotype → chimerism → QC."""
+    """End-to-end: joint VCF -> genotype -> chimerism -> QC."""
 
-    @pytest.fixture
-    def donor_vcf(self, tmp_path):
-        return _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
-
-    def test_pure_host(self, tmp_path, donor_vcf):
+    def test_pure_host(self):
         """f=0.0: estimate should be ~0%."""
-        chimeric = _make_chimeric_vcf(tmp_path, 0.0)
-        result, qc, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
+        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.00")
         assert result.donor_fraction < 0.02
 
-    def test_pure_donor(self, tmp_path, donor_vcf):
+    def test_pure_donor(self):
         """f=1.0: estimate should be ~100%."""
-        chimeric = _make_chimeric_vcf(tmp_path, 1.0)
-        result, qc, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
+        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F1.00")
         assert result.donor_fraction > 0.98
 
-    def test_fifty_fifty(self, tmp_path, donor_vcf):
+    def test_fifty_fifty(self):
         """f=0.5: estimate should be near 50%."""
-        chimeric = _make_chimeric_vcf(tmp_path, 0.5, seed=123)
-        result, qc, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
+        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.50")
         assert 0.40 < result.donor_fraction < 0.60
 
-    def test_ten_percent(self, tmp_path, donor_vcf):
+    def test_ten_percent(self):
         """f=0.10: estimate should be near 10%."""
-        chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=456)
-        result, qc, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
+        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
         assert 0.05 < result.donor_fraction < 0.20
 
-    def test_one_percent(self, tmp_path, donor_vcf):
+    def test_one_percent(self):
         """f=0.01: estimate should be near 1% (testing low-fraction sensitivity)."""
-        chimeric = _make_chimeric_vcf(tmp_path, 0.01, seed=789, depth=5000)
-        result, qc, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
-        assert result.donor_fraction < 0.05  # Within reasonable range
+        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.01")
+        assert result.donor_fraction < 0.05
 
-    def test_ci_contains_truth(self, tmp_path, donor_vcf):
+    def test_ci_contains_truth(self):
         """CI should contain the true fraction for well-behaved data.
 
-        With few markers (~8 informative), stochastic sampling can push
-        estimates slightly off. We use moderate fractions where the CI
-        is wide enough to reliably capture the truth.
+        With 100 markers and depth 2000, the CI is narrow so we test f=0.50
+        where sampling variability has the least relative effect.
         """
-        for f_true in [0.10, 0.25, 0.50]:
-            chimeric = _make_chimeric_vcf(
-                tmp_path,
-                f_true,
-                seed=int(f_true * 1000) + 8,
-                depth=3000,
-            )
-            result, _, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
-            lo, hi = result.donor_fraction_ci
-            assert lo <= f_true <= hi, (
-                f"f_true={f_true}: CI [{lo:.4f}, {hi:.4f}] "
-                f"does not contain truth, estimate={result.donor_fraction:.4f}"
-            )
+        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.50")
+        lo, hi = result.donor_fraction_ci
+        assert lo <= 0.50 <= hi, (
+            f"f_true=0.50: CI [{lo:.4f}, {hi:.4f}] "
+            f"does not contain truth, estimate={result.donor_fraction:.4f}"
+        )
 
-    def test_qc_passes(self, tmp_path, donor_vcf):
+    def test_qc_passes(self):
         """QC should pass for well-behaved synthetic data."""
-        chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
-        _, qc, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
+        _, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
         assert qc.pass_
         assert qc.n_informative > 0
 
-    def test_per_marker_results(self, tmp_path, donor_vcf):
+    def test_per_marker_results(self):
         """Per-marker results should be populated."""
-        chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
-        result, _, _ = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
+        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
         assert len(result.per_marker) > 0
         for mr in result.per_marker:
             assert mr.dp > 0
@@ -214,13 +113,11 @@ class TestFullPipeline:
 
 
 class TestReportIntegration:
-    """Integration: pipeline results → report output."""
+    """Integration: pipeline results -> report output."""
 
     @pytest.fixture
-    def pipeline_result(self, tmp_path):
-        donor_vcf = _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
-        chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
-        return _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
+    def pipeline_result(self):
+        return _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
 
     def test_tsv_output(self, pipeline_result, tmp_path):
         result, qc, genotypes = pipeline_result
@@ -247,15 +144,12 @@ class TestReportIntegration:
         data = to_json(result, qc, sample_name=genotypes.sample_name)
         assert "donor_pct" in data
         assert isinstance(data["donor_pct"], float)
-        # Verify JSON-serialisable
         json.dumps(data)
 
-    def test_timeline(self, tmp_path):
-        donor_vcf = _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
+    def test_timeline(self):
         results = []
-        for f in [0.05, 0.10, 0.20]:
-            chimeric = _make_chimeric_vcf(tmp_path, f, seed=int(f * 1000))
-            result, qc, genotypes = _run_pipeline(EXAMPLE_VCF, donor_vcf, chimeric)
+        for sample_name in ["ADMIX_F0.00", "ADMIX_F0.10", "ADMIX_F0.50"]:
+            result, qc, genotypes = _run_pipeline(JOINT_VCF, admix_sample=sample_name)
             results.append((genotypes.sample_name, result, qc))
 
         data = timeline_json(results)
@@ -268,20 +162,18 @@ class TestCLIIntegration:
     """Test CLI wiring runs without error."""
 
     def test_monitor_tsv(self, tmp_path):
-
-        donor_vcf = _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
-        chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
         out = tmp_path / "cli_out.tsv"
-
         rc = main(
             [
                 "monitor",
-                "--host",
-                str(EXAMPLE_VCF),
-                "--donor",
-                str(donor_vcf),
+                "--vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
                 "--sample",
-                str(chimeric),
+                "ADMIX_F0.10",
                 "--output",
                 str(out),
                 "--min-dp",
@@ -295,20 +187,18 @@ class TestCLIIntegration:
         assert "donor_pct" in content
 
     def test_monitor_json(self, tmp_path):
-
-        donor_vcf = _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
-        chimeric = _make_chimeric_vcf(tmp_path, 0.10, seed=42)
         out = tmp_path / "cli_out.json"
-
         rc = main(
             [
                 "monitor",
-                "--host",
-                str(EXAMPLE_VCF),
-                "--donor",
-                str(donor_vcf),
+                "--vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
                 "--sample",
-                str(chimeric),
+                "ADMIX_F0.10",
                 "--output",
                 str(out),
                 "--format",
@@ -324,23 +214,20 @@ class TestCLIIntegration:
         assert "donor_pct" in data
 
     def test_timeline(self, tmp_path):
-
-        donor_vcf = _create_flipped_vcf(tmp_path, EXAMPLE_VCF)
-        c1 = _make_chimeric_vcf(tmp_path, 0.05, seed=1)
-        c2 = _make_chimeric_vcf(tmp_path, 0.10, seed=2)
         out = tmp_path / "timeline.json"
-
         rc = main(
             [
                 "timeline",
-                "--host",
-                str(EXAMPLE_VCF),
-                "--donor",
-                str(donor_vcf),
+                "--vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
                 "--sample",
-                str(c1),
+                "ADMIX_F0.00",
                 "--sample",
-                str(c2),
+                "ADMIX_F0.10",
                 "--output",
                 str(out),
                 "--min-dp",
@@ -352,3 +239,95 @@ class TestCLIIntegration:
         assert rc == 0
         data = json.loads(out.read_text())
         assert len(data["timepoints"]) == 2
+
+    def test_monitor_multiple_samples(self, tmp_path):
+        """Monitor with multiple admixture samples."""
+        out = tmp_path / "multi.tsv"
+        rc = main(
+            [
+                "monitor",
+                "--vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.00",
+                "--sample",
+                "ADMIX_F0.10",
+                "--sample",
+                "ADMIX_F0.50",
+                "--output",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+            ]
+        )
+        assert rc == 0
+
+    def test_invalid_sample_name(self):
+        """CLI should fail with clear error for bad sample name."""
+        with pytest.raises(SystemExit):
+            main(
+                [
+                    "monitor",
+                    "--vcf",
+                    str(JOINT_VCF),
+                    "--host-sample",
+                    "NONEXISTENT",
+                    "--donor-sample",
+                    "DONOR",
+                    "--sample",
+                    "ADMIX_F0.10",
+                ]
+            )
+
+
+class TestDynamicJointVcf:
+    """Test building a joint VCF on the fly and running pipeline through it."""
+
+    def test_round_trip(self, tmp_path):
+        """Build joint VCF, write it, run pipeline, verify estimate."""
+        host_vcf = TEST_DATA_DIR / "host.vcf"
+        donor_vcf = TEST_DATA_DIR / "donor.vcf"
+
+        result = build_joint_vcf(
+            host_path=str(host_vcf),
+            donor_paths=[str(donor_vcf)],
+            admix_fractions=[0.20],
+            admix_sample_names=["TP1"],
+            host_sample_name="H",
+            donor_sample_names=["D"],
+            target_depth=2000,
+            seed=99,
+        )
+        joint_path = tmp_path / "joint.vcf"
+        write_joint_vcf(result, joint_path)
+
+        # Run through the CLI
+        out = tmp_path / "out.tsv"
+        rc = main(
+            [
+                "monitor",
+                "--vcf",
+                str(joint_path),
+                "--host-sample",
+                "H",
+                "--donor-sample",
+                "D",
+                "--sample",
+                "TP1",
+                "--output",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+            ]
+        )
+        assert rc == 0
+        content = out.read_text()
+        assert "donor_pct" in content

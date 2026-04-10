@@ -34,9 +34,11 @@ from allomix.simulate import (
     _mendelian_child,
     alt_dose,
     blend_from_genotype_dicts,
+    build_joint_vcf,
     expected_vaf_multi,
     generate_sibling_trio_genotypes,
     write_genotype_vcf,
+    write_joint_vcf,
     write_vcf,
 )
 
@@ -482,21 +484,43 @@ class TestMultiDonorIntegration:
     reason="Multi-donor test data not generated",
 )
 class TestMultiDonorCLI:
-    """Test CLI with multi-donor inputs."""
+    """Test CLI with multi-donor joint VCF inputs."""
 
-    def test_monitor_json(self, tmp_path):
+    @pytest.fixture
+    def joint_vcf(self, tmp_path):
+        """Build a multi-donor joint VCF from the existing separate VCFs."""
+        result = build_joint_vcf(
+            host_path=str(MULTIDONOR_DIR / "host.vcf"),
+            donor_paths=[
+                str(MULTIDONOR_DIR / "donor1.vcf"),
+                str(MULTIDONOR_DIR / "donor2.vcf"),
+            ],
+            admix_fractions=[0.25, 0.30, 0.10, 0.20],
+            admix_sample_names=["D1_25_D2_25", "D1_30_D2_10", "D1_10_D2_10", "D1_20_D2_0"],
+            host_sample_name="HOST",
+            donor_sample_names=["DONOR1", "DONOR2"],
+            target_depth=2000,
+            seed=42,
+        )
+        path = tmp_path / "joint_multi.vcf"
+        write_joint_vcf(result, path)
+        return path
+
+    def test_monitor_json(self, tmp_path, joint_vcf):
         out = tmp_path / "result.json"
         rc = main(
             [
                 "monitor",
-                "--host",
-                str(MULTIDONOR_DIR / "host.vcf"),
-                "--donor",
-                str(MULTIDONOR_DIR / "donor1.vcf"),
-                "--donor",
-                str(MULTIDONOR_DIR / "donor2.vcf"),
+                "--vcf",
+                str(joint_vcf),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR1",
+                "--donor-sample",
+                "DONOR2",
                 "--sample",
-                str(MULTIDONOR_DIR / "host_50_d1_25_d2_25.vcf"),
+                "D1_25_D2_25",
                 "--output",
                 str(out),
                 "--format",
@@ -512,19 +536,21 @@ class TestMultiDonorCLI:
         assert "donors" in data
         assert len(data["donors"]) == 2
 
-    def test_monitor_tsv(self, tmp_path):
+    def test_monitor_tsv(self, tmp_path, joint_vcf):
         out = tmp_path / "result.tsv"
         rc = main(
             [
                 "monitor",
-                "--host",
-                str(MULTIDONOR_DIR / "host.vcf"),
-                "--donor",
-                str(MULTIDONOR_DIR / "donor1.vcf"),
-                "--donor",
-                str(MULTIDONOR_DIR / "donor2.vcf"),
+                "--vcf",
+                str(joint_vcf),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR1",
+                "--donor-sample",
+                "DONOR2",
                 "--sample",
-                str(MULTIDONOR_DIR / "host_60_d1_30_d2_10.vcf"),
+                "D1_30_D2_10",
                 "--output",
                 str(out),
                 "--min-dp",
@@ -537,21 +563,23 @@ class TestMultiDonorCLI:
         content = out.read_text()
         assert "donor1_pct" in content
 
-    def test_timeline(self, tmp_path):
+    def test_timeline(self, tmp_path, joint_vcf):
         out = tmp_path / "timeline.json"
         rc = main(
             [
                 "timeline",
-                "--host",
-                str(MULTIDONOR_DIR / "host.vcf"),
-                "--donor",
-                str(MULTIDONOR_DIR / "donor1.vcf"),
-                "--donor",
-                str(MULTIDONOR_DIR / "donor2.vcf"),
+                "--vcf",
+                str(joint_vcf),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR1",
+                "--donor-sample",
+                "DONOR2",
                 "--sample",
-                str(MULTIDONOR_DIR / "host_80_d1_10_d2_10.vcf"),
+                "D1_10_D2_10",
                 "--sample",
-                str(MULTIDONOR_DIR / "host_50_d1_25_d2_25.vcf"),
+                "D1_25_D2_25",
                 "--output",
                 str(out),
                 "--min-dp",
@@ -564,18 +592,20 @@ class TestMultiDonorCLI:
         data = json.loads(out.read_text())
         assert len(data["timepoints"]) == 2
 
-    def test_single_donor_still_works(self, tmp_path):
-        """Single --donor should still use the single-donor estimator."""
+    def test_single_donor_still_works(self, tmp_path, joint_vcf):
+        """Single --donor-sample should still use the single-donor estimator."""
         out = tmp_path / "single.json"
         rc = main(
             [
                 "monitor",
-                "--host",
-                str(MULTIDONOR_DIR / "host.vcf"),
-                "--donor",
-                str(MULTIDONOR_DIR / "donor1.vcf"),
+                "--vcf",
+                str(joint_vcf),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR1",
                 "--sample",
-                str(MULTIDONOR_DIR / "host_80_d1_20_d2_0.vcf"),
+                "D1_20_D2_0",
                 "--output",
                 str(out),
                 "--format",

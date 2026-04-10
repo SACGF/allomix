@@ -268,5 +268,11 @@ Implementation notes:
 - In silico validation complete (depth series, relatedness, bias correction, multi-donor)
 - Multi-donor paper updates complete (methods, results, discussion, abstract, figures)
 - Simulation calibrated from empirical panel characterisation (210 VCFs, 18,047 samples)
+- Supplementary figures (S1-S6) for simulation model validation complete (`paper/scripts/generate_supp_synthetic.py`, Snakefile rules, supplementary text)
 - Validation with real samples (Step 11) still needed
 - Open-source tool release (MIT license, PyPI)
+
+### Remaining paper tasks
+
+- [ ] Add bias stability figure (`fig_bias_stability.png`) to `paper/results.md` near the "Effect of Per-Marker Bias Correction" section. This validates the fixed-bias-per-marker assumption (r = correlation between |median_bias| and within-marker SD). Caption template in `supp_synthetic.csv` facts.
+- [ ] Decide: should the ablation study (Figure S4) also include a "no overdispersion" baseline (standard binomial vs beta-binomial)?

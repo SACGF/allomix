@@ -39,12 +39,12 @@ Table 2 summarises available NGS-based chimerism tools. allomix is the only open
 | Tool | Markers | LOD | Open Source | Panel Agnostic | Input |
 |:---|:---:|:---:|:---:|:---:|:---:|
 | AlloSeq HCT | 202 SNPs | 0.3% | No | No | Proprietary |
-| Devyser Chimerism | 24 indels | 0.05% | No | No | Proprietary |
+| Devyser Chimerism | 24 indels | 0.06% | No | No | Proprietary |
 | NGStrack | 34 indels | 0.1% | No | No | Proprietary |
-| ScisGo Chimerism MD | SNPs + indels | 0.2–0.5% | No | No | Proprietary |
+| ScisGo Chimerism MD | >200 SNPs + indels | 0.2% (single) / 0.5% (multi) | No | No | Proprietary |
 | **allomix** | **Any biallelic** | **~0.6% MAE (in silico)** | **Yes (MIT)** | **Yes** | **VCF** |
 
-**Table 2.** Comparison of NGS-based chimerism monitoring tools. LOD = limit of detection. Commercial tool specifications from published evaluations.[@Blouin2024comparison; @Pedini2021devyser; @Kakodkar2023alloseq]
+**Table 2.** Comparison of NGS-based chimerism monitoring tools. LOD = limit of detection. Commercial tool specifications from published evaluations.[@Blouin2024comparison; @Pedini2021devyser; @Kakodkar2023alloseq; @Qama2026devyser]
 
 ### Effect of Donor-Host Relatedness
 

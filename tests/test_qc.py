@@ -287,8 +287,14 @@ class TestPearsonGoF:
         """A 5% systematic shift at dp=2000 across 20 markers should be detected."""
         markers = [
             _make_marker_result(
-                pos=i * 100, dp=2000, expected_vaf=0.10, observed_vaf=0.15,
-                residual=0.05, ad_ref=1700, ad_alt=300, included=True,
+                pos=i * 100,
+                dp=2000,
+                expected_vaf=0.10,
+                observed_vaf=0.15,
+                residual=0.05,
+                ad_ref=1700,
+                ad_alt=300,
+                included=True,
             )
             for i in range(20)
         ]
@@ -304,8 +310,12 @@ class TestPearsonGoF:
         ]
         bad = [
             _make_marker_result(
-                pos=1900, dp=2000, expected_vaf=0.10, observed_vaf=0.50,
-                residual=0.40, included=True,
+                pos=1900,
+                dp=2000,
+                expected_vaf=0.10,
+                observed_vaf=0.50,
+                residual=0.40,
+                included=True,
             )
         ]
         pval = _compute_gof_pval(good + bad)
@@ -323,8 +333,12 @@ class TestPearsonGoF:
             obs_vaf = max(0.0, min(1.0, rng.gauss(exp_vaf, sd)))
             markers.append(
                 _make_marker_result(
-                    pos=i * 100, dp=dp, expected_vaf=exp_vaf,
-                    observed_vaf=obs_vaf, residual=obs_vaf - exp_vaf, included=True,
+                    pos=i * 100,
+                    dp=dp,
+                    expected_vaf=exp_vaf,
+                    observed_vaf=obs_vaf,
+                    residual=obs_vaf - exp_vaf,
+                    included=True,
                 )
             )
         pval = _compute_gof_pval(markers)
@@ -345,9 +359,13 @@ class TestGoFEndToEnd:
             alt_count = sum(1 for _ in range(dp) if rng.random() < true_f)
             markers.append(
                 _make_informative_marker(
-                    host_gt=(0, 0), donor_gt=(1, 1),
-                    ad_ref=dp - alt_count, ad_alt=alt_count,
-                    marker_type=0, chrom=f"chr{i + 1}", pos=1000 * (i + 1),
+                    host_gt=(0, 0),
+                    donor_gt=(1, 1),
+                    ad_ref=dp - alt_count,
+                    ad_alt=alt_count,
+                    marker_type=0,
+                    chrom=f"chr{i + 1}",
+                    pos=1000 * (i + 1),
                 )
             )
 
@@ -355,15 +373,23 @@ class TestGoFEndToEnd:
         alt_count = sum(1 for _ in range(dp) if rng.random() < true_f)
         markers.append(
             _make_informative_marker(
-                host_gt=(1, 1), donor_gt=(0, 0),
-                ad_ref=dp - alt_count, ad_alt=alt_count,
-                marker_type=1, chrom="chr20", pos=20000,
+                host_gt=(1, 1),
+                donor_gt=(0, 0),
+                ad_ref=dp - alt_count,
+                ad_alt=alt_count,
+                marker_type=1,
+                chrom="chr20",
+                pos=20000,
             )
         )
 
         result = estimate_single_donor_bb(markers)
         genotypes = MarkerGenotypes(
-            informative=[], non_informative=[], n_total=20, n_shared=20, n_filtered=0,
+            informative=[],
+            non_informative=[],
+            n_total=20,
+            n_shared=20,
+            n_filtered=0,
         )
         qc = assess_quality(result, genotypes)
         assert qc.goodness_of_fit_pval is not None

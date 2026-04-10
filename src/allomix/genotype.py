@@ -59,19 +59,35 @@ class MarkerGenotypes:
     sample_name: str = ""
 
 
-def parse_vcf(path: Path | str, min_dp: int = 0, min_gq: int = 0) -> list[MarkerData]:
-    """Read a VCF and extract MarkerData at each biallelic SNP/indel record.
+def parse_vcf(
+    path: Path | str,
+    sample: str | int = 0,
+    min_dp: int = 0,
+    min_gq: int = 0,
+) -> list[MarkerData]:
+    """Read a VCF and extract MarkerData for a specific sample.
 
     Args:
         path: Path to VCF or VCF.gz file.
+        sample: Sample name (str) or column index (int, 0-based). Default 0.
         min_dp: Minimum depth filter. Records below this are excluded.
         min_gq: Minimum genotype quality. Records below this are excluded.
 
     Returns:
         List of MarkerData, one per passing record.
+
+    Raises:
+        ValueError: If a string sample name is not found in the VCF.
     """
     markers: list[MarkerData] = []
     vcf = VCF(str(path))
+
+    if isinstance(sample, str):
+        if sample not in vcf.samples:
+            raise ValueError(f"Sample '{sample}' not found in VCF. Available: {list(vcf.samples)}")
+        sample_idx = list(vcf.samples).index(sample)
+    else:
+        sample_idx = sample
 
     for variant in vcf:
         # Skip multiallelic sites
@@ -80,8 +96,8 @@ def parse_vcf(path: Path | str, min_dp: int = 0, min_gq: int = 0) -> list[Marker
 
         alt = variant.ALT[0] if variant.ALT else "."
 
-        # Extract genotype for first (only) sample
-        gt_arr = variant.genotypes[0]  # [allele1, allele2, phased]
+        # Extract genotype for the selected sample
+        gt_arr = variant.genotypes[sample_idx]  # [allele1, allele2, phased]
         a1, a2 = gt_arr[0], gt_arr[1]
 
         # Skip no-calls
@@ -93,7 +109,7 @@ def parse_vcf(path: Path | str, min_dp: int = 0, min_gq: int = 0) -> list[Marker
         # Extract AD
         ad = variant.format("AD")
         if ad is not None:
-            ad_vals = ad[0]  # first sample
+            ad_vals = ad[sample_idx]
             ad_ref = int(ad_vals[0]) if ad_vals[0] >= 0 else 0
             ad_alt = int(ad_vals[1]) if len(ad_vals) > 1 and ad_vals[1] >= 0 else 0
         else:
@@ -102,13 +118,13 @@ def parse_vcf(path: Path | str, min_dp: int = 0, min_gq: int = 0) -> list[Marker
         # Extract DP
         dp_arr = variant.format("DP")
         if dp_arr is not None:
-            dp = int(dp_arr[0][0])
+            dp = int(dp_arr[sample_idx][0])
         else:
             dp = ad_ref + ad_alt
 
         # Extract GQ
         gq_arr = variant.format("GQ")
-        gq = int(gq_arr[0][0]) if gq_arr is not None else None
+        gq = int(gq_arr[sample_idx][0]) if gq_arr is not None else None
 
         # Apply filters
         if dp < min_dp:

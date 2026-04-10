@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
 
 from allomix import __version__
 from allomix.bias import estimate_biases, load_bias_table, save_bias_table
@@ -17,18 +16,21 @@ from allomix.report import timeline_json, to_json, to_tsv
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add arguments shared between monitor and timeline."""
-    parser.add_argument("--host", required=True, help="Host genotype VCF")
+    parser.add_argument("--vcf", required=True, help="Joint-called VCF containing all samples")
+    parser.add_argument("--host-sample", required=True, help="Host sample name in VCF")
     parser.add_argument(
-        "--donor",
+        "--donor-sample",
         required=True,
         action="append",
-        help="Donor genotype VCF (repeat for multi-donor)",
+        metavar="SAMPLE_NAME",
+        help="Donor sample name in VCF (repeat for multi-donor)",
     )
     parser.add_argument(
         "--sample",
         required=True,
         action="append",
-        help="Post-HSCT admixture VCF (repeat for multiple timepoints)",
+        metavar="SAMPLE_NAME",
+        help="Admixture sample name in VCF (repeat for multiple timepoints)",
     )
     parser.add_argument("--output", "-o", default="-", help="Output file (default: stdout)")
     parser.add_argument("--min-dp", type=int, default=100, help="Minimum depth (default: 100)")
@@ -52,10 +54,27 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
+    """Check that all required sample names exist in the VCF header.
+
+    Raises SystemExit with a clear error listing available names if any
+    are missing.
+    """
+    from cyvcf2 import VCF
+
+    vcf = VCF(vcf_path)
+    available = list(vcf.samples)
+    vcf.close()
+    missing = [s for s in required if s not in available]
+    if missing:
+        raise SystemExit(f"Sample(s) not found in {vcf_path}: {missing}\nAvailable: {available}")
+
+
 def _run_single_sample(
-    host_path: str,
-    donor_paths: list[str],
-    sample_path: str,
+    host: list,
+    donors: list[list],
+    vcf_path: str,
+    admix_sample: str,
     min_dp: int,
     min_gq: int,
     error_rate: float,
@@ -63,19 +82,18 @@ def _run_single_sample(
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
+    Takes pre-parsed host and donor markers to avoid redundant VCF reads.
     Automatically uses multi-donor estimation when more than one donor
-    VCF is provided.
+    is provided.
 
     Returns (ChimerismResult | MultiDonorResult, QCReport, MarkerGenotypes).
     """
-    host = parse_vcf(host_path, min_gq=min_gq)
-    donors = [parse_vcf(d, min_gq=min_gq) for d in donor_paths]
-    admix = parse_vcf(sample_path, min_dp=0)  # depth filter applied in classify
+    admix = parse_vcf(vcf_path, sample=admix_sample, min_dp=0)
 
     genotypes = classify_markers(host, donors, admix, min_dp=min_dp, min_gq=min_gq)
-    genotypes.sample_name = Path(sample_path).stem
+    genotypes.sample_name = admix_sample
 
-    if len(donor_paths) == 1:
+    if len(donors) == 1:
         result = estimate_single_donor_bb(
             genotypes.informative,
             error_rate=error_rate,
@@ -84,7 +102,7 @@ def _run_single_sample(
     else:
         result = estimate_multi_donor(
             genotypes.informative,
-            n_donors=len(donor_paths),
+            n_donors=len(donors),
             error_rate=error_rate,
             marker_biases=marker_biases,
         )
@@ -109,14 +127,23 @@ def _load_biases(args: argparse.Namespace) -> dict | None:
 
 def cmd_monitor(args: argparse.Namespace) -> int:
     """Run the monitor subcommand."""
+    all_names = [args.host_sample] + args.donor_sample + args.sample
+    _validate_sample_names(args.vcf, all_names)
+
     marker_biases = _load_biases(args)
+
+    # Parse host and donors once — they're the same for every timepoint
+    host = parse_vcf(args.vcf, sample=args.host_sample, min_gq=args.min_gq)
+    donors = [parse_vcf(args.vcf, sample=d, min_gq=args.min_gq) for d in args.donor_sample]
+
     out = _open_output(args.output)
     try:
-        for sample_path in args.sample:
+        for sample_name in args.sample:
             result, qc, genotypes = _run_single_sample(
-                args.host,
-                args.donor,
-                sample_path,
+                host,
+                donors,
+                args.vcf,
+                sample_name,
                 args.min_dp,
                 args.min_gq,
                 args.error_rate,
@@ -137,13 +164,22 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
 def cmd_timeline(args: argparse.Namespace) -> int:
     """Run the timeline subcommand."""
+    all_names = [args.host_sample] + args.donor_sample + args.sample
+    _validate_sample_names(args.vcf, all_names)
+
     marker_biases = _load_biases(args)
+
+    # Parse host and donors once
+    host = parse_vcf(args.vcf, sample=args.host_sample, min_gq=args.min_gq)
+    donors = [parse_vcf(args.vcf, sample=d, min_gq=args.min_gq) for d in args.donor_sample]
+
     results = []
-    for sample_path in args.sample:
+    for sample_name in args.sample:
         result, qc, genotypes = _run_single_sample(
-            args.host,
-            args.donor,
-            sample_path,
+            host,
+            donors,
+            args.vcf,
+            sample_name,
             args.min_dp,
             args.min_gq,
             args.error_rate,

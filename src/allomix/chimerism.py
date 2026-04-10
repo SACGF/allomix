@@ -176,10 +176,7 @@ def log_likelihood_marker_bb(
     b = max(b, 1e-10)
 
     # log P(k | n, a, b) dropping the constant log C(n,k)
-    ll = (
-        lgamma(k + a) + lgamma(n - k + b) - lgamma(n + rho)
-        - lgamma(a) - lgamma(b) + lgamma(rho)
-    )
+    ll = lgamma(k + a) + lgamma(n - k + b) - lgamma(n + rho) - lgamma(a) - lgamma(b) + lgamma(rho)
     return ll
 
 
@@ -208,9 +205,7 @@ def total_log_likelihood_bb(
         if marker_biases is not None:
             bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
         w = expected_weight(m.host_gt, m.donor_gts[0], f_donor, bias=bias)
-        ll += log_likelihood_marker_bb(
-            m.admix_ad_ref, m.admix_ad_alt, w, error_rate, rho
-        )
+        ll += log_likelihood_marker_bb(m.admix_ad_ref, m.admix_ad_alt, w, error_rate, rho)
     return ll
 
 
@@ -239,9 +234,7 @@ def total_log_likelihood_multi_bb(
         if marker_biases is not None:
             bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
         w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
-        ll += log_likelihood_marker_bb(
-            m.admix_ad_ref, m.admix_ad_alt, w, error_rate, rho
-        )
+        ll += log_likelihood_marker_bb(m.admix_ad_ref, m.admix_ad_alt, w, error_rate, rho)
     return ll
 
 
@@ -387,8 +380,8 @@ def estimate_single_donor_bb(
     for f in grid:
         # Optimise rho for this f
         opt_rho = minimize_scalar(
-            lambda log_r: -total_log_likelihood_bb(
-                markers, f, error_rate, math.exp(log_r), marker_biases
+            lambda log_r: (
+                -total_log_likelihood_bb(markers, f, error_rate, math.exp(log_r), marker_biases)
             ),
             bounds=(math.log(1.0), math.log(10000.0)),
             method="bounded",
@@ -408,9 +401,7 @@ def estimate_single_donor_bb(
         rho_val = math.exp(log_rho_val)
         if rho_val < 0.5 or rho_val > 50000:
             return 1e30
-        return -total_log_likelihood_bb(
-            markers, f_val, error_rate, rho_val, marker_biases
-        )
+        return -total_log_likelihood_bb(markers, f_val, error_rate, rho_val, marker_biases)
 
     opt = minimize(
         neg_ll_joint,
@@ -430,8 +421,8 @@ def estimate_single_donor_bb(
     def profile_ll_f(f_val: float) -> float:
         """Max LL over rho at a given f."""
         opt_rho = minimize_scalar(
-            lambda log_r: -total_log_likelihood_bb(
-                markers, f_val, error_rate, math.exp(log_r), marker_biases
+            lambda log_r: (
+                -total_log_likelihood_bb(markers, f_val, error_rate, math.exp(log_r), marker_biases)
             ),
             bounds=(math.log(1.0), math.log(10000.0)),
             method="bounded",
@@ -554,9 +545,7 @@ def estimate_multi_donor(
         rho = math.exp(log_rho)
         if rho < 0.5 or rho > 50000:
             return 1e30
-        return -total_log_likelihood_multi_bb(
-            markers, [f1, f2], error_rate, rho, marker_biases
-        )
+        return -total_log_likelihood_multi_bb(markers, [f1, f2], error_rate, rho, marker_biases)
 
     opt = minimize(
         neg_ll,
@@ -572,9 +561,7 @@ def estimate_multi_donor(
     ll_max = -float(opt.fun)
 
     # Step 3: Profile likelihood CIs per donor (profiling out other f and rho)
-    cis = _profile_likelihood_cis_multi(
-        markers, f_mle, ll_max, n_donors, error_rate, marker_biases
-    )
+    cis = _profile_likelihood_cis_multi(markers, f_mle, ll_max, n_donors, error_rate, marker_biases)
 
     # Step 4: Per-marker residuals
     per_marker = _per_marker_results_multi(markers, f_mle, error_rate, marker_biases)
@@ -635,8 +622,10 @@ def _profile_likelihood_cis_multi(
                 fracs = [0.0, 0.0]
                 fracs[_didx] = fi
                 opt_rho = minimize_scalar(
-                    lambda log_r: -total_log_likelihood_multi_bb(
-                        markers, fracs, error_rate, math.exp(log_r), marker_biases
+                    lambda log_r: (
+                        -total_log_likelihood_multi_bb(
+                            markers, fracs, error_rate, math.exp(log_r), marker_biases
+                        )
                     ),
                     bounds=(math.log(1.0), math.log(10000.0)),
                     method="bounded",

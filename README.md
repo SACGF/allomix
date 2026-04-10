@@ -38,7 +38,7 @@ uv pip install -e ".[dev]"
 
 ```
 1. Genotyping            Sequence host and each donor individually
-   (upstream)              → VCF with genotypes at marker loci
+   (upstream)              → per-sample GVCFs at marker loci
 
 2. allomix estimate-bias (optional) Estimate per-marker amplification
                          bias from genotyping VCFs
@@ -46,48 +46,60 @@ uv pip install -e ".[dev]"
 
 3. Sequencing            Sequence post-HSCT admixture samples at
    (upstream)            serial timepoints (>=3 per patient)
-                           → VCF with allele depths at marker loci
+                           → per-sample GVCFs at marker loci
 
-4. allomix monitor       Calculate chimerism for each sample
+4. Joint calling         Combine all GVCFs (host + donor + all
+   (upstream)            timepoints) with GenomicsDBImport +
+                         GenotypeGVCFs → one joint-called VCF
+
+5. allomix monitor       Calculate chimerism for each sample
                            → per-sample TSV or JSON
 
    allomix timeline      Track chimerism across timepoints
                            → multi-timepoint JSON
 ```
 
+**Joint calling is required.** allomix takes a single multi-sample VCF produced by joint calling all samples for a patient together (host, donor, and all post-HSCT admixture timepoints) in one GATK GenomicsDBImport + GenotypeGVCFs run. Do not pass independently-called VCFs. Joint calling ensures that ALT alleles discovered in the donor are propagated to the admixture samples' AD fields even when those samples are called hom-ref, which is essential for detecting donor fractions below ~5%.
+
+When a new timepoint arrives, re-run the joint calling to include it, then re-run allomix on the updated VCF.
+
 ## Usage
 
 ```bash
 # Calculate chimerism for a single timepoint
 allomix monitor \
-    --host host_genotype.vcf.gz \
-    --donor donor_genotype.vcf.gz \
-    --sample post_hsct_day30.vcf.gz \
+    --vcf patient001_joint.vcf \
+    --host-sample HOST_001 \
+    --donor-sample DONOR_001 \
+    --sample TP1_20240101 \
     --output results.tsv
 
 # Multi-donor (2 donors)
 allomix monitor \
-    --host host_genotype.vcf.gz \
-    --donor donor1_genotype.vcf.gz \
-    --donor donor2_genotype.vcf.gz \
-    --sample post_hsct_day30.vcf.gz \
+    --vcf patient001_joint.vcf \
+    --host-sample HOST_001 \
+    --donor-sample DONOR1_001 \
+    --donor-sample DONOR2_001 \
+    --sample TP1_20240101 \
     --output results.tsv
 
 # JSON output with per-marker detail
 allomix monitor \
-    --host host_genotype.vcf.gz \
-    --donor donor_genotype.vcf.gz \
-    --sample post_hsct_day30.vcf.gz \
+    --vcf patient001_joint.vcf \
+    --host-sample HOST_001 \
+    --donor-sample DONOR_001 \
+    --sample TP1_20240101 \
     --format json --verbose \
     --output results.json
 
 # Timeline across multiple timepoints (always JSON)
 allomix timeline \
-    --host host_genotype.vcf.gz \
-    --donor donor_genotype.vcf.gz \
-    --sample day30.vcf.gz \
-    --sample day60.vcf.gz \
-    --sample day90.vcf.gz \
+    --vcf patient001_joint.vcf \
+    --host-sample HOST_001 \
+    --donor-sample DONOR_001 \
+    --sample TP1_20240101 \
+    --sample TP2_20240201 \
+    --sample TP3_20240301 \
     --output timeline.json
 
 # Estimate per-marker amplification bias from genotyping VCFs
@@ -97,9 +109,10 @@ allomix estimate-bias \
 
 # Use bias correction during monitoring
 allomix monitor \
-    --host host_genotype.vcf.gz \
-    --donor donor_genotype.vcf.gz \
-    --sample post_hsct_day30.vcf.gz \
+    --vcf patient001_joint.vcf \
+    --host-sample HOST_001 \
+    --donor-sample DONOR_001 \
+    --sample TP1_20240101 \
     --bias-table bias_table.tsv \
     --output results.tsv
 ```
@@ -125,11 +138,11 @@ Both `monitor` and `timeline` accept these additional options:
 
 | Input | Format | Description |
 |---|---|---|
-| Host genotype | VCF (.vcf.gz) | Per-sample VCF at marker loci. Must contain GT and AD fields. |
-| Donor genotype(s) | VCF (.vcf.gz) | One VCF per donor (up to 2 donors). Same format as host. |
-| Admixture sample(s) | VCF (.vcf.gz) | Post-HSCT monitoring samples. One or more timepoints. Must contain AD (allele depth) fields. |
+| Joint-called VCF | VCF (.vcf/.vcf.gz) | Multi-sample VCF from GATK joint calling containing host, donor(s), and admixture samples. Must contain GT and AD fields. |
 
-The tool works with VCFs from any variant calling pipeline (GATK, DeepVariant, etc.) as long as GT and AD fields are present. Higher depth improves sensitivity. Panels with >1000x coverage will give the best results at low chimerism fractions.
+All samples for a patient (host, donor(s), and all post-HSCT timepoints) must be joint-called together in a single VCF. Sample names are specified on the command line via `--host-sample`, `--donor-sample`, and `--sample`.
+
+The tool works with VCFs from any variant calling pipeline that supports joint calling (GATK GenomicsDBImport + GenotypeGVCFs) as long as GT and AD fields are present. Higher depth improves sensitivity. Panels with >1000x coverage will give the best results at low chimerism fractions.
 
 ### Outputs
 

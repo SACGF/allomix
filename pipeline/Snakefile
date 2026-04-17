@@ -1,0 +1,118 @@
+"""GATK joint-calling pipeline for allomix.
+
+Produces a single multi-sample joint-called VCF from per-sample BAMs,
+suitable for input to allomix monitor/timeline.
+
+Steps:
+    1. HaplotypeCaller (GVCF mode) per sample — parallelised
+    2. CombineGVCFs — merge all per-sample GVCFs
+    3. GenotypeGVCFs — joint genotype to final VCF
+
+Usage (from repo root):
+    snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 8
+    snakemake -s pipeline/Snakefile --config ref=/path/to/hg38.fa samples_csv=samples.csv --cores 8
+"""
+
+import csv
+import os
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+configfile: os.path.join(workflow.basedir, "config.yaml")
+
+REF = config["ref"]
+SAMPLES_CSV = config["samples_csv"]
+OUTPUT_DIR = config.get("output_dir", "output/joint_call")
+GVCF_DIR = os.path.join(OUTPUT_DIR, "gvcfs")
+
+
+def load_samples(csv_path):
+    """Read sample_id -> bam_filename mapping from CSV."""
+    samples = {}
+    with open(csv_path) as f:
+        for row in csv.DictReader(f):
+            samples[row["sample_id"]] = row["bam_filename"]
+    return samples
+
+
+SAMPLES = load_samples(SAMPLES_CSV)
+
+
+# ---------------------------------------------------------------------------
+# Rules
+# ---------------------------------------------------------------------------
+
+rule all:
+    input:
+        os.path.join(OUTPUT_DIR, "joint_called.vcf.gz"),
+
+
+rule haplotype_caller:
+    """Run GATK HaplotypeCaller in GVCF mode on a single sample."""
+    input:
+        bam=lambda wc: SAMPLES[wc.sample],
+        ref=REF,
+    output:
+        gvcf=os.path.join(GVCF_DIR, "{sample}.g.vcf.gz"),
+        tbi=os.path.join(GVCF_DIR, "{sample}.g.vcf.gz.tbi"),
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "haplotype_caller", "{sample}.log"),
+    shell:
+        """
+        gatk --java-options '-Xmx4g' HaplotypeCaller \
+            -R {input.ref} \
+            -I {input.bam} \
+            -ERC GVCF \
+            -O {output.gvcf} \
+            2>&1 | tee {log}
+        """
+
+
+rule combine_gvcfs:
+    """Merge per-sample GVCFs into a single combined GVCF."""
+    input:
+        gvcfs=expand(os.path.join(GVCF_DIR, "{sample}.g.vcf.gz"), sample=SAMPLES),
+        ref=REF,
+    output:
+        combined=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz"),
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "combine_gvcfs.log"),
+    params:
+        gvcf_args=lambda wc, input: " ".join(f"-V {g}" for g in input.gvcfs),
+    shell:
+        """
+        gatk --java-options '-Xmx4g' CombineGVCFs \
+            -R {input.ref} \
+            {params.gvcf_args} \
+            -O {output.combined} \
+            2>&1 | tee {log}
+        """
+
+
+rule genotype_gvcfs:
+    """Joint-genotype the combined GVCF to produce the final multi-sample VCF."""
+    input:
+        combined=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz"),
+        ref=REF,
+    output:
+        vcf=os.path.join(OUTPUT_DIR, "joint_called.vcf.gz"),
+        tbi=os.path.join(OUTPUT_DIR, "joint_called.vcf.gz.tbi"),
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "genotype_gvcfs.log"),
+    shell:
+        """
+        gatk --java-options '-Xmx4g' GenotypeGVCFs \
+            -R {input.ref} \
+            -V {input.combined} \
+            -O {output.vcf} \
+            2>&1 | tee {log}
+        """
+
+
+rule clean:
+    """Remove all pipeline output."""
+    shell:
+        f"rm -rf {OUTPUT_DIR}/gvcfs/ {OUTPUT_DIR}/combined.g.vcf.gz* {OUTPUT_DIR}/joint_called.vcf.gz* {OUTPUT_DIR}/logs/"

@@ -1,0 +1,4 @@
+# GATK joint-calling pipeline configuration
+ref: "/path/to/hg38.fa"
+samples_csv: "output/test_samples.csv"
+output_dir: "output/joint_call"

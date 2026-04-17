@@ -61,6 +61,8 @@ uv pip install -e ".[dev]"
 
 **Joint calling is required.** allomix takes a single multi-sample VCF produced by joint calling all samples for a patient together (host, donor, and all post-HSCT admixture timepoints) in one GATK GenomicsDBImport + GenotypeGVCFs run. Do not pass independently-called VCFs. Joint calling ensures that ALT alleles discovered in the donor are propagated to the admixture samples' AD fields even when those samples are called hom-ref, which is essential for detecting donor fractions below ~5%.
 
+A ready-to-use Snakemake pipeline for producing joint-called VCFs from BAM files is included in `pipeline/`. See [Joint Calling Guide](doc/joint_calling.md) for details on why joint calling is needed, which variant callers to use, and how to run the pipeline.
+
 When a new timepoint arrives, re-run the joint calling to include it, then re-run allomix on the updated VCF.
 
 ## Usage

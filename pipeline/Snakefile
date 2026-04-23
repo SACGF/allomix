@@ -114,6 +114,7 @@ rule genotype_gvcfs:
             -R {input.ref} \
             -V {input.combined} \
             -O {output.vcf} \
+            --verbosity ERROR \
             2>&1 | tee {log}
         """
 

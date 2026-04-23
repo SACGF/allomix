@@ -28,6 +28,10 @@ SAMPLES_CSV = config["samples_csv"]
 OUTPUT_DIR = config.get("output_dir", "output/joint_call")
 GATK = config.get("gatk", "gatk")
 JAVA_MEM = config.get("java_mem", "8g")
+INTERVALS = config.get("intervals", None)
+INTERVALS_ARG = f"-L {INTERVALS}" if INTERVALS else ""
+_intervals_tag = f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
+JOINT_VCF = os.path.join(OUTPUT_DIR, f"joint_called{_intervals_tag}.vcf.gz")
 GVCF_DIR = os.path.join(OUTPUT_DIR, "gvcfs")
 
 
@@ -49,7 +53,7 @@ SAMPLES = load_samples(SAMPLES_CSV)
 
 rule all:
     input:
-        os.path.join(OUTPUT_DIR, "joint_called.vcf.gz"),
+        JOINT_VCF,
 
 
 rule haplotype_caller:
@@ -66,6 +70,7 @@ rule haplotype_caller:
     params:
         gatk=GATK,
         java_mem=JAVA_MEM,
+        intervals_arg=INTERVALS_ARG,
     shell:
         """
         {params.gatk} --java-options '-Xmx{params.java_mem}' HaplotypeCaller \
@@ -74,6 +79,7 @@ rule haplotype_caller:
             -ERC GVCF \
             -O {output.gvcf} \
             --native-pair-hmm-threads {threads} \
+            {params.intervals_arg} \
             2>&1 | tee {log}
         """
 
@@ -90,6 +96,7 @@ rule combine_gvcfs:
     params:
         gatk=GATK,
         java_mem=JAVA_MEM,
+        intervals_arg=INTERVALS_ARG,
         gvcf_args=lambda wc, input: " ".join(f"-V {g}" for g in input.gvcfs),
     shell:
         """
@@ -97,6 +104,7 @@ rule combine_gvcfs:
             -R {input.ref} \
             {params.gvcf_args} \
             -O {output.combined} \
+            {params.intervals_arg} \
             2>&1 | tee {log}
         """
 
@@ -107,13 +115,14 @@ rule genotype_gvcfs:
         combined=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz"),
         ref=REF,
     output:
-        vcf=os.path.join(OUTPUT_DIR, "joint_called.vcf.gz"),
-        tbi=os.path.join(OUTPUT_DIR, "joint_called.vcf.gz.tbi"),
+        vcf=JOINT_VCF,
+        tbi=JOINT_VCF + ".tbi",
     log:
         os.path.join(OUTPUT_DIR, "logs", "genotype_gvcfs.log"),
     params:
         gatk=GATK,
         java_mem=JAVA_MEM,
+        intervals_arg=INTERVALS_ARG,
     shell:
         """
         {params.gatk} --java-options '-Xmx{params.java_mem}' GenotypeGVCFs \
@@ -121,6 +130,7 @@ rule genotype_gvcfs:
             -V {input.combined} \
             -O {output.vcf} \
             --verbosity ERROR \
+            {params.intervals_arg} \
             2>&1 | tee {log}
         """
 
@@ -128,4 +138,4 @@ rule genotype_gvcfs:
 rule clean:
     """Remove all pipeline output."""
     shell:
-        f"rm -rf {OUTPUT_DIR}/gvcfs/ {OUTPUT_DIR}/combined.g.vcf.gz* {OUTPUT_DIR}/joint_called.vcf.gz* {OUTPUT_DIR}/logs/"
+        f"rm -rf {OUTPUT_DIR}/gvcfs/ {OUTPUT_DIR}/combined.g.vcf.gz* {OUTPUT_DIR}/joint_called*.vcf.gz* {OUTPUT_DIR}/logs/"

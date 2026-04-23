@@ -412,9 +412,10 @@ def estimate_single_donor_bb(
 
     f_mle = max(0.0, min(1.0, float(opt.x[0])))
     rho_mle = math.exp(float(opt.x[1]))  # noqa: F841
-    ll_max = -float(opt.fun)
 
-    # Step 3: Profile likelihood CIs for f, profiling out rho at each f
+    # Step 3: Profile likelihood CIs for f, profiling out rho at each f.
+    # rho upper bound matches the Nelder-Mead constraint (50000) to avoid
+    # profile_ll_f(f_mle) < ll_max_joint, which causes brentq sign errors.
     threshold = chi2.ppf(0.95, df=1)
     half_threshold = threshold / 2.0
 
@@ -424,10 +425,14 @@ def estimate_single_donor_bb(
             lambda log_r: (
                 -total_log_likelihood_bb(markers, f_val, error_rate, math.exp(log_r), marker_biases)
             ),
-            bounds=(math.log(1.0), math.log(10000.0)),
+            bounds=(math.log(1.0), math.log(50000.0)),
             method="bounded",
         )
         return -float(opt_rho.fun)
+
+    # Re-derive ll_max from the profile at f_mle so the CI reference is
+    # consistent with profile_ll_f across the search interval.
+    ll_max = profile_ll_f(f_mle)
 
     def ci_func(f_val: float) -> float:
         return ll_max - profile_ll_f(f_val) - half_threshold
@@ -627,7 +632,7 @@ def _profile_likelihood_cis_multi(
                             markers, fracs, error_rate, math.exp(log_r), marker_biases
                         )
                     ),
-                    bounds=(math.log(1.0), math.log(10000.0)),
+                    bounds=(math.log(1.0), math.log(50000.0)),
                     method="bounded",
                 )
                 return -float(opt_rho.fun)
@@ -653,10 +658,13 @@ def _profile_likelihood_cis_multi(
             )
             return -float(opt.fun)
 
-        def ci_func(fi: float, _pll=profile_ll) -> float:
-            return ll_max - _pll(fi) - half_threshold
-
         fi_mle = f_mle[donor_idx]
+        # Re-derive reference LL from the profile at fi_mle for consistency
+        # with profile_ll across the search interval (avoids brentq sign errors).
+        pll_at_mle = profile_ll(fi_mle)
+
+        def ci_func(fi: float, _pll=profile_ll, _ref=pll_at_mle) -> float:
+            return _ref - _pll(fi) - half_threshold
 
         # Lower bound
         if fi_mle <= 0.0 or ci_func(0.0) <= 0.0:

@@ -104,9 +104,15 @@ allomix timeline \
     --sample TP3_20240301 \
     --output timeline.json
 
-# Estimate per-marker amplification bias from genotyping VCFs
+# Estimate bias from per-sample VCFs
 allomix estimate-bias \
     --vcfs sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
+    --output bias_table.tsv
+
+# Estimate bias from named samples within a joint-called VCF
+allomix estimate-bias \
+    --vcf joint_called.vcf.gz \
+    --samples DONOR_001 DONOR_002 DONOR_003 \
     --output bias_table.tsv
 
 # Use bias correction during monitoring

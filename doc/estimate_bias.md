@@ -6,22 +6,27 @@ Bias correction is optional but recommended, particularly at low donor fractions
 
 ## When to run
 
-Run `estimate-bias` once per panel, using a set of genotyping VCFs from samples with known heterozygous calls across the marker set. Typical sources:
-
-- A batch of host or donor genotyping VCFs from patients processed with the same panel
-- Any VCFs produced by the same sequencing protocol where true heterozygotes can be identified from the genotype calls
-
-Re-run if you change the capture panel, library preparation protocol, or sequencer platform.
+Run `estimate-bias` once per panel, using a set of genotyping VCFs from samples with known heterozygous calls across the marker set. Re-run if you change the capture panel, library preparation protocol, or sequencer platform.
 
 ## What VCFs to use
 
-Use **genotyping VCFs** (host or donor samples), not admixture timepoint VCFs. The estimation relies on markers called heterozygous (`GT 0/1`). Admixture samples are rarely truly heterozygous at informative loci.
+The estimation relies on markers called heterozygous (`GT 0/1`) and assumes true heterozygotes sit at VAF = 0.5, so any deviation is attributed to panel bias. This means the training samples must have clean germline heterozygotes: samples where LOH, copy number alterations, or clonal dominance could shift het VAF away from 0.5 for biological reasons will corrupt the estimate.
 
-More samples give more reliable bias estimates. With fewer than ~10 samples, estimates at low-frequency markers will be noisy. Aim for 20+ samples if available.
+**Use donor VCFs.** Donors are healthy individuals whose blood gives reliable germline heterozygotes at the marker loci. You are already genotyping them as part of the transplant workup, so donor VCFs accumulate naturally over time without extra effort.
+
+Host VCFs from haematology patients are generally not suitable as training data. Pre-transplant blood from haem patients can have LOH, chromosomal amplifications, or clonal hematopoiesis that shifts het VAF away from 0.5 at individual markers. If host samples come from a germline source (buccal swab, skin, nail clipping), they can be included.
+
+Do not use admixture timepoint VCFs: post-HSCT blood is a mixture of donor and host, so markers are not truly heterozygous.
+
+More samples give more reliable estimates. With fewer than ~10 donors, estimates at low-frequency markers will be noisy. Aim for 20+ samples if available. The median estimator is robust to sporadic outliers (a donor with an incidental CNV at one marker will not dominate), but systematic bias from a bad sample type will not average out.
 
 The VCFs do not need to be joint-called for this step. Independent per-sample VCFs are fine.
 
 ## Command
+
+Two input modes are supported. Use whichever matches how your donor VCFs are organised.
+
+### Multiple per-sample VCFs
 
 ```bash
 allomix estimate-bias \
@@ -29,7 +34,7 @@ allomix estimate-bias \
     --output bias_table.tsv
 ```
 
-Multiple VCFs can be listed directly or using shell globbing:
+Shell globbing works:
 
 ```bash
 allomix estimate-bias \
@@ -37,15 +42,30 @@ allomix estimate-bias \
     --output bias_table.tsv
 ```
 
+The first sample in each VCF is used. This mode suits workflows where each genotyping run produces a separate per-sample VCF.
+
+### Named samples from a joint-called VCF
+
+```bash
+allomix estimate-bias \
+    --vcf joint_called.vcf.gz \
+    --samples DONOR_001 DONOR_002 DONOR_003 \
+    --output bias_table.tsv
+```
+
+Use this when your donor genotyping VCFs were joint-called alongside other samples and all donors are in a single multi-sample VCF. The sample names must match those in the VCF header.
+
 ### Options
 
 | Option | Default | Description |
 |---|---|---|
-| `--vcfs` | required | One or more VCF files to use as training data |
+| `--vcfs` | | Per-sample VCFs, one per file (mutually exclusive with `--vcf`) |
+| `--vcf` | | Joint-called multi-sample VCF (use with `--samples`) |
+| `--samples` | | Sample names to extract from `--vcf` |
 | `--output` / `-o` | `bias_table.tsv` | Output path for the bias table TSV |
 | `--min-het` | 1 | Minimum heterozygous observations required to include a marker |
 
-**`--min-het`**: Markers with fewer than this many het observations are excluded from the table. With a small training set (e.g. 5 VCFs), the default of 1 means a bias estimate can be based on a single observation, which is unreliable. With larger training sets, raising this to 5 or 10 filters out markers with sparse data.
+**`--min-het`**: Markers with fewer than this many het observations are excluded from the table. With a small training set (e.g. 5 donors), the default of 1 means a bias estimate can be based on a single observation, which is unreliable. With larger training sets, raising this to 5 or 10 filters out markers with sparse data.
 
 ## Output format
 

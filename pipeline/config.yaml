@@ -3,3 +3,4 @@ ref: "/path/to/hg38.fa"
 samples_csv: "output/test_samples.csv"
 output_dir: "output/joint_call"
 gatk: "gatk"  # full path if not on PATH, e.g. /tau/tools/gatk-4.1.3.0/gatk
+java_mem: "8g"  # Java heap per GATK job; increase if HaplotypeCaller runs OOM on large BAMs

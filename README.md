@@ -128,7 +128,7 @@ Both `monitor` and `timeline` accept these additional options:
 | `--min-dp` | 100 | Minimum read depth to use a marker |
 | `--min-gq` | 20 | Minimum genotype quality for host/donor genotyping |
 | `--error-rate` | 0.01 | Sequencing error rate for the likelihood model |
-| `--bias-table` | none | Per-marker bias table TSV (from `estimate-bias`) |
+| `--bias-table` | none | Per-marker bias table TSV (from `estimate-bias`; see [Bias Estimation Guide](doc/estimate_bias.md)) |
 | `--no-bias-correction` | off | Disable bias correction even when a bias table is provided |
 | `--verbose` | off | Include per-marker detail in output |
 

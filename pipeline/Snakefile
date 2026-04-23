@@ -62,6 +62,7 @@ rule haplotype_caller:
         tbi=os.path.join(GVCF_DIR, "{sample}.g.vcf.gz.tbi"),
     log:
         os.path.join(OUTPUT_DIR, "logs", "haplotype_caller", "{sample}.log"),
+    threads: 4
     params:
         gatk=GATK,
         java_mem=JAVA_MEM,
@@ -72,6 +73,7 @@ rule haplotype_caller:
             -I {input.bam} \
             -ERC GVCF \
             -O {output.gvcf} \
+            --native-pair-hmm-threads {threads} \
             2>&1 | tee {log}
         """
 

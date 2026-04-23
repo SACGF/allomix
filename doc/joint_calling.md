@@ -14,14 +14,7 @@ This matters most below ~5% donor fraction. Above that, enough markers show hete
 
 ## Which variant caller?
 
-**Use GATK HaplotypeCaller.** The joint-calling workflow requires GVCFs (genomic VCFs that include reference blocks), and HaplotypeCaller in `-ERC GVCF` mode is the standard tool for producing these.
-
-Other callers are not suitable:
-
-- **VarDict**: Single-sample caller with no GVCF or joint-calling mode. Sites called hom-ref are simply not emitted, so AD data is lost.
-- **Mutect2**: Somatic caller designed for tumor/normal pairs. It uses a different statistical model (somatic prior, tumor purity estimation) that is wrong for germline genotyping of host and donor samples.
-- **FreeBayes**: Supports multi-sample calling but does not use the GVCF intermediate format, making incremental addition of new timepoints impractical.
-- **bcftools mpileup/call**: Can be forced to call at known sites, but lacks the local reassembly that HaplotypeCaller provides and does not produce GVCFs.
+Use GATK HaplotypeCaller in `-ERC GVCF` mode. The joint-calling workflow requires GVCFs (genomic VCFs that include reference blocks), and HaplotypeCaller is the standard tool for producing these.
 
 ## Pipeline overview
 

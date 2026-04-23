@@ -27,6 +27,7 @@ REF = config["ref"]
 SAMPLES_CSV = config["samples_csv"]
 OUTPUT_DIR = config.get("output_dir", "output/joint_call")
 GATK = config.get("gatk", "gatk")
+JAVA_MEM = config.get("java_mem", "8g")
 GVCF_DIR = os.path.join(OUTPUT_DIR, "gvcfs")
 
 
@@ -63,9 +64,10 @@ rule haplotype_caller:
         os.path.join(OUTPUT_DIR, "logs", "haplotype_caller", "{sample}.log"),
     params:
         gatk=GATK,
+        java_mem=JAVA_MEM,
     shell:
         """
-        {params.gatk} --java-options '-Xmx4g' HaplotypeCaller \
+        {params.gatk} --java-options '-Xmx{params.java_mem}' HaplotypeCaller \
             -R {input.ref} \
             -I {input.bam} \
             -ERC GVCF \
@@ -85,10 +87,11 @@ rule combine_gvcfs:
         os.path.join(OUTPUT_DIR, "logs", "combine_gvcfs.log"),
     params:
         gatk=GATK,
+        java_mem=JAVA_MEM,
         gvcf_args=lambda wc, input: " ".join(f"-V {g}" for g in input.gvcfs),
     shell:
         """
-        {params.gatk} --java-options '-Xmx4g' CombineGVCFs \
+        {params.gatk} --java-options '-Xmx{params.java_mem}' CombineGVCFs \
             -R {input.ref} \
             {params.gvcf_args} \
             -O {output.combined} \
@@ -108,9 +111,10 @@ rule genotype_gvcfs:
         os.path.join(OUTPUT_DIR, "logs", "genotype_gvcfs.log"),
     params:
         gatk=GATK,
+        java_mem=JAVA_MEM,
     shell:
         """
-        {params.gatk} --java-options '-Xmx4g' GenotypeGVCFs \
+        {params.gatk} --java-options '-Xmx{params.java_mem}' GenotypeGVCFs \
             -R {input.ref} \
             -V {input.combined} \
             -O {output.vcf} \

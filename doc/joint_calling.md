@@ -119,4 +119,16 @@ snakemake -s pipeline/Snakefile \
     --cores 8
 ```
 
-This is not currently implemented in the pipeline but is a straightforward addition to the HaplotypeCaller shell command (`-L {config[intervals]}`).
+Add an `intervals` entry to `pipeline/config.yaml`:
+
+```yaml
+intervals: "/path/to/targets.bed"
+```
+
+Or pass it on the command line:
+
+```bash
+snakemake -s pipeline/Snakefile \
+    --config ref=/path/to/hg38.fa samples_csv=my_samples.csv intervals=/path/to/targets.bed \
+    --cores 8
+```

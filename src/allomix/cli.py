@@ -201,16 +201,30 @@ def cmd_timeline(args: argparse.Namespace) -> int:
 
 def cmd_estimate_bias(args: argparse.Namespace) -> int:
     """Run the estimate-bias subcommand."""
+    if args.vcfs and args.vcf:
+        raise SystemExit("Use either --vcfs or --vcf/--samples, not both")
+    if not args.vcfs and not args.vcf:
+        raise SystemExit("One of --vcfs or --vcf is required")
+    if args.vcf and not args.samples:
+        raise SystemExit("--samples is required when using --vcf")
+
     marker_lists = []
-    for vcf_path in args.vcfs:
-        markers = parse_vcf(vcf_path, min_dp=0, min_gq=0)
-        marker_lists.append(markers)
+    if args.vcfs:
+        for vcf_path in args.vcfs:
+            markers = parse_vcf(vcf_path, min_dp=0, min_gq=0)
+            marker_lists.append(markers)
+        n_source = f"{len(args.vcfs)} VCFs"
+    else:
+        _validate_sample_names(args.vcf, args.samples)
+        for sample in args.samples:
+            markers = parse_vcf(args.vcf, sample=sample, min_dp=0, min_gq=0)
+            marker_lists.append(markers)
+        n_source = f"{len(args.samples)} samples from {args.vcf}"
 
     biases = estimate_biases(marker_lists, min_het=args.min_het)
-
     save_bias_table(biases, args.output)
     print(
-        f"Estimated bias for {len(biases)} markers from {len(args.vcfs)} VCFs -> {args.output}",
+        f"Estimated bias for {len(biases)} markers from {n_source} -> {args.output}",
         file=sys.stderr,
     )
     return 0
@@ -248,11 +262,23 @@ def main(argv: list[str] | None = None) -> int:
         "estimate-bias",
         help="Estimate per-marker amplification bias from VCFs",
     )
-    bias_parser.add_argument(
+    bias_input = bias_parser.add_mutually_exclusive_group()
+    bias_input.add_argument(
         "--vcfs",
-        required=True,
         nargs="+",
-        help="Genotyping VCFs to estimate bias from (het markers used)",
+        metavar="VCF",
+        help="Per-sample VCFs, one per file (reads first sample from each)",
+    )
+    bias_input.add_argument(
+        "--vcf",
+        metavar="VCF",
+        help="Joint-called multi-sample VCF (use with --samples)",
+    )
+    bias_parser.add_argument(
+        "--samples",
+        nargs="+",
+        metavar="SAMPLE_NAME",
+        help="Sample names to extract from --vcf",
     )
     bias_parser.add_argument(
         "--output",

@@ -27,6 +27,7 @@ REF = config["ref"]
 SAMPLES_CSV = config["samples_csv"]
 OUTPUT_DIR = config.get("output_dir", "output/joint_call")
 GATK = config.get("gatk", "gatk")
+TABIX = config.get("tabix", "tabix")
 JAVA_MEM = config.get("java_mem", "8g")
 INTERVALS = config.get("intervals", None)
 INTERVALS_ARG = f"-L {INTERVALS}" if INTERVALS else ""
@@ -69,6 +70,7 @@ rule haplotype_caller:
     threads: 4
     params:
         gatk=GATK,
+        tabix=TABIX,
         java_mem=JAVA_MEM,
         intervals_arg=INTERVALS_ARG,
     shell:
@@ -81,6 +83,7 @@ rule haplotype_caller:
             --native-pair-hmm-threads {threads} \
             {params.intervals_arg} \
             2>&1 | tee {log}
+        {params.tabix} -f {output.gvcf}
         """
 
 

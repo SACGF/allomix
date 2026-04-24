@@ -258,6 +258,8 @@ Implementation notes:
 - If BQ data unavailable, fall back to current flat error rate
 - Benchmark accuracy improvement vs computational cost on real data
 
+Detailed plan: `claude/12_bq_aware_plan.md`.
+
 ---
 
 ## Step 13: Beta-Binomial Goodness-of-Fit ✅ COMPLETE
@@ -277,6 +279,8 @@ Detailed plan: `claude/beta_binomial_plan.md`.
 
 Replace the global `--error-rate 0.01` constant with empirically measured rates from the bias-training cohort. At hom-ref sites measure observed ALT-read rate, at hom-alt sites measure observed REF-read rate. Per-site (preferred) or per-sample fallback. Removes a chunk of modelling slack and reduces reliance on a hand-tuned constant. Output a per-site error rate table from `estimate-bias`-style tooling so it can be loaded alongside the bias table.
 
+Detailed plan: [`claude/14_empirical_error_rates_plan.md`](14_empirical_error_rates_plan.md).
+
 ---
 
 ## Step 15: Per-Site Dropout Rate 🔲 TODO
@@ -290,6 +294,8 @@ Detailed plan: [`claude/per_site_dropout_plan.md`](per_site_dropout_plan.md).
 ## Step 16: GQ-Weighted Marker Contributions 🔲 TODO
 
 Currently `--min-gq 20` is a hard pass/fail. Replace with a per-marker weight on the likelihood contribution so borderline-confidence genotypes (e.g. GQ 20-30) stay informative but downweighted. Likely small gains relative to Steps 14 and 15, but cheap to add once the per-marker likelihood is already being modified.
+
+Detailed plan: [`claude/16_gq_weighted_markers_plan.md`](16_gq_weighted_markers_plan.md).
 
 ---
 

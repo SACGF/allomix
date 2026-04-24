@@ -1,4 +1,4 @@
-# Plan: Per-Base Quality-Aware Likelihood (Step 12)
+# Plan: Per-Base Quality-Aware Likelihood (Step 17)
 
 Status: proposed, not implemented.
 
@@ -904,7 +904,7 @@ Out of scope (future work, flagged but not implemented):
 - [ ] `tests/test_cli.py` / `tests/test_integration.py`: CLI flag plumbing
   tests (including the "QS missing" error message).
 - [ ] `paper/scripts/run_bq_validation.py` (NEW): in-silico validation script.
-- [ ] `claude/allomix_overall_plan.md`: link Step 12 to this plan, mark
+- [ ] `claude/allomix_overall_plan.md`: link Step 17 to this plan, mark
   status.
 
 ## Verification plan (run order)

@@ -283,6 +283,8 @@ Replace the global `--error-rate 0.01` constant with empirically measured rates 
 
 The bias-training cohort already gives us per-site no-call rates. Integrate a per-site dropout probability into the likelihood so flaky sites are automatically downweighted rather than treated as fully informative when they happen to call. Estimate alongside the bias and error-rate tables; load as an optional input to `monitor`.
 
+Detailed plan: [`claude/per_site_dropout_plan.md`](per_site_dropout_plan.md).
+
 ---
 
 ## Step 16: GQ-Weighted Marker Contributions 🔲 TODO

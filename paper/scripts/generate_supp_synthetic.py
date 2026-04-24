@@ -24,14 +24,18 @@ import sys
 import tempfile
 from pathlib import Path
 
-import numpy as np
-from scipy.stats import gaussian_kde, norm
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+from scipy.stats import gaussian_kde, norm  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor_bb
-from allomix.genotype import classify_markers, parse_vcf
-from allomix.simulate import (
+from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
+from allomix.simulate import (  # noqa: E402
     blend_vcfs,
     generate_marker_biases,
     generate_marker_biases_realistic,
@@ -712,11 +716,6 @@ def main():
         run_calibration_batch(HOST_VCF, DONOR_VCF, batch_idx, reps, outpath)
         print(f"  Wrote {outpath}", file=sys.stderr)
         return
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
 
     FACTS_DIR.mkdir(parents=True, exist_ok=True)
     markers = load_empirical_per_marker()

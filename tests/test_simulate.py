@@ -52,7 +52,7 @@ def _write_test_vcf(
 
     Each record is (chrom, pos, ref, alt, format_str, sample_str).
     """
-    with open(path, "w") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write(MINIMAL_HEADER)
         fh.write(f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample_name}\n")
         for chrom, pos, ref, alt, fmt, samp in records:

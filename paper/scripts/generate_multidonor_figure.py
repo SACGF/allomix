@@ -47,7 +47,7 @@ def run_all_samples():
     donor2 = parse_vcf(donor2_vcf, min_dp=0, min_gq=0)
 
     truth_rows = []
-    with open(DATA_DIR / "truth_table.tsv") as f:
+    with open(DATA_DIR / "truth_table.tsv", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
             truth_rows.append(row)

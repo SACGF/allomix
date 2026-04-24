@@ -109,14 +109,14 @@ def generate_biased_data(
 
     # Write truth table
     truth_path = outdir / "truth_table.tsv"
-    with open(truth_path, "w", newline="") as f:
+    with open(truth_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, ["sample_name", "true_donor_fraction"], delimiter="\t")
         w.writeheader()
         w.writerows(truth_rows)
 
     # Write bias table from the first result's marker_biases
     bias_path = outdir / "true_biases.tsv"
-    with open(bias_path, "w", newline="") as f:
+    with open(bias_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter="\t")
         w.writerow(["chrom", "pos", "ref", "alt", "bias", "n_het"])
         if first_result and first_result.marker_biases:
@@ -134,7 +134,7 @@ def run_validation(
     marker_biases: dict[tuple[str, int, str, str], float] | None = None,
 ) -> list[dict]:
     """Run allomix on all samples and compute error metrics."""
-    with open(truth_path) as f:
+    with open(truth_path, encoding="utf-8") as f:
         truth_rows = list(csv.DictReader(f, delimiter="\t"))
 
     rows = []

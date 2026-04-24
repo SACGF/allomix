@@ -33,7 +33,7 @@ BIAS_FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.9
 def write_fact(name: str, data: dict) -> None:
     """Write a single-row facts CSV."""
     path = FACTS_DIR / f"{name}.csv"
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(data.keys()))
         writer.writeheader()
         writer.writerow(data)

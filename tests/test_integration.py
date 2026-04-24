@@ -61,27 +61,27 @@ class TestFullPipeline:
 
     def test_pure_host(self):
         """f=0.0: estimate should be ~0%."""
-        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.00")
+        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.00")
         assert result.donor_fraction < 0.02
 
     def test_pure_donor(self):
         """f=1.0: estimate should be ~100%."""
-        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F1.00")
+        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F1.00")
         assert result.donor_fraction > 0.98
 
     def test_fifty_fifty(self):
         """f=0.5: estimate should be near 50%."""
-        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.50")
+        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.50")
         assert 0.40 < result.donor_fraction < 0.60
 
     def test_ten_percent(self):
         """f=0.10: estimate should be near 10%."""
-        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
+        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
         assert 0.05 < result.donor_fraction < 0.20
 
     def test_one_percent(self):
         """f=0.01: estimate should be near 1% (testing low-fraction sensitivity)."""
-        result, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.01")
+        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.01")
         assert result.donor_fraction < 0.05
 
     def test_ci_contains_truth(self):
@@ -120,9 +120,9 @@ class TestReportIntegration:
         return _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
 
     def test_tsv_output(self, pipeline_result, tmp_path):
-        result, qc, genotypes = pipeline_result
+        result, qc, _ = pipeline_result
         out = tmp_path / "results.tsv"
-        with open(out, "w") as f:
+        with open(out, "w", encoding="utf-8") as f:
             to_tsv(result, qc, f)
         content = out.read_text()
         lines = content.strip().split("\n")
@@ -130,9 +130,9 @@ class TestReportIntegration:
         assert "donor_pct" in lines[0]
 
     def test_tsv_verbose(self, pipeline_result, tmp_path):
-        result, qc, genotypes = pipeline_result
+        result, qc, _ = pipeline_result
         out = tmp_path / "results_verbose.tsv"
-        with open(out, "w") as f:
+        with open(out, "w", encoding="utf-8") as f:
             to_tsv(result, qc, f, verbose=True)
         content = out.read_text()
         lines = content.strip().split("\n")

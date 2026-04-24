@@ -37,7 +37,7 @@ def _create_flipped_vcf(tmp_dir: Path, source_path: Path) -> Path:
     This ensures maximum informativeness between host and donor.
     """
     lines = []
-    with open(source_path) as f:
+    with open(source_path, encoding="utf-8") as f:
         for line in f:
             if line.startswith("#"):
                 lines.append(line)
@@ -83,7 +83,7 @@ def _create_flipped_vcf(tmp_dir: Path, source_path: Path) -> Path:
             lines.append("\t".join(fields) + "\n")
 
     out = tmp_dir / "donor_flipped.vcf"
-    with open(out, "w") as f:
+    with open(out, "w", encoding="utf-8") as f:
         f.writelines(lines)
     return out
 

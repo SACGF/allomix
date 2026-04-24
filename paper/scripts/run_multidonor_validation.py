@@ -27,7 +27,7 @@ FACTS_DIR = Path("output/facts")
 def load_truth_table(path: Path) -> list[dict]:
     """Load truth_table.tsv into list of dicts."""
     rows = []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
             rows.append(
@@ -168,7 +168,7 @@ def compute_total_metrics(rows: list[dict]) -> dict:
 def write_fact(name: str, data: dict) -> None:
     """Write a single-row facts CSV."""
     path = FACTS_DIR / f"{name}.csv"
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(data.keys()))
         writer.writeheader()
         writer.writerow(data)
@@ -277,7 +277,7 @@ def main() -> int:
         "ci2_covers",
         "rank_correct",
     ]
-    with open(results_path, "w", newline="") as f:
+    with open(results_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         for r in results:

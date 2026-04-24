@@ -11,6 +11,7 @@ from allomix.chimerism import estimate_single_donor_bb
 from allomix.genotype import InformativeMarker, MarkerGenotypes
 from allomix.qc import ChimerismResult, MarkerResult, _compute_gof_pval, assess_quality
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -449,7 +450,7 @@ class TestGoFEndToEnd:
 class TestVersionConsistency:
     def test_versions_match(self):
         """pyproject.toml version should match __init__.py __version__."""
-        with open("pyproject.toml") as f:
+        with open("pyproject.toml", encoding="utf-8") as f:
             content = f.read()
         match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
         assert match is not None, "Could not find version in pyproject.toml"

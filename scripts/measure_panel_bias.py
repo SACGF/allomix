@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     vcf_paths = []
-    with open(args.vcf_list) as f:
+    with open(args.vcf_list, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             vcf = VCF(vcf_path)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             log.warning("failed to open %s: %s", vcf_path, e)
             continue
 
@@ -409,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         per_marker_path = f"{args.output}_per_marker.tsv"
 
-        with open(per_marker_path, "w") as f:
+        with open(per_marker_path, "w", encoding="utf-8") as f:
             header = [
                 "marker_index", "total_obs", "n_called", "n_nocall", "call_rate",
                 "n_hom_ref", "n_het", "n_hom_alt", "het_ratio_vs_hwe",
@@ -467,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
             "markers_low_het": sum(1 for r in all_het_ratios if r < LOW_HET_RATIO_THRESHOLD) if all_het_ratios else 0,
             "ado_estimate": round(ado_estimate, 4),
         }
-        with open(facts_path, "w", newline="") as f:
+        with open(facts_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
             writer.writeheader()
             writer.writerow(facts)

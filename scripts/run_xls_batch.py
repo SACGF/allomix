@@ -101,7 +101,7 @@ def main() -> None:
             cmd += ["--bias-table", args.bias_table_tsv]
 
         print(f"Running [{test_sample}]: {' '.join(cmd)}")
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd, check=False)
         if result.returncode != 0:
             print(
                 f"ERROR: allomix monitor failed for {test_sample} (exit {result.returncode})",

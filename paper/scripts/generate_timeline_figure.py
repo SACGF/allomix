@@ -180,7 +180,7 @@ def write_facts(all_replicates: list[list[dict]]) -> None:
     }
 
     path = FACTS_DIR / "timeline.csv"
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
         writer.writeheader()
         writer.writerow(facts)

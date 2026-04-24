@@ -39,6 +39,9 @@ paper = [
     "snakemake>=8.0",
     "vibepaper",
 ]
+xls = [
+    "openpyxl>=3.1",
+]
 
 [project.scripts]
 allomix = "allomix.cli:main"

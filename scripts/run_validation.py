@@ -38,17 +38,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+import matplotlib  # noqa: E402
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+
 from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.qc import assess_quality  # noqa: E402
-
-try:
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
 
 log = logging.getLogger(__name__)
 
@@ -156,11 +153,8 @@ def write_summary_tsv(metrics: dict, path: Path) -> None:
         f.write(f"mean_ci_width_pct\t{metrics['mean_ci_width_pct']:.4f}\n")
 
 
-def try_plot(rows: list[dict], outdir: Path) -> bool:
-    """Generate validation plots. Returns False if matplotlib unavailable."""
-    if not HAS_MATPLOTLIB:
-        return False
-
+def try_plot(rows: list[dict], outdir: Path) -> None:
+    """Generate validation plots."""
     truths = [r["true_donor_fraction"] * 100 for r in rows]
     estimates = [r["estimated_donor_fraction"] * 100 for r in rows]
     errors = [r["error"] * 100 for r in rows]
@@ -215,8 +209,6 @@ def try_plot(rows: list[dict], outdir: Path) -> bool:
     fig.tight_layout()
     fig.savefig(outdir / "validation_ci.png", dpi=150)
     plt.close(fig)
-
-    return True
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -314,13 +306,8 @@ def main(argv: list[str] | None = None) -> int:
     log.info("  Mean CI width:      %.4f%%", metrics["mean_ci_width_pct"])
     log.info("=" * 50)
 
-    # Try to generate plots
-    if try_plot(rows, outdir):
-        log.info("Plots saved to %s/", outdir)
-    else:
-        log.warning(
-            "matplotlib not available — skipping plots. Install with: pip install matplotlib"
-        )
+    try_plot(rows, outdir)
+    log.info("Plots saved to %s/", outdir)
 
     return 0
 

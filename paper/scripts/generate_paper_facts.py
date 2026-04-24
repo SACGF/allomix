@@ -11,14 +11,18 @@ from __future__ import annotations
 
 import csv
 import math
+import random
+import shutil
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.bias import load_bias_table
-from allomix.chimerism import estimate_single_donor_bb
-from allomix.genotype import classify_markers, parse_vcf
+from allomix.bias import load_bias_table  # noqa: E402
+from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
+from allomix.simulate import blend_vcfs, generate_marker_biases, write_vcf  # noqa: E402
+from allomix.simulate import parse_vcf as sim_parse_vcf  # noqa: E402
 
 FACTS_DIR = Path("output/facts")
 
@@ -132,11 +136,6 @@ def main():
     # --- Bias correction comparison ---
     # Generate biased data first
     print("Running bias correction comparison...")
-    import random
-
-    from allomix.simulate import blend_vcfs, generate_marker_biases, write_vcf
-    from allomix.simulate import parse_vcf as sim_parse_vcf
-
     bias_sd = 0.02
     depth = 2000
     seed = 42
@@ -222,8 +221,6 @@ def main():
     })
 
     # --- Copy empirical panel stats into facts dir ---
-    import shutil
-
     empirical_src = Path("paper/empirical_results/panel_empirical.csv")
     shutil.copy2(empirical_src, FACTS_DIR / "panel_empirical.csv")
     print(f"  Copied {empirical_src} -> {FACTS_DIR / 'panel_empirical.csv'}")

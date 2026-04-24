@@ -31,10 +31,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-try:
-    from cyvcf2 import VCF
-except ImportError:
-    VCF = None
+from cyvcf2 import VCF
 
 log = logging.getLogger(__name__)
 
@@ -88,10 +85,6 @@ def _cv(vals: list[float]) -> float:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-    if VCF is None:
-        log.error("cyvcf2 required. Install with: pip install cyvcf2")
-        return 1
 
     vcf_paths = []
     with open(args.vcf_list) as f:

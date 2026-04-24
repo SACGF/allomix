@@ -16,6 +16,14 @@ import os
 import subprocess
 import sys
 
+try:
+    import openpyxl
+except ImportError:
+    sys.exit(
+        "openpyxl is required for this script.\n"
+        "Install with: pip install 'allomix[xls]'  (or: pip install openpyxl)"
+    )
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -38,11 +46,6 @@ def main() -> None:
         help="Comma-separated XLS column names to append to each row in batch.tsv",
     )
     args = parser.parse_args()
-
-    try:
-        import openpyxl
-    except ImportError:
-        sys.exit("openpyxl is required: pip install openpyxl")
 
     os.makedirs(args.output_dir, exist_ok=True)
 

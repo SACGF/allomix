@@ -52,11 +52,13 @@ ls /tau/data/clinical_hg38/idt_haem/Haem_2[456]_*/1_BAM/*.hg38.bam \
 cut -d, -f1 samples_bias_training.csv | tail -n +2 | sort | uniq -d
 ```
 
-If duplicates appear, prepend the run folder to the sample_id to make them unique.
+If duplicates appear, either prepend the run folder to the sample_id to make them unique, or drop the duplicates and top up to your target count by sampling a few more BAMs from `all_recent_bams.txt`.
 
 ### 2. Joint-call at marker sites
 
 Run `pipeline/Snakefile` with `intervals` set to the marker bed. Restricting to the bed keeps the job cheap (a handful of sites vs the whole panel) and produces hom-ref calls with AD at every site for every sample, which is what bias estimation needs.
+
+For a one-off run, pass config on the command line:
 
 ```bash
 snakemake -s pipeline/Snakefile \
@@ -67,13 +69,31 @@ snakemake -s pipeline/Snakefile \
   --cores $(nproc)
 ```
 
-Output: `output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz`. The VCF filename prefix defaults to the samples CSV basename; override with `--config output_prefix=foo` if you prefer a different name.
+For a repeatable setup (recommended when you expect to re-run on new cohorts), put the config in a small yaml file and reference it with `--configfile`. For example `pipeline/bias_training.yaml`:
+
+```yaml
+ref: "/path/to/hg38.fa"
+samples_csv: "output/samples_bias_training.csv"
+intervals: "/tau/ngs_pipelines/hg38_reference_files/capture_kits/idt_rhampseq_sid/v1/idt_rhampseq_sid_SNPsQC.bed"
+output_dir: "output/bias_training"
+gatk: "/tau/tools/gatk-4.1.3.0/gatk"
+```
+
+Then run:
+
+```bash
+snakemake -s pipeline/Snakefile --configfile pipeline/bias_training.yaml --cores $(nproc)
+```
+
+Output: `output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz`. The VCF filename prefix defaults to the samples CSV basename; override with `output_prefix: foo` in the yaml (or `--config output_prefix=foo` inline) if you prefer a different name.
 
 The sample column names in the final VCF come from each BAM's `@RG SM:` tag, not the `sample_id` in the CSV. Extract the real names once the job completes:
 
 ```bash
 bcftools query -l output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz
 ```
+
+Expect the biallelic-site count reported by the QC step to be equal to or slightly less than your panel size (e.g. 71/76). Sites where no sample in the cohort carries an ALT allele will not appear as biallelic in the joint VCF. That is expected and not a sign of a problem.
 
 ### 3. Sample-level QC
 

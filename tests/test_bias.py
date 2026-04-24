@@ -20,6 +20,7 @@ from allomix.chimerism import (
 )
 from allomix.genotype import InformativeMarker, MarkerData
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -280,7 +281,7 @@ class TestEstimateSingleDonorWithBias:
         rng = random.Random(42)
         markers = []
         # Create type 0 markers (host 0/0, donor 1/1)
-        for i, (pos, bias) in enumerate(biases_map.items()):
+        for pos, bias in biases_map.items():
             # True ALT VAF at this marker = true_f
             true_vaf = true_f
             # Observed ALT VAF = true_vaf + bias
@@ -368,7 +369,7 @@ class TestEstimateSingleDonorWithBias:
         covers_corrected = 0
         n_trials = 20
 
-        for trial in range(n_trials):
+        for _ in range(n_trials):
             true_f = 0.25
             # Random biases per marker
             biases_map = {i * 1000: rng.gauss(0, 0.02) for i in range(40)}

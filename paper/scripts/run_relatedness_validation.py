@@ -266,7 +266,7 @@ def main() -> int:
 
         # Write facts CSV
         csv_path = FACTS_DIR / f"rel_{rel.replace('-', '_')}.csv"
-        with open(csv_path, "w", newline="") as f:
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=[
                 "relatedness", "n_replicates", "n_markers",
                 "mean_informative", "min_informative", "max_informative",
@@ -286,7 +286,7 @@ def main() -> int:
 
     # Summary table
     summary_path = outdir / "relatedness_summary.tsv"
-    with open(summary_path, "w", newline="") as f:
+    with open(summary_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter="\t")
         w.writerow(["relatedness", "mean_informative", "min", "max", "mean_mae_pct", "mean_rmse_pct"])
         for rel in RELATEDNESS_LEVELS:

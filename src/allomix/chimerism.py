@@ -70,6 +70,7 @@ class ChimerismResult:
     n_markers_used: int  # after outlier exclusion
     per_marker: list[MarkerResult]
     error_rate: float
+    rho: float = float("inf")  # beta-binomial concentration; inf = no overdispersion
 
 
 @dataclass
@@ -85,6 +86,7 @@ class MultiDonorResult:
     per_marker: list[MarkerResult]
     error_rate: float
     per_donor_n_informative: list[int] | None = None  # informative markers per donor
+    rho: float = float("inf")  # beta-binomial concentration; inf = no overdispersion
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +413,7 @@ def estimate_single_donor_bb(
     )
 
     f_mle = max(0.0, min(1.0, float(opt.x[0])))
-    rho_mle = math.exp(float(opt.x[1]))  # noqa: F841
+    rho_mle = math.exp(float(opt.x[1]))
 
     # Step 3: Profile likelihood CIs for f, profiling out rho at each f.
     # rho upper bound matches the Nelder-Mead constraint (50000) to avoid
@@ -462,6 +464,7 @@ def estimate_single_donor_bb(
         n_markers_used=n_markers_used,
         per_marker=per_marker,
         error_rate=error_rate,
+        rho=rho_mle,
     )
 
 
@@ -563,6 +566,7 @@ def estimate_multi_donor(
     if sum(f_mle) > 1.0:
         scale = 1.0 / sum(f_mle)
         f_mle = [f * scale for f in f_mle]
+    rho_mle = math.exp(float(opt.x[2]))
     ll_max = -float(opt.fun)
 
     # Step 3: Profile likelihood CIs per donor (profiling out other f and rho)
@@ -594,6 +598,7 @@ def estimate_multi_donor(
         per_marker=per_marker,
         error_rate=error_rate,
         per_donor_n_informative=per_donor_n_inf,
+        rho=rho_mle,
     )
 
 

@@ -47,6 +47,7 @@ def _make_chimerism_result(
     ci: tuple[float, float] = (0.08, 0.12),
     n_informative: int = 10,
     per_marker: list[MarkerResult] | None = None,
+    rho: float = float("inf"),
 ) -> ChimerismResult:
     if per_marker is None:
         per_marker = [_make_marker_result(pos=i * 100, dp=1000) for i in range(n_informative)]
@@ -60,6 +61,7 @@ def _make_chimerism_result(
         n_markers_used=n_used,
         per_marker=per_marker,
         error_rate=0.01,
+        rho=rho,
     )
 
 
@@ -251,6 +253,40 @@ class TestGoodnessOfFit:
         qc = assess_quality(result, genotypes, min_informative=1)
         assert qc.goodness_of_fit_pval is None
 
+    def test_overdispersed_residuals_not_flagged_under_bb(self):
+        """With a small rho capturing overdispersion, residuals that fail
+        under binomial variance should pass under beta-binomial variance."""
+        markers = [
+            _make_marker_result(pos=i * 100, dp=1000, residual=0.03, included=True)
+            for i in range(20)
+        ]
+        result = _make_chimerism_result(
+            n_informative=20,
+            per_marker=markers,
+            rho=5.0,
+        )
+        genotypes = _make_genotypes()
+        qc = assess_quality(result, genotypes)
+        assert qc.goodness_of_fit_pval is not None
+        assert qc.goodness_of_fit_pval > 0.01
+        assert not any("model fit" in w.lower() for w in qc.warnings)
+
+    def test_same_residuals_fail_under_binomial(self):
+        """Sanity: those same residuals fail under the binomial limit."""
+        markers = [
+            _make_marker_result(pos=i * 100, dp=1000, residual=0.03, included=True)
+            for i in range(20)
+        ]
+        result = _make_chimerism_result(
+            n_informative=20,
+            per_marker=markers,
+            rho=float("inf"),
+        )
+        genotypes = _make_genotypes()
+        qc = assess_quality(result, genotypes)
+        assert qc.goodness_of_fit_pval is not None
+        assert qc.goodness_of_fit_pval < 0.01
+
 
 # ---------------------------------------------------------------------------
 # Pearson GoF statistic tests
@@ -350,6 +386,11 @@ class TestGoFEndToEnd:
     """GoF should catch a swapped genotype through the full estimation pipeline."""
 
     def test_catches_wrong_genotype(self):
+        """A single swapped genotype should be detected end-to-end, either
+        by the 3-SD outlier rule (excluding it from the fit) or by a GoF
+        failure. Under the beta-binomial likelihood a lone outlier is
+        normally caught by the outlier rule; GoF only flags it when the
+        outlier rule fails to exclude it."""
         rng = random.Random(42)
         true_f = 0.20
         dp = 2000
@@ -392,8 +433,12 @@ class TestGoFEndToEnd:
             n_filtered=0,
         )
         qc = assess_quality(result, genotypes)
-        assert qc.goodness_of_fit_pval is not None
-        assert qc.goodness_of_fit_pval < 0.01
+        outlier_excluded = result.n_markers_used < result.n_informative
+        gof_fail = qc.goodness_of_fit_pval is not None and qc.goodness_of_fit_pval < 0.01
+        assert outlier_excluded or gof_fail, (
+            f"Swapped genotype not detected: n_used={result.n_markers_used}/"
+            f"{result.n_informative}, gof_pval={qc.goodness_of_fit_pval}"
+        )
 
 
 # ---------------------------------------------------------------------------

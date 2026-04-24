@@ -6,6 +6,7 @@ and goodness-of-fit to flag potential issues in chimerism estimates.
 
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass, field
 
@@ -52,29 +53,87 @@ class QCReport:
     per_donor_n_informative: list[int] | None = None
 
 
-def _compute_gof_pval(per_marker: list[MarkerResult]) -> float | None:
+def _error_adjusted_p_alt(expected_vaf: float, error_rate: float) -> float:
+    """Error-model-adjusted expected ALT fraction.
+
+    Mirrors the 4-state error model used by ``log_likelihood_marker_bb``,
+    so that GoF compares the observed VAF to the same quantity the
+    likelihood does. The raw ``expected_vaf`` stored on ``MarkerResult``
+    is ``1 - w`` without sequencing-error adjustment; at homozygous
+    markers this is 0 or 1 exactly, clamping the variance floor and
+    producing spurious chi-sq blow-ups against observations that differ
+    by a typical sequencing error (~1%).
+    """
+    e = error_rate
+    w = 1.0 - expected_vaf  # reference weight
+    p_alt = (1.0 - w) * (1.0 - e) + w * e / 3.0
+    p_ref = w * (1.0 - e) + (1.0 - w) * e / 3.0
+    return p_alt / (p_ref + p_alt)
+
+
+def _compute_gof_pval(
+    per_marker: list[MarkerResult],
+    rho: float = float("inf"),
+    n_fitted_params: int = 2,
+    error_rate: float = 0.0,
+) -> float | None:
     """Compute chi-squared goodness-of-fit p-value from per-marker residuals.
 
-    Uses the sum of squared Pearson residuals as the test statistic
-    with degrees of freedom equal to the number of included markers minus 1.
+    Uses the sum of squared Pearson residuals standardised by the
+    beta-binomial variance at each marker:
+
+        Var(k/n) = p(1-p) * (n + rho) / (n * (rho + 1))
+
+    As rho -> inf this collapses to the binomial Pearson chi-squared.
+
+    When ``error_rate > 0``, the expected VAF used for the variance
+    floor is adjusted via the 4-state error model (``p_alt`` from
+    ``log_likelihood_marker_bb``) so that at f near 0 or 1 the floor is
+    the actual error rate, not ``1 - 1e-6``. Without this, a typical
+    ~1% sequencing-error residual against a saturated ``expected_vaf``
+    of 0 or 1 produces a spurious chi-sq blow-up. The stored
+    ``m.residual`` is used as-is so synthetic test fixtures that set a
+    residual independently of the observed VAF keep working.
 
     Args:
-        per_marker: List of per-marker results from chimerism estimation.
+        per_marker: Per-marker results from chimerism estimation.
+        rho: Fitted beta-binomial concentration parameter. Pass
+            ``math.inf`` for binomial scaling.
+        n_fitted_params: Number of parameters jointly estimated with the
+            fit, used to set degrees of freedom. Single-donor BB: 2
+            (f, rho). Multi-donor BB with k donors: k + 1.
+        error_rate: Sequencing error rate used by the likelihood. Pass
+            0.0 to use the raw ``expected_vaf`` for the variance floor.
 
     Returns:
-        p-value from chi-squared survival function, or None if fewer than
-        2 included markers.
+        p-value from chi-squared survival function, or None if there are
+        not enough included markers (<= n_fitted_params).
     """
     included = [m for m in per_marker if m.included]
-    if len(included) < 2:
+    if len(included) <= n_fitted_params:
         return None
 
-    # Pearson chi-squared: standardise residuals by binomial variance
     chi_sq = 0.0
     for m in included:
-        ev = max(1e-6, min(1.0 - 1e-6, m.expected_vaf))
-        chi_sq += m.residual**2 * m.dp / (ev * (1.0 - ev))
-    df = len(included) - 1
+        n = m.dp
+        if n <= 0:
+            continue
+        if error_rate > 0:
+            ev_raw = _error_adjusted_p_alt(m.expected_vaf, error_rate)
+        else:
+            ev_raw = m.expected_vaf
+        ev = max(1e-6, min(1.0 - 1e-6, ev_raw))
+        if math.isinf(rho):
+            var_vaf = ev * (1.0 - ev) / n
+        else:
+            var_vaf = ev * (1.0 - ev) * (n + rho) / (n * (rho + 1.0))
+        if var_vaf <= 0:
+            continue
+        chi_sq += m.residual**2 / var_vaf
+
+    df = len(included) - n_fitted_params
+    if df <= 0:
+        return None
     pval: float = chi2.sf(chi_sq, df)
     return pval
 
@@ -118,7 +177,17 @@ def assess_quality(
         min_depth = 0
 
     # Goodness of fit
-    gof_pval = _compute_gof_pval(result.per_marker)
+    rho = getattr(result, "rho", float("inf"))
+    if hasattr(result, "donor_fractions"):
+        n_fitted = len(result.donor_fractions) + 1  # k donors + rho
+    else:
+        n_fitted = 2  # f + rho
+    gof_pval = _compute_gof_pval(
+        result.per_marker,
+        rho=rho,
+        n_fitted_params=n_fitted,
+        error_rate=result.error_rate,
+    )
 
     # --- QC checks ---
 

@@ -120,7 +120,7 @@ def write_results_tsv(rows: list[dict], path: Path) -> None:
         "error_pct", "abs_error_pct", "ci_lo_pct", "ci_hi_pct",
         "ci_width_pct", "ci_covers_truth", "n_informative", "n_used", "qc_pass",
     ]
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fields, delimiter="\t")
         writer.writeheader()
         for r in rows:
@@ -142,7 +142,7 @@ def write_results_tsv(rows: list[dict], path: Path) -> None:
 
 def write_summary_tsv(metrics: dict, path: Path) -> None:
     """Write aggregate validation summary."""
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("metric\tvalue\n")
         f.write(f"n_samples\t{metrics['n_samples']}\n")
         f.write(f"mean_signed_error_pct\t{metrics['mean_signed_error_pct']:.4f}\n")
@@ -236,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     vcf_dir = Path(args.vcf_dir)
 
     # Read truth table
-    with open(args.truth) as f:
+    with open(args.truth, encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
         truth_rows = list(reader)
 

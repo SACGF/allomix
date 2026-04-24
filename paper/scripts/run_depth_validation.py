@@ -173,7 +173,7 @@ def aggregate_replicate_metrics(replicate_metrics: list[dict]) -> dict:
 
 def write_fact(name: str, data: dict) -> None:
     path = FACTS_DIR / f"{name}.csv"
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(data.keys()))
         writer.writeheader()
         writer.writerow(data)
@@ -193,7 +193,7 @@ def plot_results(
     if n_depths == 1:
         axes = [axes]
 
-    colors = plt.cm.viridis_r([i / (len(depths) - 1) for i in range(len(depths))])
+    colors = plt.get_cmap("viridis_r")([i / (len(depths) - 1) for i in range(len(depths))])
 
     for ax, depth, color in zip(axes, depths, colors):
         for rep_rows in all_results[depth]:
@@ -452,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
         })
 
     summary_path = outdir / "depth_summary.tsv"
-    with open(summary_path, "w", newline="") as f:
+    with open(summary_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(
             f,
             fieldnames=[
@@ -469,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
     for depth in depths_sorted:
         for rep_idx, rep_rows in enumerate(all_results[depth]):
             results_path = outdir / f"results_{depth}x_rep{rep_idx}.tsv"
-            with open(results_path, "w", newline="") as f:
+            with open(results_path, "w", newline="", encoding="utf-8") as f:
                 fields = [
                     "sample_name", "true_pct", "est_pct", "error_pct",
                     "ci_lo_pct", "ci_hi_pct", "ci_covers",

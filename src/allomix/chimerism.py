@@ -37,6 +37,7 @@ from scipy.stats import chi2
 
 from allomix.genotype import InformativeMarker
 
+
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -278,7 +279,6 @@ def expected_weight_multi(
 def _compute_per_marker_results(
     markers: list[InformativeMarker],
     f_mle: float,
-    error_rate: float,
     marker_biases: dict[tuple[str, int, str, str], float] | None,
 ) -> list[MarkerResult]:
     """Compute per-marker residuals and flag outliers.
@@ -382,8 +382,8 @@ def estimate_single_donor_bb(
     for f in grid:
         # Optimise rho for this f
         opt_rho = minimize_scalar(
-            lambda log_r: (
-                -total_log_likelihood_bb(markers, f, error_rate, math.exp(log_r), marker_biases)
+            lambda log_r, _f=f: (
+                -total_log_likelihood_bb(markers, _f, error_rate, math.exp(log_r), marker_biases)
             ),
             bounds=(math.log(1.0), math.log(10000.0)),
             method="bounded",
@@ -452,7 +452,7 @@ def estimate_single_donor_bb(
         f_hi = brentq(ci_func, f_mle, 1.0, xtol=1e-5)
 
     # Step 4: Per-marker residuals
-    per_marker = _compute_per_marker_results(markers, f_mle, error_rate, marker_biases)
+    per_marker = _compute_per_marker_results(markers, f_mle, marker_biases)
     n_markers_used = sum(1 for mr in per_marker if mr.included)
 
     return ChimerismResult(
@@ -570,10 +570,10 @@ def estimate_multi_donor(
     ll_max = -float(opt.fun)
 
     # Step 3: Profile likelihood CIs per donor (profiling out other f and rho)
-    cis = _profile_likelihood_cis_multi(markers, f_mle, ll_max, n_donors, error_rate, marker_biases)
+    cis = _profile_likelihood_cis_multi(markers, f_mle, n_donors, error_rate, marker_biases)
 
     # Step 4: Per-marker residuals
-    per_marker = _per_marker_results_multi(markers, f_mle, error_rate, marker_biases)
+    per_marker = _per_marker_results_multi(markers, f_mle, marker_biases)
 
     # Per-donor informative counts
     per_donor_n_inf = [0] * n_donors
@@ -605,7 +605,6 @@ def estimate_multi_donor(
 def _profile_likelihood_cis_multi(
     markers: list[InformativeMarker],
     f_mle: list[float],
-    ll_max: float,
     n_donors: int,
     error_rate: float,
     marker_biases: dict[tuple[str, int, str, str], float] | None,
@@ -691,7 +690,6 @@ def _profile_likelihood_cis_multi(
 def _per_marker_results_multi(
     markers: list[InformativeMarker],
     f_mle: list[float],
-    error_rate: float,
     marker_biases: dict[tuple[str, int, str, str], float] | None,
 ) -> list[MarkerResult]:
     """Compute per-marker residuals for multi-donor model."""

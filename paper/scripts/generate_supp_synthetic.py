@@ -123,7 +123,7 @@ CONDITIONS = {
 def load_empirical_per_marker() -> list[dict]:
     """Load per-marker stats from panel_per_marker.tsv."""
     rows = []
-    with open(EMPIRICAL_PER_MARKER) as f:
+    with open(EMPIRICAL_PER_MARKER, encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
             rows.append(
@@ -497,7 +497,7 @@ def run_calibration_batch(
 
     outpath = Path(outpath)
     outpath.parent.mkdir(parents=True, exist_ok=True)
-    with open(outpath, "w", newline="") as f:
+    with open(outpath, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
@@ -507,7 +507,7 @@ def load_calibration_batches() -> list[dict]:
     """Merge all batch CSVs from output/calibration/ into one list."""
     results = []
     for p in sorted(CALIBRATION_DIR.glob("batch_*.csv")):
-        with open(p) as f:
+        with open(p, encoding="utf-8") as f:
             for row in csv.DictReader(f):
                 results.append(
                     {
@@ -679,7 +679,7 @@ def write_supp_facts(ablation_results, cal_results, empirical_biases, empirical_
     facts["bias_stability_r"] = f"{r:.2f}"
 
     path = FACTS_DIR / "supp_synthetic.csv"
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
         writer.writeheader()
         writer.writerow(facts)

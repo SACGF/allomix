@@ -237,28 +237,28 @@ All MAE values sub-2% (clinically acceptable). Even sibling donors maintain suff
 
 ---
 
-## Step 12: Per-Base Quality-Aware Likelihood 🔲 TODO
+## Step 12: Per-Marker Likelihood Context Refactor 🔲 TODO
 
-The current MLE uses a flat sequencing error rate (default 1%) for all reads at all
-markers. A more accurate model would weight each read's contribution to the likelihood
-by its base quality (BQ/QUAL), following the approach used by Conpair (Bergmann et al.):
+Pure-refactor pre-step for Steps 14, 15, 16, and 17. Each of those steps independently
+proposes adding a new optional kwarg to `total_log_likelihood_bb`,
+`total_log_likelihood_multi_bb`, `estimate_single_donor_bb`, `estimate_multi_donor`,
+and `_profile_likelihood_cis_multi`, then threading it through every nested closure.
+By the time all four land, those signatures will have grown four new optional
+parameters each, plus the existing `marker_biases`, and every call site has to
+forward all of them.
 
-- Parse per-read base qualities from the VCF (if available) or BAM pileup
-- Replace the flat error rate `e` in the likelihood with a per-read error probability
-  derived from the Phred quality score: `e_i = 10^(-Q_i/10)`
-- Per-marker likelihood becomes a product over individual reads rather than a binomial
-  with aggregate counts
-- This gives more weight to high-quality reads and down-weights low-quality bases,
-  improving accuracy at low depths and near the detection limit
-- Requires either BQ annotation in VCF FORMAT fields, or falling back to BAM access
-- Profile likelihood CIs should improve as the model better captures per-read uncertainty
+This step does that plumbing once. Introduce a `PerMarkerContext` dataclass that
+the estimators build once per call from whatever inputs are configured (today:
+`error_rate` + optional `marker_biases`); the aggregators take a single
+`ctx: list[PerMarkerContext]` aligned with the markers list. Each downstream step
+then mutates one field on the context rather than threading another kwarg through
+every closure.
 
-Implementation notes:
-- Add optional `--bq-aware` flag to CLI (default off for backwards compatibility)
-- If BQ data unavailable, fall back to current flat error rate
-- Benchmark accuracy improvement vs computational cost on real data
+No CLI changes, no behavioural changes. Success criterion is the existing 261-test
+suite passing unchanged plus a numerical-regression spot-check on the multi-donor
+fixture and the April-24 validation batch.
 
-Detailed plan: `claude/12_bq_aware_plan.md`.
+Detailed plan: `claude/12_marker_context_refactor_plan.md`.
 
 ---
 
@@ -299,7 +299,49 @@ Detailed plan: [`claude/16_gq_weighted_markers_plan.md`](16_gq_weighted_markers_
 
 ---
 
-## Step 17: Publication 🟡 IN PROGRESS
+## Step 17: Per-Base Quality-Aware Likelihood 🔲 TODO (skeptical, may not ship)
+
+**Status note:** we are not convinced this is worth doing. It is the most invasive
+of the remaining algorithm steps (new upstream `bcftools mpileup -a FORMAT/QS`
+pipeline rule, new `bq.py` module, simulator extension to emit per-read BQs, new
+`MarkerResult` field, new CLI flag, real-data revalidation) for what is likely a
+small accuracy gain on the current panel where most reads sit at Q30+. Step 14
+(empirical per-site error rates) attacks the same source of slack — over-reliance
+on the global `--error-rate` constant — at a fraction of the engineering cost,
+and the mean-phred → mean-error approximation in the BQ plan (Jensen's inequality;
+see plan §"Mean-phred vs mean-error approximation") means BQ-aware is itself only
+a partial fix. Decision gate: revisit only if Steps 14, 15, 16 land and CIs on
+real data are still wider than we want.
+
+The current MLE uses a flat sequencing error rate (default 1%) for all reads at all
+markers. A more accurate model would weight each read's contribution to the likelihood
+by its base quality (BQ/QUAL), following the approach used by Conpair (Bergmann et al.):
+
+- Parse per-read base qualities from the VCF (if available) or BAM pileup
+- Replace the flat error rate `e` in the likelihood with a per-read error probability
+  derived from the Phred quality score: `e_i = 10^(-Q_i/10)`
+- Per-marker likelihood becomes a product over individual reads rather than a binomial
+  with aggregate counts
+- This gives more weight to high-quality reads and down-weights low-quality bases,
+  improving accuracy at low depths and near the detection limit
+- Requires either BQ annotation in VCF FORMAT fields, or falling back to BAM access
+- Profile likelihood CIs should improve as the model better captures per-read uncertainty
+
+Implementation notes:
+- Add optional `--bq-aware` flag to CLI (default off for backwards compatibility)
+- If BQ data unavailable, fall back to current flat error rate
+- Benchmark accuracy improvement vs computational cost on real data
+
+Sequenced last because it requires an upstream pipeline change (`bcftools mpileup -a
+FORMAT/QS` + `bcftools annotate`) and partially overlaps Step 14 in motivation
+(both reduce dependence on the global `--error-rate` constant). Defer until 14, 15,
+16 are in and we have seen whether they close the gap on real-data CIs.
+
+Detailed plan: `claude/17_bq_aware_plan.md`.
+
+---
+
+## Step 18: Publication 🟡 IN PROGRESS
 
 - Method paper describing the approach — framework set up with vibepaper
 - Target journal: Journal of Molecular Diagnostics (Technical Advance)

@@ -10,15 +10,22 @@ Usage:
 
 from __future__ import annotations
 
+import csv
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-import numpy as np
+import matplotlib  # noqa: E402
 
-from allomix.chimerism import estimate_multi_donor, total_log_likelihood_multi_bb
-from allomix.genotype import classify_markers, parse_vcf
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+from matplotlib.lines import Line2D  # noqa: E402
+from scipy.stats import chi2  # noqa: E402
+
+from allomix.chimerism import estimate_multi_donor, total_log_likelihood_multi_bb  # noqa: E402
+from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 
 DATA_DIR = Path("tests/test_data/multidonor")
 FACTS_DIR = Path("output/facts")
@@ -31,8 +38,6 @@ CONTOUR_TRUE_F2 = 0.10
 
 def run_all_samples():
     """Run multi-donor estimation on all chimeric VCFs."""
-    import csv
-
     host_vcf = str(DATA_DIR / "host.vcf")
     donor1_vcf = str(DATA_DIR / "donor1.vcf")
     donor2_vcf = str(DATA_DIR / "donor2.vcf")
@@ -76,12 +81,6 @@ def run_all_samples():
 
 def plot_figure(results: list[dict]) -> None:
     """Generate the 2-panel figure."""
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from scipy.stats import chi2
-
     fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
 
     # --- Panel A: Per-donor accuracy scatter ---
@@ -131,8 +130,6 @@ def plot_figure(results: list[dict]) -> None:
     ax.grid(True, alpha=0.2)
 
     # Custom legend
-    from matplotlib.lines import Line2D
-
     legend_elements = [
         Line2D(
             [0],
@@ -264,8 +261,6 @@ def plot_figure(results: list[dict]) -> None:
         ax.grid(True, alpha=0.2)
 
         # Legend for panel B
-        from matplotlib.lines import Line2D
-
         legend_b = [
             Line2D(
                 [0],

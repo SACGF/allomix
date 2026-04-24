@@ -6,6 +6,8 @@ import argparse
 import json
 import sys
 
+from cyvcf2 import VCF
+
 from allomix import __version__
 from allomix.bias import estimate_biases, load_bias_table, save_bias_table
 from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
@@ -60,8 +62,6 @@ def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
     Raises SystemExit with a clear error listing available names if any
     are missing.
     """
-    from cyvcf2 import VCF
-
     vcf = VCF(vcf_path)
     available = list(vcf.samples)
     vcf.close()

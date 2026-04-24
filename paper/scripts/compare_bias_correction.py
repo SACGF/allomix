@@ -22,6 +22,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 import random  # noqa: E402
 
+import matplotlib  # noqa: E402
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+
 from allomix.bias import load_bias_table  # noqa: E402
 from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
@@ -30,7 +35,7 @@ from allomix.simulate import (  # noqa: E402
     generate_marker_biases,
     write_vcf,
 )
-from allomix.simulate import (
+from allomix.simulate import (  # noqa: E402
     parse_vcf as sim_parse_vcf,
 )
 
@@ -247,15 +252,8 @@ def print_per_sample(rows_no: list[dict], rows_yes: list[dict]) -> None:
     print("\n  * = CI covers truth")
 
 
-def try_plot(rows_no: list[dict], rows_yes: list[dict], outdir: Path, bias_sd: float) -> bool:
-    """Generate comparison plot if matplotlib is available."""
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        return False
-
+def try_plot(rows_no: list[dict], rows_yes: list[dict], outdir: Path, bias_sd: float) -> None:
+    """Generate comparison plot."""
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
 
     truths = [r["true_frac"] * 100 for r in rows_no]
@@ -309,7 +307,6 @@ def try_plot(rows_no: list[dict], rows_yes: list[dict], outdir: Path, bias_sd: f
     fig.tight_layout()
     fig.savefig(outdir / "bias_correction_comparison.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    return True
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -371,10 +368,9 @@ def main(argv: list[str] | None = None) -> int:
     print_per_sample(rows_no, rows_yes)
     print_comparison(m_no, m_yes, args.bias_sd)
 
-    # Try to generate plots
     outdir.mkdir(parents=True, exist_ok=True)
-    if try_plot(rows_no, rows_yes, outdir, args.bias_sd):
-        print(f"\nPlot saved to {outdir}/bias_correction_comparison.png", file=sys.stderr)
+    try_plot(rows_no, rows_yes, outdir, args.bias_sd)
+    print(f"\nPlot saved to {outdir}/bias_correction_comparison.png", file=sys.stderr)
 
     return 0
 

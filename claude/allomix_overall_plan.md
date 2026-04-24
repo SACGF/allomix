@@ -227,12 +227,13 @@ All MAE values sub-2% (clinically acceptable). Even sibling donors maintain suff
 
 ---
 
-## Step 11: Real Sample Validation 🔲 TODO
+## Step 11: Real Sample Validation ✅ COMPLETE
 
-- Run allomix on real post-HSCT samples from /tau
-- Compare with STR-based chimerism results (current method)
-- Assess concordance, sensitivity at low fractions
-- Requires running the /tau audit script first (in step2 document)
+- Joint-called VCFs for the idt_rhampseq_sid panel produced on /tau; joint-called VCF available locally at `output/joint_called/joint_called.idt_rhampseq_sid_SNPsQC.vcf.gz`
+- Batch runner `scripts/run_xls_batch.py` drives allomix across the patient list in `output/Chimerism project patient list.xlsx`, using the bias table from `output/bias_training/bias_table.tsv` and appending clinical reference columns (`Donor`, `Chimerism result TP2`) to `batch.tsv`
+- Validation runs captured in `output/validation_run_new_bias2/` (post-BB / error-adjusted GoF fix). All 7 PASS samples now produce non-trivial `gof_pval` (previously all 0.0000).
+- Concordance assessment vs. clinical sorted-cell chimerism (CD45 / CD3 / CD13) is not a direct apples-to-apples comparison: allomix reports bulk DNA chimerism, which is a cell-type-weighted average and tracks CD13 myeloid more closely than CD45 in samples with strong lineage disparity (e.g. 20_MO RCAR: allomix 40.79%, CD45 46.78%, CD3 93.19%, CD13 30.58%).
+- Next phase (out of this step): controlled dilution series for quantitative accuracy validation.
 
 ---
 
@@ -259,7 +260,38 @@ Implementation notes:
 
 ---
 
-## Step 13: Publication 🟡 IN PROGRESS
+## Step 13: Beta-Binomial Goodness-of-Fit ✅ COMPLETE
+
+The MLE already uses a beta-binomial likelihood (fits both `f` and overdispersion `ρ`), but the gof chi-squared in `qc.py` standardised residuals by binomial variance, so `gof_pval` was ~0 on every real-data sample even when the fit was fine. Fix landed:
+
+- `ρ` now plumbed through `ChimerismResult` and `MultiDonorResult` (default `float("inf")` for backward compatibility with old fixtures).
+- `_compute_gof_pval` in `qc.py` uses beta-binomial variance `p(1-p)(n+ρ)/(n(ρ+1))`, df corrected to `n_markers - n_fitted_params` (single-donor: 2, multi-donor: k+1).
+- Follow-up fix discovered during validation: at f near 0 or 1, the raw `expected_vaf` saturates at 0 or 1, making the variance floor (clamped at `1-1e-6`) collapse. A typical ~1% sequencing-error residual against that tiny floor produced spurious chi-sq blow-ups for 100%-donor samples. Introduced `_error_adjusted_p_alt()` in `qc.py` using the same 4-state error model as `log_likelihood_marker_bb`, driven by `result.error_rate`. The variance floor now reflects the actual error rate at saturated markers.
+- Real-data result: all 7 PASS samples in the idt_haem validation batch now produce sensible `gof_pval` (0.46–1.00 range), vs all 0.0000 previously.
+
+Detailed plan: `claude/beta_binomial_plan.md`.
+
+---
+
+## Step 14: Empirical Per-Site Error Rates 🔲 TODO
+
+Replace the global `--error-rate 0.01` constant with empirically measured rates from the bias-training cohort. At hom-ref sites measure observed ALT-read rate, at hom-alt sites measure observed REF-read rate. Per-site (preferred) or per-sample fallback. Removes a chunk of modelling slack and reduces reliance on a hand-tuned constant. Output a per-site error rate table from `estimate-bias`-style tooling so it can be loaded alongside the bias table.
+
+---
+
+## Step 15: Per-Site Dropout Rate 🔲 TODO
+
+The bias-training cohort already gives us per-site no-call rates. Integrate a per-site dropout probability into the likelihood so flaky sites are automatically downweighted rather than treated as fully informative when they happen to call. Estimate alongside the bias and error-rate tables; load as an optional input to `monitor`.
+
+---
+
+## Step 16: GQ-Weighted Marker Contributions 🔲 TODO
+
+Currently `--min-gq 20` is a hard pass/fail. Replace with a per-marker weight on the likelihood contribution so borderline-confidence genotypes (e.g. GQ 20-30) stay informative but downweighted. Likely small gains relative to Steps 14 and 15, but cheap to add once the per-marker likelihood is already being modified.
+
+---
+
+## Step 17: Publication 🟡 IN PROGRESS
 
 - Method paper describing the approach — framework set up with vibepaper
 - Target journal: Journal of Molecular Diagnostics (Technical Advance)

@@ -32,7 +32,8 @@ JAVA_MEM = config.get("java_mem", "8g")
 INTERVALS = config.get("intervals", None)
 INTERVALS_ARG = f"-L {INTERVALS}" if INTERVALS else ""
 _intervals_tag = f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
-JOINT_VCF = os.path.join(OUTPUT_DIR, f"joint_called{_intervals_tag}.vcf.gz")
+OUTPUT_PREFIX = config.get("output_prefix", os.path.splitext(os.path.basename(SAMPLES_CSV))[0])
+JOINT_VCF = os.path.join(OUTPUT_DIR, f"{OUTPUT_PREFIX}{_intervals_tag}.vcf.gz")
 GVCF_DIR = os.path.join(OUTPUT_DIR, "gvcfs")
 
 

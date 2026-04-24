@@ -22,6 +22,101 @@ More samples give more reliable estimates. With fewer than ~10 donors, estimates
 
 The VCFs do not need to be joint-called for this step. Independent per-sample VCFs are fine.
 
+If you do not have enough donor VCFs yet, an alternative path is to joint-call a cohort from archived BAMs on the same panel and filter for clean samples. See [Building a training cohort from BAMs](#building-a-training-cohort-from-bams) below.
+
+## Building a training cohort from BAMs
+
+If you do not have enough clean donor VCFs but do have archived BAMs from the same panel, you can build a training set end-to-end. This suits labs where donor VCFs accumulate slowly, or where historical data was only kept as BAMs. Because these BAMs are typically from diseased-blood samples, they carry the CNV and clonal hematopoiesis risks described above, so the QC stage is not optional.
+
+### 1. Assemble a sample CSV
+
+Select BAMs from a panel version that captures your marker set. Exclude older runs that predate coverage at those sites, and aim for 100-200 samples so each marker accumulates enough hets.
+
+```bash
+# Example: idt_haem BAMs from 2024 onward
+ls /tau/data/clinical_hg38/idt_haem/Haem_2[456]_*/1_BAM/*.hg38.bam \
+  | shuf -n 200 > sample_bams.txt
+
+# Convert to the samples.csv format the pipeline expects
+{
+  echo "sample_id,bam_filename"
+  awk '{
+    n = split($0, parts, "/")
+    name = parts[n]
+    sub(/\.hg38\.bam$/, "", name)
+    print name "," $0
+  }' sample_bams.txt
+} > samples_bias_training.csv
+
+# Check sample_ids are unique (empty output = all unique)
+cut -d, -f1 samples_bias_training.csv | tail -n +2 | sort | uniq -d
+```
+
+If duplicates appear, prepend the run folder to the sample_id to make them unique.
+
+### 2. Joint-call at marker sites
+
+Run `pipeline/Snakefile` with `intervals` set to the marker bed. Restricting to the bed keeps the job cheap (a handful of sites vs the whole panel) and produces hom-ref calls with AD at every site for every sample, which is what bias estimation needs.
+
+```bash
+snakemake -s pipeline/Snakefile \
+  --config ref=/path/to/hg38.fa \
+           samples_csv=samples_bias_training.csv \
+           intervals=/tau/ngs_pipelines/hg38_reference_files/capture_kits/idt_rhampseq_sid/v1/idt_rhampseq_sid_SNPsQC.bed \
+           output_dir=output/bias_training \
+  --cores $(nproc)
+```
+
+Output: `output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz`. The VCF filename prefix defaults to the samples CSV basename; override with `--config output_prefix=foo` if you prefer a different name.
+
+The sample column names in the final VCF come from each BAM's `@RG SM:` tag, not the `sample_id` in the CSV. Extract the real names once the job completes:
+
+```bash
+bcftools query -l output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz
+```
+
+### 3. Sample-level QC
+
+`scripts/qc_bias_samples.py` computes per-sample metrics and flags samples unsuitable for bias training:
+
+- **No-call rate** across the marker sites. Catches BAMs from a panel version that does not cover the markers (everything will be `./.`).
+- **Het rate**. Unrelated individuals at common SNPs should land around 0.3-0.5. Far outside that range suggests a problem.
+- **Mean `|VAF - 0.5|` at het calls**. Catches samples with heavy CNV or LOH that skew allele balance across many sites.
+
+```bash
+python scripts/qc_bias_samples.py \
+  output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz \
+  --output-samples output/bias_training/pass_samples.txt \
+  --output-metrics output/bias_training/qc_metrics.tsv
+```
+
+Review `qc_metrics.tsv` before trusting the pass list. Defaults are lenient starting points:
+
+| Option | Default | Description |
+|---|---|---|
+| `--min-dp` | 100 | Minimum AD-sum depth for a call to count |
+| `--max-nocall-rate` | 0.10 | Exclude samples with no-call rate above this |
+| `--min-het-rate` | 0.15 | Exclude samples with het rate below this |
+| `--max-het-rate` | 0.60 | Exclude samples with het rate above this |
+| `--max-mean-vaf-dev` | 0.15 | Exclude samples where mean \|VAF-0.5\| at hets exceeds this |
+| `--min-hets-for-vaf-dev` | 10 | Minimum hets required to apply the VAF-deviation check |
+
+The `--max-mean-vaf-dev` check includes panel bias itself in the signal (every sample is pushed the same way at biased sites), so if real panel bias is large a blanket threshold may over-reject. If that happens, an iterative approach works: run `estimate-bias` on all samples first to get rough per-site biases, subtract them, then flag samples with residual skew.
+
+### 4. Run estimate-bias
+
+Feed the pass list into the joint-VCF mode of `estimate-bias`:
+
+```bash
+allomix estimate-bias \
+  --vcf output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz \
+  --samples $(cat output/bias_training/pass_samples.txt) \
+  --output output/bias_training/bias_table.tsv \
+  --min-het 30
+```
+
+With 100+ samples passing QC, raise `--min-het` to around 30: every site should accumulate plenty of hets, and a stricter threshold drops any locus with unexpectedly thin coverage.
+
 ## Command
 
 Two input modes are supported. Use whichever matches how your donor VCFs are organised.

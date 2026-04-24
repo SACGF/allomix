@@ -125,6 +125,8 @@ allomix monitor \
     --output results.tsv
 ```
 
+If you do not yet have enough donor VCFs to train a bias table, `estimate-bias` can also be driven from archived BAMs on the same panel via a joint-calling pipeline plus sample-level QC. See [Building a training cohort from BAMs](doc/estimate_bias.md#building-a-training-cohort-from-bams) in the bias guide.
+
 ### Common Options
 
 Both `monitor` and `timeline` accept these additional options:

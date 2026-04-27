@@ -44,7 +44,7 @@ Table 2 summarises available NGS-based chimerism tools. allomix is the only open
 | ScisGo Chimerism MD | >200 SNPs + indels | 0.2% (single) / 0.5% (multi) | No | No | Proprietary |
 | **allomix** | **Any biallelic** | **~0.6% MAE (in silico)** | **Yes (MIT)** | **Yes** | **VCF** |
 
-**Table 2.** Comparison of NGS-based chimerism monitoring tools. LOD = limit of detection. Commercial tool specifications from published evaluations.[@Blouin2024comparison; @Pedini2021devyser; @Kakodkar2023alloseq; @Qama2026devyser]
+**Table 2.** Comparison of NGS-based chimerism monitoring tools. LOD = limit of detection. Commercial tool specifications from published evaluations.[@Blouin2024comparison; @Pedini2021devyser; @Kakodkar2023alloseq; @Qama2026devyser] All LOD values refer to detection in bulk extracted DNA; clinical sensitivity in a given specimen further depends on the proportion of the lineage of interest and on the upstream cell-sorting workflow.
 
 ### Effect of Donor-Host Relatedness
 

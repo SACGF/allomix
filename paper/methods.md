@@ -109,7 +109,7 @@ Each sample receives an overall pass/fail QC assessment based on these criteria.
 
 ### Simulation Framework
 
-For validation, allomix includes a simulation module that generates synthetic chimeric VCFs by blending two genotype VCFs at a specified donor fraction. For each marker, the expected alternative allele frequency is calculated from the mixture model:
+For validation, allomix includes a simulation module that generates synthetic chimeric VCFs by blending two genotype VCFs at a specified donor fraction. The simulated fraction corresponds to the donor proportion in the analysed DNA, regardless of whether that DNA was extracted from unfractionated whole blood or from a sorted cell subset (e.g., CD3+ T cells, CD15+/CD66+ myeloid cells); the same statistical framework applies in either case, only the clinical interpretation of the estimate changes. For each marker, the expected alternative allele frequency is calculated from the mixture model:
 
 $$\text{VAF}_{expected} = \frac{(1-f) \cdot a_h + f \cdot a_d}{2}$$
 

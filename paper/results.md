@@ -42,9 +42,17 @@ Table 2 summarises available NGS-based chimerism tools. allomix is the only open
 | Devyser Chimerism | 24 indels | 0.06% | No | No | Proprietary |
 | NGStrack | 34 indels | 0.1% | No | No | Proprietary |
 | ScisGo Chimerism MD | >200 SNPs + indels | 0.2% (single) / 0.5% (multi) | No | No | Proprietary |
-| **allomix** | **Any biallelic** | **~0.6% MAE (in silico)** | **Yes (MIT)** | **Yes** | **VCF** |
+| **allomix** | **Any biallelic** | **{{ lod_headline.unrelated_lod_1000x_100markers_pct }}% (in silico, 100 markers, 1,000x)** | **Yes (MIT)** | **Yes** | **VCF** |
 
-**Table 2.** Comparison of NGS-based chimerism monitoring tools. LOD = limit of detection. Commercial tool specifications from published evaluations.[@Blouin2024comparison; @Pedini2021devyser; @Kakodkar2023alloseq; @Qama2026devyser] All LOD values refer to detection in bulk extracted DNA; clinical sensitivity in a given specimen further depends on the proportion of the lineage of interest and on the upstream cell-sorting workflow.
+**Table 2.** Comparison of NGS-based chimerism monitoring tools. LOD = limit of detection. Commercial tool specifications from published evaluations.[@Blouin2024comparison; @Pedini2021devyser; @Kakodkar2023alloseq; @Qama2026devyser] The allomix value is the in silico CLSI EP17-A2 LoD at the reference operating point (unrelated donor, 100 markers, 1,000x mean depth); see *Limit of Detection* below and Figure 7 for the full sweep across relatedness, panel size, and depth. All LOD values refer to detection in bulk extracted DNA; clinical sensitivity in a given specimen further depends on the proportion of the lineage of interest and on the upstream cell-sorting workflow.
+
+### Limit of Detection
+
+To situate allomix against the limit-of-detection specifications cited by commercial vendors, we characterised LoD across panel size, sequencing depth, and donor-host relatedness using the EP17-A2 framework (see Methods). For each combination, the limit of blank (LoB, 95th percentile of estimated donor fraction on a pure-host sample) and limit of detection (LoD, lowest true fraction at which $\geq$95% of replicates exceed LoB) were estimated from {{ lod_headline.n_replicates }} replicates per cell, with a logistic fit over the dilution series and bootstrap 95% confidence intervals on LoD (Figure 7).
+
+At an unrelated donor, 100 markers, and 1,000x mean depth, the in silico LoD was {{ lod_headline.unrelated_lod_1000x_100markers_pct }}% donor fraction; with full-sibling donors at the same panel and depth, the LoD rose to {{ lod_headline.sibling_lod_1000x_100markers_pct }}%, reflecting the reduction in informative markers (Table 3). Doubling the panel size to 200 markers at 500x depth yielded an unrelated LoD of {{ lod_headline.unrelated_lod_500x_200markers_pct }}%; pushing to 400 markers at 2,000x reduced unrelated LoD to {{ lod_headline.unrelated_lod_2000x_400markers_pct }}% (sibling {{ lod_headline.sibling_lod_2000x_400markers_pct }}%). The LoD curves decrease monotonically in both panel size and depth (Figure 7), allowing laboratories with a panel of *X* markers at *Y* mean depth to read off the expected in silico LoD for their assay.
+
+![**Figure 7.** Limit of detection as a function of panel size and sequencing depth. Left: unrelated donor-host pairs. Right: full-sibling donors. Each coloured curve corresponds to one sequencing depth (100x to 2,000x); shaded bands are bootstrap 95% confidence intervals on LoD. Dashed horizontal lines mark 0.1%, 0.5%, and 1% donor fraction. The vertical dotted line marks the 76-marker rhAmpSeq sample identification panel used in our deployment. Each cell is estimated from {{ lod_headline.n_replicates }} replicates following the CLSI EP17-A2 LoB + logistic detection-curve workflow.]({{ facts_dir }}/fig5_lod_curves.png)
 
 ### Effect of Donor-Host Relatedness
 

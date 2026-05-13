@@ -127,6 +127,15 @@ Alternative allele counts are drawn from a binomial distribution with the biased
 
 To evaluate longitudinal monitoring, we simulated a six-timepoint post-HSCT engraftment trajectory (day +14 to day +365) with true donor fractions ranging from 15% (early engraftment) to 97% (full donor chimerism), including a clinically relevant 3-percentage-point dip at day +180. Each timepoint was generated at 500x depth with the same noise model parameters as the depth validation, and five independent replicates were run with different random seeds.
 
+### Limit of Detection
+
+Limit of detection (LoD) and limit of blank (LoB) are defined following the Clinical and Laboratory Standards Institute guideline EP17-A2,[@CLSIEP17A2; @PiersonPerry2012] which is the framework used by published evaluations of comparable NGS chimerism assays.[@Blouin2024comparison; @Qama2026devyser] For a given combination of donor-host relatedness, sequencing depth, and panel size:
+
+- **Limit of blank (LoB)** is the 95th percentile of the estimated donor fraction across replicates of a pure-host sample (true donor fraction = 0). Because the estimator is bounded at zero, LoB captures the upper tail of nonzero estimates produced by sampling noise, per-marker bias, and locus dropout on a blank input.
+- **Limit of detection (LoD)** is the lowest true donor fraction at which at least 95% of replicates yield an estimate exceeding LoB. Empirical detection rates at each tested fraction are fitted with a 2-parameter logistic in $\log_{10}(f)$, $P(\text{detected} \mid f) = [1 + \exp(-(a + b\log_{10} f))]^{-1}$, and LoD is the fraction at which the fitted curve equals 0.95. A 95% confidence interval on LoD is obtained by resampling per-replicate detection booleans with replacement (200 bootstrap iterations) and refitting.
+
+LoD was characterised across a sweep of 2 relatedness levels (unrelated, full sibling), 5 mean sequencing depths (100x, 250x, 500x, 1,000x, 2,000x), 6 panel sizes (25, 50, 75, 100, 200, 400 markers), and 7 true donor fractions (0, 0.1%, 0.2%, 0.5%, 1%, 2%, 5%), with 60 independent replicates per cell. Replicates differ in the host/donor genotype pair (regenerated per replicate from population allele frequencies, MAF 0.2--0.5), per-marker amplification bias, and read-sampling noise. The estimator's profile-likelihood lower confidence bound is constrained to non-negative values, so at low true fractions a substantial proportion of CIs will touch zero and a CI-lower-bound detection rule would behave conservatively at small panel sizes; the EP17 LoB rule used here is independent of this constraint. Sibling-donor simulations use Mendelian segregation from independent parental haplotypes and therefore do not model non-random identity-by-descent around the HLA locus, which is irrelevant for sample-identification panels that avoid HLA but would shift effective informative-marker counts on panels overlapping the major histocompatibility complex.
+
 {# TODO: Real sequencing data validation methods #}
 {# Add subsection "### Clinical Sample Validation" describing: #}
 {# - Sample cohort (retrospective post-HSCT patients from /tau) #}

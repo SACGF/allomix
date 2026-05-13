@@ -43,6 +43,13 @@ TIMELINE_FIGS = [f"{FACTS_DIR}/fig_timeline.png"]
 
 CALIBRATION_BATCHES = expand("output/calibration/batch_{i}.csv", i=range(10))
 
+LOD_FACTS = [
+    f"{FACTS_DIR}/lod_grid_raw.csv",
+    f"{FACTS_DIR}/lod_summary.csv",
+    f"{FACTS_DIR}/lod_headline.csv",
+]
+LOD_FIGS = [f"{FACTS_DIR}/fig5_lod_curves.png"]
+
 SUPP_SYNTHETIC_FIGS = [
     f"{FACTS_DIR}/figS1_bias_distributions.png",
     f"{FACTS_DIR}/figS2_depth_distributions.png",
@@ -75,6 +82,7 @@ ALL_FACTS = (
     + TIMELINE_FACTS
     + PAPER_FACTS
     + SUPP_SYNTHETIC_FACTS
+    + LOD_FACTS
 )
 
 ALL_FIGS = (
@@ -84,6 +92,7 @@ ALL_FIGS = (
     + BIAS_FIGS
     + TIMELINE_FIGS
     + SUPP_SYNTHETIC_FIGS
+    + LOD_FIGS
 )
 
 
@@ -186,6 +195,22 @@ rule calibration_batch:
         "python paper/scripts/generate_supp_synthetic.py --calibration-batch {wildcards.i} 10"
 
 
+rule lod_validation:
+    output:
+        LOD_FACTS,
+    shell:
+        "python paper/scripts/run_lod_validation.py"
+
+
+rule lod_plot:
+    input:
+        f"{FACTS_DIR}/lod_summary.csv",
+    output:
+        LOD_FIGS,
+    shell:
+        "python paper/scripts/plot_lod_curves.py"
+
+
 rule supp_synthetic:
     input:
         "tests/test_data/host.vcf",
@@ -230,6 +255,6 @@ rule clean:
     shell:
         """
         rm -rf output/facts/ output/depth_validation/ output/relatedness_validation/
-        rm -rf output/bias_comparison/ output/timeline/ output/.paper_built
+        rm -rf output/bias_comparison/ output/timeline/ output/lod_validation/ output/.paper_built
         rm -rf build/
         """

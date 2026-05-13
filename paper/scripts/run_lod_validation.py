@@ -102,6 +102,26 @@ def _logistic(log10_f: np.ndarray, a: float, b: float) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-(a + b * log10_f)))
 
 
+def _interp_lod(
+    fractions: list[float], rates: list[float], target: float = 0.95,
+) -> float | None:
+    """Linear interpolation in log10(f) between the two fractions that bracket
+    ``target`` detection rate. Returns None if the rates never cross ``target``.
+
+    This is the fallback when the logistic fit fails (typically when detection
+    jumps too sharply from 0 to 1 to identify the logistic's slope).
+    """
+    pairs = sorted([(f, r) for f, r in zip(fractions, rates) if f > 0])
+    for (f_lo, r_lo), (f_hi, r_hi) in zip(pairs, pairs[1:]):
+        if r_lo <= target <= r_hi:
+            if r_hi == r_lo:
+                return f_lo
+            log_lo, log_hi = math.log10(f_lo), math.log10(f_hi)
+            frac = (target - r_lo) / (r_hi - r_lo)
+            return 10.0 ** (log_lo + frac * (log_hi - log_lo))
+    return None
+
+
 def fit_lod(
     fractions: list[float],
     detection_rates: list[float],
@@ -142,19 +162,32 @@ def fit_lod(
             absolute_sigma=False,
             maxfev=10000,
         )
+        a, b = float(popt[0]), float(popt[1])
     except (RuntimeError, ValueError):
-        return None
+        a = b = float("nan")
 
-    a, b = float(popt[0]), float(popt[1])
-    if abs(b) < 1e-9:
-        return None
-    log10_f95 = (LOGIT_95 - a) / b
-    try:
-        f95 = 10.0**log10_f95
-    except OverflowError:
-        return None
-    if not math.isfinite(f95) or f95 <= 0:
-        return None
+    f95: float | None = None
+    if math.isfinite(a) and math.isfinite(b) and abs(b) > 1e-9:
+        log10_f95 = (LOGIT_95 - a) / b
+        try:
+            cand = 10.0**log10_f95
+        except OverflowError:
+            cand = float("inf")
+        if math.isfinite(cand) and cand > 0:
+            f95 = cand
+
+    if f95 is None:
+        # Fallback: linear interpolation in log10(f) between bracketing points.
+        # The logistic cannot identify its slope when detection jumps too
+        # sharply from 0 to 1; the interpolated crossing is still meaningful.
+        interp = _interp_lod([f for f, _ in pos], [r for _, r in pos])
+        if interp is None:
+            return None
+        f95 = interp
+        if not math.isfinite(a) or not math.isfinite(b):
+            b = 5.0
+            a = LOGIT_95 - b * math.log10(f95)
+
     return f95, a, b
 
 

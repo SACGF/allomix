@@ -78,6 +78,37 @@ def test_bootstrap_lod_ci_brackets_point_estimate() -> None:
     assert ci_lo * 0.5 <= f95 <= ci_hi * 2.0
 
 
+def test_interp_lod_brackets_target() -> None:
+    # det rate 0.95 lies between (0.005, 0.5) and (0.01, 1.0) -> log10-interpolate
+    fractions = [0.001, 0.005, 0.01, 0.02]
+    rates = [0.0, 0.5, 1.0, 1.0]
+    f95 = lod._interp_lod(fractions, rates, target=0.95)
+    assert f95 is not None
+    assert 0.005 < f95 < 0.01
+    expected = 10 ** (math.log10(0.005) + 0.9 * (math.log10(0.01) - math.log10(0.005)))
+    assert f95 == pytest.approx(expected)
+
+
+def test_interp_lod_returns_none_when_never_crossing() -> None:
+    # Detection never reaches target -> bracketing impossible, callers handle
+    # via the LOD_ABOVE_RANGE sentinel.
+    assert lod._interp_lod([0.001, 0.01], [0.0, 0.5]) is None
+    # Always at or above target -> bracketing also impossible (below smallest
+    # tested fraction). Callers use LOD_BELOW_RANGE.
+    assert lod._interp_lod([0.001, 0.01], [1.0, 1.0], target=0.95) is None
+
+
+def test_fit_lod_falls_back_to_interp_on_step_data() -> None:
+    # Step-like detection 0->1 across one fraction -- logistic slope is
+    # unidentifiable. Interp fallback should still yield an LoD.
+    fractions = [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05]
+    rates = [0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0]
+    fit = lod.fit_lod(fractions, rates)
+    assert fit is not None
+    f95 = fit[0]
+    assert 0.005 < f95 < 0.01
+
+
 def test_to_pct_preserves_sentinels() -> None:
     assert lod._to_pct(lod.LOD_BELOW_RANGE) == -1.0
     assert lod._to_pct(lod.LOD_ABOVE_RANGE) == float("inf")

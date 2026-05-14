@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import math
 import random
 import sys
@@ -77,10 +78,13 @@ LOD_ABOVE_RANGE = float("inf")
 def derive_seed(*parts: object) -> int:
     """Deterministic seed from a tuple of arbitrary parts.
 
-    Hashing through repr to avoid Python's randomised string hashing.
+    Uses SHA-256 of the repr so seeds are stable across Python invocations
+    and worker processes. Python's built-in hash() is randomised per process
+    for str/bytes (PEP 456), which previously made each run of this sweep
+    produce a different "deterministic" output.
     """
-    h = hash(repr(parts)) & 0xFFFFFFFF
-    return h
+    digest = hashlib.sha256(repr(parts).encode("utf-8")).digest()[:4]
+    return int.from_bytes(digest, "big")
 
 
 def detection_rate(est_fracs: list[float], lob: float) -> float:
@@ -167,7 +171,12 @@ def fit_lod(
         a = b = float("nan")
 
     f95: float | None = None
-    if math.isfinite(a) and math.isfinite(b) and abs(b) > 1e-9:
+    # Require positive slope: detection should increase with fraction. A
+    # negative b means curve_fit converged to a degenerate solution (typically
+    # in the "ultra-easy" corner where detection is ~1.0 at every probed
+    # fraction and the slope is unidentifiable); fall through to the interp
+    # fallback below.
+    if math.isfinite(a) and math.isfinite(b) and b > 1e-9:
         log10_f95 = (LOGIT_95 - a) / b
         try:
             cand = 10.0**log10_f95
@@ -234,47 +243,48 @@ def bootstrap_lod_ci(
 
 def run_replicate(
     relatedness: str,
-    n_markers: int,
     rep: int,
     base_seed: int,
     work_root: Path,
 ) -> list[dict]:
-    """Generate one host/donor pair, then run estimator across depth x fraction.
+    """Generate one host/donor pair at maximum panel size, then sweep every
+    (n_markers, depth, true_frac) cell by slicing in-memory.
 
-    Returns one row per (depth, true_frac).
+    Strict nesting requires that the n_markers=50 result be a bit-identical
+    prefix of the n_markers=400 result. To achieve that, the admix VCF for a
+    given (depth, frac) is generated ONCE at max_markers and then sliced for
+    each panel size — sharing the rng consumption order (depth sampling,
+    locus-dropout rolls, allele-count binomial draws) so the read counts at
+    marker i never depend on how many markers we are about to use downstream.
+
+    Returns one row per (n_markers, depth, true_frac).
     """
-    rep_dir = work_root / relatedness / f"nm_{n_markers}" / f"rep_{rep}"
+    rep_dir = work_root / relatedness / f"rep_{rep}"
     rep_dir.mkdir(parents=True, exist_ok=True)
 
-    # Genotype RNG is deterministic in (relatedness, n_markers, rep) but not in
-    # depth/fraction, so the same pair is reused across all inner cells.
-    gt_seed = derive_seed("gt", relatedness, n_markers, rep, base_seed)
+    max_markers = max(N_MARKERS_GRID)
+    gt_seed = derive_seed("gt", relatedness, rep, base_seed)
     rng = random.Random(gt_seed)
-    markers = generate_related_genotypes(n_markers, relatedness, rng, maf_range=MAF_RANGE)
-    n_informative_truth = sum(1 for m in markers if m["informative"])
+    all_markers = generate_related_genotypes(
+        max_markers, relatedness, rng, maf_range=MAF_RANGE,
+    )
 
     host_vcf = rep_dir / "host.vcf"
     donor_vcf = rep_dir / "donor.vcf"
-    write_genotype_vcf(markers, host_vcf, "host", key="host_gt")
-    write_genotype_vcf(markers, donor_vcf, "donor", key="donor_gt")
+    write_genotype_vcf(all_markers, host_vcf, "host", key="host_gt")
+    write_genotype_vcf(all_markers, donor_vcf, "donor", key="donor_gt")
+    host_md_full = parse_vcf(str(host_vcf), min_dp=0, min_gq=0)
+    donor_md_full = parse_vcf(str(donor_vcf), min_dp=0, min_gq=0)
 
-    host_md = parse_vcf(str(host_vcf), min_dp=0, min_gq=0)
-    donor_md = parse_vcf(str(donor_vcf), min_dp=0, min_gq=0)
-
-    # Pre-generate per-marker amplification biases for this replicate. Reusing
-    # the same biases across all (depth, fraction) cells in this rep means we
-    # can hand them to the estimator as known bias correction values, isolating
-    # LoD from bias-calibration uncertainty (the "panel calibrated" ceiling).
-    bias_rng = random.Random(derive_seed("bias", relatedness, n_markers, rep, base_seed))
-    fixed_biases = generate_marker_biases_realistic(n_markers, bias_rng)
+    bias_rng = random.Random(derive_seed("bias", relatedness, rep, base_seed))
+    all_biases = generate_marker_biases_realistic(max_markers, bias_rng)
 
     rows: list[dict] = []
-    admix_path = rep_dir / "admix.vcf"  # reused across cells, saves disk
-    bias_dict: dict[tuple[str, int, str, str], float] | None = None
+    admix_path = rep_dir / "admix.vcf"
 
     for depth in DEPTHS:
         for frac in TRUE_FRACTIONS:
-            blend_seed = derive_seed("blend", relatedness, n_markers, rep, depth, frac, base_seed)
+            blend_seed = derive_seed("blend", relatedness, rep, depth, frac, base_seed)
             blend = blend_vcfs(
                 host_path=str(host_vcf),
                 donor_path=str(donor_vcf),
@@ -282,19 +292,50 @@ def run_replicate(
                 target_depth=depth,
                 sample_name="admix",
                 seed=blend_seed,
-                fixed_biases=fixed_biases,
+                fixed_biases=all_biases,
                 error_rate=ERROR_RATE,
                 locus_dropout_rate=LOCUS_DROPOUT_RATE,
                 depth_cv=DEPTH_CV,
             )
-            if bias_dict is None and blend.marker_biases is not None:
-                bias_dict = {(c, p, r, a): b for c, p, r, a, b in blend.marker_biases}
+            bias_dict = (
+                {(c, p, r, a): b for c, p, r, a, b in blend.marker_biases}
+                if blend.marker_biases is not None
+                else None
+            )
             write_vcf(blend, admix_path)
-            admix_md = parse_vcf(str(admix_path), min_dp=0, min_gq=0)
+            admix_md_full = parse_vcf(str(admix_path), min_dp=0, min_gq=0)
 
-            genos = classify_markers(host_md, [donor_md], admix_md, min_dp=0, min_gq=0,
-                                     pass_only=False)
-            if len(genos.informative) < 1:
+            for n_markers in N_MARKERS_GRID:
+                host_md = host_md_full[:n_markers]
+                donor_md = donor_md_full[:n_markers]
+                admix_md = admix_md_full[:n_markers]
+                n_informative_truth = sum(
+                    1 for m in all_markers[:n_markers] if m["informative"]
+                )
+
+                genos = classify_markers(host_md, [donor_md], admix_md, min_dp=0,
+                                         min_gq=0, pass_only=False)
+                if len(genos.informative) < 1:
+                    rows.append({
+                        "relatedness": relatedness,
+                        "depth": depth,
+                        "n_markers": n_markers,
+                        "true_frac": frac,
+                        "rep": rep,
+                        "seed": blend_seed,
+                        "est_frac": float("nan"),
+                        "ci_lo": float("nan"),
+                        "ci_hi": float("nan"),
+                        "n_informative": 0,
+                        "n_informative_truth": n_informative_truth,
+                    })
+                    continue
+
+                result = estimate_single_donor_bb(
+                    genos.informative, error_rate=ERROR_RATE,
+                    grid_steps=ESTIMATOR_GRID_STEPS,
+                    marker_biases=bias_dict,
+                )
                 rows.append({
                     "relatedness": relatedness,
                     "depth": depth,
@@ -302,32 +343,12 @@ def run_replicate(
                     "true_frac": frac,
                     "rep": rep,
                     "seed": blend_seed,
-                    "est_frac": float("nan"),
-                    "ci_lo": float("nan"),
-                    "ci_hi": float("nan"),
-                    "n_informative": 0,
+                    "est_frac": result.donor_fraction,
+                    "ci_lo": result.donor_fraction_ci[0],
+                    "ci_hi": result.donor_fraction_ci[1],
+                    "n_informative": result.n_informative,
                     "n_informative_truth": n_informative_truth,
                 })
-                continue
-
-            result = estimate_single_donor_bb(
-                genos.informative, error_rate=ERROR_RATE,
-                grid_steps=ESTIMATOR_GRID_STEPS,
-                marker_biases=bias_dict,
-            )
-            rows.append({
-                "relatedness": relatedness,
-                "depth": depth,
-                "n_markers": n_markers,
-                "true_frac": frac,
-                "rep": rep,
-                "seed": blend_seed,
-                "est_frac": result.donor_fraction,
-                "ci_lo": result.donor_fraction_ci[0],
-                "ci_hi": result.donor_fraction_ci[1],
-                "n_informative": result.n_informative,
-                "n_informative_truth": n_informative_truth,
-            })
 
     return rows
 
@@ -475,8 +496,12 @@ def write_headline(summaries: list[dict], path: Path, n_replicates: int) -> None
 
 
 def _worker(args: tuple) -> list[dict]:
-    relatedness, n_markers, rep, base_seed, work_root = args
-    return run_replicate(relatedness, n_markers, rep, base_seed, work_root)
+    relatedness, rep, base_seed, work_root, n_markers_subset = args
+    rows = run_replicate(relatedness, rep, base_seed, work_root)
+    if n_markers_subset is not None:
+        keep = set(n_markers_subset)
+        rows = [r for r in rows if r["n_markers"] in keep]
+    return rows
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -509,10 +534,15 @@ def main(argv: list[str] | None = None) -> int:
     work_root = Path(args.workdir)
     work_root.mkdir(parents=True, exist_ok=True)
 
+    # Each task is one (relatedness, rep) pair. The worker iterates internally
+    # over all n_markers in the grid, sharing the max-size admix VCF across
+    # panel sizes so the cells are strictly nested.
+    n_markers_subset = (
+        None if args.n_markers == N_MARKERS_GRID else list(args.n_markers)
+    )
     tasks = [
-        (rel, nm, rep, args.seed, work_root)
+        (rel, rep, args.seed, work_root, n_markers_subset)
         for rel in args.relatedness
-        for nm in args.n_markers
         for rep in range(args.n_replicates)
     ]
     print(
@@ -522,8 +552,9 @@ def main(argv: list[str] | None = None) -> int:
         file=sys.stderr,
     )
     print(
-        f"Total replicate-runs: {len(tasks)} "
-        f"(each produces {len(DEPTHS) * len(TRUE_FRACTIONS)} estimator calls)",
+        f"Total (relatedness, rep) tasks: {len(tasks)} "
+        f"(each produces "
+        f"{len(args.n_markers) * len(DEPTHS) * len(TRUE_FRACTIONS)} estimator calls)",
         file=sys.stderr,
     )
 
@@ -531,8 +562,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.n_workers <= 1:
         for i, t in enumerate(tasks, 1):
             all_rows.extend(_worker(t))
-            if i % 10 == 0 or i == len(tasks):
-                print(f"  [{i}/{len(tasks)}] reps done", file=sys.stderr)
+            if i % 5 == 0 or i == len(tasks):
+                print(f"  [{i}/{len(tasks)}] tasks done", file=sys.stderr)
     else:
         with ProcessPoolExecutor(max_workers=args.n_workers) as pool:
             futures = [pool.submit(_worker, t) for t in tasks]
@@ -540,8 +571,8 @@ def main(argv: list[str] | None = None) -> int:
             for fut in as_completed(futures):
                 all_rows.extend(fut.result())
                 done += 1
-                if done % 10 == 0 or done == len(futures):
-                    print(f"  [{done}/{len(futures)}] reps done", file=sys.stderr)
+                if done % 5 == 0 or done == len(futures):
+                    print(f"  [{done}/{len(futures)}] tasks done", file=sys.stderr)
 
     # Sort rows for stable output regardless of worker order.
     all_rows.sort(key=lambda r: (

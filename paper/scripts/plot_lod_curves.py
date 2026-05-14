@@ -21,13 +21,25 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.ticker import FuncFormatter, NullLocator  # noqa: E402
+
+
+def _format_pct(v: float, _pos: int) -> str:
+    """Format a percent value with the minimum number of decimals needed."""
+    if v >= 1:
+        return f"{v:g}%"
+    return f"{v:g}%".rstrip("0").rstrip(".")
 
 FACTS_DIR = Path("output/facts")
 
 RELATEDNESS_ORDER = ["unrelated", "sibling"]
 FACET_TITLES = {"unrelated": "Unrelated", "sibling": "Full sibling"}
-REFERENCE_PANEL = 76  # our lab's IDT rhAmpSeq panel
-THRESHOLDS = [0.1, 0.5, 1.0]  # percent
+THRESHOLDS = [0.5, 1.0]  # percent (0.1% is below the trimmed y-range)
+# 25-marker panels aren't realistic in clinical practice; drop them from the
+# plot to give the rest of the data more horizontal real estate. The data
+# stays in lod_summary.csv (60 rows including 25-marker cells) so the
+# headline facts are unaffected.
+MIN_PLOT_MARKERS = 50
 
 
 def _read_summary(path: Path) -> list[dict]:
@@ -73,6 +85,8 @@ def plot(summary_path: Path, out_path: Path) -> None:
     depths_seen = set()
     nmarkers_seen = set()
     for r in rows:
+        if r["n_markers"] < MIN_PLOT_MARKERS:
+            continue
         by_rel[r["relatedness"]][r["depth"]].append(
             (r["n_markers"], r["lod_pct"], r["lod_pct_ci_lo"], r["lod_pct_ci_hi"])
         )
@@ -81,8 +95,18 @@ def plot(summary_path: Path, out_path: Path) -> None:
 
     depths = sorted(depths_seen)
     nmarkers = sorted(nmarkers_seen)
+    # viridis_r cropped to [0.35, 1.0] avoids the bright-yellow end of the
+    # default palette (low contrast on white). The deepest sequencing depth
+    # (2000x, the most clinically interesting) maps to viridis_r(1.0) = dark
+    # purple, the shallowest (100x) to viridis_r(0.35) = green-teal.
     cmap = plt.get_cmap("viridis_r")
-    colors = {d: cmap(i / max(len(depths) - 1, 1)) for i, d in enumerate(depths)}
+    if len(depths) > 1:
+        colors = {
+            d: cmap(0.35 + 0.65 * i / (len(depths) - 1))
+            for i, d in enumerate(depths)
+        }
+    else:
+        colors = {depths[0]: cmap(1.0)}
 
     fig, axes = plt.subplots(1, len(RELATEDNESS_ORDER), figsize=(12, 5.2),
                              sharex=True, sharey=True)
@@ -108,29 +132,33 @@ def plot(summary_path: Path, out_path: Path) -> None:
         ax.set_yscale("log")
         ax.set_xticks(nmarkers)
         ax.set_xticklabels([str(n) for n in nmarkers])
+        # Suppress matplotlib's default log-axis minor ticks ("6×10¹", "3×10²")
+        # that otherwise bleed through alongside our custom panel-size labels.
+        ax.xaxis.set_minor_locator(NullLocator())
         ax.set_xlabel("Panel size (markers)", fontsize=11)
         ax.set_title(FACET_TITLES.get(rel, rel), fontsize=12, fontweight="bold")
         ax.grid(True, which="both", alpha=0.2)
 
-        ax.axvline(REFERENCE_PANEL, color="grey", linestyle=":", linewidth=1.2,
-                   alpha=0.8)
-        ymin, ymax = ax.get_ylim()
-        # Threshold lines on the right-most facet only get labels.
+        # Show y-axis tick labels as percentages instead of matplotlib's default
+        # 10^-1 / 10^0 scientific format. Extra ticks at 0.3/0.4 because that
+        # band is the clinically interesting action zone for deeper / larger
+        # panels — the standard 1-2-5 convention would skip them.
+        ax.yaxis.set_major_locator(
+            plt.FixedLocator([0.2, 0.3, 0.4, 0.5, 1, 2, 5])
+        )
+        ax.yaxis.set_minor_locator(NullLocator())
+        ax.yaxis.set_major_formatter(FuncFormatter(_format_pct))
+        # Trim y-range to focus on the action zone. The 25-marker cells (already
+        # filtered above) and the worst-case sibling-100x-50-marker cell sit
+        # above 2%; the rest of the plot benefits from giving the 0.2-1% band
+        # more vertical real estate.
+        ax.set_ylim(0.15, 5.0)
+
         for thr in THRESHOLDS:
             ax.axhline(thr, color="black", linestyle="--", linewidth=0.7,
                        alpha=0.35)
 
     axes[0].set_ylabel("Limit of detection (% donor)", fontsize=11)
-    # Annotate reference panel on the left facet.
-    ymin, ymax = axes[0].get_ylim()
-    axes[0].text(REFERENCE_PANEL, ymax * 0.7, f" {REFERENCE_PANEL}-marker panel",
-                 fontsize=8.5, color="grey", rotation=90,
-                 verticalalignment="top")
-
-    # Threshold labels on the right facet.
-    for thr in THRESHOLDS:
-        axes[-1].text(nmarkers[-1] * 1.05, thr, f" {thr}%", fontsize=8.5,
-                      color="black", verticalalignment="center")
 
     axes[-1].legend(title="Depth", fontsize=9, loc="upper right",
                     framealpha=0.9)

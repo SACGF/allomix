@@ -109,6 +109,35 @@ def test_fit_lod_falls_back_to_interp_on_step_data() -> None:
     assert 0.005 < f95 < 0.01
 
 
+def test_derive_seed_is_stable_across_invocations() -> None:
+    # Regression: Python's hash() is randomised per-process for str (PEP 456),
+    # so an older `hash(repr(parts))`-based derive_seed silently produced
+    # different "deterministic" seeds in each run of this sweep. Pin a known
+    # SHA-256-derived value so future refactors can't reintroduce the bug.
+    assert lod.derive_seed("gt", "unrelated", 0, 42) == 3162746855
+
+
+def test_derive_seed_distinct_inputs_distinct_outputs() -> None:
+    a = lod.derive_seed("gt", "unrelated", 0, 42)
+    b = lod.derive_seed("gt", "unrelated", 1, 42)
+    c = lod.derive_seed("bias", "unrelated", 0, 42)
+    assert len({a, b, c}) == 3
+
+
+def test_fit_lod_rejects_negative_slope() -> None:
+    # Ultra-easy corner: ~50% detection at smallest fraction, 100% above.
+    # curve_fit can converge to a negative-slope solution that algebraically
+    # inverts to f95 > 1 (the regression that produced LoD = 156% on
+    # unrelated/2000x/400 markers). Negative slope must be rejected so the
+    # interp fallback supplies the real LoD.
+    fractions = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05]
+    rates = [0.467, 1.0, 1.0, 1.0, 1.0, 1.0]
+    fit = lod.fit_lod(fractions, rates)
+    assert fit is not None
+    f95 = fit[0]
+    assert 0 < f95 < 0.01, f"expected sub-1% LoD, got {f95}"
+
+
 def test_to_pct_preserves_sentinels() -> None:
     assert lod._to_pct(lod.LOD_BELOW_RANGE) == -1.0
     assert lod._to_pct(lod.LOD_ABOVE_RANGE) == float("inf")

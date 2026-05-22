@@ -80,7 +80,7 @@ def plot(summary_path: Path, out_path: Path) -> None:
     if not rows:
         raise SystemExit(f"No rows in {summary_path}")
 
-    # Group: by_rel[rel][depth] -> list of (n_markers, lod_pct, ci_lo, ci_hi) sorted
+    # Group: by_rel[rel][depth] -> list of (n_markers, lod_pct, ci_lo, ci_hi, lob_pct) sorted
     by_rel: dict[str, dict[int, list[tuple]]] = defaultdict(lambda: defaultdict(list))
     depths_seen = set()
     nmarkers_seen = set()
@@ -88,7 +88,8 @@ def plot(summary_path: Path, out_path: Path) -> None:
         if r["n_markers"] < MIN_PLOT_MARKERS:
             continue
         by_rel[r["relatedness"]][r["depth"]].append(
-            (r["n_markers"], r["lod_pct"], r["lod_pct_ci_lo"], r["lod_pct_ci_hi"])
+            (r["n_markers"], r["lod_pct"], r["lod_pct_ci_lo"],
+             r["lod_pct_ci_hi"], r["lob_pct"])
         )
         depths_seen.add(r["depth"])
         nmarkers_seen.add(r["n_markers"])
@@ -120,6 +121,7 @@ def plot(summary_path: Path, out_path: Path) -> None:
             ys = [c[1] for c in cell]
             lo = [c[2] for c in cell]
             hi = [c[3] for c in cell]
+            lob = [c[4] for c in cell]
             x_f, y_f, lo_f, hi_f = _finite_xy(xs, ys, lo, hi)
             if not x_f:
                 continue
@@ -127,6 +129,18 @@ def plot(summary_path: Path, out_path: Path) -> None:
                     markersize=6, label=f"{depth}x")
             ax.fill_between(x_f, lo_f, hi_f, color=colors[depth], alpha=0.15,
                             linewidth=0)
+            # Plot LoB as a faint dashed line beneath LoD for the same depth.
+            # The LoB curve shows the noise floor (95% quantile of est_frac on
+            # blank samples) and should be monotone in panel size and depth
+            # even when LoD has small N=60 wiggles; visualising both makes the
+            # underlying monotonicity of the estimator visible.
+            lob_xy = [(x, y) for x, y in zip(xs, lob)
+                      if y is not None and math.isfinite(y) and y > 0]
+            if lob_xy:
+                lob_x = [p[0] for p in lob_xy]
+                lob_y = [p[1] for p in lob_xy]
+                ax.plot(lob_x, lob_y, "--", color=colors[depth], linewidth=1.0,
+                        alpha=0.55)
 
         ax.set_xscale("log")
         ax.set_yscale("log")
@@ -162,6 +176,15 @@ def plot(summary_path: Path, out_path: Path) -> None:
 
     axes[-1].legend(title="Depth", fontsize=9, loc="upper right",
                     framealpha=0.9)
+    # Style key on the left facet: solid = LoD, dashed = LoB.
+    style_handles = [
+        plt.Line2D([0], [0], color="grey", linewidth=1.8, linestyle="-",
+                   label="LoD (solid)"),
+        plt.Line2D([0], [0], color="grey", linewidth=1.0, linestyle="--",
+                   alpha=0.7, label="LoB (dashed)"),
+    ]
+    axes[0].legend(handles=style_handles, fontsize=8.5, loc="lower left",
+                   framealpha=0.9)
 
     fig.suptitle(
         "Limit of detection as a function of panel size and sequencing depth",

@@ -16,11 +16,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "paper" / "scrip
 import run_lod_validation as lod  # noqa: E402
 
 
-def test_compute_lob_matches_numpy_quantile() -> None:
+def test_compute_lob_parametric() -> None:
     rng = np.random.default_rng(0)
-    blanks = rng.uniform(0, 0.01, size=200).tolist()
-    expected = float(np.quantile(np.asarray(blanks), 0.95))
+    blanks = rng.normal(0.0, 0.001, size=200).tolist()
+    arr = np.asarray(blanks)
+    expected = float(arr.mean() + 1.645 * arr.std(ddof=1))
     assert lod.compute_lob(blanks) == pytest.approx(expected)
+
+
+def test_compute_lob_approaches_95th_percentile_for_normal() -> None:
+    # For Gaussian blanks, parametric LoB and empirical 95th percentile converge
+    # in distribution. At large n they should agree to within a few percent.
+    rng = np.random.default_rng(7)
+    blanks = rng.normal(0.0, 0.001, size=10000).tolist()
+    parametric = lod.compute_lob(blanks)
+    empirical = float(np.quantile(np.asarray(blanks), 0.95))
+    assert parametric == pytest.approx(empirical, rel=0.05)
 
 
 def test_compute_lob_empty_is_nan() -> None:

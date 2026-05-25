@@ -7,7 +7,7 @@ non-informative based on host vs donor genotype comparison.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from cyvcf2 import VCF
@@ -48,6 +48,26 @@ class InformativeMarker:
 
 
 @dataclass
+class MarkerCounts:
+    """Per-input marker counts explaining how the informative set was reached.
+
+    Diagnostic data only: produced as a byproduct of classification and
+    interpreted by ``allomix.qc``; the estimator never reads it.
+    """
+
+    n_host: int = 0  # markers genotyped in host
+    n_donor_markers: list[int] = field(default_factory=list)  # per donor
+    n_admix: int = 0  # markers in the admixture sample (the universe)
+    n_admix_in_host: int = 0  # admix markers also genotyped in host
+    n_admix_in_donor: list[int] = field(default_factory=list)  # admix markers also in each donor
+    # Reasons shared markers were dropped before classification.
+    n_drop_pass: int = 0  # failed PASS filter
+    n_drop_gq_host: int = 0  # host GQ below threshold
+    n_drop_gq_donor: int = 0  # a donor GQ below threshold
+    n_drop_admix_dp: int = 0  # admixture depth below threshold
+
+
+@dataclass
 class MarkerGenotypes:
     """Result of parsing and classifying markers across host, donor(s), and admixture."""
 
@@ -57,6 +77,7 @@ class MarkerGenotypes:
     n_shared: int
     n_filtered: int
     sample_name: str = ""
+    marker_counts: MarkerCounts | None = None  # per-input diagnostic counts (see MarkerCounts)
 
 
 def parse_vcf(
@@ -236,8 +257,14 @@ def classify_markers(
     donor_idxs = [{_marker_key(m): m for m in d} for d in donors]
     admix_idx = {_marker_key(m): m for m in admixture}
 
+    # Per-input coverage of the admixture marker set (the universe), to show
+    # which input genotyping is sparse.
+    admix_keys = set(admix_idx.keys())
+    n_admix_in_host = len(admix_keys & set(host_idx.keys()))
+    n_admix_in_donor = [len(admix_keys & set(di.keys())) for di in donor_idxs]
+
     # Find shared keys (present in host, all donors, and admixture)
-    shared_keys = set(host_idx.keys()) & set(admix_idx.keys())
+    shared_keys = set(host_idx.keys()) & admix_keys
     for di in donor_idxs:
         shared_keys &= set(di.keys())
 
@@ -245,7 +272,10 @@ def classify_markers(
 
     informative: list[InformativeMarker] = []
     non_informative: list[MarkerData] = []
-    n_filtered = 0
+    n_drop_pass = 0
+    n_drop_gq_host = 0
+    n_drop_gq_donor = 0
+    n_drop_admix_dp = 0
 
     for key in sorted(shared_keys):
         h = host_idx[key]
@@ -253,25 +283,24 @@ def classify_markers(
         a = admix_idx[key]
 
         # Filter: PASS only
-        if pass_only and (h.filter != "PASS" or a.filter != "PASS"):
-            n_filtered += 1
-            continue
-        if pass_only and any(d.filter != "PASS" for d in ds):
-            n_filtered += 1
+        if pass_only and (
+            h.filter != "PASS" or a.filter != "PASS" or any(d.filter != "PASS" for d in ds)
+        ):
+            n_drop_pass += 1
             continue
 
         # Filter: host/donor GQ
         if min_gq > 0:
             if h.gq is not None and h.gq < min_gq:
-                n_filtered += 1
+                n_drop_gq_host += 1
                 continue
             if any(d.gq is not None and d.gq < min_gq for d in ds):
-                n_filtered += 1
+                n_drop_gq_donor += 1
                 continue
 
         # Filter: admixture depth
         if a.dp < min_dp:
-            n_filtered += 1
+            n_drop_admix_dp += 1
             continue
 
         # Classify: informative if host differs from ANY donor
@@ -303,11 +332,24 @@ def classify_markers(
         else:
             non_informative.append(a)
 
+    counts = MarkerCounts(
+        n_host=len(host),
+        n_donor_markers=[len(d) for d in donors],
+        n_admix=len(admixture),
+        n_admix_in_host=n_admix_in_host,
+        n_admix_in_donor=n_admix_in_donor,
+        n_drop_pass=n_drop_pass,
+        n_drop_gq_host=n_drop_gq_host,
+        n_drop_gq_donor=n_drop_gq_donor,
+        n_drop_admix_dp=n_drop_admix_dp,
+    )
+
     return MarkerGenotypes(
         informative=informative,
         non_informative=non_informative,
         n_total=n_total,
         n_shared=n_shared,
-        n_filtered=n_filtered,
+        n_filtered=n_drop_pass + n_drop_gq_host + n_drop_gq_donor + n_drop_admix_dp,
         sample_name=sample_name,
+        marker_counts=counts,
     )

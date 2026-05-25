@@ -140,6 +140,23 @@ class TestTsvOutput:
         fields = lines[1].split("\t")
         assert fields[10] == "FAIL"
 
+    def test_tsv_warnings_column(self):
+        result = _make_chimerism_result()
+        qc = _make_qc_report(warnings=["Insufficient informative markers: 1 < 3", "Low depth"])
+        buf = io.StringIO()
+        to_tsv(result, qc, buf)
+        lines = buf.getvalue().splitlines()
+        assert lines[0].split("\t")[11] == "qc_warnings"
+        assert lines[1].split("\t")[11] == "Insufficient informative markers: 1 < 3; Low depth"
+
+    def test_tsv_warnings_column_empty_when_clean(self):
+        result = _make_chimerism_result()
+        qc = _make_qc_report(warnings=[])
+        buf = io.StringIO()
+        to_tsv(result, qc, buf)
+        # Trailing empty cell: line ends with a tab then nothing.
+        assert buf.getvalue().splitlines()[1].split("\t")[11] == ""
+
     def test_tsv_gof_na(self):
         result = _make_chimerism_result()
         qc = _make_qc_report(gof_pval=None)

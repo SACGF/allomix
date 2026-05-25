@@ -5,11 +5,14 @@ from __future__ import annotations
 import math
 import random
 
+import numpy as np
 import pytest
 
 from allomix.chimerism import (
     ChimerismResult,
     MarkerResult,
+    _precompute_marker_arrays,
+    _total_ll_vec,
     detection_limit,
     estimate_single_donor_bb,
     expected_weight,
@@ -23,7 +26,6 @@ from allomix.simulate import (
     sample_allele_counts,
     sample_marker_depths,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -456,3 +458,70 @@ class TestDetectionLimit:
         se = fraction_se(markers, 0.0)
         assert math.isfinite(se)
         assert se > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Vectorized likelihood numeric-equivalence tests
+# ---------------------------------------------------------------------------
+
+
+def _scalar_total(markers, f, err, rho, biases):
+    """Independent re-derivation of the scalar reference total log-likelihood.
+
+    Does not call total_log_likelihood_bb, which now routes through the
+    vectorized path, so this stays an independent check.
+    """
+    ll = 0.0
+    for m in markers:
+        bias = biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0) if biases else 0.0
+        w = expected_weight(m.host_gt, m.donor_gts[0], f, bias=bias)
+        ll += log_likelihood_marker_bb(m.admix_ad_ref, m.admix_ad_alt, w, err, rho)
+    return ll
+
+
+def _mk(chrom, pos, hgt, dgt, ref_n, alt_n):
+    return InformativeMarker(
+        chrom=chrom,
+        pos=pos,
+        ref="A",
+        alt="G",
+        host_gt=hgt,
+        donor_gts=[dgt],
+        marker_type=0,
+        admix_ad_ref=ref_n,
+        admix_ad_alt=alt_n,
+        admix_dp=ref_n + alt_n,
+    )
+
+
+def test_vectorized_ll_matches_scalar() -> None:
+    """Vectorized total LL matches the scalar reference across an (f, rho) grid."""
+    markers = [
+        _mk("chr1", 100, (0, 0), (0, 1), 480, 20),
+        _mk("chr1", 200, (0, 1), (1, 1), 250, 250),
+        _mk("chr1", 300, (1, 1), (0, 0), 15, 985),
+        _mk("chr1", 400, (0, 0), (1, 1), 0, 0),  # dropout: n==0 -> 0 contribution
+    ]
+    biases = {("chr1", 200, "A", "G"): 0.03}  # one biased marker
+    err = 0.01
+    arr = _precompute_marker_arrays(markers, biases)
+    max_diff = 0.0
+    for f in np.linspace(0.0, 1.0, 51):
+        for rho in (1.0, 10.0, 50.0, 200.0, 1000.0, 50000.0):
+            s = _scalar_total(markers, float(f), err, rho, biases)
+            v = _total_ll_vec(arr, float(f), err, rho)
+            max_diff = max(max_diff, abs(s - v))
+    assert max_diff < 1e-6
+
+
+def test_vectorized_ll_no_biases_path() -> None:
+    """Vectorized LL matches scalar on the no-bias code path."""
+    markers = [_mk("chr1", 100, (0, 0), (0, 1), 480, 20)]
+    arr = _precompute_marker_arrays(markers, None)
+    assert (
+        abs(
+            _total_ll_vec(arr, 0.05, 0.01, 200.0)
+            - _scalar_total(markers, 0.05, 0.01, 200.0, None)
+        )
+        < 1e-9
+    )

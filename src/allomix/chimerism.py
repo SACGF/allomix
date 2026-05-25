@@ -33,10 +33,10 @@ from math import lgamma
 
 import numpy as np
 from scipy.optimize import brentq, minimize, minimize_scalar
+from scipy.special import gammaln
 from scipy.stats import chi2, norm
 
 from allomix.genotype import InformativeMarker
-
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -230,14 +230,122 @@ def total_log_likelihood_bb(
     Returns:
         Total log-likelihood.
     """
-    ll = 0.0
-    for m in markers:
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
-        w = expected_weight(m.host_gt, m.donor_gts[0], f_donor, bias=bias)
-        ll += log_likelihood_marker_bb(m.admix_ad_ref, m.admix_ad_alt, w, error_rate, rho)
-    return ll
+    if not markers:
+        return 0.0
+    arr = _precompute_marker_arrays(markers, marker_biases)
+    return _total_ll_vec(arr, f_donor, error_rate, rho)
+
+
+@dataclass(frozen=True)
+class _MarkerArrays:
+    """Per-marker quantities that do not depend on (f_donor, rho).
+
+    Precomputed once per marker set so the likelihood can be evaluated as a
+    single vectorized expression for any (f_donor, rho).
+    """
+
+    host_ref_dose: np.ndarray  # 2 - host alt dose, float
+    donor_ref_dose: np.ndarray  # 2 - donor[0] alt dose, float
+    n: np.ndarray  # ad_ref + ad_alt, float
+    k: np.ndarray  # ad_alt, float
+    bias: np.ndarray  # per-marker bias, float (0.0 where none)
+    bias_mask: np.ndarray  # bias != 0.0, bool
+
+
+def _precompute_marker_arrays(
+    markers: list[InformativeMarker],
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+) -> _MarkerArrays:
+    """Build the (f, rho)-independent per-marker arrays for the vectorized LL.
+
+    Uses the first donor genotype (single-donor model), matching
+    ``total_log_likelihood_bb``.
+
+    Args:
+        markers: List of informative markers with admixture allele counts.
+        marker_biases: Optional per-marker amplification bias dict.
+
+    Returns:
+        Precomputed per-marker arrays for ``_total_ll_vec``.
+    """
+    n_markers = len(markers)
+    host_ref_dose = np.fromiter(
+        (2 - (m.host_gt[0] + m.host_gt[1]) for m in markers),
+        dtype=float,
+        count=n_markers,
+    )
+    donor_ref_dose = np.fromiter(
+        (2 - (m.donor_gts[0][0] + m.donor_gts[0][1]) for m in markers),
+        dtype=float,
+        count=n_markers,
+    )
+    ad_ref = np.fromiter((m.admix_ad_ref for m in markers), dtype=float, count=n_markers)
+    ad_alt = np.fromiter((m.admix_ad_alt for m in markers), dtype=float, count=n_markers)
+    if marker_biases is not None:
+        bias = np.fromiter(
+            (marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0) for m in markers),
+            dtype=float,
+            count=n_markers,
+        )
+    else:
+        bias = np.zeros(n_markers, dtype=float)
+    return _MarkerArrays(
+        host_ref_dose=host_ref_dose,
+        donor_ref_dose=donor_ref_dose,
+        n=ad_ref + ad_alt,
+        k=ad_alt,
+        bias=bias,
+        bias_mask=bias != 0.0,
+    )
+
+
+def _total_ll_vec(
+    arr: _MarkerArrays,
+    f_donor: float,
+    error_rate: float = 0.01,
+    rho: float = 100.0,
+) -> float:
+    """Vectorized single-donor beta-binomial total log-likelihood.
+
+    Numerically equivalent to ``total_log_likelihood_bb`` (differences only at
+    the ``gammaln`` vs ``math.lgamma`` rounding level, ~1e-9). Markers with
+    ``n == 0`` contribute 0 automatically.
+
+    Args:
+        arr: Per-marker arrays from ``_precompute_marker_arrays``.
+        f_donor: Donor fraction to evaluate.
+        error_rate: Sequencing error rate.
+        rho: Beta-binomial concentration parameter.
+
+    Returns:
+        Total log-likelihood.
+    """
+    # Expected reference-allele weight, with the conditional bias clamp.
+    w = (1.0 - f_donor) * arr.host_ref_dose / 2.0 + f_donor * arr.donor_ref_dose / 2.0
+    if arr.bias_mask.any():
+        w[arr.bias_mask] = np.clip(w[arr.bias_mask] - arr.bias[arr.bias_mask], 1e-6, 1.0 - 1e-6)
+
+    # P(observe ALT | w) under the 4-state error model, renormalised, then clamped.
+    e = error_rate
+    e_specific = e / _N_OTHER_BASES
+    p_alt_raw = (1.0 - w) * (1.0 - e) + w * e_specific
+    p_ref_raw = w * (1.0 - e) + (1.0 - w) * e_specific
+    p_alt = p_alt_raw / (p_ref_raw + p_alt_raw)
+    p_alt = np.clip(p_alt, 1e-6, 1.0 - 1e-6)
+
+    a = np.maximum(p_alt * rho, 1e-10)
+    b = np.maximum((1.0 - p_alt) * rho, 1e-10)
+    n, k = arr.n, arr.k
+
+    ll = (
+        gammaln(k + a)
+        + gammaln(n - k + b)
+        - gammaln(n + rho)
+        - gammaln(a)
+        - gammaln(b)
+        + gammaln(rho)
+    )
+    return float(ll.sum())
 
 
 def total_log_likelihood_multi_bb(
@@ -519,6 +627,10 @@ def estimate_single_donor_bb(
             error_rate=error_rate,
         )
 
+    # Precompute the (f, rho)-independent per-marker arrays once and reuse them
+    # across the grid search, Nelder-Mead refinement, and profile-likelihood CI.
+    arr = _precompute_marker_arrays(markers, marker_biases)
+
     # Step 1: Grid search over f with rho profiled out at each grid point
     grid = np.linspace(0.0, 1.0, grid_steps)
     best_ll = -math.inf
@@ -528,9 +640,7 @@ def estimate_single_donor_bb(
     for f in grid:
         # Optimise rho for this f
         opt_rho = minimize_scalar(
-            lambda log_r, _f=f: (
-                -total_log_likelihood_bb(markers, _f, error_rate, math.exp(log_r), marker_biases)
-            ),
+            lambda log_r, _f=f: -_total_ll_vec(arr, _f, error_rate, math.exp(log_r)),
             bounds=(math.log(1.0), math.log(10000.0)),
             method="bounded",
         )
@@ -549,7 +659,7 @@ def estimate_single_donor_bb(
         rho_val = math.exp(log_rho_val)
         if rho_val < 0.5 or rho_val > 50000:
             return 1e30
-        return -total_log_likelihood_bb(markers, f_val, error_rate, rho_val, marker_biases)
+        return -_total_ll_vec(arr, f_val, error_rate, rho_val)
 
     opt = minimize(
         neg_ll_joint,
@@ -570,9 +680,7 @@ def estimate_single_donor_bb(
     def profile_ll_f(f_val: float) -> float:
         """Max LL over rho at a given f."""
         opt_rho = minimize_scalar(
-            lambda log_r: (
-                -total_log_likelihood_bb(markers, f_val, error_rate, math.exp(log_r), marker_biases)
-            ),
+            lambda log_r: -_total_ll_vec(arr, f_val, error_rate, math.exp(log_r)),
             bounds=(math.log(1.0), math.log(50000.0)),
             method="bounded",
         )

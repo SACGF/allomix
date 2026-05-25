@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import random
 import sys
 from pathlib import Path
 
@@ -66,27 +65,6 @@ def test_logistic_fit_handles_degenerate() -> None:
     # All rates equal: curve_fit may converge with b ~= 0 — guard rejects it.
     fit = lod.fit_lod([0.001, 0.002, 0.005, 0.01], [0.5, 0.5, 0.5, 0.5])
     assert fit is None or not math.isfinite(fit[0]) or fit[0] > 0
-
-
-def test_bootstrap_lod_ci_brackets_point_estimate() -> None:
-    # Booleans drawn from a clean logistic: bootstrap CI should bracket the
-    # point-estimate LoD on average.
-    a_true, b_true = 2.5, 3.0
-    fractions = [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05]
-    rng = random.Random(123)
-    booleans = {}
-    for f in fractions:
-        p = 1.0 / (1.0 + math.exp(-(a_true + b_true * math.log10(f))))
-        booleans[f] = [rng.random() < p for _ in range(60)]
-    rates = [sum(booleans[f]) / len(booleans[f]) for f in fractions]
-    fit = lod.fit_lod(fractions, rates)
-    assert fit is not None
-    f95 = fit[0]
-    ci_lo, ci_hi = lod.bootstrap_lod_ci(booleans, n_bootstrap=200, rng=random.Random(7))
-    assert math.isfinite(ci_lo) and math.isfinite(ci_hi)
-    assert ci_lo <= ci_hi
-    # f95 should usually fall inside the bootstrap CI; allow a small slack.
-    assert ci_lo * 0.5 <= f95 <= ci_hi * 2.0
 
 
 def test_interp_lod_brackets_target() -> None:
@@ -154,3 +132,51 @@ def test_to_pct_preserves_sentinels() -> None:
     assert lod._to_pct(lod.LOD_ABOVE_RANGE) == float("inf")
     assert math.isnan(lod._to_pct(float("nan")))
     assert lod._to_pct(0.0123) == pytest.approx(1.23)
+
+
+def test_lod_for_aggregation_maps_sentinels() -> None:
+    # all_detected -> probed floor, none_detected -> probed ceiling, NaN dropped.
+    assert lod._lod_for_aggregation(lod.LOD_BELOW_RANGE) == lod.MIN_POS_FRACTION
+    assert lod._lod_for_aggregation(lod.LOD_ABOVE_RANGE) == lod.MAX_FRACTION
+    assert lod._lod_for_aggregation(float("nan")) is None
+    assert lod._lod_for_aggregation(0.003) == 0.003
+
+
+def test_summarise_cell_median_and_band() -> None:
+    # Curve point = median across pairs; band = 10th-90th percentile across pairs.
+    pairs = [
+        {"lod": 0.001, "lob": 0.0005, "mean_n_informative": 40, "note": ""},
+        {"lod": 0.002, "lob": 0.0007, "mean_n_informative": 42, "note": ""},
+        {"lod": 0.004, "lob": 0.0009, "mean_n_informative": 41, "note": ""},
+    ]
+    s = lod.summarise_cell("sibling", 1000, 100, pairs, n_seq_reps=30)
+    assert s["lod_pct"] == pytest.approx(0.2)  # median 0.002 -> 0.2%
+    assert s["n_pairs"] == 3 and s["n_pairs_used"] == 3 and s["n_pairs_dropped"] == 0
+    assert s["lod_pct_ci_lo"] <= s["lod_pct"] <= s["lod_pct_ci_hi"]
+
+
+def test_summarise_cell_drops_failed_fits() -> None:
+    pairs = [
+        {"lod": 0.002, "lob": 0.0007, "mean_n_informative": 42, "note": ""},
+        {"lod": float("nan"), "lob": float("nan"), "mean_n_informative": 5,
+         "note": "fit_failed"},
+    ]
+    s = lod.summarise_cell("sibling", 1000, 50, pairs, n_seq_reps=30)
+    assert s["n_pairs"] == 2
+    assert s["n_pairs_used"] == 1
+    assert s["n_pairs_dropped"] == 1
+    assert "dropped" in s["note"]
+
+
+def test_summarise_cell_clamps_all_detected_pair() -> None:
+    # A pair that detects everything (LoD below probed range) is clamped to the
+    # floor before the median, so it pulls the cell LoD down but stays finite.
+    pairs = [
+        {"lod": lod.LOD_BELOW_RANGE, "lob": 0.0002, "mean_n_informative": 120,
+         "note": "all_detected"},
+        {"lod": 0.002, "lob": 0.0007, "mean_n_informative": 122, "note": ""},
+    ]
+    s = lod.summarise_cell("unrelated", 2000, 200, pairs, n_seq_reps=30)
+    # median of [0.001 (clamped floor), 0.002] = 0.0015 -> 0.15%
+    assert s["lod_pct"] == pytest.approx(0.15)
+    assert s["n_pairs_used"] == 2

@@ -2,8 +2,10 @@
 """Plot LoD curves from output/facts/lod_summary.csv.
 
 Two facets (unrelated, sibling). Each facet plots LoD (%) vs panel size on
-log-log axes, with one coloured curve per sequencing depth and shaded
-bootstrap CIs. A vertical reference line marks the 76-marker rhAmpSeq panel.
+log-log axes, with one coloured curve per sequencing depth. The curve is the
+median LoD across donor/host pairs and the shaded band is the 10th-90th
+percentile across pairs (the IBD-driven spread, widest for siblings at small
+panels).
 
 Output: output/facts/fig5_lod_curves.png
 """
@@ -130,10 +132,10 @@ def plot(summary_path: Path, out_path: Path) -> None:
             ax.fill_between(x_f, lo_f, hi_f, color=colors[depth], alpha=0.15,
                             linewidth=0)
             # Plot LoB as a faint dashed line beneath LoD for the same depth.
-            # The LoB curve shows the noise floor (95% quantile of est_frac on
-            # blank samples) and should be monotone in panel size and depth
-            # even when LoD has small N=60 wiggles; visualising both makes the
-            # underlying monotonicity of the estimator visible.
+            # The LoB curve (across-pair median of the per-pair blank 95th
+            # percentile) shows the noise floor and is monotone in panel size
+            # and depth; plotting it beside LoD makes the underlying
+            # monotonicity of the estimator visible.
             lob_xy = [(x, y) for x, y in zip(xs, lob)
                       if y is not None and math.isfinite(y) and y > 0]
             if lob_xy:

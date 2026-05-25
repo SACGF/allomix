@@ -95,10 +95,12 @@ rule combine_gvcfs:
         ref=REF,
     output:
         combined=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz"),
+        tbi=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz.tbi"),
     log:
         os.path.join(OUTPUT_DIR, "logs", "combine_gvcfs.log"),
     params:
         gatk=GATK,
+        tabix=TABIX,
         java_mem=JAVA_MEM,
         intervals_arg=INTERVALS_ARG,
         gvcf_args=lambda wc, input: " ".join(f"-V {g}" for g in input.gvcfs),
@@ -110,6 +112,7 @@ rule combine_gvcfs:
             -O {output.combined} \
             {params.intervals_arg} \
             2>&1 | tee {log}
+        {params.tabix} -f {output.combined}
         """
 
 

@@ -138,6 +138,69 @@ def _compute_gof_pval(
     return pval
 
 
+def _marker_loss_diagnosis(g: MarkerGenotypes, n_informative: int) -> str:
+    """Explain which input starved the informative-marker set.
+
+    Walks the per-input marker counts recorded by ``classify_markers`` and names
+    the dominant bottleneck: a low-coverage admixture sample, sparse host or donor
+    genotyping, or a per-marker filter (depth, GQ, PASS). Returns "" when no
+    counts were recorded (``g.marker_counts`` is None, e.g. a hand-built
+    MarkerGenotypes).
+
+    Args:
+        g: Marker genotype classification, with ``g.marker_counts`` populated.
+        n_informative: Number of informative markers that survived.
+
+    Returns:
+        A one-line diagnostic, or "" if no count data is available.
+    """
+    mc = g.marker_counts
+    if mc is None or mc.n_admix == 0:
+        return ""
+
+    donor_str = "/".join(str(x) for x in mc.n_donor_markers) if mc.n_donor_markers else "?"
+    summary = (
+        f"counts: host {mc.n_host}, donor {donor_str}, admix {mc.n_admix}; "
+        f"{g.n_shared} shared; {n_informative} informative"
+    )
+
+    # 1. Admixture sample itself sparse (many no-calls / low input).
+    geno_counts = [mc.n_host, *mc.n_donor_markers]
+    if geno_counts and mc.n_admix < 0.5 * min(geno_counts):
+        return (
+            f"Few informative markers: admixture sample has only {mc.n_admix} genotyped "
+            f"markers vs host {mc.n_host}/donor {donor_str} (low coverage or many no-calls) "
+            f"[{summary}]."
+        )
+
+    # 2. A genotyping input covers few of the admixture markers.
+    cover = [("host", mc.n_admix_in_host)]
+    for i, c in enumerate(mc.n_admix_in_donor):
+        cover.append(("donor" if len(mc.n_admix_in_donor) == 1 else f"donor{i + 1}", c))
+    name, cov = min(cover, key=lambda kv: kv[1])
+    if cov < 0.5 * mc.n_admix:
+        return (
+            f"Few informative markers: {name} genotyping covers only {cov}/{mc.n_admix} "
+            f"admixture markers (genotyping likely failed) [{summary}]."
+        )
+
+    # 3. Sharing is fine; blame the dominant per-marker filter.
+    drops = [
+        ("low admixture depth (DP<min)", mc.n_drop_admix_dp),
+        ("host GQ below threshold", mc.n_drop_gq_host),
+        ("donor GQ below threshold", mc.n_drop_gq_donor),
+        ("non-PASS calls", mc.n_drop_pass),
+    ]
+    reason, n = max(drops, key=lambda kv: kv[1])
+    if n > 0:
+        return (
+            f"Few informative markers: {n}/{g.n_shared} shared markers dropped at "
+            f"{reason} [{summary}]."
+        )
+
+    return f"Few informative markers [{summary}]."
+
+
 def assess_quality(
     result: ChimerismResult,
     genotypes: MarkerGenotypes,
@@ -195,6 +258,9 @@ def assess_quality(
     if n_informative < min_informative:
         pass_ = False
         warnings.append(f"Insufficient informative markers: {n_informative} < {min_informative}")
+        diagnosis = _marker_loss_diagnosis(genotypes, n_informative)
+        if diagnosis:
+            warnings.append(diagnosis)
 
     # Low mean depth
     if mean_depth < 100:

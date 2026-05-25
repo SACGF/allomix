@@ -19,6 +19,11 @@ def _is_multi_donor(result: object) -> bool:
     return hasattr(result, "donor_fractions")
 
 
+def _warnings_cell(qc: QCReport) -> str:
+    """Join QC warnings into a single tab-safe TSV cell (empty if none)."""
+    return "; ".join(w.replace("\t", " ").replace("\n", " ") for w in qc.warnings)
+
+
 def to_tsv(
     result: ChimerismResult | MultiDonorResult,
     qc: QCReport,
@@ -69,7 +74,7 @@ def _write_tsv(
     # Summary header and line
     summary_header = (
         "sample\tdonor_pct\tci_lo\tci_hi\tlob_pct\tlod_pct\t"
-        "n_informative\tn_used\tmean_depth\tgof_pval\tqc_pass"
+        "n_informative\tn_used\tmean_depth\tgof_pval\tqc_pass\tqc_warnings"
     )
     fh.write(summary_header + "\n")
 
@@ -90,9 +95,15 @@ def _write_tsv(
         f"{qc.n_used}\t"
         f"{qc.mean_depth:.0f}\t"
         f"{gof_str}\t"
-        f"{qc_pass_str}"
+        f"{qc_pass_str}\t"
+        f"{_warnings_cell(qc)}"
     )
     fh.write(summary_line + "\n")
+
+    if verbose and qc.warnings:
+        fh.write("\n# warnings\n")
+        for w in qc.warnings:
+            fh.write(f"# {w}\n")
 
     if verbose and result.per_marker:
         fh.write("\n")
@@ -126,7 +137,9 @@ def _write_tsv_multi(
     for i in range(n_donors):
         d = i + 1
         cols.extend([f"donor{d}_pct", f"donor{d}_ci_lo", f"donor{d}_ci_hi"])
-    cols.extend(["host_pct", "n_informative", "n_used", "mean_depth", "gof_pval", "qc_pass"])
+    cols.extend(
+        ["host_pct", "n_informative", "n_used", "mean_depth", "gof_pval", "qc_pass", "qc_warnings"]
+    )
     fh.write("\t".join(cols) + "\n")
 
     # Build data line
@@ -151,9 +164,15 @@ def _write_tsv_multi(
             f"{qc.mean_depth:.0f}",
             gof_str,
             qc_pass_str,
+            _warnings_cell(qc),
         ]
     )
     fh.write("\t".join(vals) + "\n")
+
+    if verbose and qc.warnings:
+        fh.write("\n# warnings\n")
+        for w in qc.warnings:
+            fh.write(f"# {w}\n")
 
     if verbose and result.per_marker:
         fh.write("\n")

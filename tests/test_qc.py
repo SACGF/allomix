@@ -8,9 +8,14 @@ import re
 
 import allomix
 from allomix.chimerism import estimate_single_donor_bb
-from allomix.genotype import InformativeMarker, MarkerGenotypes
-from allomix.qc import ChimerismResult, MarkerResult, _compute_gof_pval, assess_quality
-
+from allomix.genotype import InformativeMarker, MarkerCounts, MarkerGenotypes
+from allomix.qc import (
+    ChimerismResult,
+    MarkerResult,
+    _compute_gof_pval,
+    _marker_loss_diagnosis,
+    assess_quality,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -119,6 +124,76 @@ class TestInsufficientMarkers:
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes, min_informative=3)
         assert qc.pass_ is True
+
+
+class TestMarkerLossDiagnosis:
+    """_marker_loss_diagnosis should name the input that starved the markers."""
+
+    def test_no_funnel_data_returns_empty(self):
+        # Hand-built genotypes with default (zero) funnel fields.
+        assert _marker_loss_diagnosis(_make_genotypes(), 1) == ""
+
+    def test_sparse_donor_genotyping(self):
+        g = MarkerGenotypes(
+            informative=[],
+            non_informative=[],
+            n_total=64,
+            n_shared=8,
+            n_filtered=0,
+            marker_counts=MarkerCounts(
+                n_host=64, n_donor_markers=[9], n_admix=64, n_admix_in_host=64, n_admix_in_donor=[9]
+            ),
+        )
+        msg = _marker_loss_diagnosis(g, 1)
+        assert "donor" in msg and "9/64" in msg
+
+    def test_low_admixture_depth(self):
+        g = MarkerGenotypes(
+            informative=[],
+            non_informative=[],
+            n_total=64,
+            n_shared=60,
+            n_filtered=58,
+            marker_counts=MarkerCounts(
+                n_host=64,
+                n_donor_markers=[62],
+                n_admix=64,
+                n_admix_in_host=64,
+                n_admix_in_donor=[62],
+                n_drop_admix_dp=58,
+            ),
+        )
+        msg = _marker_loss_diagnosis(g, 2)
+        assert "admixture depth" in msg
+
+    def test_sparse_admixture_sample(self):
+        g = MarkerGenotypes(
+            informative=[],
+            non_informative=[],
+            n_total=5,
+            n_shared=5,
+            n_filtered=0,
+            marker_counts=MarkerCounts(
+                n_host=70, n_donor_markers=[68], n_admix=5, n_admix_in_host=5, n_admix_in_donor=[5]
+            ),
+        )
+        msg = _marker_loss_diagnosis(g, 1)
+        assert "admixture sample has only 5" in msg
+
+    def test_diagnosis_appears_in_warnings(self):
+        result = _make_chimerism_result(n_informative=1, per_marker=[_make_marker_result()])
+        g = MarkerGenotypes(
+            informative=[],
+            non_informative=[],
+            n_total=64,
+            n_shared=8,
+            n_filtered=0,
+            marker_counts=MarkerCounts(
+                n_host=64, n_donor_markers=[9], n_admix=64, n_admix_in_host=64, n_admix_in_donor=[9]
+            ),
+        )
+        qc = assess_quality(result, g, min_informative=3)
+        assert any("donor genotyping covers only" in w for w in qc.warnings)
 
 
 class TestLowDepth:

@@ -72,11 +72,21 @@ def _write_tsv(
         verbose: If True, include per-marker detail section.
     """
     # Summary header and line
-    summary_header = (
-        "sample\tdonor_pct\tci_lo\tci_hi\tlob_pct\tlod_pct\t"
-        "n_informative\tn_used\tmean_depth\tgof_pval\tqc_pass\tqc_warnings"
-    )
-    fh.write(summary_header + "\n")
+    summary_cols = [
+        "sample",
+        "donor_pct",
+        "ci_lo",
+        "ci_hi",
+        "lob_pct",
+        "lod_pct",
+        "n_informative",
+        "n_used",
+        "mean_depth",
+        "gof_pval",
+        "qc_pass",
+        "qc_warnings",
+    ]
+    fh.write("\t".join(summary_cols) + "\n")
 
     ci_lo, ci_hi = result.donor_fraction_ci
     gof_str = f"{qc.goodness_of_fit_pval:.4f}" if qc.goodness_of_fit_pval is not None else "NA"
@@ -84,21 +94,21 @@ def _write_tsv(
     lob_str = f"{result.lob_fraction * 100:.3f}" if math.isfinite(result.lob_fraction) else "NA"
     lod_str = f"{result.lod_fraction * 100:.3f}" if math.isfinite(result.lod_fraction) else "NA"
 
-    summary_line = (
-        f"{sample_name}\t"
-        f"{result.donor_fraction * 100:.2f}\t"
-        f"{ci_lo * 100:.2f}\t"
-        f"{ci_hi * 100:.2f}\t"
-        f"{lob_str}\t"
-        f"{lod_str}\t"
-        f"{result.n_informative}\t"
-        f"{qc.n_used}\t"
-        f"{qc.mean_depth:.0f}\t"
-        f"{gof_str}\t"
-        f"{qc_pass_str}\t"
-        f"{_warnings_cell(qc)}"
-    )
-    fh.write(summary_line + "\n")
+    summary_vals = [
+        sample_name,
+        f"{result.donor_fraction * 100:.2f}",
+        f"{ci_lo * 100:.2f}",
+        f"{ci_hi * 100:.2f}",
+        lob_str,
+        lod_str,
+        str(result.n_informative),
+        str(qc.n_used),
+        f"{qc.mean_depth:.0f}",
+        gof_str,
+        qc_pass_str,
+        _warnings_cell(qc),
+    ]
+    fh.write("\t".join(summary_vals) + "\n")
 
     if verbose and qc.warnings:
         fh.write("\n# warnings\n")
@@ -107,19 +117,35 @@ def _write_tsv(
 
     if verbose and result.per_marker:
         fh.write("\n")
-        detail_header = (
-            "chrom\tpos\tmarker_type\thost_gt\tdonor_gt\t"
-            "ad_ref\tad_alt\tobserved_vaf\texpected_vaf\tresidual\tincluded"
-        )
-        fh.write(detail_header + "\n")
+        detail_cols = [
+            "chrom",
+            "pos",
+            "marker_type",
+            "host_gt",
+            "donor_gt",
+            "ad_ref",
+            "ad_alt",
+            "observed_vaf",
+            "expected_vaf",
+            "residual",
+            "included",
+        ]
+        fh.write("\t".join(detail_cols) + "\n")
         for m in result.per_marker:
-            fh.write(
-                f"{m.chrom}\t{m.pos}\t{m.marker_type}\t"
-                f".\t.\t"
-                f"{m.ad_ref}\t{m.ad_alt}\t"
-                f"{m.observed_vaf:.4f}\t{m.expected_vaf:.4f}\t"
-                f"{m.residual:.4f}\t{m.included}\n"
-            )
+            row = [
+                m.chrom,
+                str(m.pos),
+                str(m.marker_type),
+                ".",
+                ".",
+                str(m.ad_ref),
+                str(m.ad_alt),
+                f"{m.observed_vaf:.4f}",
+                f"{m.expected_vaf:.4f}",
+                f"{m.residual:.4f}",
+                str(m.included),
+            ]
+            fh.write("\t".join(row) + "\n")
 
 
 def _write_tsv_multi(
@@ -176,18 +202,31 @@ def _write_tsv_multi(
 
     if verbose and result.per_marker:
         fh.write("\n")
-        detail_header = (
-            "chrom\tpos\tmarker_type\t"
-            "ad_ref\tad_alt\tobserved_vaf\texpected_vaf\tresidual\tincluded"
-        )
-        fh.write(detail_header + "\n")
+        detail_cols = [
+            "chrom",
+            "pos",
+            "marker_type",
+            "ad_ref",
+            "ad_alt",
+            "observed_vaf",
+            "expected_vaf",
+            "residual",
+            "included",
+        ]
+        fh.write("\t".join(detail_cols) + "\n")
         for m in result.per_marker:
-            fh.write(
-                f"{m.chrom}\t{m.pos}\t{m.marker_type}\t"
-                f"{m.ad_ref}\t{m.ad_alt}\t"
-                f"{m.observed_vaf:.4f}\t{m.expected_vaf:.4f}\t"
-                f"{m.residual:.4f}\t{m.included}\n"
-            )
+            row = [
+                m.chrom,
+                str(m.pos),
+                str(m.marker_type),
+                str(m.ad_ref),
+                str(m.ad_alt),
+                f"{m.observed_vaf:.4f}",
+                f"{m.expected_vaf:.4f}",
+                f"{m.residual:.4f}",
+                str(m.included),
+            ]
+            fh.write("\t".join(row) + "\n")
 
 
 def to_json(

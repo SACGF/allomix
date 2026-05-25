@@ -6,6 +6,7 @@ multi-timepoint timelines. Supports both single-donor and multi-donor results.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import TextIO
 
@@ -67,19 +68,24 @@ def _write_tsv(
     """
     # Summary header and line
     summary_header = (
-        "sample\tdonor_pct\tci_lo\tci_hi\tn_informative\tn_used\tmean_depth\tgof_pval\tqc_pass"
+        "sample\tdonor_pct\tci_lo\tci_hi\tlob_pct\tlod_pct\t"
+        "n_informative\tn_used\tmean_depth\tgof_pval\tqc_pass"
     )
     fh.write(summary_header + "\n")
 
     ci_lo, ci_hi = result.donor_fraction_ci
     gof_str = f"{qc.goodness_of_fit_pval:.4f}" if qc.goodness_of_fit_pval is not None else "NA"
     qc_pass_str = "PASS" if qc.pass_ else "FAIL"
+    lob_str = f"{result.lob_fraction * 100:.3f}" if math.isfinite(result.lob_fraction) else "NA"
+    lod_str = f"{result.lod_fraction * 100:.3f}" if math.isfinite(result.lod_fraction) else "NA"
 
     summary_line = (
         f"{sample_name}\t"
         f"{result.donor_fraction * 100:.2f}\t"
         f"{ci_lo * 100:.2f}\t"
         f"{ci_hi * 100:.2f}\t"
+        f"{lob_str}\t"
+        f"{lod_str}\t"
         f"{result.n_informative}\t"
         f"{qc.n_used}\t"
         f"{qc.mean_depth:.0f}\t"
@@ -235,6 +241,12 @@ def to_json(
             "donor_pct": round(result.donor_fraction * 100, 4),
             "ci_lo": round(ci_lo * 100, 4),
             "ci_hi": round(ci_hi * 100, 4),
+            "lob_pct": round(result.lob_fraction * 100, 4)
+            if math.isfinite(result.lob_fraction)
+            else None,
+            "lod_pct": round(result.lod_fraction * 100, 4)
+            if math.isfinite(result.lod_fraction)
+            else None,
             "n_informative": result.n_informative,
             "n_used": qc.n_used,
             "mean_depth": round(qc.mean_depth, 1),

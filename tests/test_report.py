@@ -48,6 +48,8 @@ def _make_chimerism_result(
     ci: tuple[float, float] = (0.1102, 0.1371),
     n_informative: int = 10,
     per_marker: list[MarkerResult] | None = None,
+    lob_fraction: float = 0.0021,
+    lod_fraction: float = 0.0045,
 ) -> ChimerismResult:
     if per_marker is None:
         per_marker = [_make_marker_result(pos=i * 100) for i in range(n_informative)]
@@ -61,6 +63,8 @@ def _make_chimerism_result(
         n_markers_used=n_used,
         per_marker=per_marker,
         error_rate=0.01,
+        lob_fraction=lob_fraction,
+        lod_fraction=lod_fraction,
     )
 
 
@@ -119,11 +123,13 @@ class TestTsvOutput:
         assert float(fields[1]) == pytest.approx(12.34, abs=0.01)
         assert float(fields[2]) == pytest.approx(11.02, abs=0.01)
         assert float(fields[3]) == pytest.approx(13.71, abs=0.01)
-        assert int(fields[4]) == 10
-        assert int(fields[5]) == 10
-        assert float(fields[6]) == pytest.approx(1500, abs=1)
-        assert float(fields[7]) == pytest.approx(0.45, abs=0.01)
-        assert fields[8] == "PASS"
+        assert float(fields[4]) == pytest.approx(0.21, abs=0.01)  # lob_pct
+        assert float(fields[5]) == pytest.approx(0.45, abs=0.01)  # lod_pct
+        assert int(fields[6]) == 10
+        assert int(fields[7]) == 10
+        assert float(fields[8]) == pytest.approx(1500, abs=1)
+        assert float(fields[9]) == pytest.approx(0.45, abs=0.01)
+        assert fields[10] == "PASS"
 
     def test_tsv_fail_status(self):
         result = _make_chimerism_result()
@@ -132,7 +138,7 @@ class TestTsvOutput:
         to_tsv(result, qc, buf)
         lines = buf.getvalue().strip().split("\n")
         fields = lines[1].split("\t")
-        assert fields[8] == "FAIL"
+        assert fields[10] == "FAIL"
 
     def test_tsv_gof_na(self):
         result = _make_chimerism_result()
@@ -141,7 +147,7 @@ class TestTsvOutput:
         to_tsv(result, qc, buf)
         lines = buf.getvalue().strip().split("\n")
         fields = lines[1].split("\t")
-        assert fields[7] == "NA"
+        assert fields[9] == "NA"
 
 
 class TestTsvVerbose:

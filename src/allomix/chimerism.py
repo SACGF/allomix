@@ -33,7 +33,7 @@ from math import lgamma
 
 import numpy as np
 from scipy.optimize import brentq, minimize, minimize_scalar
-from scipy.stats import chi2
+from scipy.stats import chi2, norm
 
 from allomix.genotype import InformativeMarker
 
@@ -72,6 +72,10 @@ class ChimerismResult:
     per_marker: list[MarkerResult]
     error_rate: float
     rho: float = float("inf")  # beta-binomial concentration; inf = no overdispersion
+    # Per-sample analytical detection limits (donor fractions, 0.0-1.0), computed
+    # from the Fisher information of this sample's own markers. inf = nothing detectable.
+    lob_fraction: float = float("inf")  # limit of blank
+    lod_fraction: float = float("inf")  # limit of detection
 
 
 @dataclass
@@ -131,6 +135,35 @@ def expected_weight(
     return w
 
 
+# DNA has 4 bases, so a sequencing error changes the true base into one of the
+# 3 other bases. Assuming errors are spread evenly, a miscall to one specific
+# base (e.g. REF read as the ALT allele) has probability error_rate / 3.
+_N_OTHER_BASES = 3
+
+
+def alt_read_probability(w: float, error_rate: float = 0.01) -> float:
+    """Probability an observed read is ALT, given expected REF weight ``w``.
+
+    Under the 4-state error model a read is observed as ALT if it comes from a
+    true ALT allele and is called correctly (probability ``1 - e``), or from a
+    true REF allele miscalled to the ALT base (probability ``e / 3``). The two
+    raw probabilities are renormalised so they condition on the read being
+    called REF or ALT rather than one of the other two bases.
+
+    Args:
+        w: Expected reference allele weight (fraction of REF alleles).
+        error_rate: Per-base sequencing error rate ``e``.
+
+    Returns:
+        P(observe ALT | w), between 0 and 1.
+    """
+    e = error_rate
+    e_specific = e / _N_OTHER_BASES
+    p_alt = (1.0 - w) * (1.0 - e) + w * e_specific
+    p_ref = w * (1.0 - e) + (1.0 - w) * e_specific
+    return p_alt / (p_ref + p_alt)
+
+
 def log_likelihood_marker_bb(
     ad_ref: int,
     ad_alt: int,
@@ -157,12 +190,7 @@ def log_likelihood_marker_bb(
     Returns:
         Log-likelihood contribution from this marker.
     """
-    e = error_rate
-    p_alt = (1.0 - w) * (1.0 - e) + w * e / 3.0
-    p_ref = w * (1.0 - e) + (1.0 - w) * e / 3.0
-    # Normalise to conditional probability (given observed REF or ALT)
-    # since p_ref + p_alt = 1 - 2e/3 under the 4-state error model.
-    p_alt = p_alt / (p_ref + p_alt)
+    p_alt = alt_read_probability(w, error_rate)
     p_alt = max(1e-6, min(1.0 - 1e-6, p_alt))
 
     n = ad_ref + ad_alt
@@ -338,6 +366,124 @@ def _compute_per_marker_results(
     return per_marker
 
 
+# One-sided 95% normal quantile (z_0.95 ~= 1.6449), used for EP17-style LoB/LoD.
+_Z95 = float(norm.ppf(0.95))
+
+# Margin used to keep a probability strictly inside the open interval (0, 1),
+# so that p * (1 - p) stays positive and the marker variance never collapses to
+# zero. This is a safety clamp, not machine epsilon (np.finfo(float).eps).
+_PROB_EPS = 1e-9
+
+
+def fraction_se(
+    markers: list[InformativeMarker],
+    f_donor: float,
+    error_rate: float = 0.01,
+    rho: float = float("inf"),
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+) -> float:
+    """Standard error of the donor-fraction estimate at a given fraction.
+
+    Computed from the Fisher information of the beta-binomial model used by
+    ``estimate_single_donor_bb``, evaluated at ``f_donor``. Each informative
+    marker contributes ``(dp_alt/df)^2 / Var(VAF)``, where the VAF variance
+    includes the beta-binomial overdispersion inflation
+    ``1 + (n - 1) / (rho + 1)``. Markers whose expected ALT fraction does not
+    change with f (host and donor ref-dose equal) carry no information and are
+    skipped.
+
+    Args:
+        markers: Informative markers with admixture allele counts.
+        f_donor: Donor fraction at which to evaluate the SE.
+        error_rate: Sequencing error rate.
+        rho: Beta-binomial concentration (inf = pure binomial).
+        marker_biases: Optional per-marker amplification bias dict.
+
+    Returns:
+        Standard error of the donor fraction. inf if no marker is informative.
+    """
+    # P(observe ALT) is linear in the REF weight w, so its slope dp_alt/dw is
+    # constant and equals the change across the full weight range w: 0 -> 1.
+    dpalt_dw = alt_read_probability(1.0, error_rate) - alt_read_probability(0.0, error_rate)
+
+    info = 0.0
+    for m in markers:
+        bias = 0.0
+        if marker_biases is not None:
+            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+
+        host_ref_dose = 2 - (m.host_gt[0] + m.host_gt[1])
+        donor_ref_dose = 2 - (m.donor_gts[0][0] + m.donor_gts[0][1])
+        dw_df = (donor_ref_dose - host_ref_dose) / 2.0
+        if dw_df == 0.0:
+            continue
+
+        n = m.admix_ad_ref + m.admix_ad_alt
+        if n == 0:
+            continue
+
+        w = expected_weight(m.host_gt, m.donor_gts[0], f_donor, bias=bias)
+        p_alt = alt_read_probability(w, error_rate)
+        p_alt = max(_PROB_EPS, min(1.0 - _PROB_EPS, p_alt))
+
+        overdispersion = 1.0 if math.isinf(rho) else 1.0 + (n - 1.0) / (rho + 1.0)
+        var_vaf = p_alt * (1.0 - p_alt) / n * overdispersion
+        if var_vaf <= 0.0:
+            continue
+
+        dpalt_df = dpalt_dw * dw_df
+        info += (dpalt_df * dpalt_df) / var_vaf
+
+    if info <= 0.0:
+        return float("inf")
+    return 1.0 / math.sqrt(info)
+
+
+def detection_limit(
+    markers: list[InformativeMarker],
+    error_rate: float = 0.01,
+    rho: float = float("inf"),
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+) -> tuple[float, float]:
+    """Per-sample limit of blank and limit of detection (donor fractions).
+
+    Follows the single-replicate Currie / CLSI EP17-A2 construction, using the
+    Fisher information of this sample's own markers in place of repeated blank
+    and low-level measurements:
+
+        LoB = z * SE(f = 0)
+        LoD = LoB + z * SE(f = LoB)
+
+    with ``z`` the one-sided 95% normal quantile. The donor-fraction estimator
+    is bounded at 0, so its upper 95th percentile under a true blank is
+    ``z * SE(0)`` even though the lower tail piles at 0.
+
+    This is the best achievable sensitivity given the fitted noise model
+    (``rho``) and known/corrected biases. It is not a substitute for a
+    validated assay LoD from a blank and dilution series, which must come from
+    replicated experiments (simulation or wetlab).
+
+    Args:
+        markers: Informative markers with admixture allele counts.
+        error_rate: Sequencing error rate.
+        rho: Beta-binomial concentration from the fit (inf = pure binomial).
+        marker_biases: Optional per-marker amplification bias dict.
+
+    Returns:
+        ``(lob, lod)`` as donor fractions (0.0-1.0). ``(inf, inf)`` if no
+        marker is informative.
+    """
+    se0 = fraction_se(markers, 0.0, error_rate, rho, marker_biases)
+    if math.isinf(se0):
+        return float("inf"), float("inf")
+    lob = _Z95 * se0
+    se_lob = fraction_se(markers, lob, error_rate, rho, marker_biases)
+    if math.isinf(se_lob):
+        se_lob = se0
+    lod = lob + _Z95 * se_lob
+    return lob, lod
+
+
 def estimate_single_donor_bb(
     markers: list[InformativeMarker],
     error_rate: float = 0.01,
@@ -455,6 +601,9 @@ def estimate_single_donor_bb(
     per_marker = _compute_per_marker_results(markers, f_mle, marker_biases)
     n_markers_used = sum(1 for mr in per_marker if mr.included)
 
+    # Step 5: Per-sample analytical detection limits from the fitted noise model.
+    lob, lod = detection_limit(markers, error_rate, rho_mle, marker_biases)
+
     return ChimerismResult(
         donor_fraction=f_mle,
         donor_fraction_ci=(f_lo, f_hi),
@@ -465,6 +614,8 @@ def estimate_single_donor_bb(
         per_marker=per_marker,
         error_rate=error_rate,
         rho=rho_mle,
+        lob_fraction=lob,
+        lod_fraction=lod,
     )
 
 

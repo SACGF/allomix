@@ -10,8 +10,10 @@ import pytest
 from allomix.chimerism import (
     ChimerismResult,
     MarkerResult,
+    detection_limit,
     estimate_single_donor_bb,
     expected_weight,
+    fraction_se,
     log_likelihood_marker_bb,
 )
 from allomix.genotype import InformativeMarker
@@ -396,3 +398,61 @@ class TestBetaBinomialEstimator:
         assert sum(od_widths) / len(od_widths) > sum(clean_widths) / len(clean_widths), (
             "BB CIs should be wider on overdispersed data (rho should adapt)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: per-sample analytical detection limit (LoB / LoD)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectionLimit:
+    """Tests for fraction_se and detection_limit."""
+
+    def test_blank_sample_has_finite_positive_lod(self) -> None:
+        """A pure-host sample still yields a finite, positive LoB/LoD."""
+        markers = _make_markers_for_fraction(0.0, n_markers=40, dp=2000, seed=7)
+        lob, lod = detection_limit(markers)
+        assert 0.0 < lob < lod < 1.0
+        assert math.isfinite(lod)
+
+    def test_lod_reported_on_result(self) -> None:
+        """estimate_single_donor_bb populates lob_fraction/lod_fraction."""
+        markers = _make_markers_for_fraction(0.0, n_markers=40, dp=2000, seed=7)
+        result = estimate_single_donor_bb(markers)
+        assert math.isfinite(result.lod_fraction)
+        assert 0.0 < result.lob_fraction <= result.lod_fraction
+
+    def test_lod_decreases_with_more_markers(self) -> None:
+        """More informative markers should lower the detection limit."""
+        few = detection_limit(_make_markers_for_fraction(0.0, n_markers=10, dp=1000, seed=1))[1]
+        many = detection_limit(_make_markers_for_fraction(0.0, n_markers=100, dp=1000, seed=1))[1]
+        assert many < few
+
+    def test_lod_decreases_with_depth(self) -> None:
+        """Higher depth should lower the detection limit."""
+        shallow = detection_limit(_make_markers_for_fraction(0.0, n_markers=40, dp=250, seed=2))[1]
+        deep = detection_limit(_make_markers_for_fraction(0.0, n_markers=40, dp=4000, seed=2))[1]
+        assert deep < shallow
+
+    def test_overdispersion_widens_lod(self) -> None:
+        """Smaller rho (more overdispersion) should raise the detection limit."""
+        markers = _make_markers_for_fraction(0.0, n_markers=40, dp=2000, seed=3)
+        lod_clean = detection_limit(markers, rho=float("inf"))[1]
+        lod_od = detection_limit(markers, rho=50.0)[1]
+        assert lod_od > lod_clean
+
+    def test_empty_markers_infinite_lod(self) -> None:
+        """No markers means nothing is detectable."""
+        lob, lod = detection_limit([])
+        assert math.isinf(lob)
+        assert math.isinf(lod)
+        # And the estimator surfaces inf on its result.
+        result = estimate_single_donor_bb([])
+        assert math.isinf(result.lod_fraction)
+
+    def test_se_positive_and_finite(self) -> None:
+        """fraction_se returns a positive finite SE for informative markers."""
+        markers = _make_markers_for_fraction(0.0, n_markers=30, dp=1000, seed=9)
+        se = fraction_se(markers, 0.0)
+        assert math.isfinite(se)
+        assert se > 0.0

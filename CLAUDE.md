@@ -23,7 +23,7 @@ Our specific deployment uses the 76 Sample ID SNPs from the IDT rhAmpSeq panel i
 ## Input Requirements
 
 - **VCF-first**: allomix takes VCFs as input (not BAMs). Minimum required FORMAT fields: GT, AD, DP.
-- **Joint calling**: For low-fraction detection (<5% donor), admixture samples MUST be joint-called alongside donor/host genotyping samples in the same GATK GenomicsDBImport + GenotypeGVCFs run. This ensures ALT alleles discovered in donors produce 2-element AD fields (ref,alt) in admixture samples even when called hom-ref. See `claude/step2_bam_vs_vcf_decision.md` for full rationale.
+- **Joint calling**: For low-fraction detection (<5% donor), admixture samples MUST be joint-called alongside donor/host genotyping samples in the same GATK GenomicsDBImport + GenotypeGVCFs run. This ensures ALT alleles discovered in donors produce 2-element AD fields (ref,alt) in admixture samples even when called hom-ref. See `doc/joint_calling.md` for full rationale (including why a somatic caller is not used).
 
 ## Data Access
 

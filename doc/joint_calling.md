@@ -12,6 +12,16 @@ Joint calling solves this. When all samples (host, donor, admixture timepoints) 
 
 This matters most below ~5% donor fraction. Above that, enough markers show heterozygous calls in the admixture sample that independent calling can still work, but joint calling gives better results at all fractions.
 
+## Why not a somatic variant caller?
+
+A common question is why we do not use a somatic caller (such as Mutect2) to detect the low-VAF ALT reads that carry the chimerism signal, given that somatic callers are designed for low allele fractions. The reason is that allomix is not discovering variants. It is quantifying a mixture of two known germline genotypes.
+
+The informative markers are common germline SNPs, and the donor and host genotypes are already known from individual sequencing. The task is to count ref and alt reads at a fixed, known set of sites and feed those counts to a likelihood model. That is germline joint-genotyping, not variant discovery.
+
+Somatic callers are built to decide whether a low-fraction event is a real mutation or an artifact, and they are tuned to reject low-fraction events as noise (detection thresholds, artifact and strand filters, matched-normal subtraction). The sub-1% donor reads we want to measure are exactly what those filters are designed to discard. We do not want a yes/no variant call at each marker, we want an honest allele count.
+
+The sensitivity below 1% comes from the statistical model aggregating evidence across all markers (see the MLE in `paper/methods.md`), not from a caller's per-site detection. The caller's only job is to emit unbiased two-element AD values at known sites, which is precisely what germline joint calling provides and a somatic caller does not.
+
 ## Which variant caller?
 
 Use GATK HaplotypeCaller in `-ERC GVCF` mode. The joint-calling workflow requires GVCFs (genomic VCFs that include reference blocks), and HaplotypeCaller is the standard tool for producing these.

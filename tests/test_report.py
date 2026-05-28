@@ -72,7 +72,7 @@ def _make_qc_report(
     n_used: int = 10,
     mean_depth: float = 1500.0,
     gof_pval: float | None = 0.45,
-    pass_: bool = True,
+    status: str = "PASS",
     warnings: list[str] | None = None,
 ) -> QCReport:
     return QCReport(
@@ -88,7 +88,7 @@ def _make_qc_report(
         min_depth=800,
         goodness_of_fit_pval=gof_pval,
         warnings=warnings if warnings is not None else [],
-        pass_=pass_,
+        status=status,
     )
 
 
@@ -133,12 +133,21 @@ class TestTsvOutput:
 
     def test_tsv_fail_status(self):
         result = _make_chimerism_result()
-        qc = _make_qc_report(pass_=False)
+        qc = _make_qc_report(status="FAIL")
         buf = io.StringIO()
         to_tsv(result, qc, buf)
         lines = buf.getvalue().strip().split("\n")
         fields = lines[1].split("\t")
         assert fields[10] == "FAIL"
+
+    def test_tsv_review_status(self):
+        result = _make_chimerism_result()
+        qc = _make_qc_report(status="REVIEW")
+        buf = io.StringIO()
+        to_tsv(result, qc, buf)
+        lines = buf.getvalue().strip().split("\n")
+        fields = lines[1].split("\t")
+        assert fields[10] == "REVIEW"
 
     def test_tsv_warnings_column(self):
         result = _make_chimerism_result()

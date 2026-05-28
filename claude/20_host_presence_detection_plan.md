@@ -156,10 +156,139 @@ donor-homozygous markers (`e_i ~ 5e-4`) at 1000x, `Lam ~ 10`, so f_h around 0.05
 is detectable, below what the global-error MLE achieves. The lever is the per-site error
 rate, which is why Step 14 gates the headline number.
 
+## Control data and calibration (build this first)
+
+Before wiring the detector into the CLI and reports, generate dedicated positive and
+negative controls and confirm the statistic is calibrated. This is the same EP17 LoB/LoD
+construction already used for the MLE (`claude/issue_8_lod_markers_plan.md`), applied to
+the presence statistic, and follows the protocol of generating extremely low-fraction
+positives and running many replicates until detection stabilises. We do not currently have
+this data: the existing LoD sweep
+(`paper/scripts/run_lod_validation.py:75`) stops at a lowest positive fraction of 0.001
+(0.1%) and uses a single global error rate, neither of which exercises the regime this
+detector targets.
+
+**Negative controls (the LoB / false-positive floor).** Many pure-donor replicates
+(`f = 0`): donor-homozygous markers with simulated sequencing error only and no host. Each
+yields a presence p-value and the donor-absent read count `Y`. Under H0 the p-values should
+be approximately uniform; the 5% false-positive point (or the 95th percentile of `Y/Lam`)
+sets the operating threshold. Run enough replicates to pin the tail (order 1,000), since the
+whole claim is about rare false positives.
+
+**Positive controls (the LoD).** Extremely low fractions below the current floor, e.g.
+`f in {1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3}`, extended downward until the detection
+rate hits zero, at deep coverage (1000x, 2000x, and a 5000x cell to mimic deep relapse
+monitoring), with many replicates (>=60, more at the bottom because host reads are rare).
+"Keep running replicates until a signal" operationalises as: measure detection rate at each
+fraction and depth; LoD is the lowest fraction with >=95% detection above the LoB threshold.
+
+**Generation.** Reuse `simulate.generate_related_genotypes`, `blend_vcfs`, and
+`sample_allele_counts`. Nothing in the simulator blocks `f < 0.001`: at `f = 1e-4`,
+2000x, a full-contrast marker has an expected 0.2 host reads, so detection relies on
+pooling across many markers and replicates, which is exactly why the protocol runs many
+replicates. No new simulator capability is needed for the first (global-rate) pass.
+
+**Calibration pass (cheap, gate before CLI/report work).** A standalone script
+(`paper/scripts/run_presence_lod.py`, or a prototype next to the issue #8 sweep) that
+generates the controls, runs `host_presence_test`, and reports: (a) negative-control
+false-positive rate vs nominal alpha, (b) the positive-control detection-rate curve and the
+fitted 95% LoD, reusing the `fit_lod` / `compute_lob` helpers from
+`paper/scripts/run_lod_validation.py`. Acceptance gate before building the reporting and CLI
+integration: false-positive rate ~= alpha on negatives (calibrated), detection rate monotone
+in `f` and depth, and presence-test LoD below the global-error MLE LoB at matched cells.
+
+**Error-model consistency (the one real gap).** `sample_allele_counts` injects a single
+global, symmetric error rate (`src/allomix/simulate.py:244`, scalar `error_rate`). For the
+first calibration pass this is fine and self-consistent: simulate with rate `e`, give the
+detector rate `e`, and check calibration and power against a known truth. No simulator change
+needed. To validate the *per-site* advantage (the headline of this plan), the simulator must
+inject per-site, per-direction error matching an error table, which is a small extension to
+let `blend_vcfs` / `sample_allele_counts` take a per-marker (per-direction) rate instead of a
+scalar. This is the same simulator update that Step 14 lists as an out-of-scope follow-up
+(`claude/14_empirical_error_rates_plan.md`, "Out of scope"). Sequence: global-rate
+calibration first (no sim change), per-site validation after that extension lands.
+
+**Quality scores are not needed for any of this.** The detector uses AD counts plus per-site
+error rates (Step 14), not per-read base qualities (Step 17). For synthetic controls the
+error rate is declared, not derived from a quality score; for real-data negative controls the
+empirical per-site error table captures the background directly. Step 17 (FORMAT/QS) remains
+an optional sharpener only and is itself flagged "skeptical, may not ship" in the master plan,
+so this validation and the detector can both proceed without the QS pipeline work.
+
+### Prototype spec (the actual first task, self-contained)
+
+A throwaway experiment script, no `src/allomix/` changes. The statistic is small enough to
+inline here; promote it to `src/allomix/detect.py` only after the gate passes.
+
+**File:** `paper/scripts/run_presence_lod.py` (paper-tree, sits next to the issue #8 sweep).
+Outputs `output/facts/presence_lod_raw.csv` and `output/facts/presence_lod_summary.csv`,
+plus a console summary. Gitignore-friendly (`output/` is already gitignored).
+
+**Key trick that removes the Step 14 dependency for this pass:** the simulator injects a
+single global symmetric error rate `e` via `sample_allele_counts`
+(`src/allomix/simulate.py:244`), giving an effective per-direction floor of `e/3` at a
+donor-homozygous marker (pure donor, `f_h=0`, ALT appears at `~e/3`). So if we simulate with
+rate `e` and tell the detector `e_i = e/3` for every marker, the test is exactly calibrated
+by construction. Sweeping `e` (e.g. 1e-2, 3e-3, 1e-3, 3e-4) is then a clean proxy for "what a
+clean per-site error background would buy", and directly demonstrates the headline claim
+(LoD is set by the error floor) without any per-site machinery.
+
+**Grid:**
+- relatedness: `unrelated`, `sibling` (the two clinically bracketing cases)
+- n_markers: 76 (our panel), optionally 200
+- depth: 1000, 2000, 5000
+- error rate `e`: 1e-2, 3e-3, 1e-3, 3e-4
+- host fraction `f_h`: `0.0` (negative controls) plus `{1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3}`
+- replicates: >=200 at `f_h=0` (need the FP tail), >=60 at each positive (more at the bottom)
+
+**Per replicate:**
+1. `gts = simulate.generate_related_genotypes(n_markers, relatedness, rng, maf_range=(0.2,0.5))`
+   (`src/allomix/simulate.py:508`) — gives host and donor genotypes.
+2. Build the admixture sample by blending at **donor fraction = `1 - f_h`** (host re-occurrence
+   means host is the minor contributor). Use `simulate.blend_from_genotype_dicts(...)`
+   (`src/allomix/simulate.py:914`, avoids temp files) or `blend_vcfs` (`:689`) with
+   `error_rate=e`, and the existing realistic-noise knobs (`realistic_biases`,
+   `locus_dropout_rate=0.016`, `depth_cv=0.43`) to match the issue #8 sweep. Confirm the exact
+   signature when implementing.
+3. Select donor-homozygous markers where host carries the donor-absent allele (Vynck types 0,
+   1, 10, 11; see "Marker set"). For each, take `y_i` = donor-absent-allele read count
+   (`admix_ad_alt` when donor is hom-ref, `admix_ad_ref` when donor is hom-alt), `n_i` = depth,
+   `h_i` = host dose of that allele (1 if host het, 2 if host homozygous-opposite).
+4. Background `e_i = e/3` for every marker (self-consistent with the simulator).
+5. Statistic (inline): pooled Poisson `Y=sum y_i`, `Lam=sum n_i*e_i`,
+   `p_pois = scipy.stats.poisson.sf(Y-1, Lam)`; plus the LRT in "The statistic" giving
+   `f_h_hat`, `D`, `p_lrt = 0.5*chi2.sf(D,1)`. Record both.
+6. For the MLE comparison, also run `chimerism.estimate_single_donor_bb` on the same markers
+   and store `1 - donor_fraction` and the donor_fraction itself.
+
+**Analysis:**
+- Negative controls: report the empirical false-positive rate at alpha=0.05 (fraction of
+  `f_h=0` replicates with `p_lrt < 0.05`); it should be ~0.05. Also report the realised
+  decision threshold (95th percentile of `Y/Lam` or of the statistic) as the LoB analogue.
+- Positive controls: detection rate per `f_h` = fraction with `p_lrt < 0.05` (and a variant
+  using the LoB threshold from negatives). Fit the 95% LoD with `fit_lod`/`compute_lob` from
+  `paper/scripts/run_lod_validation.py` (import or copy). Report presence-LoD per
+  (relatedness, depth, e).
+- MLE comparison: at matched cells, compute the MLE-LoB-based LoD (estimate-exceeds-LoB rule,
+  as issue #8 does) and tabulate presence-LoD vs MLE-LoD.
+
+**Acceptance gate (decides whether to build Step 14 + `detect.py` + CLI):**
+1. Calibrated: FP rate ~= 0.05 on negatives across cells.
+2. Detection rate monotone in `f_h`, depth, and decreasing `e`.
+3. Presence-LoD below the MLE-LoB LoD at low `e` / high depth; the gap shrinks as `e` rises
+   toward 1e-2 (showing the error floor is the lever, i.e. Step 14 is worth doing).
+If 1-2 hold and 3 shows a real gap at clean error rates, proceed with the full plan. If not,
+write up why in this file and stop.
+
+**Sanity checks before the full grid:** run a 10-replicate pilot first;
+`f_h=0` should give few/no detections, `f_h=1e-3` at 2000x with `e=3e-4` should detect almost
+always, and `f_h_hat` should track `1 - donor_fraction` from the MLE on the same sample.
+
 ## Fix scope
 
 New module plus reporting and CLI plumbing. The detector is a separate path from the
-estimator, so it does not touch the MLE likelihood functions.
+estimator, so it does not touch the MLE likelihood functions. Build the control data and
+clear the calibration gate above before the CLI/report integration below.
 
 ### 1. `src/allomix/detect.py` (NEW)
 
@@ -226,17 +355,19 @@ re-reading the TSV.
 
 ## Validation plan
 
-1. **Unit sanity** (cheapest): `pytest tests/test_detect.py -x -q`.
-2. **Synthetic LoD comparison**: extend the Step 8 / issue #8 LoD sweep
-   (`paper/scripts/run_lod_validation.py`, `claude/issue_8_lod_markers_plan.md`) to also
-   record, per replicate, the presence-test p-value and whether it called detection at
-   alpha=0.05. Compute a presence-test LoD (lowest true fraction with >=95% detection)
-   alongside the existing MLE-LoB LoD. Run with a per-site error table provided (perfect
-   rates, matching how the issue #8 sweep provides perfect biases) to show the achievable
-   gain, and again with the global rate to show the floor effect. Expectation: at low
-   fractions and high depth the presence test detects below the MLE-LoB LoD when per-site
-   errors are available; the two converge when only the global rate is used.
-3. **Real-data smoke test**: run on the post-HSCT samples in
+1. **Control data + calibration gate** (do first): build the positive and negative controls
+   and clear the calibration gate described in "Control data and calibration (build this
+   first)" above. This is the primary evidence for the LoD claim and must pass before the
+   detector is wired into the CLI.
+2. **Unit sanity** (cheapest): `pytest tests/test_detect.py -x -q`.
+3. **Synthetic LoD comparison**: fold the presence-test detection into the issue #8 LoD sweep
+   (`paper/scripts/run_lod_validation.py`, `claude/issue_8_lod_markers_plan.md`) so the
+   presence-test LoD sits on the same axes as the existing MLE-LoB LoD. Run with a per-site
+   error table provided (perfect rates, matching how the issue #8 sweep provides perfect
+   biases) to show the achievable gain, and again with the global rate to show the floor
+   effect. Expectation: at low fractions and high depth the presence test detects below the
+   MLE-LoB LoD when per-site errors are available; the two converge under the global rate.
+4. **Real-data smoke test**: run on the post-HSCT samples in
    `output/validation_run_new_bias2/` with the per-site error table from the
    bias-training cohort. Check that full-donor samples give non-significant presence
    p-values (no false relapse calls) and that any sample with known low-level host shows
@@ -291,6 +422,11 @@ re-reading the TSV.
 
 ## File-by-file checklist
 
+- [ ] **Control data + calibration first** — `paper/scripts/run_presence_lod.py` (NEW, or a
+      prototype): generate extremely-low positive controls and error-only negative controls,
+      run `host_presence_test`, report false-positive rate vs alpha and the fitted 95% LoD
+      (reuse `compute_lob` / `fit_lod` from `run_lod_validation.py`). Clear the calibration
+      gate before the integration items below.
 - [ ] `src/allomix/detect.py` (NEW): `HostPresenceResult`, `select_donor_hom_markers`,
       `host_presence_test` (pooled Poisson + LRT + profile CI), error-table assembly with
       per-direction fallback and floor.
@@ -315,6 +451,11 @@ re-reading the TSV.
 - **Step 12 (per-marker context refactor)** — `claude/12_marker_context_refactor_plan.md`.
   Soft; only matters for route B.
 - **Step 17 (per-base quality)** — `claude/17_bq_aware_plan.md`. Optional sharpener of the
-  background, not required.
-- **issue #8 LoD sweep** — `claude/issue_8_lod_markers_plan.md`. Reused to validate the
-  detection-LoD gain.
+  background, **not required**: the detector uses AD counts plus per-site error rates, and
+  the controls declare their error rate rather than deriving it from quality scores.
+- **issue #8 LoD sweep** — `claude/issue_8_lod_markers_plan.md`. Reused to build the
+  positive/negative controls and validate the detection-LoD gain. The control-data and
+  calibration step is sequenced first, before the detector is wired into the CLI.
+- **Simulator per-site error extension** — co-requisite with the Step 14 simulator
+  follow-up. Only needed to validate the per-site advantage; the first calibration pass runs
+  on the existing scalar global error model.

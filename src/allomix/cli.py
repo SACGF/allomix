@@ -11,6 +11,7 @@ from cyvcf2 import VCF
 from allomix import __version__
 from allomix.bias import estimate_biases, load_bias_table, save_bias_table
 from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
+from allomix.detect import host_presence_test
 from allomix.error_rates import (
     estimate_error_rates,
     load_error_table,
@@ -73,6 +74,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Disable empirical error-rate correction even when an error "
              "table is provided",
     )
+    parser.add_argument(
+        "--no-host-presence",
+        action="store_true",
+        help="Disable the host-presence detection test (see "
+             "`allomix.detect`). On by default; cheap to run.",
+    )
 
 
 def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
@@ -101,6 +108,7 @@ def _run_single_sample(
     marker_errors: (
         dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
     ) = None,
+    run_host_presence: bool = True,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -130,6 +138,17 @@ def _run_single_sample(
             marker_biases=marker_biases,
             marker_errors=marker_errors,
         )
+
+    # Host-presence detector is on by default; cheap and complementary to the
+    # MLE (see ``allomix.detect`` / ``claude/20_host_presence_detection_plan.md``).
+    # Attached to the result before QC so the QC step can read it.
+    if run_host_presence:
+        result.host_presence = host_presence_test(
+            genotypes.informative,
+            marker_errors=marker_errors,
+            error_rate=error_rate,
+        )
+
     qc = assess_quality(result, genotypes)
 
     return result, qc, genotypes
@@ -181,6 +200,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 args.error_rate,
                 marker_biases=marker_biases,
                 marker_errors=marker_errors,
+                run_host_presence=not args.no_host_presence,
             )
 
             if args.format == "json":
@@ -219,6 +239,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             args.error_rate,
             marker_biases=marker_biases,
             marker_errors=marker_errors,
+            run_host_presence=not args.no_host_presence,
         )
         results.append((genotypes.sample_name, result, qc))
 

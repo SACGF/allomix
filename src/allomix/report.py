@@ -11,7 +11,69 @@ from pathlib import Path
 from typing import TextIO
 
 from allomix.chimerism import ChimerismResult, MultiDonorResult
+from allomix.detect import HostPresenceResult
 from allomix.qc import QCReport
+
+# Sentinel for the host-presence cells when the detector did not run (e.g.
+# --no-host-presence) or produced no usable markers. Keeps the TSV
+# rectangular and parseable by downstream scripts.
+_NA = "NA"
+
+
+def _host_presence_tsv_cells(hp: HostPresenceResult | None) -> list[str]:
+    """Format the six host-presence columns for a single result.
+
+    Order matches ``_HOST_PRESENCE_TSV_COLS`` below. Returns ``NA`` for every
+    column when the detector did not run, and per-column ``NA`` when there
+    are no usable markers (the source flag still carries information).
+    """
+    if hp is None:
+        return [_NA] * 6
+    if hp.n_markers == 0:
+        # Carry the source flag (typically "none") but leave numeric cells
+        # empty since the test was not actually exercised.
+        return [_NA, _NA, _NA, _NA, str(hp.n_markers), hp.error_rate_source]
+    f_lo, f_hi = hp.f_host_ci
+    return [
+        f"{hp.lrt_pval:.4g}",
+        f"{hp.f_host_mle:.6f}",
+        f"{f_lo:.6f}",
+        f"{f_hi:.6f}",
+        str(hp.n_markers),
+        hp.error_rate_source,
+    ]
+
+
+def _host_presence_json(hp: HostPresenceResult | None) -> dict | None:
+    """JSON view of a HostPresenceResult; mirrors the TSV columns."""
+    if hp is None:
+        return None
+    f_lo, f_hi = hp.f_host_ci
+    return {
+        "lrt_pval": hp.lrt_pval,
+        "poisson_pval": hp.poisson_pval,
+        "f_host_mle": hp.f_host_mle,
+        "f_host_ci_lo": f_lo,
+        "f_host_ci_hi": f_hi,
+        "n_markers": hp.n_markers,
+        "n_donor_absent_reads": hp.n_donor_absent_reads,
+        "expected_background": hp.expected_background,
+        "used_per_site_error": hp.used_per_site_error,
+        "error_rate_source": hp.error_rate_source,
+    }
+
+
+# Names APPENDED to the existing TSV summary. Order matters: downstream
+# scripts parse by header so renaming or reordering existing columns would
+# break them. New columns sit at the end.
+_HOST_PRESENCE_TSV_COLS = [
+    "host_present_p",
+    "host_f_est",
+    "host_f_ci_lo",
+    "host_f_ci_hi",
+    "host_detect_markers",
+    "host_err_source",
+]
 
 
 def _is_multi_donor(result: object) -> bool:
@@ -71,7 +133,8 @@ def _write_tsv(
         fh: Open text file handle.
         verbose: If True, include per-marker detail section.
     """
-    # Summary header and line
+    # Summary header and line. Host-presence columns are appended at the end
+    # so existing parsers continue to find ``donor_pct`` etc. by header.
     summary_cols = [
         "sample",
         "donor_pct",
@@ -85,6 +148,7 @@ def _write_tsv(
         "gof_pval",
         "qc_status",
         "qc_warnings",
+        *_HOST_PRESENCE_TSV_COLS,
     ]
     fh.write("\t".join(summary_cols) + "\n")
 
@@ -107,6 +171,7 @@ def _write_tsv(
         gof_str,
         qc_status_str,
         _warnings_cell(qc),
+        *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
     ]
     fh.write("\t".join(summary_vals) + "\n")
 
@@ -172,6 +237,7 @@ def _write_tsv_multi(
             "gof_pval",
             "qc_status",
             "qc_warnings",
+            *_HOST_PRESENCE_TSV_COLS,
         ]
     )
     fh.write("\t".join(cols) + "\n")
@@ -199,6 +265,7 @@ def _write_tsv_multi(
             gof_str,
             qc_status_str,
             _warnings_cell(qc),
+            *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
         ]
     )
     fh.write("\t".join(vals) + "\n")
@@ -299,6 +366,7 @@ def to_json(
             "qc_pass": qc.pass_,
             "qc_status": qc.status,
             "warnings": list(qc.warnings),
+            "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
             "markers": markers_list,
         }
     else:
@@ -323,6 +391,7 @@ def to_json(
             "qc_pass": qc.pass_,
             "qc_status": qc.status,
             "warnings": list(qc.warnings),
+            "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
             "markers": markers_list,
         }
     return out
@@ -360,6 +429,7 @@ def timeline_json(
                 ),
                 "qc_pass": qc.pass_,
                 "qc_status": qc.status,
+                "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
             }
             for i, frac in enumerate(result.donor_fractions):
                 ci_lo, ci_hi = result.donor_fraction_cis[i]
@@ -390,6 +460,9 @@ def timeline_json(
                     ),
                     "qc_pass": qc.pass_,
                     "qc_status": qc.status,
+                    "host_presence": _host_presence_json(
+                        getattr(result, "host_presence", None)
+                    ),
                 }
             )
     return {"timepoints": timepoints}

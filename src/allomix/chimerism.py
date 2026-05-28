@@ -36,6 +36,7 @@ from scipy.optimize import brentq, minimize, minimize_scalar
 from scipy.special import gammaln
 from scipy.stats import chi2, norm
 
+from allomix.detect import HostPresenceResult
 from allomix.genotype import InformativeMarker
 
 # ---------------------------------------------------------------------------
@@ -76,6 +77,10 @@ class ChimerismResult:
     # from the Fisher information of this sample's own markers. inf = nothing detectable.
     lob_fraction: float = float("inf")  # limit of blank
     lod_fraction: float = float("inf")  # limit of detection
+    # Host-presence detector output (see ``allomix.detect``). None when the
+    # caller disabled the detector or when there were no donor-homozygous
+    # markers to run it on.
+    host_presence: HostPresenceResult | None = None
 
 
 @dataclass
@@ -92,6 +97,7 @@ class MultiDonorResult:
     error_rate: float
     per_donor_n_informative: list[int] | None = None  # informative markers per donor
     rho: float = float("inf")  # beta-binomial concentration; inf = no overdispersion
+    host_presence: HostPresenceResult | None = None
 
 
 # ---------------------------------------------------------------------------

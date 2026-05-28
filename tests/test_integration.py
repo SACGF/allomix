@@ -286,6 +286,101 @@ class TestCLIIntegration:
             )
 
 
+class TestHostPresenceCli:
+    """Smoke tests for the host-presence detector wiring in the CLI.
+
+    Sits next to TestCLIIntegration rather than in a dedicated tests/test_cli.py
+    because the existing integration suite already owns the CLI smoke surface
+    (JOINT_VCF fixture, sample naming conventions).
+    """
+
+    _HP_COLS = (
+        "host_present_p",
+        "host_f_est",
+        "host_f_ci_lo",
+        "host_f_ci_hi",
+        "host_detect_markers",
+        "host_err_source",
+    )
+
+    def _run_monitor(self, tmp_path, extra_args=()):
+        out = tmp_path / "cli_hp.tsv"
+        rc = main(
+            [
+                "monitor",
+                "--vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.10",
+                "--output",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+                *extra_args,
+            ]
+        )
+        assert rc == 0
+        return out.read_text()
+
+    def test_monitor_emits_host_presence_columns(self, tmp_path):
+        content = self._run_monitor(tmp_path)
+        header = content.splitlines()[0].split("\t")
+        for col in self._HP_COLS:
+            assert col in header, f"{col} missing from TSV header"
+        data = content.splitlines()[1].split("\t")
+        # host_err_source cell is one of the documented sentinels.
+        idx = header.index("host_err_source")
+        assert data[idx] in {"per-site", "global-fallback", "mixed", "none", "NA"}
+
+    def test_no_host_presence_suppresses_values(self, tmp_path):
+        """--no-host-presence keeps headers (TSV stays rectangular) but the
+        cells should all be the NA sentinel."""
+        content = self._run_monitor(tmp_path, ["--no-host-presence"])
+        header = content.splitlines()[0].split("\t")
+        data = content.splitlines()[1].split("\t")
+        for col in self._HP_COLS:
+            assert col in header
+            assert data[header.index(col)] == "NA", f"expected NA for {col}"
+
+    def test_monitor_json_includes_host_presence_object(self, tmp_path):
+        out = tmp_path / "cli_hp.json"
+        rc = main(
+            [
+                "monitor",
+                "--vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.10",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(out.read_text())
+        assert "host_presence" in data
+        hp = data["host_presence"]
+        assert hp is not None
+        assert "lrt_pval" in hp
+        assert "f_host_mle" in hp
+        assert "error_rate_source" in hp
+
+
 class TestDynamicJointVcf:
     """Test building a joint VCF on the fly and running pipeline through it."""
 

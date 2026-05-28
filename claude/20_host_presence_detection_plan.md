@@ -621,27 +621,39 @@ re-reading the TSV.
 
 ## File-by-file checklist
 
-- [ ] **Control data + calibration first** — `paper/scripts/run_presence_lod.py` (NEW, or a
-      prototype): generate extremely-low positive controls and error-only negative controls,
-      run `host_presence_test`, report false-positive rate vs alpha and the fitted 95% LoD
-      (reuse `compute_lob` / `fit_lod` from `run_lod_validation.py`). Clear the calibration
-      gate before the integration items below.
-- [ ] `src/allomix/detect.py` (NEW): `HostPresenceResult`, `select_donor_hom_markers`,
+- [x] **Control data + calibration first** — `paper/scripts/run_presence_lod.py`: generated
+      extremely-low positive controls and error-only negative controls, ran
+      `host_presence_test`, reported false-positive rate vs alpha and the fitted 95% LoD
+      (reuses `compute_lob` / `fit_lod` from `run_lod_validation.py`). All three gates pass
+      under realistic `rho=100` with `--rho-marker-type het_only`; see the "Prototype
+      results, rho-on (2026-05-28)" section. The script is retained as the calibration /
+      gate-evidence harness and its docstring now points at the production module.
+- [x] `src/allomix/detect.py` (NEW): `HostPresenceResult`, `select_donor_hom_markers`,
       `host_presence_test` (pooled Poisson + LRT + profile CI), error-table assembly with
       per-direction fallback and floor.
-- [ ] `src/allomix/cli.py`: run the presence test by default in `_run_single_sample`,
+- [x] `src/allomix/cli.py`: run the presence test by default in `_run_single_sample`,
       attach result; add `--no-host-presence`. Reuse `--error-table` from Step 14.
-- [ ] `src/allomix/report.py`: add `host_present_p`, `host_f_est`, `host_f_ci_lo`,
+- [x] `src/allomix/report.py`: add `host_present_p`, `host_f_est`, `host_f_ci_lo`,
       `host_f_ci_hi`, `host_detect_markers`, `host_err_source` to TSV summary; mirror in
-      JSON under `host_presence`.
-- [ ] `src/allomix/qc.py`: optional REVIEW warning when presence is significant but the
-      MLE fraction does not reflect it, or the two disagree.
-- [ ] `tests/test_detect.py` (NEW): marker selection, false-positive rate on pure donor,
-      power on spiked input, error-table effect and fallback, agreement with MLE.
-- [ ] `tests/test_cli.py`: new columns present; `--no-host-presence` suppresses them.
+      JSON under `host_presence` (single, multi-donor, and timeline).
+- [x] `src/allomix/qc.py`: REVIEW-level soft warning when the presence p-value is
+      significant but the MLE host estimate sits below either the per-sample LoB or
+      `f_h_est / HOST_PRESENCE_RATIO_GAP`. Tunable via module-level constants.
+- [x] `tests/test_detect.py` (NEW): marker selection (0/1/10/11 in, 20/21 out, multi-donor
+      requires absence-from-all, requires same hom allele), false-positive rate on pure
+      donor, power on spiked input, asymmetric per-site rates, missing-site fallback,
+      agreement with the MLE host estimate.
+- [x] `tests/test_integration.py` (`TestHostPresenceCli`): new TSV columns present;
+      `--no-host-presence` keeps the header and writes `NA` cells; JSON has the
+      `host_presence` object.
 - [ ] `paper/scripts/run_lod_validation.py`: record presence-test detection alongside the
       MLE-LoB rule; compute presence-test LoD with and without per-site errors.
-- [ ] `claude/allomix_overall_plan.md`: add Step 20 entry linking here (done).
+- [x] `claude/allomix_overall_plan.md`: Step 20 entry linking here (done).
+
+The remaining open item (`run_lod_validation.py`) is a follow-up: it needs the per-site
+extension to the simulator to inject the per-site error background that the production
+detector now consumes. The detector itself, the CLI/report/QC wiring, and the test
+matrix above all land here.
 
 ## Dependencies summary
 

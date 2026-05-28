@@ -13,7 +13,18 @@ from dataclasses import dataclass, field
 from scipy.stats import chi2
 
 from allomix.chimerism import ChimerismResult, MarkerResult
+from allomix.detect import HostPresenceResult
 from allomix.genotype import MarkerGenotypes
+
+# Thresholds for the optional REVIEW warning when the host-presence detector
+# fires significantly but the global MLE does not echo the signal. Tunable
+# here rather than buried in ``assess_quality`` so an operator can audit them
+# without reading the call site.
+HOST_PRESENCE_REVIEW_P = 0.01
+# Treat the MLE as "below the detector estimate" when it's < 1/3 of f_h_hat.
+# A factor of 3 absorbs sampling noise; tighter ratios produce a lot of
+# noise warnings at borderline cells.
+HOST_PRESENCE_RATIO_GAP = 3.0
 
 
 @dataclass
@@ -145,6 +156,18 @@ def _compute_gof_pval(
         return None
     pval: float = chi2.sf(chi_sq, df)
     return pval
+
+
+def _mle_host_estimate(result: ChimerismResult) -> float:
+    """Extract the MLE's host-fraction estimate.
+
+    Single-donor results report ``donor_fraction`` directly; multi-donor
+    results carry an explicit ``host_fraction`` field. Either way the host
+    fraction is what we need to compare against the dedicated detector.
+    """
+    if hasattr(result, "host_fraction"):
+        return float(result.host_fraction)
+    return 1.0 - float(result.donor_fraction)
 
 
 def _marker_loss_diagnosis(g: MarkerGenotypes, n_informative: int) -> str:
@@ -310,6 +333,25 @@ def assess_quality(
             "Poor model fit (goodness-of-fit p < 0.01) — "
             "possible genotyping error, CNV, or sample issue"
         )
+
+    # Host-presence vs MLE disagreement: a significant presence test that the
+    # global MLE host-fraction estimate does not echo is the clinically
+    # interesting "low-level host signal below the MLE's resolution" case.
+    # Soft warning only — v1 does not promote qc.status because the operating
+    # characteristics on real samples are still being mapped.
+    hp: HostPresenceResult | None = getattr(result, "host_presence", None)
+    if hp is not None and hp.n_markers > 0 and hp.lrt_pval < HOST_PRESENCE_REVIEW_P:
+        mle_host = _mle_host_estimate(result)
+        lob = getattr(result, "lob_fraction", float("inf"))
+        gap_ratio = hp.f_host_mle / HOST_PRESENCE_RATIO_GAP
+        below_lob = math.isfinite(lob) and mle_host < lob
+        below_ratio = mle_host < gap_ratio
+        if below_lob or below_ratio:
+            warnings.append(
+                "Low-level host signal detected below the fraction estimate's "
+                f"resolution (host_present_p={hp.lrt_pval:.2e}, "
+                f"f_host_est={hp.f_host_mle:.4%}, mle_host={mle_host:.4%})"
+            )
 
     # A computed-but-questionable result (poor fit or imprecise) is flagged for
     # review rather than passed silently or failed outright.

@@ -385,7 +385,9 @@ Came out of a design discussion on 2026-05-27.
 
 A dedicated detection test for "is the host present at all?", separate from the fraction MLE, aimed at low-level host re-occurrence (relapse) post-HSCT. It uses only the markers where the donor is homozygous and the host carries the donor-absent allele: there the donor-absent allele sits at the sequencing-error background in a pure-donor sample, so its read counts give a one-sided count test (and an LRT yielding a host-fraction estimate) against that background, combined across markers. Same reads the MLE already sees, but reframed as detection and freed from the single shared overdispersion `ρ` and the global error rate, both of which blunt the MLE at very low fractions. Reported alongside the MLE (route A); a unified two-component likelihood is a follow-up (route B).
 
-Depends on Step 14 (empirical per-site error rates) for the per-site background that sets the achievable detection limit; without it the test falls back to the global `--error-rate` and the limit is error-floor-bound. Soft dependency on Step 12 (per-marker context refactor) for route B only. Reuses the issue #8 LoD sweep to validate the detection-LoD gain.
+Depends on Step 14 (empirical per-site error rates) for the per-site background that sets the achievable detection limit; without it the test falls back to the global `--error-rate` and the limit is error-floor-bound. Soft dependency on Step 12 (per-marker context refactor) for route B only.
+
+Build the validation controls first: we do not yet have extremely-low-fraction synthetic data (the issue #8 LoD sweep stops at 0.1%). The plan adds a control-generation + calibration step before any CLI work, generating low-fraction positive controls and error-only negative controls (EP17 LoB/LoD applied to the detection statistic) and checking the test is calibrated. Quality scores (Step 17) are not needed: the detector uses AD counts plus per-site error rates, and the controls declare their error rate rather than deriving it from per-read qualities.
 
 Came out of a design discussion on 2026-05-28.
 

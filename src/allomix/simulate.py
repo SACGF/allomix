@@ -246,8 +246,9 @@ def sample_allele_counts(
     depth: int,
     rng: random.Random | None = None,
     error_rate: float = 0.0,
+    rho: float = float("inf"),
 ) -> tuple[int, int]:
-    """Sample allele counts from a binomial distribution with sequencing errors.
+    """Sample allele counts from a (beta-)binomial with sequencing errors.
 
     When ``error_rate`` > 0, each simulated read has a chance of being
     mis-called using the 4-state (trinucleotide) model: a correct read
@@ -256,6 +257,14 @@ def sample_allele_counts(
     bases.  Only one of those 3 is the alternative allele at a biallelic
     site, so the effective per-read REF->ALT (or ALT->REF) error rate
     is ``error_rate / 3``.
+
+    When ``rho`` is finite, reads are drawn beta-binomial instead of binomial:
+    a per-marker ALT probability is first drawn from Beta(p*rho, (1-p)*rho), then
+    reads are binomial given that probability. This injects the extra-binomial
+    overdispersion seen in real sequencing (PCR/capture jitter), with ``rho`` the
+    beta-binomial concentration matching ``chimerism`` (var inflated by
+    ``(n+rho)/(rho+1)``; ``rho -> inf`` recovers the pure binomial). It is the
+    dominant control on the achievable limit of detection at high depth.
 
     This matches the error model in ``chimerism.log_likelihood_marker_bb()``,
     ensuring that in-silico validation uses a consistent generative model.
@@ -267,6 +276,8 @@ def sample_allele_counts(
         error_rate: Per-read total sequencing error probability (0.0-1.0).
             The probability of a specific substitution (e.g. REF->ALT)
             is ``error_rate / 3``.  Default 0.0 (no sequencing error).
+        rho: Beta-binomial concentration. ``inf`` (default) is pure binomial;
+            smaller values mean more overdispersion.
 
     Returns:
         Tuple of (ref_count, alt_count).
@@ -298,6 +309,12 @@ def sample_allele_counts(
         e = error_rate
         p_alt = p * (1.0 - e) + (1.0 - p) * e / 3.0
         p = p_alt / (1.0 - 2.0 * e / 3.0)
+
+    # Beta-binomial overdispersion: draw the per-marker ALT probability from a
+    # Beta with mean p and concentration rho, then sample reads binomially. At
+    # the probability boundaries (p in {0, 1}) the Beta is degenerate, so keep p.
+    if math.isfinite(rho) and 0.0 < p < 1.0:
+        p = rng.betavariate(p * rho, (1.0 - p) * rho)
 
     if hasattr(rng, "binomialvariate"):
         alt_count = rng.binomialvariate(depth, p)
@@ -700,6 +717,7 @@ def blend_vcfs(
     locus_dropout_rate: float = 0.0,
     depth_cv: float = 0.0,
     realistic_biases: bool = False,
+    rho: float = float("inf"),
 ) -> BlendResult:
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
 
@@ -734,6 +752,8 @@ def blend_vcfs(
         realistic_biases: If True, use the heavy-tailed mixture bias
             distribution (generate_marker_biases_realistic) instead of
             a simple Gaussian. Ignored when ``fixed_biases`` is provided.
+        rho: Beta-binomial overdispersion passed to sample_allele_counts
+            (inf = pure binomial). Smaller values raise the achievable LoD.
 
     Returns:
         BlendResult containing the header, VCF record lines, and statistics.
@@ -833,7 +853,7 @@ def blend_vcfs(
             if rng.random() < allele_dropout_rate:
                 vaf_biased = 0.0 if rng.random() < 0.5 else 1.0
 
-        ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng, error_rate)
+        ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng, error_rate, rho)
 
         # Build output record
         gt = gt_from_counts(ref_count, alt_count)
@@ -919,6 +939,7 @@ def blend_from_genotype_dicts(
     error_rate: float = 0.01,
     depth_cv: float = 0.0,
     sample_name: str = "simulated",
+    rho: float = float("inf"),
 ) -> BlendResult:
     """Create a synthetic chimeric VCF directly from genotype dicts.
 
@@ -933,6 +954,8 @@ def blend_from_genotype_dicts(
         error_rate: Sequencing error rate.
         depth_cv: Depth CV across markers.
         sample_name: Sample name for VCF header.
+        rho: Beta-binomial overdispersion passed to sample_allele_counts
+            (inf = pure binomial).
 
     Returns:
         BlendResult with synthetic chimeric VCF data.
@@ -973,7 +996,7 @@ def blend_from_genotype_dicts(
         donor_gts = [m[k] for k in donor_keys]
 
         vaf = expected_vaf_multi(host_gt, donor_gts, donor_fractions)
-        ref_count, alt_count = sample_allele_counts(vaf, depths[i], rng, error_rate)
+        ref_count, alt_count = sample_allele_counts(vaf, depths[i], rng, error_rate, rho)
 
         if m.get("informative_any", False):
             n_informative += 1

@@ -170,12 +170,20 @@ def log_likelihood_marker_bb(
     w: float,
     error_rate: float = 0.01,
     rho: float = 100.0,
+    e_refalt: float | None = None,
+    e_altref: float | None = None,
 ) -> float:
     """Per-marker log-likelihood under a beta-binomial model.
 
-    Uses the same 4-state error model to compute
-    expected probabilities, but replaces the binomial with a
-    beta-binomial parameterised by concentration rho.
+    When ``e_refalt`` and ``e_altref`` are both supplied, uses the asymmetric
+    REF/ALT-only error model
+
+        p_alt = w * e_refalt + (1 - w) * (1 - e_altref)
+
+    where the rates are per-direction empirical substitution probabilities
+    (typically from ``error_rates.estimate_error_rates``). Either rate may be
+    ``None`` individually; in that case the legacy 4-state symmetric model
+    with rate ``error_rate`` is used, matching the prior behaviour.
 
     When rho -> inf this converges to the binomial log-likelihood.
 
@@ -183,14 +191,21 @@ def log_likelihood_marker_bb(
         ad_ref: Reference allele read count.
         ad_alt: Alternative allele read count.
         w: Expected reference allele weight.
-        error_rate: Sequencing error rate (default 0.01).
+        error_rate: Symmetric 4-state rate, used only when asymmetric rates
+            are not both provided (default 0.01).
         rho: Beta-binomial concentration parameter. Larger = less
             overdispersion. Typical empirical values: 50-500.
+        e_refalt: ``P(observe ALT | true REF)`` for this marker.
+        e_altref: ``P(observe REF | true ALT)`` for this marker.
 
     Returns:
         Log-likelihood contribution from this marker.
     """
-    p_alt = alt_read_probability(w, error_rate)
+    if e_refalt is not None and e_altref is not None:
+        # Asymmetric REF/ALT-only model. p_alt + p_ref = 1 by construction.
+        p_alt = w * e_refalt + (1.0 - w) * (1.0 - e_altref)
+    else:
+        p_alt = alt_read_probability(w, error_rate)
     p_alt = max(1e-6, min(1.0 - 1e-6, p_alt))
 
     n = ad_ref + ad_alt
@@ -217,22 +232,30 @@ def total_log_likelihood_bb(
     error_rate: float = 0.01,
     rho: float = 100.0,
     marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
 ) -> float:
     """Sum of per-marker beta-binomial log-likelihoods.
 
     Args:
         markers: List of informative markers with admixture allele counts.
         f_donor: Donor fraction to evaluate.
-        error_rate: Sequencing error rate.
+        error_rate: Sequencing error rate (used as the fallback when a marker
+            is missing from ``marker_errors`` or only one direction is known).
         rho: Beta-binomial concentration parameter.
         marker_biases: Optional per-marker amplification bias dict.
+        marker_errors: Optional per-marker, per-direction empirical error
+            rates. Maps ``(chrom, pos, ref, alt)`` to
+            ``(e_refalt, e_altref)``. ``None`` in either slot falls through
+            to the symmetric ``error_rate`` model for that marker.
 
     Returns:
         Total log-likelihood.
     """
     if not markers:
         return 0.0
-    arr = _precompute_marker_arrays(markers, marker_biases)
+    arr = _precompute_marker_arrays(markers, marker_biases, marker_errors)
     return _total_ll_vec(arr, f_donor, error_rate, rho)
 
 
@@ -250,11 +273,20 @@ class _MarkerArrays:
     k: np.ndarray  # ad_alt, float
     bias: np.ndarray  # per-marker bias, float (0.0 where none)
     bias_mask: np.ndarray  # bias != 0.0, bool
+    # Per-marker asymmetric error rates. NaN where the asymmetric model does
+    # not apply (either rate missing); the vectorised LL falls back to the
+    # symmetric 4-state model at those markers via ``error_mask``.
+    e_refalt: np.ndarray
+    e_altref: np.ndarray
+    error_mask: np.ndarray  # True where both per-direction rates are known
 
 
 def _precompute_marker_arrays(
     markers: list[InformativeMarker],
     marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
 ) -> _MarkerArrays:
     """Build the (f, rho)-independent per-marker arrays for the vectorized LL.
 
@@ -264,6 +296,8 @@ def _precompute_marker_arrays(
     Args:
         markers: List of informative markers with admixture allele counts.
         marker_biases: Optional per-marker amplification bias dict.
+        marker_errors: Optional per-marker, per-direction error-rate dict
+            (``(e_refalt, e_altref)`` per key, either entry may be ``None``).
 
     Returns:
         Precomputed per-marker arrays for ``_total_ll_vec``.
@@ -289,6 +323,24 @@ def _precompute_marker_arrays(
         )
     else:
         bias = np.zeros(n_markers, dtype=float)
+
+    e_refalt = np.full(n_markers, np.nan, dtype=float)
+    e_altref = np.full(n_markers, np.nan, dtype=float)
+    if marker_errors is not None:
+        for i, m in enumerate(markers):
+            entry = marker_errors.get((m.chrom, m.pos, m.ref, m.alt))
+            if entry is None:
+                continue
+            e_ra, e_ar = entry
+            # Both directions required for the asymmetric path. Storing one
+            # only would leave the other side of the likelihood underspecified
+            # at hets and at the opposite-homozygous endpoint.
+            if e_ra is None or e_ar is None:
+                continue
+            e_refalt[i] = e_ra
+            e_altref[i] = e_ar
+    error_mask = ~np.isnan(e_refalt)
+
     return _MarkerArrays(
         host_ref_dose=host_ref_dose,
         donor_ref_dose=donor_ref_dose,
@@ -296,6 +348,9 @@ def _precompute_marker_arrays(
         k=ad_alt,
         bias=bias,
         bias_mask=bias != 0.0,
+        e_refalt=e_refalt,
+        e_altref=e_altref,
+        error_mask=error_mask,
     )
 
 
@@ -325,12 +380,18 @@ def _total_ll_vec(
     if arr.bias_mask.any():
         w[arr.bias_mask] = np.clip(w[arr.bias_mask] - arr.bias[arr.bias_mask], 1e-6, 1.0 - 1e-6)
 
-    # P(observe ALT | w) under the 4-state error model, renormalised, then clamped.
+    # P(observe ALT | w). Default is the 4-state symmetric model with the
+    # global ``error_rate``; per-marker asymmetric rates (where supplied) use
+    # the REF/ALT-only form ``p_alt = w * e_refalt + (1 - w) * (1 - e_altref)``.
     e = error_rate
     e_specific = e / _N_OTHER_BASES
     p_alt_raw = (1.0 - w) * (1.0 - e) + w * e_specific
     p_ref_raw = w * (1.0 - e) + (1.0 - w) * e_specific
     p_alt = p_alt_raw / (p_ref_raw + p_alt_raw)
+    if arr.error_mask.any():
+        # Sub in the asymmetric per-marker rates at the masked positions.
+        p_alt_asym = w * arr.e_refalt + (1.0 - w) * (1.0 - arr.e_altref)
+        p_alt = np.where(arr.error_mask, p_alt_asym, p_alt)
     p_alt = np.clip(p_alt, 1e-6, 1.0 - 1e-6)
 
     a = np.maximum(p_alt * rho, 1e-10)
@@ -354,26 +415,43 @@ def total_log_likelihood_multi_bb(
     error_rate: float = 0.01,
     rho: float = 100.0,
     marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
 ) -> float:
     """Sum of per-marker beta-binomial log-likelihoods for multi-donor model.
 
     Args:
         markers: Informative markers (for at least one donor).
         donor_fractions: [f_donor1, f_donor2, ...].
-        error_rate: Sequencing error rate.
+        error_rate: Sequencing error rate (fallback when a marker's
+            per-direction rate is missing).
         rho: Beta-binomial concentration parameter.
         marker_biases: Optional per-marker bias dict.
+        marker_errors: Optional per-marker, per-direction error-rate dict
+            (see ``total_log_likelihood_bb``).
 
     Returns:
         Total log-likelihood.
     """
     ll = 0.0
     for m in markers:
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        key = (m.chrom, m.pos, m.ref, m.alt)
+        bias = marker_biases.get(key, 0.0) if marker_biases is not None else 0.0
+        e_ra: float | None = None
+        e_ar: float | None = None
+        if marker_errors is not None:
+            entry = marker_errors.get(key)
+            if entry is not None:
+                e_ra, e_ar = entry
         w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
-        ll += log_likelihood_marker_bb(m.admix_ad_ref, m.admix_ad_alt, w, error_rate, rho)
+        ll += log_likelihood_marker_bb(
+            m.admix_ad_ref, m.admix_ad_alt, w,
+            error_rate=error_rate,
+            rho=rho,
+            e_refalt=e_ra,
+            e_altref=e_ar,
+        )
     return ll
 
 
@@ -597,6 +675,9 @@ def estimate_single_donor_bb(
     error_rate: float = 0.01,
     grid_steps: int = 1001,
     marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
 ) -> ChimerismResult:
     """Estimate single-donor chimerism with beta-binomial likelihood.
 
@@ -606,9 +687,15 @@ def estimate_single_donor_bb(
 
     Args:
         markers: List of informative markers with admixture allele counts.
-        error_rate: Sequencing error rate.
+        error_rate: Sequencing error rate (fallback when a marker is missing
+            per-direction rates).
         grid_steps: Number of grid points for initial f search.
         marker_biases: Optional per-marker bias dict.
+        marker_errors: Optional per-marker, per-direction empirical error
+            rates (``(e_refalt, e_altref)`` per key, either may be ``None``).
+            When present and both directions are known, the asymmetric
+            REF/ALT-only likelihood is used at that marker; otherwise the
+            symmetric 4-state model with ``error_rate`` is used.
 
     Returns:
         ChimerismResult with MLE estimate and beta-binomial CIs.
@@ -629,7 +716,7 @@ def estimate_single_donor_bb(
 
     # Precompute the (f, rho)-independent per-marker arrays once and reuse them
     # across the grid search, Nelder-Mead refinement, and profile-likelihood CI.
-    arr = _precompute_marker_arrays(markers, marker_biases)
+    arr = _precompute_marker_arrays(markers, marker_biases, marker_errors)
 
     # Step 1: Grid search over f with rho profiled out at each grid point
     grid = np.linspace(0.0, 1.0, grid_steps)
@@ -738,6 +825,9 @@ def estimate_multi_donor(
     error_rate: float = 0.01,
     grid_steps: int = 101,
     marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
 ) -> MultiDonorResult:
     """Estimate multi-donor chimerism fractions via maximum likelihood.
 
@@ -753,9 +843,11 @@ def estimate_multi_donor(
     Args:
         markers: Informative markers (for at least one donor).
         n_donors: Number of donors (currently supports 2).
-        error_rate: Sequencing error rate.
+        error_rate: Sequencing error rate (fallback).
         grid_steps: Grid resolution per dimension.
         marker_biases: Optional per-marker bias dict.
+        marker_errors: Optional per-marker, per-direction empirical error
+            rates (see ``estimate_single_donor_bb``).
 
     Returns:
         MultiDonorResult with per-donor fractions and CIs.
@@ -798,7 +890,8 @@ def estimate_multi_donor(
             if f1 + f2 > 1.0 + 1e-9:
                 break
             ll = total_log_likelihood_multi_bb(
-                markers, [f1, f2], error_rate, rho_init, marker_biases
+                markers, [f1, f2], error_rate, rho_init, marker_biases,
+                marker_errors,
             )
             if ll > best_ll:
                 best_ll = ll
@@ -812,7 +905,9 @@ def estimate_multi_donor(
         rho = math.exp(log_rho)
         if rho < 0.5 or rho > 50000:
             return 1e30
-        return -total_log_likelihood_multi_bb(markers, [f1, f2], error_rate, rho, marker_biases)
+        return -total_log_likelihood_multi_bb(
+            markers, [f1, f2], error_rate, rho, marker_biases, marker_errors,
+        )
 
     opt = minimize(
         neg_ll,
@@ -829,7 +924,9 @@ def estimate_multi_donor(
     ll_max = -float(opt.fun)
 
     # Step 3: Profile likelihood CIs per donor (profiling out other f and rho)
-    cis = _profile_likelihood_cis_multi(markers, f_mle, n_donors, error_rate, marker_biases)
+    cis = _profile_likelihood_cis_multi(
+        markers, f_mle, n_donors, error_rate, marker_biases, marker_errors,
+    )
 
     # Step 4: Per-marker residuals
     per_marker = _per_marker_results_multi(markers, f_mle, marker_biases)
@@ -867,6 +964,9 @@ def _profile_likelihood_cis_multi(
     n_donors: int,
     error_rate: float,
     marker_biases: dict[tuple[str, int, str, str], float] | None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
 ) -> list[tuple[float, float]]:
     """Profile likelihood CIs for each donor fraction.
 
@@ -892,7 +992,8 @@ def _profile_likelihood_cis_multi(
                 opt_rho = minimize_scalar(
                     lambda log_r: (
                         -total_log_likelihood_multi_bb(
-                            markers, fracs, error_rate, math.exp(log_r), marker_biases
+                            markers, fracs, error_rate, math.exp(log_r),
+                            marker_biases, marker_errors,
                         )
                     ),
                     bounds=(math.log(1.0), math.log(50000.0)),
@@ -910,7 +1011,8 @@ def _profile_likelihood_cis_multi(
                     return 1e30
                 fracs = [fi, fj] if _di == 0 else [fj, fi]
                 return -total_log_likelihood_multi_bb(
-                    markers, fracs, error_rate, rho, marker_biases
+                    markers, fracs, error_rate, rho, marker_biases,
+                    marker_errors,
                 )
 
             opt = minimize(

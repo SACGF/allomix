@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import random
+import statistics
 import tempfile
 import textwrap
 from pathlib import Path
@@ -203,6 +204,26 @@ class TestSampleAlleleCounts:
         mean_alt = sum(alt_counts) / len(alt_counts)
         # Should be within ~2% of 5000
         assert 4800 < mean_alt < 5200
+
+    def test_overdispersion_inflates_variance(self) -> None:
+        """Finite rho should widen the VAF spread well beyond binomial."""
+        depth, n = 2000, 400
+        rng_bin = random.Random(7)
+        rng_bb = random.Random(7)
+        binom = [sample_allele_counts(0.5, depth, rng_bin)[1] / depth for _ in range(n)]
+        betab = [sample_allele_counts(0.5, depth, rng_bb, rho=50.0)[1] / depth for _ in range(n)]
+        var_binom = statistics.pvariance(binom)
+        var_betab = statistics.pvariance(betab)
+        # Beta-binomial var(VAF) = p(1-p)/n * (n+rho)/(rho+1); at p=0.5, n=2000,
+        # rho=50 that is ~40x the binomial variance. Mean stays at 0.5.
+        assert var_betab > 10 * var_binom
+        assert abs(statistics.mean(betab) - 0.5) < 0.02
+
+    def test_infinite_rho_matches_binomial(self) -> None:
+        """rho=inf (default) must reproduce the binomial draw exactly."""
+        a = sample_allele_counts(0.3, 1500, random.Random(99))
+        b = sample_allele_counts(0.3, 1500, random.Random(99), rho=float("inf"))
+        assert a == b
 
 
 class TestSampleAlleleCountsErrorModel:

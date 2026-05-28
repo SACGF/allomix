@@ -153,6 +153,9 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=20260528)
     parser.add_argument("--out", type=Path, default=FACTS_DIR / "fig_overdispersion_lod.png")
     parser.add_argument("--facts", type=Path, default=FACTS_DIR / "overdispersion_lod.csv")
+    parser.add_argument(
+        "--headline", type=Path, default=FACTS_DIR / "overdispersion_lod_headline.csv"
+    )
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -190,6 +193,7 @@ def main() -> None:
 
     _plot(rows, args)
     _write_facts(rows, args)
+    _write_headline(rows, args)
 
 
 def _plot(rows: list[dict], args: argparse.Namespace) -> None:
@@ -267,6 +271,41 @@ def _write_facts(rows: list[dict], args: argparse.Namespace) -> None:
                 ]
             )
     print(f"Wrote {args.facts}")
+
+
+def _write_headline(rows: list[dict], args: argparse.Namespace) -> None:
+    """Single-row headline facts for the paper (tool LoD at a few reference rhos)."""
+
+    def lod_at(rho_target: float) -> float:
+        return min(rows, key=lambda r: abs(r["rho"] - rho_target))["tool_lod_pct"]
+
+    binom = next(r for r in rows if math.isinf(r["rho"]))["tool_lod_pct"]
+    lod100 = lod_at(100)
+    with args.headline.open("w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(
+            [
+                "depth",
+                "n_markers",
+                "lod_binomial_pct",
+                "lod_rho1000_pct",
+                "lod_rho100_pct",
+                "lod_rho30_pct",
+                "fold_rho100_vs_binomial",
+            ]
+        )
+        w.writerow(
+            [
+                args.depth,
+                args.markers,
+                f"{binom:.3f}",
+                f"{lod_at(1000):.3f}",
+                f"{lod100:.3f}",
+                f"{lod_at(30):.3f}",
+                f"{lod100 / binom:.1f}",
+            ]
+        )
+    print(f"Wrote {args.headline}")
 
 
 if __name__ == "__main__":

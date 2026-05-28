@@ -392,3 +392,17 @@ Build the validation controls first: we do not yet have extremely-low-fraction s
 Came out of a design discussion on 2026-05-28.
 
 Detailed plan: [`claude/20_host_presence_detection_plan.md`](20_host_presence_detection_plan.md).
+
+## Step 21: Calibrate Simulator Overdispersion for Realistic LoD 🟡 IN PROGRESS
+
+Discovered 2026-05-28 while reconciling the in-silico LoD against real run3 patient LoDs (~0.5–1%) vs the paper's headline in-silico LoD (~0.13–0.32%). The simulator drew reads from a pure binomial, so the in-silico LoD reflects near-binomial sampling and is optimistic by ~3–5x. The per-marker beta-binomial variance approaches `p(1-p)/(ρ+1)` as depth grows, so the effective depth caps near `ρ+1` reads and the LoD saturates; overdispersion, not depth, is the dominant LoD control at clinical coverage.
+
+Done:
+- `simulate.sample_allele_counts` / `blend_vcfs` / `blend_from_genotype_dicts` now take a `rho` arg (default `inf` = binomial, unchanged). Tests in `tests/test_simulate.py`.
+- New paper artefacts: `paper/scripts/plot_lod_saturation.py` (LoD vs depth, reconciles sim vs real) and `paper/scripts/run_overdispersion_lod.py` (LoD vs ρ). Wired into `paper/Snakefile` (rules `lod_saturation`, `overdispersion_lod`); figures added as Supplementary S7/S8 with `overdispersion_lod_headline.csv` facts; discussion + methods updated.
+- `scripts/diagnose_sample.py` prints each real sample's fitted `rho` (per-sample, authoritative).
+
+TODO:
+- [ ] Calibrate `rho` from real per-sample fits (`diagnose_sample.py` on run3 VCFs), then re-run `lod_validation` with that `rho` so the **headline** LoD reflects real overdispersion rather than the binomial best case. This re-runs the expensive `lod_validation` job (warn before triggering).
+- [ ] The simulator applies a single global `rho` to every marker/allele uniformly, including the near-zero donor-absent allele where overdispersion is not physical (it is a het/intermediate-marker amplification phenomenon). A marker-type-aware (or allele-aware) overdispersion model is needed before `rho` can be used to validate host-presence detection (Step 20) — otherwise turning on a global `rho` miscalibrates the presence-test null. See the note added to `claude/20_host_presence_detection_plan.md`.
+- [ ] Decide whether the headline-LoD wording in `discussion.md` should switch from the binomial number to the overdispersion-calibrated number once the above lands.

@@ -358,3 +358,35 @@ Detailed plan: `claude/17_bq_aware_plan.md`.
 
 - [ ] Add bias stability figure (`fig_bias_stability.png`) to `paper/results.md` near the "Effect of Per-Marker Bias Correction" section. This validates the fixed-bias-per-marker assumption (r = correlation between |median_bias| and within-marker SD). Caption template in `supp_synthetic.csv` facts.
 - [ ] Decide: should the ablation study (Figure S4) also include a "no overdispersion" baseline (standard binomial vs beta-binomial)?
+
+---
+
+## Step 19: Intronic Shoulder Marker Evaluation 🔲 TODO
+
+Our Haem capture panel's depth extends past the exon boundaries into the flanking introns (reads sequencing off the ends of captured fragments), forming a declining-depth shoulder. These intronic positions are a potential source of extra informative markers. Introns are under weaker purifying selection than exons, so their site frequency spectrum is shifted toward common (near-0.5 MAF) variants, which are exactly the high-heterozygosity markers most likely to distinguish host from donor. More informative markers means a tighter chimerism estimate and lower LOD.
+
+The open question is whether they carry allele-specific bias that would distort VAF (and therefore the chimerism estimate):
+
+- **Capture (hybridization) bias: expected to be negligible.** The intronic SNP sits outside the probe footprint (the probe is over the exon), so the polymorphic base does not affect duplex stability and both haplotypes are pulled down equally. The only capture effect is the depth drop, which is allele-symmetric and already handled by the beta-binomial weighting plus depth/dropout QC.
+- **Read-end mapping bias: the real risk to check.** By construction these SNPs sit near read ends (reads sequence from the exon out into the intron). Alt reads carry a mismatch and are more likely to be soft-clipped or MAPQ-penalised there, dropping alt reads from AD and skewing observed VAF toward reference. This is allele-asymmetric and is NOT caught by the depth filter, because depth is allele-blind: a marker can have healthy depth and still carry a quiet reference skew.
+
+**Analysis to run** (summary-stats script against /tau, no coordinates or patient IDs in output): for intronic-shoulder markers vs exon-core markers, report per-marker median het VAF (should center on 0.5), depth distribution, and dropout rate, binned by distance into the intron (intron offset).
+
+- If het VAF only departs from 0.5 once depth has already fallen below the QC threshold, the depth filter alone suffices and the introns can be harvested directly.
+- If het VAF drifts off 0.5 while depth is still healthy, the read-end mapping bias is real in the intermediate band and an explicit allele-balance filter (orthogonal to depth) is needed. Where bias is moderate and stable it folds into the existing per-marker bias term (`bias.py`); where large, filter the marker out.
+
+Optionally rank candidate intronic markers by population MAF / expected heterozygosity (gnomAD AF) to prioritise the most informative ones.
+
+Came out of a design discussion on 2026-05-27.
+
+---
+
+## Step 20: Host-Presence Detection at Donor-Homozygous Markers 🔲 TODO
+
+A dedicated detection test for "is the host present at all?", separate from the fraction MLE, aimed at low-level host re-occurrence (relapse) post-HSCT. It uses only the markers where the donor is homozygous and the host carries the donor-absent allele: there the donor-absent allele sits at the sequencing-error background in a pure-donor sample, so its read counts give a one-sided count test (and an LRT yielding a host-fraction estimate) against that background, combined across markers. Same reads the MLE already sees, but reframed as detection and freed from the single shared overdispersion `ρ` and the global error rate, both of which blunt the MLE at very low fractions. Reported alongside the MLE (route A); a unified two-component likelihood is a follow-up (route B).
+
+Depends on Step 14 (empirical per-site error rates) for the per-site background that sets the achievable detection limit; without it the test falls back to the global `--error-rate` and the limit is error-floor-bound. Soft dependency on Step 12 (per-marker context refactor) for route B only. Reuses the issue #8 LoD sweep to validate the detection-LoD gain.
+
+Came out of a design discussion on 2026-05-28.
+
+Detailed plan: [`claude/20_host_presence_detection_plan.md`](20_host_presence_detection_plan.md).

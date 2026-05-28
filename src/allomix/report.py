@@ -83,14 +83,14 @@ def _write_tsv(
         "n_used",
         "mean_depth",
         "gof_pval",
-        "qc_pass",
+        "qc_status",
         "qc_warnings",
     ]
     fh.write("\t".join(summary_cols) + "\n")
 
     ci_lo, ci_hi = result.donor_fraction_ci
     gof_str = f"{qc.goodness_of_fit_pval:.4f}" if qc.goodness_of_fit_pval is not None else "NA"
-    qc_pass_str = "PASS" if qc.pass_ else "FAIL"
+    qc_status_str = qc.status
     lob_str = f"{result.lob_fraction * 100:.3f}" if math.isfinite(result.lob_fraction) else "NA"
     lod_str = f"{result.lod_fraction * 100:.3f}" if math.isfinite(result.lod_fraction) else "NA"
 
@@ -105,7 +105,7 @@ def _write_tsv(
         str(qc.n_used),
         f"{qc.mean_depth:.0f}",
         gof_str,
-        qc_pass_str,
+        qc_status_str,
         _warnings_cell(qc),
     ]
     fh.write("\t".join(summary_vals) + "\n")
@@ -164,13 +164,21 @@ def _write_tsv_multi(
         d = i + 1
         cols.extend([f"donor{d}_pct", f"donor{d}_ci_lo", f"donor{d}_ci_hi"])
     cols.extend(
-        ["host_pct", "n_informative", "n_used", "mean_depth", "gof_pval", "qc_pass", "qc_warnings"]
+        [
+            "host_pct",
+            "n_informative",
+            "n_used",
+            "mean_depth",
+            "gof_pval",
+            "qc_status",
+            "qc_warnings",
+        ]
     )
     fh.write("\t".join(cols) + "\n")
 
     # Build data line
     gof_str = f"{qc.goodness_of_fit_pval:.4f}" if qc.goodness_of_fit_pval is not None else "NA"
-    qc_pass_str = "PASS" if qc.pass_ else "FAIL"
+    qc_status_str = qc.status
 
     vals = [sample_name]
     for i in range(n_donors):
@@ -189,7 +197,7 @@ def _write_tsv_multi(
             str(qc.n_used),
             f"{qc.mean_depth:.0f}",
             gof_str,
-            qc_pass_str,
+            qc_status_str,
             _warnings_cell(qc),
         ]
     )
@@ -289,6 +297,7 @@ def to_json(
                 round(qc.goodness_of_fit_pval, 4) if qc.goodness_of_fit_pval is not None else None
             ),
             "qc_pass": qc.pass_,
+            "qc_status": qc.status,
             "warnings": list(qc.warnings),
             "markers": markers_list,
         }
@@ -312,6 +321,7 @@ def to_json(
                 round(qc.goodness_of_fit_pval, 4) if qc.goodness_of_fit_pval is not None else None
             ),
             "qc_pass": qc.pass_,
+            "qc_status": qc.status,
             "warnings": list(qc.warnings),
             "markers": markers_list,
         }
@@ -349,6 +359,7 @@ def timeline_json(
                     else None
                 ),
                 "qc_pass": qc.pass_,
+                "qc_status": qc.status,
             }
             for i, frac in enumerate(result.donor_fractions):
                 ci_lo, ci_hi = result.donor_fraction_cis[i]
@@ -378,6 +389,7 @@ def timeline_json(
                         else None
                     ),
                     "qc_pass": qc.pass_,
+                    "qc_status": qc.status,
                 }
             )
     return {"timepoints": timepoints}

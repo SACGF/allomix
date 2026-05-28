@@ -13,7 +13,8 @@ inverted so 100% is at the top. The clinically interesting action is the
 low-level signal near full donor chimerism, which a plain linear (or plain log)
 donor axis compresses; this spacing keeps it readable. The spread of the
 CD3/CD13 subsets shows where the true whole-blood value can sit depending on the
-cell differential. QC-FAIL samples are skipped.
+cell differential. QC-FAIL samples are skipped; QC-REVIEW samples are drawn but
+circled in red so a confident-looking estimate is not read as clean.
 
 Convention: all percentages are % DONOR (allomix `donor_pct` and the flow
 values).
@@ -25,12 +26,13 @@ Usage:
         --flow-column "Chimerism result TP2" \
         --output output/chimerism_comparison.png
 
-    # Compare two runs (e.g. run1 SID/tp0-donor vs run2 full-panel/explicit):
+    # Compare runs (primary drawn rightmost/filled; compares listed oldest first;
+    # labels are left to right):
     python scripts/plot_chimerism_comparison.py \
-        output/validation_run2/batch.tsv \
-        --compare-tsv output/validation_run1/batch.tsv \
-        --labels "run2 (full panel)" "run1 (SID only)" \
-        --output output/run1_vs_run2.png
+        output/validation_run3/batch.tsv \
+        --compare-tsv output/validation_run1/batch.tsv output/validation_run2/batch.tsv \
+        --labels run1 run2 run3 \
+        --output output/run1_vs_run2_vs_run3.png
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
+from matplotlib.patches import Patch  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 # Markers per flow lineage. CD45 is the pan-leukocyte value (the nominal
@@ -72,6 +75,30 @@ def parse_lineages(text: str) -> dict[str, float]:
     return {name: float(val) for name, val in _LINEAGE_RE.findall(text)}
 
 
+def _qc_status(row: dict, gof: float | None) -> str:
+    """Three-state QC status for a batch.tsv row.
+
+    Uses the ``qc_status`` column when present (allomix now emits PASS / REVIEW /
+    FAIL). For older files that only have the binary ``qc_pass`` column, derive
+    REVIEW from a failing goodness-of-fit so a poor-fit sample is still flagged.
+
+    Args:
+        row: One batch.tsv row.
+        gof: Parsed goodness-of-fit p-value, or None.
+
+    Returns:
+        One of "PASS", "REVIEW", "FAIL".
+    """
+    status = row.get("qc_status")
+    if status:
+        return status.strip().upper()
+    if row.get("qc_pass", "PASS") != "PASS":
+        return "FAIL"
+    if gof is not None and gof < 0.01:
+        return "REVIEW"
+    return "PASS"
+
+
 def read_batch(path: Path, flow_column: str | None, donor_column: str = "Donor") -> dict[str, dict]:
     """Read a batch.tsv into {sample: row dict} with parsed numeric fields.
 
@@ -89,16 +116,20 @@ def read_batch(path: Path, flow_column: str | None, donor_column: str = "Donor")
         reader = csv.DictReader(fh, delimiter="\t")
         for row in reader:
             sample = row["sample"]
+            gof = None
+            if row.get("gof_pval") not in (None, "", "NA"):
+                gof = float(row["gof_pval"])
             rec: dict = {
                 "donor_pct": float(row["donor_pct"]),
                 "ci_lo": float(row["ci_lo"]),
                 "ci_hi": float(row["ci_hi"]),
                 "n_informative": int(row.get("n_informative", 0) or 0),
                 "mean_depth": float(row.get("mean_depth", 0) or 0),
-                "qc_pass": row.get("qc_pass", "PASS") == "PASS",
+                "qc_status": _qc_status(row, gof),
                 "donor": (row.get(donor_column) or "").strip(),
                 "lineages": {},
             }
+            rec["qc_pass"] = rec["qc_status"] != "FAIL"
             # lob_pct / lod_pct are present only on batch.tsv files produced
             # after the per-sample LOD change; tolerate their absence.
             if row.get("lod_pct") not in (None, "", "NA"):
@@ -135,10 +166,17 @@ def short_label(name: str, field: int | None, code: bool) -> str:
     return name
 
 
+# Run colours, assigned by display position (leftmost run first): run1 orange,
+# run2 blue, run3 green, ... The primary run (the rightmost) is drawn filled and
+# the compare runs hollow, so the fill (not the colour) marks the primary.
+RUN_PALETTE = ["#ff7f0e", "#1f77b4", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+LINEAGE_COLOR = "#888888"
+REVIEW_COLOR = "#d62728"  # ring around QC-REVIEW primary points
+
+
 def plot(
-    primary: dict[str, dict],
-    compare: dict[str, dict] | None,
-    labels: tuple[str, str],
+    runs: list[dict[str, dict]],
+    labels: list[str],
     floor: float,
     title: str,
     output: Path,
@@ -146,6 +184,8 @@ def plot(
     label_field: int | None,
     label_code: bool,
     explicit_donor: set[str],
+    sort: str,
+    show_lod: bool,
 ) -> None:
     """Draw the forest plot and write it to ``output``.
 
@@ -154,12 +194,36 @@ def plot(
     of donor% would compress everything near 100% where the low-level signal
     lives; this keeps that region readable while labelling the axis in donor %.
 
-    Each x-axis label carries the informative-marker count(s) so the panel
+    Each x-axis label row carries the informative-marker count so the panel
     difference between runs is visible at a glance.
+
+    Args:
+        runs: One or more batch dicts in left-to-right display order. The last
+            entry is the primary run (drawn filled); flow lineages, donor type,
+            sample ordering and the explicit-donor star are all read from it.
+            Earlier entries are compare runs, drawn hollow.
+        labels: Legend label for each run, parallel to ``runs``.
+        show_lod: If True, shade each sample's region at or below the primary
+            run's limit of detection (where a signal is not a reportable
+            detection). Needs an ``lod_pct`` column in the primary batch.tsv.
     """
+    primary = runs[-1]
+    n_runs = len(runs)
+    run_colors = [RUN_PALETTE[i % len(RUN_PALETTE)] for i in range(n_runs)]
+
+    # Sample order on the x axis. "chimerism" (sort by measured donor fraction)
+    # reshuffles between runs because the estimate differs, so "name" and "tsv"
+    # give a stable order that lets the runs' plots line up.
+    match sort:
+        case "name":
+            ordered = sorted(primary)
+        case "tsv":
+            ordered = list(primary)
+        case _:  # "chimerism"
+            ordered = sorted(primary, key=lambda s: host(primary[s]["donor_pct"]))
     # QC-FAIL samples (e.g. a single informative marker) have point estimates
     # too unreliable to plot, so drop them rather than imply a real measurement.
-    ordered = sorted(primary, key=lambda s: host(primary[s]["donor_pct"]))
+    # QC-REVIEW samples are kept (and circled later) so they are not hidden.
     skipped = [s for s in ordered if not primary[s]["qc_pass"]]
     samples = [s for s in ordered if primary[s]["qc_pass"]]
     if skipped:
@@ -174,21 +238,43 @@ def plot(
 
     fig, ax = plt.subplots(figsize=(max(9.0, 1.45 * n), 6.5))
 
-    ngs_color = "#1f77b4"
-    cmp_color = "#ff7f0e"
-    lineage_color = "#888888"
+    # Dodge: flow markers sit far left, then the runs spread across the slot in
+    # display order so time reads left to right. A single run is centred.
+    if n_runs == 1:
+        flow_dx = -0.22
+        offsets = [0.0]
+    else:
+        flow_dx = -0.40
+        step = 0.16
+        start = -((n_runs - 1) / 2.0) * step + 0.06
+        offsets = [start + i * step for i in range(n_runs)]
 
-    # Dodge: time runs left to right, so run1 (compare) sits left of run2
-    # (primary). In single-run mode the one estimate is centred.
-    flow_dx = -0.34 if compare is not None else -0.22
-    run2_dx = 0.12 if compare is not None else 0.0
+    # Per-sample LOD band: shade the strip from 100% donor down to the primary
+    # run's limit of detection. A point inside the band is below LOD, i.e. not a
+    # reportable detection (statistically indistinguishable from full donor).
+    review_drawn = False
+    lod_drawn = False
+    if show_lod:
+        top_y = floor * 0.7
+        for x, sample in enumerate(samples):
+            lod = primary[sample].get("lod_pct")
+            if lod is None:
+                continue
+            ax.fill_between(
+                [x - 0.46, x + 0.46],
+                clamp(lod),
+                top_y,
+                color="0.6",
+                alpha=0.13,
+                lw=0,
+                zorder=0,
+            )
+            lod_drawn = True
 
     for x, sample in enumerate(samples):
-        rec = primary[sample]
-
         # Flow lineage markers, offset left of centre, each at its own donor
         # value (100% sits at the top). A thin line shows the lineage spread.
-        lin = rec["lineages"]
+        lin = primary[sample]["lineages"]
         if lin:
             lx = x + flow_dx
             host_vals = [clamp(host(v)) for v in lin.values()]
@@ -196,7 +282,7 @@ def plot(
                 ax.plot(
                     [lx, lx],
                     [min(host_vals), max(host_vals)],
-                    color=lineage_color,
+                    color=LINEAGE_COLOR,
                     lw=1.0,
                     zorder=1,
                 )
@@ -207,18 +293,35 @@ def plot(
                     marker=LINEAGE_MARKERS.get(name, "d"),
                     s=42,
                     facecolors="none",
-                    edgecolors=lineage_color,
+                    edgecolors=LINEAGE_COLOR,
                     zorder=3,
                 )
 
-        # NGS estimate(s) with CI error bars. A compare run that failed or found
-        # no informative markers has no point to plot (its 0 still shows in the
-        # x-axis label).
-        _ngs_point(ax, x + run2_dx, rec, ngs_color, clamp)
-        if compare is not None and sample in compare:
-            crec = compare[sample]
-            if crec["qc_pass"] and crec["n_informative"] > 0:
-                _ngs_point(ax, x - 0.12, crec, cmp_color, clamp, hollow=True)
+        # NGS estimate per run, with CI error bars. The primary is always drawn
+        # (samples are filtered to its QC pass). A compare run that failed or
+        # found no informative markers has no point to plot (its 0 still shows
+        # in the x-axis label row).
+        for k, run in enumerate(runs):
+            rec = run.get(sample)
+            if rec is None:
+                continue
+            is_primary = k == n_runs - 1
+            if not is_primary and (not rec["qc_pass"] or rec["n_informative"] == 0):
+                continue
+            _ngs_point(ax, x + offsets[k], rec, run_colors[k], clamp, hollow=not is_primary)
+            # Circle a primary-run point flagged for QC review (e.g. poor model
+            # fit), so a confident-looking estimate is not read as clean.
+            if is_primary and rec.get("qc_status") == "REVIEW":
+                ax.scatter(
+                    x + offsets[k],
+                    clamp(host(rec["donor_pct"])),
+                    s=200,
+                    facecolors="none",
+                    edgecolors=REVIEW_COLOR,
+                    linewidths=1.6,
+                    zorder=5,
+                )
+                review_drawn = True
 
     # Reference lines at clinically relevant donor fractions (99%, 95%).
     for donor_thr in (99.0, 95.0):
@@ -241,53 +344,40 @@ def plot(
     ax.set_xlim(-0.6, n - 0.4)
     ax.set_title(title)
 
-    # Per-point x-axis labels, colour-matched to the runs. In compare mode run1
-    # is the top row and run2 a separate row below it (time runs left to right).
+    # Per-point x-axis labels. One row per run, colour-matched to the runs and
+    # stacked in display order (leftmost run on top, primary at the bottom). The
+    # patient code (with the explicit-donor star) is shown once, on the primary
+    # row; the other rows carry just that run's marker count and depth.
     ax.set_xticks([])
     trans = ax.get_xaxis_transform()
-    # Row y-positions below the axis: run label(s), then donor type, then key.
-    donor_y = -0.075 if compare is None else -0.135
-    xlabel_y = -0.20 if compare is None else -0.27
+    row0_y = -0.02
+    row_step = 0.05
+    # Row y-positions below the axis: the run rows, then donor type, then key.
+    donor_y = row0_y - row_step * (n_runs - 1) - 0.065
+    xlabel_y = donor_y - 0.135
     for i, s in enumerate(samples):
         code = code_for(i, s)
-        p = primary[s]
-        # Flag explicit-donor samples with a star on the sample name (keyed in
-        # title). It marks the primary run, so only that row's code is starred.
-        mark = "★" if any(tok and tok in s for tok in explicit_donor) else ""
-        # Runs are distinguished by colour (see legend), so the run name is
-        # left off the labels.
-        if compare is None:
+        for k, run in enumerate(runs):
+            rec = run.get(s)
+            md = f"M:{rec['n_informative']} D:{rec['mean_depth']:.0f}x" if rec else "NA"
+            is_primary = k == n_runs - 1
+            if is_primary:
+                # Flag explicit-donor samples with a star on the code (keyed in
+                # the title); it marks the primary run.
+                mark = "★" if any(tok and tok in s for tok in explicit_donor) else ""
+                txt = f"{code}{mark} {md}"
+            else:
+                txt = md
             ax.text(
                 i,
-                -0.02,
-                f"{code}{mark} M:{p['n_informative']} D:{p['mean_depth']:.0f}x",
+                row0_y - row_step * k,
+                txt,
                 transform=trans,
                 ha="center",
                 va="top",
                 fontsize=8,
-            )
-        else:
-            c = compare.get(s)
-            run1_txt = f"M:{c['n_informative']} D:{c['mean_depth']:.0f}x" if c else "NA"
-            ax.text(
-                i,
-                -0.02,
-                f"{code} {run1_txt}",
-                transform=trans,
-                ha="center",
-                va="top",
-                fontsize=8,
-                color=cmp_color,
-            )
-            ax.text(
-                i,
-                -0.07,
-                f"{code}{mark} M:{p['n_informative']} D:{p['mean_depth']:.0f}x",
-                transform=trans,
-                ha="center",
-                va="top",
-                fontsize=8,
-                color=ngs_color,
+                # A single run keeps the default black label for readability.
+                color=run_colors[k] if n_runs > 1 else "black",
             )
         # Donor type (consistent across runs, so read once from primary).
         donor = primary[s]["donor"]
@@ -308,25 +398,57 @@ def plot(
     xlabel = "Sample: M = informative markers, D = mean depth"
     ax.text((n - 1) / 2.0, xlabel_y, xlabel, transform=trans, ha="center", va="top", fontsize=9)
 
-    # Legend order matches the left-to-right draw order: flow, then run1, run2.
+    # Legend order matches the left-to-right draw order: flow, then the runs.
     handles = [
-        Line2D([], [], color=lineage_color, marker="s", mfc="none", lw=0, label="Flow CD45"),
-        Line2D([], [], color=lineage_color, marker="^", mfc="none", lw=0, label="Flow CD3"),
-        Line2D([], [], color=lineage_color, marker="o", mfc="none", lw=0, label="Flow CD13"),
+        Line2D([], [], color=LINEAGE_COLOR, marker="s", mfc="none", lw=0, label="Flow CD45"),
+        Line2D([], [], color=LINEAGE_COLOR, marker="^", mfc="none", lw=0, label="Flow CD3"),
+        Line2D([], [], color=LINEAGE_COLOR, marker="o", mfc="none", lw=0, label="Flow CD13"),
     ]
-    if compare is not None:
+    for k in range(n_runs):
+        is_primary = k == n_runs - 1
         handles.append(
             Line2D(
-                [], [], color=cmp_color, marker="o", mfc="none", lw=0, label=f"NGS {labels[1]} (CI)"
+                [],
+                [],
+                color=run_colors[k],
+                marker="o",
+                mfc=run_colors[k] if is_primary else "none",
+                lw=0,
+                label=f"NGS {labels[k]} (CI)",
             )
         )
-    handles.append(Line2D([], [], color=ngs_color, marker="o", lw=0, label=f"NGS {labels[0]} (CI)"))
-    ax.legend(handles=handles, fontsize=8, loc="lower left", framealpha=0.9)
+    if review_drawn:
+        handles.append(
+            Line2D(
+                [],
+                [],
+                color=REVIEW_COLOR,
+                marker="o",
+                mfc="none",
+                mew=1.6,
+                ms=11,
+                lw=0,
+                label="QC review (e.g. poor fit)",
+            )
+        )
+    if lod_drawn:
+        handles.append(
+            Patch(facecolor="0.6", alpha=0.13, label=f"≤ {labels[-1]} LOD (not detected)")
+        )
+    # Legend below the x-axis label rows, laid out horizontally.
+    ax.legend(
+        handles=handles,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, xlabel_y - 0.05),
+        ncol=min(len(handles), 4),
+        framealpha=0.9,
+    )
 
     fig.tight_layout()
-    # Reserve room for the custom label rows + donor type + key (tight_layout
-    # ignores them).
-    fig.subplots_adjust(bottom=0.26 if compare is None else 0.33)
+    # Reserve room for the custom label rows + donor type + key + the legend now
+    # sitting below them (tight_layout ignores all of these); more rows need more.
+    fig.subplots_adjust(bottom=min(0.58, 0.34 + 0.05 * n_runs))
     fig.savefig(output, dpi=150)
     print(f"Wrote {output}")
 
@@ -353,12 +475,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("batch_tsv", type=Path, help="Primary batch.tsv (e.g. run2)")
+    parser.add_argument(
+        "batch_tsv",
+        type=Path,
+        help="Primary batch.tsv (drawn filled, rightmost; flow/donor/star read from it)",
+    )
     parser.add_argument(
         "--compare-tsv",
         type=Path,
+        nargs="+",
         default=None,
-        help="Optional second batch.tsv to overlay (e.g. run1)",
+        help="One or more batch.tsv files to overlay (hollow). Listed left to "
+        "right, the primary is drawn to their right, so pass them oldest first.",
     )
     parser.add_argument(
         "--flow-column",
@@ -367,10 +495,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--labels",
-        nargs=2,
-        default=["run2", "run1"],
-        metavar=("PRIMARY", "COMPARE"),
-        help="Legend labels for the two runs",
+        nargs="+",
+        default=None,
+        metavar="LABEL",
+        help="Legend label per run in left-to-right display order (compare runs "
+        "first, then primary). Defaults to run1, run2, ... Must match the run count.",
     )
     parser.add_argument(
         "--floor", type=float, default=0.02, help="Host%% floor for the log axis (default 0.02)"
@@ -402,17 +531,42 @@ def main() -> None:
         "donor genotype; their primary-run points are drawn as a star. Pair with a "
         "matching symbol in --title.",
     )
+    parser.add_argument(
+        "--sort",
+        choices=("name", "tsv", "chimerism"),
+        default="name",
+        help="X-axis sample order: 'name' (alphabetical, default), 'tsv' (file "
+        "order), or 'chimerism' (by measured donor fraction). Use 'name' or 'tsv' "
+        "for a stable order that matches across runs.",
+    )
+    parser.add_argument(
+        "--hide-lod",
+        action="store_true",
+        help="Do not shade the per-sample LOD band (drawn by default when the "
+        "primary batch.tsv has an lod_pct column).",
+    )
     parser.add_argument("--output", type=Path, default=Path("output/chimerism_comparison.png"))
     args = parser.parse_args()
     explicit_donor = {t.strip() for t in args.explicit_donor.split(",") if t.strip()}
 
+    # Display order, left to right: compare runs as given, then the primary
+    # (filled) on the right.
     primary = read_batch(args.batch_tsv, args.flow_column)
-    compare = read_batch(args.compare_tsv, args.flow_column) if args.compare_tsv else None
+    compares = [read_batch(p, args.flow_column) for p in (args.compare_tsv or [])]
+    runs = [*compares, primary]
+    if args.labels is None:
+        labels = [f"run{i + 1}" for i in range(len(runs))]
+    elif len(args.labels) != len(runs):
+        parser.error(
+            f"--labels expects {len(runs)} label(s) (one per run, left to right), "
+            f"got {len(args.labels)}"
+        )
+    else:
+        labels = args.labels
     args.output.parent.mkdir(parents=True, exist_ok=True)
     plot(
-        primary,
-        compare,
-        tuple(args.labels),
+        runs,
+        labels,
         args.floor,
         args.title,
         args.output,
@@ -420,6 +574,8 @@ def main() -> None:
         args.label_field,
         args.label_code,
         explicit_donor,
+        args.sort,
+        not args.hide_lod,
     )
 
 

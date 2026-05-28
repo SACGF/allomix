@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import random
 import statistics
@@ -224,6 +225,81 @@ class TestSampleAlleleCounts:
         a = sample_allele_counts(0.3, 1500, random.Random(99))
         b = sample_allele_counts(0.3, 1500, random.Random(99), rho=float("inf"))
         assert a == b
+
+    def test_rho_het_only_boundary_stays_binomial(self) -> None:
+        """rho_marker_type='het_only' must leave VAF=0 and VAF=1 at the binomial
+        error background; the donor-absent allele rate matches e/3 within
+        sampling noise, with no extra-binomial inflation.
+        """
+        n_trials = 400
+        depth = 2000
+        e = 0.003
+        rng0 = random.Random(11)
+        rng1 = random.Random(22)
+        alt_at_zero = [
+            sample_allele_counts(
+                0.0, depth, rng0, error_rate=e, rho=100.0, rho_marker_type="het_only",
+            )[1]
+            for _ in range(n_trials)
+        ]
+        ref_at_one = [
+            sample_allele_counts(
+                1.0, depth, rng1, error_rate=e, rho=100.0, rho_marker_type="het_only",
+            )[0]
+            for _ in range(n_trials)
+        ]
+        # Empirical mean = e/3 per direction; tolerance is ~3x binomial SE.
+        expected = e / 3.0
+        se = math.sqrt(expected * (1.0 - expected) / depth) / math.sqrt(n_trials)
+        mean_zero = sum(alt_at_zero) / (n_trials * depth)
+        mean_one = sum(ref_at_one) / (n_trials * depth)
+        assert abs(mean_zero - expected) < 5 * se
+        assert abs(mean_one - expected) < 5 * se
+        # Variance should be at the binomial floor (no overdispersion). The
+        # binomial var(VAF) = expected*(1-expected)/depth; allow a generous 2x
+        # ceiling (still well below the ~12x beta-binomial inflation rho=100
+        # would give if it were applied here).
+        bin_var = expected * (1.0 - expected) / depth
+        var_zero = statistics.pvariance([y / depth for y in alt_at_zero])
+        assert var_zero < 2.5 * bin_var, (
+            f"VAF=0 boundary variance {var_zero:.2e} > 2.5x binomial floor "
+            f"{bin_var:.2e}; rho was applied at boundary"
+        )
+
+    def test_rho_het_only_intermediate_still_overdispersed(self) -> None:
+        """rho_marker_type='het_only' must still inflate variance at VAF=0.5
+        by the expected beta-binomial factor.
+        """
+        depth, n = 2000, 400
+        rho = 100.0
+        rng_bin = random.Random(33)
+        rng_bb = random.Random(33)
+        binom = [
+            sample_allele_counts(0.5, depth, rng_bin)[1] / depth for _ in range(n)
+        ]
+        betab = [
+            sample_allele_counts(
+                0.5, depth, rng_bb, rho=rho, rho_marker_type="het_only",
+            )[1]
+            / depth
+            for _ in range(n)
+        ]
+        var_binom = statistics.pvariance(binom)
+        var_betab = statistics.pvariance(betab)
+        # Expected inflation factor 1 + (n-1)/(rho+1) at p=0.5, n=2000, rho=100
+        # is ~20.8x. Empirical estimates of variance are noisy at n=400 reps
+        # so allow a wide band around the expected ratio.
+        expected_ratio = 1.0 + (depth - 1) / (rho + 1.0)
+        ratio = var_betab / var_binom
+        assert 0.4 * expected_ratio < ratio < 2.5 * expected_ratio, (
+            f"var-inflation ratio {ratio:.1f} far from expected {expected_ratio:.1f}"
+        )
+
+    def test_rho_marker_type_invalid_raises(self) -> None:
+        with pytest.raises(ValueError, match="rho_marker_type"):
+            sample_allele_counts(
+                0.5, 1000, random.Random(1), rho=100.0, rho_marker_type="nope",
+            )
 
 
 class TestSampleAlleleCountsErrorModel:

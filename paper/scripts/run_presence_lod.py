@@ -34,10 +34,16 @@ Usage:
     python paper/scripts/run_presence_lod.py --n-blanks 200 --n-positives 60 \
         --n-workers 8
 
-Note on rho: the simulator gained a ``rho`` argument (Step 21). We leave it at
-the default ``inf`` (binomial); see the plan's "Update (2026-05-28)" for why a
-uniform rho would miscalibrate the presence null. Acceptance gate #3's
-presence-vs-MLE gap is therefore a lower bound on the real-data advantage.
+Note on rho: the simulator gained a ``rho`` argument (Step 21). By default this
+script runs the binomial case (``rho=inf, rho_marker_type='all'``) for backward
+compatibility with the original prototype run. Passing ``--rho 100
+--rho-marker-type het_only`` runs the marker-type-aware regime: overdispersion
+applies to het/intermediate markers only, leaving the donor-absent allele
+background binomial. That is the configuration that honestly exposes acceptance
+gate #3: the MLE pays the overdispersion tax while the presence detector,
+restricted to donor-homozygous markers at the binomial error floor, does not.
+A uniform ``--rho 100 --rho-marker-type all`` would miscalibrate the presence
+null (overdispersing the clean background); do not use it for the gate check.
 """
 
 from __future__ import annotations
@@ -208,6 +214,8 @@ def _run_replicate(
     rep_idx: int,
     seed_base: int,
     workdir: Path,
+    rho: float,
+    rho_marker_type: str,
 ) -> dict:
     """One synthetic replicate.
 
@@ -256,6 +264,8 @@ def _run_replicate(
         depth_cv=DEPTH_CV,
         realistic_biases=False,
         marker_bias_sd=0.0,
+        rho=rho,
+        rho_marker_type=rho_marker_type,
     )
     write_vcf(blend, admix_vcf)
 
@@ -484,6 +494,8 @@ def build_tasks(
     n_positives: int,
     seed: int,
     workdir: Path,
+    rho: float,
+    rho_marker_type: str,
 ) -> list[tuple]:
     """Build a flat task list: one tuple per replicate."""
     tasks: list[tuple] = []
@@ -495,7 +507,8 @@ def build_tasks(
                         n_reps = n_blanks if f_h == 0.0 else n_positives
                         for rep_idx in range(n_reps):
                             tasks.append(
-                                (rel, nm, depth, e, f_h, rep_idx, seed, workdir)
+                                (rel, nm, depth, e, f_h, rep_idx, seed, workdir,
+                                 rho, rho_marker_type)
                             )
     return tasks
 
@@ -529,6 +542,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--workdir", default=None,
                         help="Per-replicate temp dir (default: tempfile.mkdtemp).")
+    parser.add_argument(
+        "--rho", type=float, default=float("inf"),
+        help="Beta-binomial overdispersion (inf = binomial, default). Use 100 "
+             "for the realistic value identified in claude/21_*.",
+    )
+    parser.add_argument(
+        "--rho-marker-type", choices=["all", "het_only"], default="all",
+        help="Where to apply rho. 'all' (default) overdisperses every marker; "
+             "'het_only' applies rho only at intermediate VAF, keeping the "
+             "donor-absent allele background binomial. Use 'het_only' with "
+             "--rho 100 for the honest gate-3 check.",
+    )
     args = parser.parse_args(argv)
 
     if args.pilot:
@@ -554,11 +579,16 @@ def main(argv: list[str] | None = None) -> int:
     tasks = build_tasks(
         args.relatedness, args.n_markers, depths, error_rates,
         HOST_FRACTIONS, n_blanks, n_positives, args.seed, workdir,
+        args.rho, args.rho_marker_type,
     )
 
     print(
         f"Cells: rel={args.relatedness} nm={args.n_markers} depths={depths} "
         f"e={error_rates}",
+        file=sys.stderr,
+    )
+    print(
+        f"Overdispersion: rho={args.rho} rho_marker_type={args.rho_marker_type}",
         file=sys.stderr,
     )
     print(

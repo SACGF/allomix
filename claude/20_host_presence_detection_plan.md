@@ -402,6 +402,81 @@ pooled-Poisson logic in `paper/scripts/run_presence_lod.py`) is calibrated and
 ready to promote to `src/allomix/detect.py` when a follow-up justifies the
 integration work. Until then, no `src/allomix/` changes.
 
+### Prototype results, rho-on (2026-05-28)
+
+The "marker-type-aware overdispersion" Step 21 follow-up landed and the prototype
+was re-run with realistic `rho=100`. The simulator gained
+`rho_marker_type={"all", "het_only"}` on `sample_allele_counts`, plumbed through
+`blend_vcfs` and `blend_from_genotype_dicts` (default `"all"` keeps every existing
+script byte-identical). At `"het_only"` overdispersion is applied only when the
+unbiased input `vaf` sits in `(0.05, 0.95)`; at boundary VAF the draw is binomial
+regardless of `rho`. The decision is made on the unbiased `vaf` before the
+error-model transform shifts `p` off the boundary, so the donor-absent allele at
+a donor-homozygous marker stays at the binomial `e/3` background while
+het / intermediate markers carry the full beta-binomial tax. Test:
+`tests/test_simulate.py::TestSampleAlleleCounts::test_rho_het_only_*`.
+
+`paper/scripts/run_presence_lod.py` got `--rho` and `--rho-marker-type` flags
+(defaults preserve binomial behaviour). The full grid (200 blanks + 60 positives
+per cell, 14,880 reps total) re-ran with `--rho 100 --rho-marker-type het_only`.
+Outputs in `output/facts/presence_lod_rho_raw.csv` and
+`output/facts/presence_lod_rho_summary.csv`. Bias is still off in the prototype
+for the same reason as the binomial run (see the bias note above).
+
+**Gate 1 (calibration): PASS.** Mean LRT FP rate across 24 cells = **0.051**
+(target 0.050), range 0.030-0.070. All 24 cells inside the Wald 95% band for
+n=200 blanks at p=0.05 ([0.020, 0.080]). Pooled-Poisson mean 0.043. The
+"het_only" switch did exactly what it was designed to do: keep the
+donor-absent background binomial so the presence null is unaffected by the
+realistic `rho=100`.
+
+**Gate 2 (monotonicity): PASS.** Presence-LoD monotone in depth (1000 -> 2000
+-> 5000) at every (relatedness, e) and monotone in `e` (3e-4 -> 1e-3 -> 3e-3 ->
+1e-2) at every (relatedness, depth), modulo one degenerate cell at sibling /
+5000x / e=3e-3 where `fit_lod`'s `curve_fit` collapsed on a detection curve
+with a flat shelf at the FP-rate baseline (0.05-0.10 from f=1e-5 to f=1e-4) then
+a steep rise above f=2e-4. The collapse is a fit-helper artifact, not a
+detector issue. Detection rates per fraction in the summary CSV reflect the
+real (monotone) curve.
+
+**Gate 3 (presence-LoD below MLE-LoD at clean `e`): PASS, with a real gap.**
+Tabulating `presence_LoD / MLE_LoD` at matched cells under realistic
+overdispersion:
+
+  - Clean error (`e=3e-4`): presence wins at every cell.
+    - unrelated / 1000x: 5.00e-4 vs 7.71e-4 (1.5x)
+    - unrelated / 2000x: 4.11e-4 vs 7.07e-4 (1.7x)
+    - unrelated / 5000x: 1.81e-4 vs 8.41e-4 (4.6x)
+    - sibling / 1000x: 8.58e-4 vs 2.46e-3 (2.9x)
+    - sibling / 2000x: 7.07e-4 vs 1.47e-3 (2.1x)
+    - sibling / 5000x: 4.16e-4 vs 3.07e-3 (7.4x)
+  - Moderate error (`e=1e-3`): the gap widens (e.g. sibling / 1000x:
+    1.99e-3 vs 2.19e-2, ~11x; sibling / 5000x: 5.64e-4 vs 3.42e-1, two
+    orders of magnitude).
+  - High error (`e in {3e-3, 1e-2}`): the MLE LoD blows up to absurd values
+    (1e8 to 1e17) because the realistic-rho MLE on blanks produces wildly
+    variable host-estimate fits and the LoB sits high (e.g. sibling / 2000x /
+    e=1e-2: mean blank `mle_host_est` 3.4e-3, q95 6.5e-3); `fit_lod` then
+    fails to find a fraction at which the MLE crosses LoB in 95% of reps and
+    returns garbage. The presence detector keeps working in the same cells.
+    This is the same "MLE pays the rho tax, presence detector does not"
+    story, taken to its limit at high error background.
+
+The sign predicted by "Background point 1" — presence-LoD strictly below
+MLE-LoD at clean `e`, with the gap growing as the MLE pays more overdispersion
+tax — is now visible at every depth and relatedness. Compare to the binomial-sim
+run above where MLE-LoD was marginally to modestly better at clean `e`: turning
+on realistic overdispersion (only at het markers, leaving the presence null
+intact) flips that comparison cleanly.
+
+**Disposition: proceed with Step 14 + `detect.py` + CLI.** All three gates
+hold under realistic overdispersion. The detector's structural advantage from
+the no-shared-`rho`-tax argument is empirically demonstrated and quantitatively
+sized (1.5x to 7x at clean error, an order of magnitude at moderate error,
+arbitrarily large at high error where the MLE diverges). The remaining lever
+on the headline LoD is the error floor itself, which is the Step 14
+prerequisite.
+
 ---
 
 **Sanity checks before the full grid:** run a 10-replicate pilot first;

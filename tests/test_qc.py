@@ -222,12 +222,14 @@ class TestWideCi:
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes)
         assert any("confidence interval" in w.lower() for w in qc.warnings)
+        assert qc.status == "REVIEW"
 
     def test_narrow_ci_no_warning(self):
         result = _make_chimerism_result(ci=(0.09, 0.11))
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes)
         assert not any("confidence interval" in w.lower() for w in qc.warnings)
+        assert qc.status == "PASS"
 
 
 class TestGoodData:
@@ -253,6 +255,7 @@ class TestGoodData:
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes)
         assert qc.pass_ is True
+        assert qc.status == "PASS"
         assert len(qc.warnings) == 0
 
     def test_counts_are_correct(self):
@@ -296,6 +299,8 @@ class TestGoodnessOfFit:
         assert qc.goodness_of_fit_pval is not None
         assert qc.goodness_of_fit_pval < 0.01
         assert any("model fit" in w.lower() for w in qc.warnings)
+        assert qc.status == "REVIEW"
+        assert qc.pass_ is True  # REVIEW is not a hard fail
 
     def test_small_residuals_no_warning(self):
         markers = [

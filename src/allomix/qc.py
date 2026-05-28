@@ -33,7 +33,11 @@ class QCReport:
         min_depth: Minimum sequencing depth across informative markers.
         goodness_of_fit_pval: Chi-squared goodness-of-fit p-value, or None.
         warnings: List of warning messages.
-        pass_: Overall QC pass/fail status.
+        status: Overall QC status, one of "PASS", "REVIEW", or "FAIL". "FAIL"
+            means the result is unusable (e.g. too few informative markers).
+            "REVIEW" means it was computed but a reliability check failed (poor
+            model fit or wide CI), so it needs manual interpretation rather than
+            being trusted or discarded automatically.
         per_donor_n_informative: Per-donor informative marker counts (multi-donor).
     """
 
@@ -49,8 +53,13 @@ class QCReport:
     min_depth: int
     goodness_of_fit_pval: float | None
     warnings: list[str] = field(default_factory=list)
-    pass_: bool = True
+    status: str = "PASS"
     per_donor_n_informative: list[int] | None = None
+
+    @property
+    def pass_(self) -> bool:
+        """True unless the result is a hard FAIL (i.e. PASS or REVIEW)."""
+        return self.status != "FAIL"
 
 
 def _error_adjusted_p_alt(expected_vaf: float, error_rate: float) -> float:
@@ -209,8 +218,10 @@ def assess_quality(
     """Assess quality of a chimerism result and produce a QC report.
 
     Checks marker counts, sequencing depth, confidence interval width,
-    and goodness-of-fit. Sets pass/fail status and collects warnings.
-    Handles both ChimerismResult (single-donor) and MultiDonorResult.
+    and goodness-of-fit. Sets a three-state status (PASS / REVIEW / FAIL) and
+    collects warnings. Too few informative markers is a FAIL (unusable); a poor
+    model fit or a wide CI is a REVIEW (computed, but flagged for manual
+    interpretation). Handles both ChimerismResult and MultiDonorResult.
 
     Args:
         result: The chimerism estimation result to evaluate.
@@ -221,7 +232,9 @@ def assess_quality(
         QCReport with metrics, warnings, and pass/fail status.
     """
     warnings: list[str] = []
-    pass_ = True
+    status = "PASS"
+    wide_ci = False
+    poor_gof = False
 
     # Marker counts
     n_informative = result.n_informative
@@ -256,7 +269,7 @@ def assess_quality(
 
     # Insufficient informative markers
     if n_informative < min_informative:
-        pass_ = False
+        status = "FAIL"
         warnings.append(f"Insufficient informative markers: {n_informative} < {min_informative}")
         diagnosis = _marker_loss_diagnosis(genotypes, n_informative)
         if diagnosis:
@@ -273,6 +286,7 @@ def assess_quality(
         for i, (ci_lo, ci_hi) in enumerate(result.donor_fraction_cis):
             ci_width = (ci_hi - ci_lo) * 100
             if ci_width > 20:
+                wide_ci = True
                 warnings.append(f"Wide CI for donor {i + 1}: {ci_width:.1f}% > 20%")
         per_donor_n_inf = getattr(result, "per_donor_n_informative", None)
         if per_donor_n_inf:
@@ -286,14 +300,21 @@ def assess_quality(
         ci_lo, ci_hi = result.donor_fraction_ci
         ci_width = (ci_hi - ci_lo) * 100
         if ci_width > 20:
+            wide_ci = True
             warnings.append(f"Wide confidence interval: {ci_width:.1f}% > 20%")
 
     # Poor goodness of fit
     if gof_pval is not None and gof_pval < 0.01:
+        poor_gof = True
         warnings.append(
             "Poor model fit (goodness-of-fit p < 0.01) — "
             "possible genotyping error, CNV, or sample issue"
         )
+
+    # A computed-but-questionable result (poor fit or imprecise) is flagged for
+    # review rather than passed silently or failed outright.
+    if status != "FAIL" and (poor_gof or wide_ci):
+        status = "REVIEW"
 
     return QCReport(
         n_total_markers=genotypes.n_total,
@@ -308,6 +329,6 @@ def assess_quality(
         min_depth=min_depth,
         goodness_of_fit_pval=gof_pval,
         warnings=warnings,
-        pass_=pass_,
+        status=status,
         per_donor_n_informative=per_donor_n_inf,
     )

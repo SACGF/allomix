@@ -11,6 +11,11 @@ from cyvcf2 import VCF
 from allomix import __version__
 from allomix.bias import estimate_biases, load_bias_table, save_bias_table
 from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
+from allomix.error_rates import (
+    estimate_error_rates,
+    load_error_table,
+    save_error_table,
+)
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.qc import assess_quality
 from allomix.report import timeline_json, to_json, to_tsv
@@ -54,6 +59,20 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Disable bias correction even when a bias table is provided",
     )
+    parser.add_argument(
+        "--error-table",
+        default=None,
+        help="Per-site empirical error-rate table TSV (from "
+             "`allomix estimate-errors`). Sites with per-direction rates "
+             "override --error-rate; missing sites or missing directions "
+             "fall back to --error-rate.",
+    )
+    parser.add_argument(
+        "--no-error-correction",
+        action="store_true",
+        help="Disable empirical error-rate correction even when an error "
+             "table is provided",
+    )
 
 
 def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
@@ -79,6 +98,9 @@ def _run_single_sample(
     min_gq: int,
     error_rate: float,
     marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -98,6 +120,7 @@ def _run_single_sample(
             genotypes.informative,
             error_rate=error_rate,
             marker_biases=marker_biases,
+            marker_errors=marker_errors,
         )
     else:
         result = estimate_multi_donor(
@@ -105,6 +128,7 @@ def _run_single_sample(
             n_donors=len(donors),
             error_rate=error_rate,
             marker_biases=marker_biases,
+            marker_errors=marker_errors,
         )
     qc = assess_quality(result, genotypes)
 
@@ -125,12 +149,20 @@ def _load_biases(args: argparse.Namespace) -> dict | None:
     return None
 
 
+def _load_errors(args: argparse.Namespace) -> dict | None:
+    """Load per-site error table if specified and not disabled."""
+    if args.error_table and not args.no_error_correction:
+        return load_error_table(args.error_table)
+    return None
+
+
 def cmd_monitor(args: argparse.Namespace) -> int:
     """Run the monitor subcommand."""
     all_names = [args.host_sample] + args.donor_sample + args.sample
     _validate_sample_names(args.vcf, all_names)
 
     marker_biases = _load_biases(args)
+    marker_errors = _load_errors(args)
 
     # Parse host and donors once — they're the same for every timepoint
     host = parse_vcf(args.vcf, sample=args.host_sample, min_gq=args.min_gq)
@@ -148,6 +180,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 args.min_gq,
                 args.error_rate,
                 marker_biases=marker_biases,
+                marker_errors=marker_errors,
             )
 
             if args.format == "json":
@@ -168,6 +201,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     _validate_sample_names(args.vcf, all_names)
 
     marker_biases = _load_biases(args)
+    marker_errors = _load_errors(args)
 
     # Parse host and donors once
     host = parse_vcf(args.vcf, sample=args.host_sample, min_gq=args.min_gq)
@@ -184,6 +218,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             args.min_gq,
             args.error_rate,
             marker_biases=marker_biases,
+            marker_errors=marker_errors,
         )
         results.append((genotypes.sample_name, result, qc))
 
@@ -225,6 +260,43 @@ def cmd_estimate_bias(args: argparse.Namespace) -> int:
     save_bias_table(biases, args.output)
     print(
         f"Estimated bias for {len(biases)} markers from {n_source} -> {args.output}",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def cmd_estimate_errors(args: argparse.Namespace) -> int:
+    """Run the estimate-errors subcommand."""
+    if args.vcfs and args.vcf:
+        raise SystemExit("Use either --vcfs or --vcf/--samples, not both")
+    if not args.vcfs and not args.vcf:
+        raise SystemExit("One of --vcfs or --vcf is required")
+    if args.vcf and not args.samples:
+        raise SystemExit("--samples is required when using --vcf")
+
+    marker_lists = []
+    if args.vcfs:
+        for vcf_path in args.vcfs:
+            markers = parse_vcf(vcf_path, min_dp=0, min_gq=args.min_gq)
+            marker_lists.append(markers)
+        n_source = f"{len(args.vcfs)} VCFs"
+    else:
+        _validate_sample_names(args.vcf, args.samples)
+        for sample in args.samples:
+            markers = parse_vcf(args.vcf, sample=sample, min_dp=0, min_gq=args.min_gq)
+            marker_lists.append(markers)
+        n_source = f"{len(args.samples)} samples from {args.vcf}"
+
+    errors = estimate_error_rates(
+        marker_lists,
+        min_reads=args.min_reads,
+        max_vaf_homref=args.max_vaf_homref,
+        min_vaf_homalt=args.min_vaf_homalt,
+    )
+    save_error_table(errors, args.output)
+    print(
+        f"Estimated error rates for {len(errors)} sites from {n_source} "
+        f"-> {args.output}",
         file=sys.stderr,
     )
     return 0
@@ -293,6 +365,62 @@ def main(argv: list[str] | None = None) -> int:
         help="Minimum het observations per marker (default: 1)",
     )
 
+    err_parser = subparsers.add_parser(
+        "estimate-errors",
+        help="Estimate per-site empirical error rates from VCFs",
+    )
+    err_input = err_parser.add_mutually_exclusive_group()
+    err_input.add_argument(
+        "--vcfs",
+        nargs="+",
+        metavar="VCF",
+        help="Per-sample VCFs, one per file (reads first sample from each)",
+    )
+    err_input.add_argument(
+        "--vcf",
+        metavar="VCF",
+        help="Joint-called multi-sample VCF (use with --samples)",
+    )
+    err_parser.add_argument(
+        "--samples",
+        nargs="+",
+        metavar="SAMPLE_NAME",
+        help="Sample names to extract from --vcf",
+    )
+    err_parser.add_argument(
+        "--output",
+        "-o",
+        default="error_table.tsv",
+        help="Output error table TSV (default: error_table.tsv)",
+    )
+    err_parser.add_argument(
+        "--min-reads",
+        type=int,
+        default=1000,
+        help="Minimum total reads per direction to retain a site's estimate "
+             "(default: 1000)",
+    )
+    err_parser.add_argument(
+        "--max-vaf-homref",
+        type=float,
+        default=0.10,
+        help="Drop hom-ref training observations with vaf > this "
+             "(default: 0.10)",
+    )
+    err_parser.add_argument(
+        "--min-vaf-homalt",
+        type=float,
+        default=0.90,
+        help="Drop hom-alt training observations with vaf < this "
+             "(default: 0.90)",
+    )
+    err_parser.add_argument(
+        "--min-gq",
+        type=int,
+        default=20,
+        help="Minimum GQ for training calls (default: 20)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -305,6 +433,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_timeline(args)
     if args.command == "estimate-bias":
         return cmd_estimate_bias(args)
+    if args.command == "estimate-errors":
+        return cmd_estimate_errors(args)
     parser.print_help()
     return 1
 

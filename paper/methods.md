@@ -123,7 +123,7 @@ where $a_h$ and $a_d$ are the alternative allele doses (0, 1, or 2) for host and
 
 4. **Locus dropout**: Each marker has a {{ panel_empirical.mean_nocall_pct }}% probability of producing zero reads, based on the empirical no-call rate.
 
-Alternative allele counts are drawn from a binomial distribution with the biased, error-adjusted, and conditionally normalised expected frequency and per-marker depth.
+Alternative allele counts are drawn from a binomial distribution with the biased, error-adjusted, and conditionally normalised expected frequency and per-marker depth. The simulator can optionally draw reads from a beta-binomial with a specified overdispersion concentration $\rho$ instead (binomial is the $\rho \to \infty$ limit); this is used to characterise the dependence of the limit of detection on overdispersion (Supplementary Figures S7, S8) but not in the main validation, which uses binomial sampling.
 
 To evaluate longitudinal monitoring, we simulated a six-timepoint post-HSCT engraftment trajectory (day +14 to day +365) with true donor fractions ranging from 15% (early engraftment) to 97% (full donor chimerism), including a clinically relevant 3-percentage-point dip at day +180. Each timepoint was generated at 500x depth with the same noise model parameters as the depth validation, and five independent replicates were run with different random seeds.
 

@@ -324,6 +324,86 @@ write up why in this file and stop.
 > the donor-absent background too). The honest demonstration needs marker-type-aware
 > overdispersion (Step 21 follow-up).
 
+### Prototype results (2026-05-28)
+
+The prototype landed as `paper/scripts/run_presence_lod.py`, ran a 10-rep pilot, then
+scaled to the full grid (2 relatedness x 1 panel size x 3 depths x 4 error rates x 8
+fractions, with 200 blanks + 60 reps per positive = 14,880 replicates total). Outputs
+in `output/facts/presence_lod_raw.csv` and `output/facts/presence_lod_summary.csv`.
+
+**Sim-config decision worth recording.** The plan suggested `realistic_biases=True` to
+match the issue #8 sweep, but the initial pilot run gave FP=100% at every cell. Cause:
+`simulate.blend_vcfs` adds per-marker bias to the expected VAF *before* the error
+model, so at donor-homozygous markers the bias contributes a real per-marker ALT
+excess on top of the e/3 error background, breaking the `e_i = e/3` calibration
+trick. This is the same class of objection the "Update (2026-05-28)" section above
+raises for a uniform `rho` (a knob calibrated for het/intermediate markers
+contaminating the clean near-zero background). The prototype now runs with
+`realistic_biases=False, marker_bias_sd=0.0`; `depth_cv=0.43` and
+`locus_dropout_rate=0.016` are kept (neither adds background). Inline comment in
+the script explains the same. When the detector ships, the bias-on case should be
+revisited once the underlying simulator either gates bias on het markers only or
+the production code uses per-site error rates that absorb the bias-driven excess.
+
+**Pilot sanity (10 reps).** All three checks passed. FP=0/10 in every cell at
+`f_h=0`; 10/10 detection at `f_h=1e-3 / 2000x / e=3e-4` with median `p_lrt` ~ 2e-22
+(unrelated) and 4e-11 (sibling); `f_h_hat` tracked `1 - donor_fraction` from the MLE
+tightly across positives (e.g. unrelated/2000x/e=3e-4/f_h=5e-4: mean f_hat = 5.95e-4
+vs mean mle_host = 5.98e-4 vs true 5.00e-4).
+
+**Gate 1 (calibration): PASS.** Mean LRT FP rate across 24 cells = **0.050** (target
+0.050), range 0.020-0.085, n=200 blanks per cell. 23/24 cells inside the Wald 95%
+band for n=200 at p=0.05 ([0.020, 0.080]); the one outlier (unrelated/1000x/3e-4 at
+0.085) is one replicate above the band. The pooled-Poisson statistic was similar
+(mean 0.045, range 0.020-0.070). Both presence statistics are calibrated by
+construction as predicted.
+
+**Gate 2 (monotonicity): PASS.** Detection rate is monotone in `f_h` per cell up to
+small-N sampling noise (binomial SE ~6% at n=60 per positive). Presence-LoD is
+monotone in depth (1000 -> 2000 -> 5000 always decreases) and monotone in `e` (1e-2
+-> 3e-3 -> 1e-3 -> 3e-4 always decreases) across all 24 cells.
+
+**Gate 3 (presence-LoD below MLE-LoD at clean `e`): inconclusive in binomial sim,
+as anticipated by the "Update (2026-05-28)" caveat above.** Tabulating
+`presence_LoD / MLE_LoD` at matched cells:
+
+  - Clean error (`e=3e-4`): ratio 1.01 to 1.64, MLE marginally to modestly better
+    at every depth/relatedness (e.g. unrelated/5000x/3e-4: presence 1.94e-4 vs MLE
+    1.92e-4; sibling/2000x/3e-4: presence 8.2e-4 vs MLE 5.0e-4).
+  - Noisy error (`e=1e-2`): presence wins at low depth (unrelated/1000x: ratio
+    0.53; sibling/2000x: ratio 0.09 = ~12x advantage), converging to parity at
+    5000x.
+
+The expected sign of the gate-3 gap (presence wins at clean `e`, parity at noisy
+`e`) is reversed here, exactly because the binomial simulator gives the MLE no
+overdispersion to pay. Under binomial sim the MLE has an unrealistically clean
+likelihood and asymptotically captures the same signal the presence detector does
+(plus a little extra from the het / intermediate markers the detector discards),
+so the MLE wins by a small margin at clean error. The presence detector's
+structural advantage from "Background point 1" (no shared-`rho` tax) is invisible
+by construction and the gate-3 gap measured here is a lower bound. Per the caveat,
+this is not grounds to stop.
+
+**Disposition.** Gates 1 and 2 hold cleanly; gate 3 needs the realistic
+overdispersion the MLE pays before it can show the expected gap. The honest
+headline LoD comparison requires one of two follow-ups to land first:
+
+  - **Step 14 (empirical per-site error rates)** — the headline benefit the plan is
+    structured around. Once per-site rates feed both the simulator (per-site
+    extension) and the detector, the presence statistic decouples from the global
+    error rate and the gap at clean `e` becomes a single-rate baseline shift.
+  - **Marker-type-aware overdispersion in the simulator (Step 21 follow-up)** —
+    apply `rho` only to het / intermediate markers, leave the donor-absent allele
+    at the binomial error background. Cheapest path to exposing the structural
+    presence advantage on synthetic data, without per-site rates.
+
+Either is sufficient to revisit gate 3. The detector itself (the inline LRT +
+pooled-Poisson logic in `paper/scripts/run_presence_lod.py`) is calibrated and
+ready to promote to `src/allomix/detect.py` when a follow-up justifies the
+integration work. Until then, no `src/allomix/` changes.
+
+---
+
 **Sanity checks before the full grid:** run a 10-replicate pilot first;
 `f_h=0` should give few/no detections, `f_h=1e-3` at 2000x with `e=3e-4` should detect almost
 always, and `f_h_hat` should track `1 - donor_fraction` from the MLE on the same sample.

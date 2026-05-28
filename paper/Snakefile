@@ -50,6 +50,17 @@ LOD_FACTS = [
 ]
 LOD_FIGS = [f"{FACTS_DIR}/fig5_lod_curves.png"]
 
+# LoD vs depth saturation (consumes the lod_summary above; no extra simulation).
+LOD_SATURATION_FACTS = [f"{FACTS_DIR}/lod_saturation.csv"]
+LOD_SATURATION_FIGS = [f"{FACTS_DIR}/fig_lod_saturation.png"]
+
+# LoD vs overdispersion (rho) sweep (self-contained, runs its own simulation).
+OVERDISP_FACTS = [
+    f"{FACTS_DIR}/overdispersion_lod.csv",
+    f"{FACTS_DIR}/overdispersion_lod_headline.csv",
+]
+OVERDISP_FIGS = [f"{FACTS_DIR}/fig_overdispersion_lod.png"]
+
 SUPP_SYNTHETIC_FIGS = [
     f"{FACTS_DIR}/figS1_bias_distributions.png",
     f"{FACTS_DIR}/figS2_depth_distributions.png",
@@ -83,6 +94,8 @@ ALL_FACTS = (
     + PAPER_FACTS
     + SUPP_SYNTHETIC_FACTS
     + LOD_FACTS
+    + LOD_SATURATION_FACTS
+    + OVERDISP_FACTS
 )
 
 ALL_FIGS = (
@@ -93,6 +106,8 @@ ALL_FIGS = (
     + TIMELINE_FIGS
     + SUPP_SYNTHETIC_FIGS
     + LOD_FIGS
+    + LOD_SATURATION_FIGS
+    + OVERDISP_FIGS
 )
 
 
@@ -209,6 +224,24 @@ rule lod_plot:
         LOD_FIGS,
     shell:
         "python paper/scripts/plot_lod_curves.py"
+
+
+rule lod_saturation:
+    input:
+        f"{FACTS_DIR}/lod_summary.csv",
+    output:
+        LOD_SATURATION_FACTS,
+        LOD_SATURATION_FIGS,
+    shell:
+        "python paper/scripts/plot_lod_saturation.py --relatedness unrelated"
+
+
+rule overdispersion_lod:
+    output:
+        OVERDISP_FACTS,
+        OVERDISP_FIGS,
+    shell:
+        "python paper/scripts/run_overdispersion_lod.py"
 
 
 rule supp_synthetic:

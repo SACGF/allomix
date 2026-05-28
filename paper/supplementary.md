@@ -71,3 +71,15 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 ![Figure S6](output/facts/figS6_residuals.png)
 
 **Figure S6.** Per-marker residuals (observed minus expected VAF) from a simulated 30% donor mixture at 500x. (A) Residual histogram with normal fit. (B) Residuals plotted against expected VAF, showing no systematic trend across the VAF range.
+
+### S7. Limit of Detection vs Depth (Saturation)
+
+![Figure S7](output/facts/fig_lod_saturation.png)
+
+**Figure S7.** Limit of detection as a function of mean depth for the simulated unrelated panels in the LoD sweep. Points are the in silico LoD per panel size; lines are the LoD model $\mathrm{LoD} = (A/\sqrt{M})\sqrt{(n + \rho)/(n(\rho + 1))}$ fitted across panels ($M$ = informative markers, $n$ = depth, $\rho$ = beta-binomial overdispersion concentration). The simulator draws reads from a binomial (Methods), so the fit returns a near-infinite $\rho$ and the LoD falls close to $1/\sqrt{n}$ with no floor (dashed binomial reference). Under real, finite $\rho$ the per-marker variance instead approaches $p(1-p)/(\rho + 1)$, so the LoD saturates at a floor and depth beyond an effective cap of $\rho + 1$ reads yields diminishing returns. The in silico LoD reported elsewhere is therefore an analytical best case under near-binomial sampling.
+
+### S8. Effect of Overdispersion on the Limit of Detection
+
+![Figure S8](output/facts/fig_overdispersion_lod.png)
+
+**Figure S8.** In silico LoD as a function of the beta-binomial overdispersion concentration $\rho$, at {{ overdispersion_lod_headline.depth }}x depth with {{ overdispersion_lod_headline.n_markers }} informative markers (unrelated donor). Reads were simulated beta-binomial across a grid of $\rho$ and the donor fraction estimated with the standard pipeline; the analytic and simulated (tool) LoD agree closely. The LoD rises from {{ overdispersion_lod_headline.lod_binomial_pct }}% under pure-binomial sampling ($\rho \to \infty$) to {{ overdispersion_lod_headline.lod_rho100_pct }}% at $\rho = 100$ (a {{ overdispersion_lod_headline.fold_rho100_vs_binomial }}-fold increase) and {{ overdispersion_lod_headline.lod_rho30_pct }}% at $\rho = 30$. At clinical coverage the overdispersion, not the depth, is the dominant control on the achievable LoD, which is why a simulated $\rho$ calibrated from real per-sample fits is needed before the in silico LoD is taken as a performance figure.

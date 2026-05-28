@@ -27,6 +27,42 @@ and removes most of the benefit. Step 14 should land first.
 if it lands first, but this plan does not strictly require it because the detector is
 a separate code path from the estimator.
 
+## Update (2026-05-28): overdispersion is now in the simulator — what it means here
+
+A separate LoD investigation (Step 21) found that the in-silico LoD was optimistic
+because the simulator drew reads from a pure binomial; it now confirmed empirically
+that the per-sample LoD is dominated by overdispersion `rho` (the variance approaches
+`p(1-p)/(rho+1)`, so depth saturates near an effective cap of `rho+1` reads). The
+simulator gained a `rho` argument (`sample_allele_counts` / `blend_vcfs` /
+`blend_from_genotype_dicts`, default `inf` = binomial). This affects this plan in three
+ways:
+
+1. **It is direct evidence for Background point 1** (the shared `rho` taxes exactly the
+   markers this detector uses). The MLE's `detection_limit` pays the overdispersion tax;
+   a detector restricted to donor-homozygous, error-background-only markers does not. The
+   new figures `output/facts/fig_lod_saturation.png` and `fig_overdispersion_lod.png`
+   (from `paper/scripts/plot_lod_saturation.py` and `run_overdispersion_lod.py`) quantify
+   the tax: at `rho≈100`, LoD is ~3.5x the binomial value.
+
+2. **The prototype below is unaffected and still correct as written.** It simulates with
+   the binomial default (`rho=inf`) and the `e_i = e/3` self-consistency trick holds. Do
+   **not** turn on a global `rho` in the prototype: the simulator applies one `rho` to
+   *every* marker/allele uniformly, including the near-zero donor-absent allele, where
+   overdispersion is not physical (it is a het/intermediate-marker amplification effect).
+   A uniform `rho` would overdisperse the clean donor-absent background and miscalibrate
+   the presence-test binomial null (inflated false positives), making the detector look
+   bad for the wrong reason.
+
+3. **Caveat for acceptance gate #3.** Because the prototype's binomial simulation gives
+   the MLE no overdispersion to pay, the MLE-LoB LoD it measures is the optimistic
+   binomial value and the presence detector's structural advantage from point 1 is
+   invisible. The gate-#3 gap measured on binomial sim is therefore a **lower bound** on
+   the real-data advantage — do not reject the detector if that gap is small; the gap is
+   expected to widen once overdispersion is present. Fully demonstrating point 1 needs a
+   **marker-type-aware** overdispersion model (apply `rho` only to het/intermediate
+   markers, keep the donor-absent allele at the binomial error background), which is a
+   Step 21 follow-up, not part of this prototype.
+
 ## Background
 
 ### What the current pipeline does, and why low-fraction detection is under-served
@@ -279,6 +315,14 @@ clean per-site error background would buy", and directly demonstrates the headli
    toward 1e-2 (showing the error floor is the lever, i.e. Step 14 is worth doing).
 If 1-2 hold and 3 shows a real gap at clean error rates, proceed with the full plan. If not,
 write up why in this file and stop.
+
+> Note (see "Update (2026-05-28)" above): gate #3 runs on binomial simulation, which
+> charges the MLE no overdispersion, so the measured presence-vs-MLE gap is a **lower
+> bound**. A small gap here does not by itself justify stopping; the gap widens under the
+> real overdispersion the MLE pays and this detector does not. Do not "fix" this by turning
+> on a global `rho` in the prototype — that miscalibrates the presence null (it overdisperses
+> the donor-absent background too). The honest demonstration needs marker-type-aware
+> overdispersion (Step 21 follow-up).
 
 **Sanity checks before the full grid:** run a 10-replicate pilot first;
 `f_h=0` should give few/no detections, `f_h=1e-3` at 2000x with `e=3e-4` should detect almost

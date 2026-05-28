@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Calibration + LoD prototype for the host-presence detection test.
+"""Calibration + LoD harness for the host-presence detection test.
+
+Production code now lives in ``src/allomix/detect.py``
+(``host_presence_test``, ``HostPresenceResult``). This script remains the
+calibration / gate-evidence harness — it sweeps the synthetic grid used to
+clear the three acceptance gates in the plan, so the LRT and pooled-Poisson
+helpers below are kept as their inline-tested form. New downstream code
+should call ``allomix.detect.host_presence_test`` instead.
 
 See ``claude/20_host_presence_detection_plan.md``, section "Prototype spec".
 

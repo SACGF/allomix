@@ -348,6 +348,48 @@ class TestHostPresenceCli:
             assert col in header
             assert data[header.index(col)] == "NA", f"expected NA for {col}"
 
+    def test_monitor_two_vcf_mode(self, tmp_path):
+        """--panel-vcf + --admix-vcf mode produces the same result as --vcf."""
+        out_single = tmp_path / "single.tsv"
+        out_split = tmp_path / "split.tsv"
+        common = [
+            "--host-sample", "HOST",
+            "--donor-sample", "DONOR",
+            "--sample", "ADMIX_F0.10",
+            "--min-dp", "0",
+            "--min-gq", "0",
+        ]
+        assert main(["monitor", "--vcf", str(JOINT_VCF), "--output", str(out_single), *common]) == 0
+        assert (
+            main(
+                [
+                    "monitor",
+                    "--panel-vcf", str(JOINT_VCF),
+                    "--admix-vcf", str(JOINT_VCF),
+                    "--output", str(out_split),
+                    *common,
+                ]
+            )
+            == 0
+        )
+        assert out_single.read_text() == out_split.read_text()
+
+    def test_monitor_rejects_mixed_vcf_modes(self, tmp_path):
+        """Specifying both --vcf and --panel-vcf is a hard error."""
+        import pytest
+        with pytest.raises(SystemExit):
+            main(
+                [
+                    "monitor",
+                    "--vcf", str(JOINT_VCF),
+                    "--panel-vcf", str(JOINT_VCF),
+                    "--admix-vcf", str(JOINT_VCF),
+                    "--host-sample", "HOST",
+                    "--donor-sample", "DONOR",
+                    "--sample", "ADMIX_F0.10",
+                ]
+            )
+
     def test_monitor_json_includes_host_presence_object(self, tmp_path):
         out = tmp_path / "cli_hp.json"
         rc = main(

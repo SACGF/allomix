@@ -62,9 +62,29 @@ SAMPLES_CSV_DIR = config.get(
 GATK = config.get("gatk", "gatk")
 JAVA_MEM = config.get("java_mem", "8g")
 INTERVALS = config.get("intervals", None)
-INTERVALS_ARG = f"-L {INTERVALS}" if INTERVALS else ""
-_intervals_tag = (
-    f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
+# Optional fixed panel of (CHROM,POS,REF,ALT) sites. When set, GenotypeGVCFs
+# is force-called at every panel allele (and the panel VCF is used as -L
+# intervals throughout phase 1) so the per-patient panel size is constant
+# regardless of how many variants GATK discovers in HOST+DONOR alone. This
+# recovers markers that small per-patient joint calls miss but a big pooled
+# joint call would have found. Same VCF is then used by phase 2.
+PANEL_ALLELES_VCF = config.get("panel_alleles_vcf", None)
+if PANEL_ALLELES_VCF:
+    # Panel VCF overrides any intervals BED — using both would just mask
+    # panel sites that fall outside the BED.
+    INTERVALS_ARG = f"-L {PANEL_ALLELES_VCF}"
+    _intervals_tag = (
+        f".{os.path.splitext(os.path.basename(PANEL_ALLELES_VCF))[0].removesuffix('.vcf')}"
+    )
+else:
+    INTERVALS_ARG = f"-L {INTERVALS}" if INTERVALS else ""
+    _intervals_tag = (
+        f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
+    )
+GENOTYPE_GVCFS_ALLELES_ARG = (
+    f"--alleles {PANEL_ALLELES_VCF} --include-non-variant-sites"
+    if PANEL_ALLELES_VCF
+    else ""
 )
 
 # Phase 2 (bcftools mpileup)
@@ -290,6 +310,7 @@ rule genotype_gvcfs:
         gatk=GATK,
         java_mem=JAVA_MEM,
         intervals_arg=INTERVALS_ARG,
+        alleles_arg=GENOTYPE_GVCFS_ALLELES_ARG,
     shell:
         """
         {params.gatk} --java-options '-Xmx{params.java_mem}' GenotypeGVCFs \
@@ -298,6 +319,7 @@ rule genotype_gvcfs:
             -O {output.vcf} \
             --verbosity ERROR \
             {params.intervals_arg} \
+            {params.alleles_arg} \
             2>&1 | tee {log}
         """
 

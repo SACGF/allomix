@@ -408,3 +408,33 @@ TODO:
 - [ ] Calibrate `rho` from real per-sample fits (`diagnose_sample.py` on run3 VCFs), then re-run `lod_validation` with that `rho` so the **headline** LoD reflects real overdispersion rather than the binomial best case. This re-runs the expensive `lod_validation` job (warn before triggering).
 - [ ] The simulator applies a single global `rho` to every marker/allele uniformly, including the near-zero donor-absent allele where overdispersion is not physical (it is a het/intermediate-marker amplification phenomenon). A marker-type-aware (or allele-aware) overdispersion model is needed before `rho` can be used to validate host-presence detection (Step 20) — otherwise turning on a global `rho` miscalibrates the presence-test null. See the note added to `claude/20_host_presence_detection_plan.md`.
 - [ ] Decide whether the headline-LoD wording in `discussion.md` should switch from the binomial number to the overdispersion-calibrated number once the above lands.
+
+---
+
+## Step 22: Decide Whether to Fully Switch to the Pileup / Two-VCF Model 🔲 TODO
+
+Pipeline and CLI now both support the two-VCF model (panel VCF for host/donor `GT` from GATK; admix VCF for `AD` from forced `bcftools mpileup`). The original single-joint-VCF model is still supported as a back-compat path: `allomix monitor --vcf <single>`, synthetic test data (`tests/test_data/`, `scripts/generate_*.py`), the in-silico validation harness, and the paper figures all still live on the single-VCF model.
+
+This step is the decision and the follow-through: do we keep dual support, or commit to pileup-only and delete the single-VCF branches?
+
+Arguments for fully switching:
+- The two-phase pipeline is now the only sane way to produce admix `AD` (see the empirical 0-ALT-reads-at-hom-ref result in Step 11 and `doc/joint_calling.md`).
+- Dual support is maintenance drag: every new CLI arg, every estimator change, every paper figure has to consider both modes.
+- Synthetic data generated under the single-VCF assumption can hide AD-stripping bugs that real data exposes.
+
+Arguments against:
+- The single-VCF mode is exactly how the in-silico simulator currently emits data — synthetic ground truth is convenient because we control both the panel GTs and the admix AD in one file.
+- Existing paper validation runs (Steps 8, 9, 13) were done against single-VCF synthetic data; tearing this out invalidates a chunk of reproducibility.
+- All 21 integration tests in `tests/test_integration.py` currently drive the single-VCF path. A switch means rebuilding the fixtures as two-file panel/admix pairs.
+
+If we commit to pileup-only, the work to do:
+- [ ] Drop `--vcf` from `monitor` / `timeline`; make `--panel-vcf` + `--admix-vcf` the only mode. Update `_resolve_vcf_inputs` accordingly.
+- [ ] Update synthetic data generation (`scripts/generate_test_data.py`, `scripts/generate_timeline_data.py`, `scripts/generate_multidonor_test_data.py`, `src/allomix/simulate.py`) to emit a panel VCF + admix VCF pair rather than one joint VCF. Decide whether the simulator should model `bcftools mpileup`'s actual behaviour (raw AD, no GVCF rounding) or keep the current binomial draw and just route the GTs/ADs into two files.
+- [ ] Rebuild `tests/test_data/` fixtures as panel+admix pairs; update all 21 single-VCF integration tests and the multi-donor / LOD / detection fixtures.
+- [ ] Re-run all paper validation scripts (`paper/scripts/run_*.py`) against pipeline-style synthetic data and update facts CSVs, figures, methods text, and any results numbers that move.
+- [ ] Remove the back-compat branch in `_resolve_vcf_inputs` and the `test_monitor_two_vcf_mode` parity test (becomes the only mode).
+- [ ] Sweep for residual single-VCF assumptions in `doc/`, `claude/`, `README.md`.
+
+Gated on: Step 11 re-run landing (need to see that the two-VCF results agree with or improve on the old single-VCF batch before pulling the floor out from under the existing validation).
+
+Decision required before any of the above ships — this is the explicit "do we even want to do this" step.

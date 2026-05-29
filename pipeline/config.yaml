@@ -18,6 +18,14 @@ bgzip: "bgzip"
 gatk: "gatk"  # full path if not on PATH, e.g. /tau/tools/gatk-4.1.3.0/gatk
 java_mem: "8g"  # Java heap per GATK job
 # intervals: "/path/to/targets.bed"  # restrict calling to specific loci (recommended for targeted panels)
+# Optional fixed panel of (CHROM,POS,REF,ALT) sites. When set:
+#   - GenotypeGVCFs is force-called at every panel allele (--alleles + --include-non-variant-sites),
+#     so the per-patient panel has the same site set regardless of how many
+#     variants GATK discovers in HOST+DONOR alone.
+#   - The panel VCF is used as -L intervals for HaplotypeCaller / CombineGVCFs / GenotypeGVCFs.
+#   - Overrides `intervals:` above (using both would mask panel sites outside the BED).
+# Build one with: python scripts/build_panel_vcf.py <bed> <existing.vcf.gz> panel.vcf.gz
+# panel_alleles_vcf: "/path/to/panel.vcf.gz"
 
 # Phase 2 — bcftools mpileup
 bcftools: "bcftools"

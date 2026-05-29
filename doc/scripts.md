@@ -3,8 +3,7 @@
 Utility and validation scripts live in `scripts/`. They are **not** part of the
 installed `allomix` package; run them from the repo root with `python
 scripts/<name>.py`. They depend on `allomix` being installed (`pip install -e
-".[dev]"`); the plotting script also needs `matplotlib` and `run_xls_batch.py`
-needs `openpyxl` (`pip install 'allomix[xls]'`).
+".[dev]"`); the plotting script also needs `matplotlib`.
 
 > The example sample codes below (`AAAA`, `BBBB`, ...) are placeholders. Use your
 > own sample names, and keep real sample sheets and `/tau` paths out of version
@@ -14,7 +13,7 @@ needs `openpyxl` (`pip install 'allomix[xls]'`).
 
 | Script | Purpose |
 |--------|---------|
-| `run_xls_batch.py` | Run `allomix monitor` for every row of an XLS/XLSX sample sheet and combine the per-sample results into one `batch.tsv`. |
+| `run_csv_batch.py` | Run `allomix monitor` for every per-patient CSV in `pipeline/sample_csvs/` against the two-VCF pipeline outputs, and combine the per-patient results into one `batch.tsv`. |
 | `plot_chimerism_comparison.py` | Plot whole-blood NGS chimerism (with CIs) against flow-sorted lineage values, optionally overlaying one or more other runs. |
 | `diagnose_sample.py` | Per-marker residuals and noise model for one admixture sample: localise a goodness-of-fit failure (CNV/LOH) by chromosome and show why a per-sample LOD is what it is (fitted overdispersion `rho`, SE, LoB, LoD). |
 | `run_validation.py` | Run allomix on synthetic test data against a truth table and produce a validation report. |
@@ -28,51 +27,50 @@ needs `openpyxl` (`pip install 'allomix[xls]'`).
 
 The two most commonly used scripts are documented in detail below.
 
-## `run_xls_batch.py` — batch a sample sheet
+## `run_csv_batch.py` — batch the joint-calling pipeline outputs
 
-Reads an XLS/XLSX file where each row names a host, a donor, and a test
-(admixture) sample. For each row it runs `allomix monitor` against a single
-joint-called VCF, writes a per-sample TSV to the output directory, and
-concatenates them all into `batch.tsv`.
+Drives `allomix monitor` across every per-patient CSV in
+`pipeline/sample_csvs/`. For each CSV it locates the matching
+`<patient>.vcf.gz` (host/donor genotypes) and `<patient>.admix.vcf.gz`
+(raw pileup AD) in `--vcf-dir`, runs `allomix monitor --panel-vcf ...
+--admix-vcf ...` once per patient with all ADMIX timepoints, and
+concatenates the per-patient TSVs into `batch.tsv`. Patients with no
+ADMIX rows are skipped automatically.
 
 ### Example
 
 ```bash
-python scripts/run_xls_batch.py samples.xlsx \
-    --vcf joint_called.g.vcf.gz \
-    --host-column "Host sample" \
-    --donor-column "Donor sample" \
-    --test-sample-column "Test sample" \
-    --copy-columns "Donor,Chimerism result TP2" \
-    --output-dir output/validation_run2
+python scripts/run_csv_batch.py \
+    --samples-csv-dir pipeline/sample_csvs \
+    --vcf-dir output/joint_call \
+    --output-dir output/validation_run2 \
+    --bias-table output/bias_training/bias_table.tsv \
+    --error-table output/error_training/error_table.tsv
 ```
 
-This produces `output/validation_run2/<test_sample>.tsv` for each row plus
-`output/validation_run2/batch.tsv`.
+This produces `output/validation_run2/<patient>.tsv` for each patient
+plus `output/validation_run2/batch.tsv`.
 
 ### Options
 
-| Option | Required | Description |
-|--------|----------|-------------|
-| `xls_file` (positional) | yes | Path to the `.xlsx` sample sheet. |
-| `--vcf` | yes | Joint-called VCF containing all host/donor/test samples. |
-| `--host-column` | yes | Sheet column holding the host sample name. |
-| `--donor-column` | yes | Sheet column holding the donor sample name. |
-| `--test-sample-column` | yes | Sheet column holding the test (admixture) sample name. |
-| `--bias-table-tsv` | no | Per-marker bias table passed to `allomix monitor --bias-table`. |
-| `--copy-columns` | no | Comma-separated sheet columns to append to each `batch.tsv` row. |
-| `--output-dir` | no | Output directory (default `output/batch`). |
-
-Rows whose host/donor/test value is blank or `N/A` are skipped.
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--samples-csv-dir` | `pipeline/sample_csvs` | Directory of per-patient CSVs (one per file). |
+| `--vcf-dir` | `output/joint_call` | Directory containing `<patient>.vcf.gz` and `<patient>.admix.vcf.gz` from `pipeline/Snakefile`. |
+| `--output-dir` | `output/batch` | Where per-patient TSVs and the combined `batch.tsv` are written. |
+| `--bias-table` | none | Per-marker bias table passed through to `allomix monitor`. |
+| `--error-table` | none | Per-site error table passed through to `allomix monitor`. |
+| `--allomix` | `allomix` | Path to the `allomix` executable. |
+| `--extra-arg ARG` | none | Forward an extra argument to every `allomix monitor` call. Repeat for multiple, e.g. `--extra-arg --min-dp=200 --extra-arg --min-gq=30`. |
 
 ### `batch.tsv` columns
 
-The combined file has one row per successfully run sample, with the columns
-`allomix monitor` emits, followed by any `--copy-columns`:
+The combined file has one row per successfully run admix sample, with the
+columns `allomix monitor` emits:
 
 ```
 sample  donor_pct  ci_lo  ci_hi  lob_pct  lod_pct  n_informative  n_used
-        mean_depth  gof_pval  qc_status  qc_warnings  <copied columns...>
+        mean_depth  gof_pval  qc_status  qc_warnings
 ```
 
 - `lob_pct` / `lod_pct` — per-sample limit of blank / limit of detection.
@@ -84,9 +82,11 @@ sample  donor_pct  ci_lo  ci_hi  lob_pct  lod_pct  n_informative  n_used
   `REVIEW` sample this names the cause, e.g. which input starved the informative
   markers, or the poor-fit reason.
 
-> Tip: pass the flow lineage column (and any donor-type column) through
-> `--copy-columns` so the plotting script below can read them straight from
-> `batch.tsv`.
+> Note: `plot_chimerism_comparison.py` reads the flow lineage column
+> (and donor-type column) directly from `batch.tsv`. The old
+> `run_xls_batch.py` driver merged those columns in via
+> `--copy-columns`. `run_csv_batch.py` does not do this yet — see the
+> follow-up in the plotting section below if you need flow overlay.
 
 ## `plot_chimerism_comparison.py` — NGS vs flow, and run-to-run
 

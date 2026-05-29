@@ -143,8 +143,13 @@ def parse_vcf(
         else:
             dp = ad_ref + ad_alt
 
-        # Extract GQ
-        gq_arr = variant.format("GQ")
+        # Extract GQ. cyvcf2 raises KeyError when GQ is not declared in the
+        # VCF header (e.g. bcftools call -C alleles output), as opposed to
+        # returning None for declared-but-missing — treat both as "no GQ".
+        try:
+            gq_arr = variant.format("GQ")
+        except KeyError:
+            gq_arr = None
         gq = int(gq_arr[sample_idx][0]) if gq_arr is not None else None
 
         # Apply filters

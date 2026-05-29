@@ -4,7 +4,7 @@
 Internal SA Path validation plot (not part of the allomix package).
 
 Takes one or two allomix `batch.tsv` files (as produced by
-`scripts/run_xls_batch.py`) and draws a per-sample forest plot. Each sample
+`scripts/run_csv_batch.py`) and draws a per-sample forest plot. Each sample
 shows the NGS donor estimate with its confidence interval, overlaid on the
 flow cytometry lineage values (CD45 / CD3 / CD13) parsed from a copied column.
 

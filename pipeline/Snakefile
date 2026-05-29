@@ -63,11 +63,13 @@ GATK = config.get("gatk", "gatk")
 JAVA_MEM = config.get("java_mem", "8g")
 INTERVALS = config.get("intervals", None)
 # Optional fixed panel of (CHROM,POS,REF,ALT) sites. When set, GenotypeGVCFs
-# is force-called at every panel allele (and the panel VCF is used as -L
-# intervals throughout phase 1) so the per-patient panel size is constant
-# regardless of how many variants GATK discovers in HOST+DONOR alone. This
-# recovers markers that small per-patient joint calls miss but a big pooled
-# joint call would have found. Same VCF is then used by phase 2.
+# forces a genotype at every panel site (--force-output-intervals) and the
+# panel VCF is used as -L intervals throughout phase 1, so the per-patient
+# panel size is constant regardless of how many variants GATK discovers in
+# HOST+DONOR alone. The main payoff is a marginal informative marker that
+# falls below the calling QUAL threshold in a small 2-sample joint call: forced
+# output pins its genotype back. See doc/joint_calling.md. Same VCF is then
+# used by phase 2.
 PANEL_ALLELES_VCF = config.get("panel_alleles_vcf", None)
 if PANEL_ALLELES_VCF:
     # Panel VCF overrides any intervals BED — using both would just mask
@@ -81,8 +83,13 @@ else:
     _intervals_tag = (
         f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
     )
+# GenotypeGVCFs has no --alleles option (that lives on HaplotypeCaller). The
+# tool's own mechanism for "emit a genotype at these sites even if non-variant
+# in the samples" is --force-output-intervals, combined with
+# --include-non-variant-sites. See doc/joint_calling.md for why we force every
+# panel site.
 GENOTYPE_GVCFS_ALLELES_ARG = (
-    f"--alleles {PANEL_ALLELES_VCF} --include-non-variant-sites"
+    f"--force-output-intervals {PANEL_ALLELES_VCF} --include-non-variant-sites"
     if PANEL_ALLELES_VCF
     else ""
 )

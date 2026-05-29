@@ -362,9 +362,15 @@ rule pileup_admix:
 
     ``mpileup -a FORMAT/AD,FORMAT/DP`` reports raw REF/ALT base counts at
     every panel position — no local reassembly, no minority-ALT stripping.
-    ``call -m -C alleles -T panel_tsv`` then assigns a GT at each site
+    ``call -m -A -C alleles -T panel_tsv`` then assigns a GT at each site
     using only the panel's known REF/ALT as candidates, so the output
     covers every panel site regardless of whether the ALT was observed.
+    ``-A``/``--keep-alts`` is required: without it, ``call`` strips the
+    panel's ALT to ``.`` whenever the admix sample has zero ALT reads,
+    which breaks the (chrom,pos,ref,alt) join with the panel VCF
+    downstream. Sites where the admix is fully host-aligned and the
+    donor's panel ALT is absent are exactly the high-signal markers we
+    care about for low-fraction chimerism, so the join must hold.
     """
     input:
         bam=lambda wc: _bam_for_sample(wc.patient, wc.sample),
@@ -399,6 +405,7 @@ rule pileup_admix:
             {input.bam} 2> {log} \
         | {params.bcftools} call \
             -m \
+            -A \
             -C alleles \
             -T {input.targets} \
             -Oz -o {output.vcf} 2>> {log}

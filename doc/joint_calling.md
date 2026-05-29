@@ -163,7 +163,7 @@ Phase-1 HaplotypeCaller and phase-2 pileup are both per-sample and parallelise w
 | `output/genotypes/<patient>/admix/targets.tsv.gz` | Phase 1 panel sites in `bcftools call -C alleles` format |
 | `output/genotypes/logs/` | Per-rule log files |
 
-allomix then reads `<patient>.vcf.gz` for the host/donor genotypes and `<patient>.admix.vcf.gz` for the admix allele depths, using the existing separate-VCF CLI mode.
+allomix then reads `<patient>.vcf.gz` for the host/donor genotypes (`--panel-vcf`) and `<patient>.admix.vcf.gz` for the admix allele depths (`--admix-vcf`).
 
 ## Adding new timepoints
 

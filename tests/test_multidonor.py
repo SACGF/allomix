@@ -511,7 +511,9 @@ class TestMultiDonorCLI:
         rc = main(
             [
                 "monitor",
-                "--vcf",
+                "--panel-vcf",
+                str(joint_vcf),
+                "--admix-vcf",
                 str(joint_vcf),
                 "--host-sample",
                 "HOST",
@@ -541,7 +543,9 @@ class TestMultiDonorCLI:
         rc = main(
             [
                 "monitor",
-                "--vcf",
+                "--panel-vcf",
+                str(joint_vcf),
+                "--admix-vcf",
                 str(joint_vcf),
                 "--host-sample",
                 "HOST",
@@ -568,7 +572,9 @@ class TestMultiDonorCLI:
         rc = main(
             [
                 "timeline",
-                "--vcf",
+                "--panel-vcf",
+                str(joint_vcf),
+                "--admix-vcf",
                 str(joint_vcf),
                 "--host-sample",
                 "HOST",
@@ -598,7 +604,9 @@ class TestMultiDonorCLI:
         rc = main(
             [
                 "monitor",
-                "--vcf",
+                "--panel-vcf",
+                str(joint_vcf),
+                "--admix-vcf",
                 str(joint_vcf),
                 "--host-sample",
                 "HOST",

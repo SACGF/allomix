@@ -1,16 +1,36 @@
-"""GATK joint-calling pipeline for allomix.
+"""Per-patient genotyping + admixture pileup pipeline for allomix.
 
-Produces a single multi-sample joint-called VCF from per-sample BAMs,
-suitable for input to allomix monitor/timeline.
+One CSV per patient with columns ``sample_id,bam_filename,sample_type``
+(values ``HOST``, ``DONOR``, ``ADMIX``). Pipeline runs in two phases that
+share a single DAG:
 
-Steps:
-    1. HaplotypeCaller (GVCF mode) per sample — parallelised
-    2. CombineGVCFs — merge all per-sample GVCFs
-    3. GenotypeGVCFs — joint genotype to final VCF
+    Phase 1 — GATK joint-call HOST + DONOR BAMs
+        HaplotypeCaller (GVCF) -> CombineGVCFs -> GenotypeGVCFs
+        Output: <patient>.vcf.gz  (panel sites + reliable host/donor GTs)
+
+    Phase 2 — Forced bcftools mpileup on ADMIX BAMs at the phase-1 sites
+        Per admix sample: bcftools mpileup -a FORMAT/AD,FORMAT/DP -R panel
+                          | bcftools call -m -C alleles -T panel.targets
+        Then bcftools merge across admix samples.
+        Output: <patient>.admix.vcf.gz  (raw AD at every panel site)
+
+Why this split: GATK is the right tool for genotyping the reference
+samples (we only need GT there). It is the wrong tool for the admix AD,
+because HaplotypeCaller -ERC GVCF strips minority ALT reads from
+FORMAT/AD at hom-ref blocks (local reassembly only tracks the called
+allele). That is exactly the signal that low-fraction host detection
+depends on. ``bcftools mpileup`` preserves raw per-allele counts;
+``bcftools call -C alleles`` then assigns a GT at every panel site
+using only the panel's known REF/ALT pair as candidates.
+
+One patient per CSV: joint-calling across patients adds samples to the
+VCF with no informative markers for each other and just inflates run
+time. Also matches the GMP constraint of explicit host/donor pairing.
 
 Usage (from repo root):
     snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 8
-    snakemake -s pipeline/Snakefile --config ref=/path/to/hg38.fa samples_csv=samples.csv --cores 8
+    snakemake -s pipeline/Snakefile \\
+        --config ref=/path/hg38.fa samples_csv=patientX.csv --cores 8
 """
 
 import csv
@@ -26,42 +46,90 @@ configfile: os.path.join(workflow.basedir, "config.yaml")
 REF = config["ref"]
 SAMPLES_CSV = config["samples_csv"]
 OUTPUT_DIR = config.get("output_dir", "output/joint_call")
+
+# Phase 1 (GATK)
 GATK = config.get("gatk", "gatk")
-TABIX = config.get("tabix", "tabix")
 JAVA_MEM = config.get("java_mem", "8g")
 INTERVALS = config.get("intervals", None)
 INTERVALS_ARG = f"-L {INTERVALS}" if INTERVALS else ""
 _intervals_tag = f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
+
+# Phase 2 (bcftools mpileup)
+BCFTOOLS = config.get("bcftools", "bcftools")
+MAX_DEPTH = config.get("max_depth", 100000)
+MIN_MAPQ = config.get("min_mapq", 20)
+MIN_BASEQ = config.get("min_baseq", 20)
+READ_FILTERS = config.get("read_filters", "UNMAP,SECONDARY,QCFAIL,DUP")
+
+# Shared
+TABIX = config.get("tabix", "tabix")
+
 OUTPUT_PREFIX = config.get("output_prefix", os.path.splitext(os.path.basename(SAMPLES_CSV))[0])
-JOINT_VCF = os.path.join(OUTPUT_DIR, f"{OUTPUT_PREFIX}{_intervals_tag}.vcf.gz")
+
+# Phase 1 paths
 GVCF_DIR = os.path.join(OUTPUT_DIR, "gvcfs")
+JOINT_VCF = os.path.join(OUTPUT_DIR, f"{OUTPUT_PREFIX}{_intervals_tag}.vcf.gz")
+
+# Phase 2 paths
+ADMIX_DIR = os.path.join(OUTPUT_DIR, "admix")
+PANEL_TSV = os.path.join(ADMIX_DIR, f"{OUTPUT_PREFIX}.targets.tsv.gz")
+ADMIX_VCF = os.path.join(OUTPUT_DIR, f"{OUTPUT_PREFIX}.admix.vcf.gz")
 
 
-def load_samples(csv_path):
-    """Read sample_id -> bam_filename mapping from CSV."""
+def load_samples(csv_path, allowed_types):
+    """Read sample_id -> bam_filename, filtered by sample_type column.
+
+    The CSV must declare a ``sample_type`` per row. Returns an empty dict
+    if the CSV has no rows matching ``allowed_types`` (e.g. a pre-transplant
+    CSV with no ADMIX timepoints yet) — phase 2 will then have nothing to do.
+    """
     samples = {}
     with open(csv_path) as f:
-        for row in csv.DictReader(f):
-            samples[row["sample_id"]] = row["bam_filename"]
+        reader = csv.DictReader(f)
+        if "sample_type" not in (reader.fieldnames or []):
+            raise ValueError(
+                f"{csv_path} is missing the required 'sample_type' column "
+                f"(expected values: HOST, DONOR, ADMIX)"
+            )
+        for row in reader:
+            stype = row["sample_type"].strip().upper()
+            if stype in allowed_types:
+                samples[row["sample_id"]] = row["bam_filename"]
     return samples
 
 
-SAMPLES = load_samples(SAMPLES_CSV)
+REF_SAMPLES = load_samples(SAMPLES_CSV, allowed_types={"HOST", "DONOR"})
+ADMIX_SAMPLES = load_samples(SAMPLES_CSV, allowed_types={"ADMIX"})
+
+if not REF_SAMPLES:
+    raise ValueError(
+        f"{SAMPLES_CSV} has no HOST or DONOR rows; phase 1 has nothing to call"
+    )
 
 
 # ---------------------------------------------------------------------------
-# Rules
+# Top-level target
 # ---------------------------------------------------------------------------
+
+# Build the admix VCF when admix samples exist; otherwise just the panel VCF.
+_targets = [JOINT_VCF]
+if ADMIX_SAMPLES:
+    _targets.append(ADMIX_VCF)
+
 
 rule all:
     input:
-        JOINT_VCF,
+        _targets,
 
+
+# ---------------------------------------------------------------------------
+# Phase 1: GATK HOST + DONOR joint genotyping
+# ---------------------------------------------------------------------------
 
 rule haplotype_caller:
-    """Run GATK HaplotypeCaller in GVCF mode on a single sample."""
+    """Run GATK HaplotypeCaller in GVCF mode on a single HOST/DONOR sample."""
     input:
-        bam=lambda wc: SAMPLES[wc.sample],
+        bam=lambda wc: REF_SAMPLES[wc.sample],
         ref=REF,
     output:
         gvcf=os.path.join(GVCF_DIR, "{sample}.g.vcf.gz"),
@@ -91,7 +159,7 @@ rule haplotype_caller:
 rule combine_gvcfs:
     """Merge per-sample GVCFs into a single combined GVCF."""
     input:
-        gvcfs=expand(os.path.join(GVCF_DIR, "{sample}.g.vcf.gz"), sample=SAMPLES),
+        gvcfs=expand(os.path.join(GVCF_DIR, "{sample}.g.vcf.gz"), sample=REF_SAMPLES),
         ref=REF,
     output:
         combined=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz"),
@@ -117,7 +185,7 @@ rule combine_gvcfs:
 
 
 rule genotype_gvcfs:
-    """Joint-genotype the combined GVCF to produce the final multi-sample VCF."""
+    """Joint-genotype the combined GVCF to produce the panel VCF."""
     input:
         combined=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz"),
         ref=REF,
@@ -142,7 +210,122 @@ rule genotype_gvcfs:
         """
 
 
+# ---------------------------------------------------------------------------
+# Phase 2: forced bcftools mpileup on ADMIX samples at phase-1 panel sites
+# ---------------------------------------------------------------------------
+
+rule panel_tsv:
+    """Extract (CHROM,POS,REF,ALT) targets file from the phase-1 panel VCF.
+
+    Used by ``bcftools call -C alleles -T`` to force a GT at every panel
+    position with the panel's exact REF/ALT pair as the only candidates.
+    """
+    input:
+        vcf=JOINT_VCF,
+    output:
+        tsv=PANEL_TSV,
+        tbi=PANEL_TSV + ".tbi",
+    params:
+        bcftools=BCFTOOLS,
+        tabix=TABIX,
+    shell:
+        """
+        {params.bcftools} query -f '%CHROM\\t%POS\\t%REF,%ALT\\n' {input.vcf} \
+            | bgzip -c > {output.tsv}
+        {params.tabix} -f -s1 -b2 -e2 {output.tsv}
+        """
+
+
+rule pileup_admix:
+    """Raw pileup + constrained-allele genotyping for one admixture sample.
+
+    ``mpileup -a FORMAT/AD,FORMAT/DP`` reports raw REF/ALT base counts at
+    every panel position — no local reassembly, no minority-ALT stripping.
+    ``call -m -C alleles -T panel_tsv`` then assigns a GT at each site
+    using only the panel's known REF/ALT as candidates, so the output
+    covers every panel site regardless of whether the ALT was observed.
+    """
+    input:
+        bam=lambda wc: ADMIX_SAMPLES[wc.sample],
+        ref=REF,
+        targets=PANEL_TSV,
+        targets_tbi=PANEL_TSV + ".tbi",
+        panel=JOINT_VCF,
+    output:
+        vcf=os.path.join(ADMIX_DIR, "per_sample", "{sample}.vcf.gz"),
+        tbi=os.path.join(ADMIX_DIR, "per_sample", "{sample}.vcf.gz.tbi"),
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "pileup_admix", "{sample}.log"),
+    threads: 2
+    params:
+        bcftools=BCFTOOLS,
+        tabix=TABIX,
+        max_depth=MAX_DEPTH,
+        min_mapq=MIN_MAPQ,
+        min_baseq=MIN_BASEQ,
+        read_filters=READ_FILTERS,
+    shell:
+        """
+        {params.bcftools} mpileup \
+            -f {input.ref} \
+            -R {input.panel} \
+            -a FORMAT/AD,FORMAT/DP \
+            -d {params.max_depth} \
+            -q {params.min_mapq} \
+            -Q {params.min_baseq} \
+            --ff {params.read_filters} \
+            --threads {threads} \
+            {input.bam} 2> {log} \
+        | {params.bcftools} call \
+            -m \
+            -C alleles \
+            -T {input.targets} \
+            -Oz -o {output.vcf} 2>> {log}
+        {params.tabix} -f {output.vcf}
+        """
+
+
+rule merge_admix:
+    """Merge per-admix-sample VCFs into one multi-sample admixture VCF.
+
+    All per-sample VCFs cover every panel site (constrained calling
+    guarantees this), so the merge has no missing-sample positions.
+    """
+    input:
+        vcfs=expand(
+            os.path.join(ADMIX_DIR, "per_sample", "{sample}.vcf.gz"),
+            sample=ADMIX_SAMPLES,
+        ),
+        tbis=expand(
+            os.path.join(ADMIX_DIR, "per_sample", "{sample}.vcf.gz.tbi"),
+            sample=ADMIX_SAMPLES,
+        ),
+    output:
+        vcf=ADMIX_VCF,
+        tbi=ADMIX_VCF + ".tbi",
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "merge_admix.log"),
+    threads: 4
+    params:
+        bcftools=BCFTOOLS,
+        tabix=TABIX,
+    shell:
+        """
+        {params.bcftools} merge \
+            --threads {threads} \
+            -m all \
+            -Oz -o {output.vcf} \
+            {input.vcfs} 2>&1 | tee {log}
+        {params.tabix} -f {output.vcf}
+        """
+
+
+# ---------------------------------------------------------------------------
+# Cleanup
+# ---------------------------------------------------------------------------
+
 rule clean:
     """Remove all pipeline output."""
     shell:
-        f"rm -rf {OUTPUT_DIR}/gvcfs/ {OUTPUT_DIR}/combined.g.vcf.gz* {OUTPUT_DIR}/joint_called*.vcf.gz* {OUTPUT_DIR}/logs/"
+        f"rm -rf {GVCF_DIR}/ {OUTPUT_DIR}/combined.g.vcf.gz* "
+        f"{JOINT_VCF}* {ADMIX_DIR}/ {ADMIX_VCF}* {OUTPUT_DIR}/logs/"

@@ -275,7 +275,16 @@ rule haplotype_caller:
 
 
 rule combine_gvcfs:
-    """Merge per-sample GVCFs into a single combined GVCF for one patient."""
+    """Merge per-sample GVCFs into a single combined GVCF for one patient.
+
+    No -L here on purpose. The input GVCFs are already restricted to the panel
+    region by haplotype_caller's -L, so CombineGVCFs needs no interval
+    restriction. Passing -L here triggers a GATK bug: with a spanning or
+    multiallelic <NON_REF> block straddling panel sites, the interval-restricted
+    endPreviousStates flush can write records out of coordinate order ("Features
+    added out of order"), which the tabix index writer rejects. genotype_gvcfs
+    still applies -L + force-output, so the final panel VCF is unchanged.
+    """
     input:
         gvcfs=lambda wc: expand(GVCF_TPL, sample=list(_ref_samples(wc.patient))),
         ref=REF,
@@ -288,7 +297,6 @@ rule combine_gvcfs:
         gatk=GATK,
         tabix=TABIX,
         java_mem=JAVA_MEM,
-        intervals_arg=INTERVALS_ARG,
         gvcf_args=lambda wc, input: " ".join(f"-V {g}" for g in input.gvcfs),
     shell:
         """
@@ -296,7 +304,6 @@ rule combine_gvcfs:
             -R {input.ref} \
             {params.gvcf_args} \
             -O {output.combined} \
-            {params.intervals_arg} \
             2>&1 | tee {log}
         {params.tabix} -f {output.combined}
         """

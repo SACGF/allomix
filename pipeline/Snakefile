@@ -339,6 +339,16 @@ rule panel_tsv:
 
     Used by ``bcftools call -C alleles -T`` to force a GT at every panel
     position with the panel's exact REF/ALT pair as the only candidates.
+
+    Drops rows where the per-patient panel has ALT="." (force-output
+    sites that GATK genotyped as hom-ref in BOTH host and donor, so no
+    ALT was emitted). Two reasons to drop them:
+      1. ``bcftools call -A`` produces malformed PL records when the
+         targets row has ``REF,.`` as the allele list.
+      2. Those sites are uninformative for chimerism by construction —
+         GATK saw zero ALT reads in either reference sample at >1000x,
+         so host == donor == hom-ref. They cannot distinguish host from
+         donor regardless of what the admix BAM shows.
     """
     input:
         vcf=JOINT_VCF_TPL,
@@ -351,7 +361,8 @@ rule panel_tsv:
         tabix=TABIX,
     shell:
         """
-        {params.bcftools} query -f '%CHROM\\t%POS\\t%REF,%ALT\\n' {input.vcf} \
+        {params.bcftools} query -f '%CHROM\\t%POS\\t%REF,%ALT\\n' \
+                -e 'ALT="."' {input.vcf} \
             | {params.bgzip} -c > {output.tsv}
         {params.tabix} -f -s1 -b2 -e2 {output.tsv}
         """

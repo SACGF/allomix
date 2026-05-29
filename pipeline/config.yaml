@@ -1,9 +1,24 @@
-# GATK joint-calling pipeline configuration
+# One CSV per patient with columns:
+#     sample_id,bam_filename,sample_type
+# sample_type must be HOST, DONOR, or ADMIX.
+# Pipeline runs GATK on HOST + DONOR, then forced bcftools mpileup on ADMIX
+# at the GATK-derived panel sites — see pipeline/Snakefile for the rationale.
+
 ref: "/path/to/hg38.fa"
-samples_csv: "output/test_samples.csv"
+samples_csv: "output/patientX.csv"
 output_dir: "output/joint_call"
-# output_prefix: "test_samples"  # optional: output VCF filename prefix (default: basename of samples_csv)
+# output_prefix: "patientX"  # default: basename of samples_csv
+
+tabix: "tabix"
+
+# Phase 1 — GATK
 gatk: "gatk"  # full path if not on PATH, e.g. /tau/tools/gatk-4.1.3.0/gatk
-tabix: "tabix"  # full path if not on PATH
-java_mem: "8g"  # Java heap per GATK job; increase if HaplotypeCaller runs OOM on large BAMs
-# intervals: "/path/to/targets.bed"  # optional: restrict calling to specific loci (strongly recommended for targeted panels)
+java_mem: "8g"  # Java heap per GATK job
+# intervals: "/path/to/targets.bed"  # restrict calling to specific loci (recommended for targeted panels)
+
+# Phase 2 — bcftools mpileup
+bcftools: "bcftools"
+max_depth: 100000  # set well above panel coverage so >1000x panels are not capped
+min_mapq: 20
+min_baseq: 20
+read_filters: "UNMAP,SECONDARY,QCFAIL,DUP"

@@ -18,12 +18,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Our specific deployment uses the 76 Sample ID SNPs from the IDT rhAmpSeq panel in the Haem capture panel (coverage >1000x). This context is useful for testing and validation but should not be hardcoded into the tool.
 
 - **Existing data**: VCF files with genotypes for all 76 markers on TAU server at `/tau/data/clinical_hg38/idt_rhampseq_sid/` with AF tag (VAF) present, depth >>1000x
-- **GMP constraint**: New workflow must be conducted entirely within GMP to avoid donor/host genome mix-up during data analysis (identified as a problem in external review of current workflow)
+- **GMP** (Genetics and Molecular Pathology) is the department running this in-house; not a design constraint, just the deployment context.
 
 ## Input Requirements
 
 - **VCF-first**: allomix takes VCFs as input (not BAMs). Minimum required FORMAT fields: GT, AD, DP.
-- **Joint calling**: For low-fraction detection (<5% donor), admixture samples MUST be joint-called alongside donor/host genotyping samples in the same GATK GenomicsDBImport + GenotypeGVCFs run. This ensures ALT alleles discovered in donors produce 2-element AD fields (ref,alt) in admixture samples even when called hom-ref. See `doc/joint_calling.md` for full rationale (including why a somatic caller is not used).
+- **Two-phase upstream**: Host/donor `GT` should come from GATK joint calling of those reference samples. Admix sample `AD` should come from forced `bcftools mpileup` at the panel sites, not from GATK — `HaplotypeCaller -ERC GVCF` strips minority ALT reads at hom-ref blocks, which is exactly the low-fraction signal we need. See `doc/joint_calling.md` for the full rationale (including the empirical check and why a somatic caller is also not the right answer).
 
 ## Data Access
 

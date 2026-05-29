@@ -85,6 +85,7 @@ def parse_vcf(
     sample: str | int = 0,
     min_dp: int = 0,
     min_gq: int = 0,
+    gt_ad_consistency: bool = False,
 ) -> list[MarkerData]:
     """Read a VCF and extract MarkerData for a specific sample.
 
@@ -93,6 +94,12 @@ def parse_vcf(
         sample: Sample name (str) or column index (int, 0-based). Default 0.
         min_dp: Minimum depth filter. Records below this are excluded.
         min_gq: Minimum genotype quality. Records below this are excluded.
+        gt_ad_consistency: If True, drop markers where the called GT
+            contradicts the AD-derived VAF (het outside [0.35, 0.65],
+            hom-ref VAF > 0.05, hom-alt VAF < 0.95). Use for reference
+            samples (host/donor) whose GT must match their reads. Do
+            NOT use for admix samples — admix is a mixture, so its VAF
+            is not expected to land at 0/0.5/1 by definition.
 
     Returns:
         List of MarkerData, one per passing record.
@@ -116,6 +123,13 @@ def parse_vcf(
             continue
 
         alt = variant.ALT[0] if variant.ALT else "."
+
+        # Skip indels — admix-side AD comes from straight pileup which
+        # cannot count indel reads the way local-reassembly callers
+        # (GATK HaplotypeCaller) do, producing systematic admix=0-ALT
+        # at sites where the panel sample is genuinely het/hom-alt.
+        if alt != "." and (len(variant.REF) != 1 or len(alt) != 1):
+            continue
 
         # Extract genotype for the selected sample
         gt_arr = variant.genotypes[sample_idx]  # [allele1, allele2, phased]
@@ -157,6 +171,26 @@ def parse_vcf(
             continue
         if gq is not None and min_gq > 0 and gq < min_gq:
             continue
+
+        # Reference-sample GT/AD consistency check. Caller-only filter:
+        # admix is a mixture so its VAF is not expected to track its GT.
+        # For host/donor a het call with VAF below 35% or above 65% is
+        # almost certainly a miscall (GATK rescued it from marginal
+        # evidence in a 2-sample joint call), and using it would feed a
+        # systematic bias into the chimerism estimator at the recovered
+        # marker. The thresholds are loose to tolerate genuine capture
+        # bias (median |bias| ~0.5%, 95th pct ~4%).
+        if gt_ad_consistency and (ad_ref + ad_alt) >= 20 and alt != ".":
+            vaf = ad_alt / (ad_ref + ad_alt)
+            if gt == (0, 1):
+                if vaf < 0.35 or vaf > 0.65:
+                    continue
+            elif gt == (0, 0):
+                if vaf > 0.05:
+                    continue
+            elif gt == (1, 1):
+                if vaf < 0.95:
+                    continue
 
         # Filter status
         filt = variant.FILTER

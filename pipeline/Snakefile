@@ -49,7 +49,7 @@ import re
 configfile: os.path.join(workflow.basedir, "config.yaml")
 
 REF = config["ref"]
-OUTPUT_DIR = config.get("output_dir", "output/joint_call")
+OUTPUT_DIR = config.get("output_dir", "output/genotypes")
 
 # Patient discovery — either a directory of per-patient CSVs (multi-patient
 # DAG) or a single CSV path (back-compat for one-shot runs).

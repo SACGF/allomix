@@ -9,7 +9,7 @@
 
 ref: "/path/to/hg38.fa"
 samples_csv_dir: "pipeline/sample_csvs"
-output_dir: "output/joint_call"
+output_dir: "output/genotypes"
 
 tabix: "tabix"
 bgzip: "bgzip"

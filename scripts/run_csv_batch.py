@@ -16,7 +16,7 @@ Patients with no ADMIX rows are skipped (nothing to estimate).
 Usage:
     python scripts/run_csv_batch.py \\
         --samples-csv-dir pipeline/sample_csvs \\
-        --vcf-dir output/joint_call \\
+        --vcf-dir output/genotypes \\
         --output-dir output/batch \\
         [--bias-table bias.tsv] \\
         [--error-table errors.tsv] \\
@@ -70,10 +70,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--vcf-dir",
-        default="output/joint_call",
+        default="output/genotypes",
         help=(
             "Directory containing <patient>.vcf.gz and <patient>.admix.vcf.gz "
-            "(default: output/joint_call)"
+            "(default: output/genotypes)"
         ),
     )
     parser.add_argument(

@@ -1,13 +1,15 @@
 # One CSV per patient with columns:
 #     sample_id,bam_filename,sample_type
 # sample_type must be HOST, DONOR, or ADMIX.
+# All CSVs in samples_csv_dir are processed in one DAG. To run a single
+# patient instead, pass --config samples_csv=path/to/patient.csv (overrides
+# the directory).
 # Pipeline runs GATK on HOST + DONOR, then forced bcftools mpileup on ADMIX
 # at the GATK-derived panel sites — see pipeline/Snakefile for the rationale.
 
 ref: "/path/to/hg38.fa"
-samples_csv: "output/patientX.csv"
+samples_csv_dir: "pipeline/sample_csvs"
 output_dir: "output/joint_call"
-# output_prefix: "patientX"  # default: basename of samples_csv
 
 tabix: "tabix"
 

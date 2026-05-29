@@ -5,7 +5,7 @@ allomix needs two distinct things from upstream:
 1. Reliable genotypes (`GT`) for the **host and donor** reference samples, so we can classify each panel marker as informative or not.
 2. Raw per-allele read counts (`AD`) for the **admixture samples**, so the chimerism MLE and the low-fraction host-presence detector can count REF/ALT reads at panel sites.
 
-These two needs have different best-in-class tools. The pipeline in `pipeline/Snakefile` runs them in two phases against a per-patient CSV.
+These two needs have different best-in-class tools. The pipeline in `pipeline/Snakefile` runs them in two phases against per-patient CSVs (all CSVs in `pipeline/sample_csvs/` are processed in one DAG by default).
 
 ## Why not GATK joint calling for everything?
 
@@ -107,13 +107,18 @@ The phase-2 filters approximate sensible GATK-equivalent defaults. They are tuna
 ## Running
 
 ```bash
-# Full run (both phases) for one patient
-snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 8
+# All patients in pipeline/sample_csvs/ in one DAG
+snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 16
 
-# Override config on the command line
+# Single patient (override the directory with one CSV path)
 snakemake -s pipeline/Snakefile \
     --config ref=/path/to/hg38.fa samples_csv=patient_4MO.csv \
     --cores 8
+
+# Point at a different directory of patient CSVs
+snakemake -s pipeline/Snakefile \
+    --config samples_csv_dir=/path/to/csvs \
+    --cores 16
 
 # Dry run (show DAG without executing)
 snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml -n
@@ -122,7 +127,7 @@ snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml -n
 snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml clean
 ```
 
-Phase-1 HaplotypeCaller and phase-2 pileup are both per-sample and parallelise well.
+Phase-1 HaplotypeCaller and phase-2 pileup are both per-sample and parallelise well across patients in a single Snakemake invocation.
 
 ## Output
 
@@ -130,9 +135,10 @@ Phase-1 HaplotypeCaller and phase-2 pileup are both per-sample and parallelise w
 |---|---|
 | `output/joint_call/<patient>.vcf.gz` | Phase 1: GATK joint-called VCF for HOST + DONOR. Source of host/donor `GT`. |
 | `output/joint_call/<patient>.admix.vcf.gz` | Phase 2: multi-sample admix VCF with raw pileup `AD` at every panel site. Source of admix `AD`. |
-| `output/joint_call/gvcfs/*.g.vcf.gz` | Phase 1 per-sample GVCFs (intermediate) |
-| `output/joint_call/admix/per_sample/*.vcf.gz` | Phase 2 per-admix-sample VCFs (intermediate) |
-| `output/joint_call/admix/<patient>.targets.tsv.gz` | Phase 1 panel sites in `bcftools call -C alleles` format |
+| `output/joint_call/gvcfs/*.g.vcf.gz` | Phase 1 per-sample GVCFs (intermediate, shared across patients by sample ID) |
+| `output/joint_call/<patient>/combined.g.vcf.gz` | Phase 1 per-patient combined GVCF (intermediate) |
+| `output/joint_call/<patient>/admix/per_sample/*.vcf.gz` | Phase 2 per-admix-sample VCFs (intermediate) |
+| `output/joint_call/<patient>/admix/targets.tsv.gz` | Phase 1 panel sites in `bcftools call -C alleles` format |
 | `output/joint_call/logs/` | Per-rule log files |
 
 allomix then reads `<patient>.vcf.gz` for the host/donor genotypes and `<patient>.admix.vcf.gz` for the admix allele depths, using the existing separate-VCF CLI mode.

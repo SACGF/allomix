@@ -1,8 +1,12 @@
-"""Per-patient genotyping + admixture pileup pipeline for allomix.
+"""Multi-patient genotyping + admixture pileup pipeline for allomix.
 
 One CSV per patient with columns ``sample_id,bam_filename,sample_type``
-(values ``HOST``, ``DONOR``, ``ADMIX``). Pipeline runs in two phases that
-share a single DAG:
+(values ``HOST``, ``DONOR``, ``ADMIX``). All CSVs in
+``samples_csv_dir`` (default ``pipeline/sample_csvs``) are processed in
+one DAG so HaplotypeCaller / pileup jobs across patients run in parallel
+under a single ``snakemake --cores N`` invocation.
+
+Two phases share the DAG (per patient):
 
     Phase 1 — GATK joint-call HOST + DONOR BAMs
         HaplotypeCaller (GVCF) -> CombineGVCFs -> GenotypeGVCFs
@@ -23,18 +27,19 @@ depends on. ``bcftools mpileup`` preserves raw per-allele counts;
 ``bcftools call -C alleles`` then assigns a GT at every panel site
 using only the panel's known REF/ALT pair as candidates.
 
-One patient per CSV: joint-calling across patients adds samples to the
-VCF with no informative markers for each other and just inflates run
-time. Also matches the GMP constraint of explicit host/donor pairing.
-
 Usage (from repo root):
-    snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 8
+    # All patients in pipeline/sample_csvs/
+    snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 16
+
+    # Single-patient run (override the directory with one CSV)
     snakemake -s pipeline/Snakefile \\
         --config ref=/path/hg38.fa samples_csv=patientX.csv --cores 8
 """
 
 import csv
+import glob
 import os
+import re
 
 
 # ---------------------------------------------------------------------------
@@ -44,15 +49,23 @@ import os
 configfile: os.path.join(workflow.basedir, "config.yaml")
 
 REF = config["ref"]
-SAMPLES_CSV = config["samples_csv"]
 OUTPUT_DIR = config.get("output_dir", "output/joint_call")
+
+# Patient discovery — either a directory of per-patient CSVs (multi-patient
+# DAG) or a single CSV path (back-compat for one-shot runs).
+SAMPLES_CSV = config.get("samples_csv")
+SAMPLES_CSV_DIR = config.get(
+    "samples_csv_dir", os.path.join(workflow.basedir, "sample_csvs")
+)
 
 # Phase 1 (GATK)
 GATK = config.get("gatk", "gatk")
 JAVA_MEM = config.get("java_mem", "8g")
 INTERVALS = config.get("intervals", None)
 INTERVALS_ARG = f"-L {INTERVALS}" if INTERVALS else ""
-_intervals_tag = f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
+_intervals_tag = (
+    f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
+)
 
 # Phase 2 (bcftools mpileup)
 BCFTOOLS = config.get("bcftools", "bcftools")
@@ -64,76 +77,154 @@ READ_FILTERS = config.get("read_filters", "UNMAP,SECONDARY,QCFAIL,DUP")
 # Shared
 TABIX = config.get("tabix", "tabix")
 
-OUTPUT_PREFIX = config.get("output_prefix", os.path.splitext(os.path.basename(SAMPLES_CSV))[0])
 
-# Phase 1 paths
-GVCF_DIR = os.path.join(OUTPUT_DIR, "gvcfs")
-JOINT_VCF = os.path.join(OUTPUT_DIR, f"{OUTPUT_PREFIX}{_intervals_tag}.vcf.gz")
+def _discover_patients():
+    """Map {patient_id: csv_path} from samples_csv (single) or samples_csv_dir."""
+    if SAMPLES_CSV:
+        pid = os.path.splitext(os.path.basename(SAMPLES_CSV))[0]
+        return {pid: SAMPLES_CSV}
+    paths = sorted(glob.glob(os.path.join(SAMPLES_CSV_DIR, "*.csv")))
+    if not paths:
+        raise ValueError(
+            f"No CSV files found in {SAMPLES_CSV_DIR}. "
+            f"Set samples_csv_dir or samples_csv in config / --config."
+        )
+    return {os.path.splitext(os.path.basename(p))[0]: p for p in paths}
 
-# Phase 2 paths
-ADMIX_DIR = os.path.join(OUTPUT_DIR, "admix")
-PANEL_TSV = os.path.join(ADMIX_DIR, f"{OUTPUT_PREFIX}.targets.tsv.gz")
-ADMIX_VCF = os.path.join(OUTPUT_DIR, f"{OUTPUT_PREFIX}.admix.vcf.gz")
+
+PATIENTS = _discover_patients()
+
+# Cache to avoid re-parsing each CSV on every input function call.
+_samples_cache: dict[str, tuple[dict[str, str], dict[str, str]]] = {}
 
 
-def load_samples(csv_path, allowed_types):
-    """Read sample_id -> bam_filename, filtered by sample_type column.
-
-    The CSV must declare a ``sample_type`` per row. Returns an empty dict
-    if the CSV has no rows matching ``allowed_types`` (e.g. a pre-transplant
-    CSV with no ADMIX timepoints yet) — phase 2 will then have nothing to do.
-    """
-    samples = {}
-    with open(csv_path) as f:
-        reader = csv.DictReader(f)
-        if "sample_type" not in (reader.fieldnames or []):
+def _patient_samples(patient):
+    """Return (ref_samples, admix_samples) dicts for ``patient``."""
+    if patient not in _samples_cache:
+        csv_path = PATIENTS[patient]
+        ref, admix = {}, {}
+        with open(csv_path) as f:
+            reader = csv.DictReader(f)
+            if "sample_type" not in (reader.fieldnames or []):
+                raise ValueError(
+                    f"{csv_path} is missing the required 'sample_type' "
+                    f"column (expected values: HOST, DONOR, ADMIX)"
+                )
+            for row in reader:
+                stype = row["sample_type"].strip().upper()
+                sid = row["sample_id"]
+                bam = row["bam_filename"]
+                if stype in ("HOST", "DONOR"):
+                    ref[sid] = bam
+                elif stype == "ADMIX":
+                    admix[sid] = bam
+                else:
+                    raise ValueError(
+                        f"{csv_path}: unknown sample_type {stype!r} for "
+                        f"sample {sid}"
+                    )
+        if not ref:
             raise ValueError(
-                f"{csv_path} is missing the required 'sample_type' column "
-                f"(expected values: HOST, DONOR, ADMIX)"
+                f"{csv_path} has no HOST or DONOR rows; phase 1 cannot run"
             )
-        for row in reader:
-            stype = row["sample_type"].strip().upper()
-            if stype in allowed_types:
-                samples[row["sample_id"]] = row["bam_filename"]
-    return samples
+        _samples_cache[patient] = (ref, admix)
+    return _samples_cache[patient]
 
 
-REF_SAMPLES = load_samples(SAMPLES_CSV, allowed_types={"HOST", "DONOR"})
-ADMIX_SAMPLES = load_samples(SAMPLES_CSV, allowed_types={"ADMIX"})
+def _ref_samples(patient):
+    return _patient_samples(patient)[0]
 
-if not REF_SAMPLES:
-    raise ValueError(
-        f"{SAMPLES_CSV} has no HOST or DONOR rows; phase 1 has nothing to call"
-    )
+
+def _admix_samples(patient):
+    return _patient_samples(patient)[1]
+
+
+def _bam_for_sample(patient, sample):
+    ref, admix = _patient_samples(patient)
+    if sample in ref:
+        return ref[sample]
+    return admix[sample]
+
+
+# Eagerly validate every CSV at parse time so errors surface up-front
+# rather than mid-DAG. Also lets us decide which patients have admix work.
+for _p in PATIENTS:
+    _patient_samples(_p)
+
+
+# ---------------------------------------------------------------------------
+# Output paths (all keyed on {patient})
+# ---------------------------------------------------------------------------
+
+# Final outputs — kept at the top-level OUTPUT_DIR so existing per-patient
+# VCFs from earlier single-patient runs are recognised and reused.
+def _joint_vcf(patient):
+    return os.path.join(OUTPUT_DIR, f"{patient}{_intervals_tag}.vcf.gz")
+
+
+def _admix_vcf(patient):
+    return os.path.join(OUTPUT_DIR, f"{patient}.admix.vcf.gz")
+
+
+# Per-patient intermediates live under <OUTPUT_DIR>/<patient>/ to avoid
+# cross-patient collisions on shared filenames (combined.g.vcf.gz,
+# admix/per_sample/...).
+JOINT_VCF_TPL = os.path.join(OUTPUT_DIR, f"{{patient}}{_intervals_tag}.vcf.gz")
+ADMIX_VCF_TPL = os.path.join(OUTPUT_DIR, "{patient}.admix.vcf.gz")
+GVCF_TPL = os.path.join(OUTPUT_DIR, "gvcfs", "{sample}.g.vcf.gz")
+COMBINED_GVCF_TPL = os.path.join(OUTPUT_DIR, "{patient}", "combined.g.vcf.gz")
+PANEL_TSV_TPL = os.path.join(OUTPUT_DIR, "{patient}", "admix", "targets.tsv.gz")
+PER_SAMPLE_ADMIX_TPL = os.path.join(
+    OUTPUT_DIR, "{patient}", "admix", "per_sample", "{sample}.vcf.gz"
+)
 
 
 # ---------------------------------------------------------------------------
 # Top-level target
 # ---------------------------------------------------------------------------
 
-# Build the admix VCF when admix samples exist; otherwise just the panel VCF.
-_targets = [JOINT_VCF]
-if ADMIX_SAMPLES:
-    _targets.append(ADMIX_VCF)
+def _all_targets():
+    out = []
+    for p in PATIENTS:
+        out.append(_joint_vcf(p))
+        if _admix_samples(p):
+            out.append(_admix_vcf(p))
+    return out
 
 
 rule all:
     input:
-        _targets,
+        _all_targets(),
+
+
+# Restrict wildcards so {patient}/{sample} cannot match path separators
+# or partial intermediate filenames (e.g. "combined.g") — otherwise
+# Snakemake recurses on shared path components.
+wildcard_constraints:
+    patient="|".join(re.escape(p) for p in PATIENTS),
+    sample=r"[^/]+",
 
 
 # ---------------------------------------------------------------------------
-# Phase 1: GATK HOST + DONOR joint genotyping
+# Phase 1: GATK HOST + DONOR joint genotyping (per patient)
 # ---------------------------------------------------------------------------
 
+# GVCFs are keyed on sample only (sample IDs are globally unique across
+# patient CSVs). This lets a sample shared between two patient CSVs reuse
+# its GVCF and avoids needless reruns of cached single-patient outputs.
 rule haplotype_caller:
     """Run GATK HaplotypeCaller in GVCF mode on a single HOST/DONOR sample."""
     input:
-        bam=lambda wc: REF_SAMPLES[wc.sample],
+        bam=lambda wc: next(
+            bam
+            for p in PATIENTS
+            for sid, bam in _ref_samples(p).items()
+            if sid == wc.sample
+        ),
         ref=REF,
     output:
-        gvcf=os.path.join(GVCF_DIR, "{sample}.g.vcf.gz"),
-        tbi=os.path.join(GVCF_DIR, "{sample}.g.vcf.gz.tbi"),
+        gvcf=GVCF_TPL,
+        tbi=GVCF_TPL + ".tbi",
     log:
         os.path.join(OUTPUT_DIR, "logs", "haplotype_caller", "{sample}.log"),
     threads: 4
@@ -157,15 +248,15 @@ rule haplotype_caller:
 
 
 rule combine_gvcfs:
-    """Merge per-sample GVCFs into a single combined GVCF."""
+    """Merge per-sample GVCFs into a single combined GVCF for one patient."""
     input:
-        gvcfs=expand(os.path.join(GVCF_DIR, "{sample}.g.vcf.gz"), sample=REF_SAMPLES),
+        gvcfs=lambda wc: expand(GVCF_TPL, sample=list(_ref_samples(wc.patient))),
         ref=REF,
     output:
-        combined=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz"),
-        tbi=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz.tbi"),
+        combined=COMBINED_GVCF_TPL,
+        tbi=COMBINED_GVCF_TPL + ".tbi",
     log:
-        os.path.join(OUTPUT_DIR, "logs", "combine_gvcfs.log"),
+        os.path.join(OUTPUT_DIR, "logs", "combine_gvcfs", "{patient}.log"),
     params:
         gatk=GATK,
         tabix=TABIX,
@@ -185,15 +276,15 @@ rule combine_gvcfs:
 
 
 rule genotype_gvcfs:
-    """Joint-genotype the combined GVCF to produce the panel VCF."""
+    """Joint-genotype the combined GVCF to produce one patient's panel VCF."""
     input:
-        combined=os.path.join(OUTPUT_DIR, "combined.g.vcf.gz"),
+        combined=COMBINED_GVCF_TPL,
         ref=REF,
     output:
-        vcf=JOINT_VCF,
-        tbi=JOINT_VCF + ".tbi",
+        vcf=JOINT_VCF_TPL,
+        tbi=JOINT_VCF_TPL + ".tbi",
     log:
-        os.path.join(OUTPUT_DIR, "logs", "genotype_gvcfs.log"),
+        os.path.join(OUTPUT_DIR, "logs", "genotype_gvcfs", "{patient}.log"),
     params:
         gatk=GATK,
         java_mem=JAVA_MEM,
@@ -215,16 +306,16 @@ rule genotype_gvcfs:
 # ---------------------------------------------------------------------------
 
 rule panel_tsv:
-    """Extract (CHROM,POS,REF,ALT) targets file from the phase-1 panel VCF.
+    """Extract (CHROM,POS,REF,ALT) targets file from one patient's panel VCF.
 
     Used by ``bcftools call -C alleles -T`` to force a GT at every panel
     position with the panel's exact REF/ALT pair as the only candidates.
     """
     input:
-        vcf=JOINT_VCF,
+        vcf=JOINT_VCF_TPL,
     output:
-        tsv=PANEL_TSV,
-        tbi=PANEL_TSV + ".tbi",
+        tsv=PANEL_TSV_TPL,
+        tbi=PANEL_TSV_TPL + ".tbi",
     params:
         bcftools=BCFTOOLS,
         tabix=TABIX,
@@ -246,16 +337,16 @@ rule pileup_admix:
     covers every panel site regardless of whether the ALT was observed.
     """
     input:
-        bam=lambda wc: ADMIX_SAMPLES[wc.sample],
+        bam=lambda wc: _bam_for_sample(wc.patient, wc.sample),
         ref=REF,
-        targets=PANEL_TSV,
-        targets_tbi=PANEL_TSV + ".tbi",
-        panel=JOINT_VCF,
+        targets=PANEL_TSV_TPL,
+        targets_tbi=PANEL_TSV_TPL + ".tbi",
+        panel=JOINT_VCF_TPL,
     output:
-        vcf=os.path.join(ADMIX_DIR, "per_sample", "{sample}.vcf.gz"),
-        tbi=os.path.join(ADMIX_DIR, "per_sample", "{sample}.vcf.gz.tbi"),
+        vcf=PER_SAMPLE_ADMIX_TPL,
+        tbi=PER_SAMPLE_ADMIX_TPL + ".tbi",
     log:
-        os.path.join(OUTPUT_DIR, "logs", "pileup_admix", "{sample}.log"),
+        os.path.join(OUTPUT_DIR, "logs", "pileup_admix", "{patient}", "{sample}.log"),
     threads: 2
     params:
         bcftools=BCFTOOLS,
@@ -286,25 +377,27 @@ rule pileup_admix:
 
 
 rule merge_admix:
-    """Merge per-admix-sample VCFs into one multi-sample admixture VCF.
+    """Merge per-admix-sample VCFs into one multi-sample admixture VCF per patient.
 
     All per-sample VCFs cover every panel site (constrained calling
     guarantees this), so the merge has no missing-sample positions.
     """
     input:
-        vcfs=expand(
-            os.path.join(ADMIX_DIR, "per_sample", "{sample}.vcf.gz"),
-            sample=ADMIX_SAMPLES,
+        vcfs=lambda wc: expand(
+            PER_SAMPLE_ADMIX_TPL,
+            patient=[wc.patient],
+            sample=list(_admix_samples(wc.patient)),
         ),
-        tbis=expand(
-            os.path.join(ADMIX_DIR, "per_sample", "{sample}.vcf.gz.tbi"),
-            sample=ADMIX_SAMPLES,
+        tbis=lambda wc: expand(
+            PER_SAMPLE_ADMIX_TPL + ".tbi",
+            patient=[wc.patient],
+            sample=list(_admix_samples(wc.patient)),
         ),
     output:
-        vcf=ADMIX_VCF,
-        tbi=ADMIX_VCF + ".tbi",
+        vcf=ADMIX_VCF_TPL,
+        tbi=ADMIX_VCF_TPL + ".tbi",
     log:
-        os.path.join(OUTPUT_DIR, "logs", "merge_admix.log"),
+        os.path.join(OUTPUT_DIR, "logs", "merge_admix", "{patient}.log"),
     threads: 4
     params:
         bcftools=BCFTOOLS,
@@ -327,5 +420,4 @@ rule merge_admix:
 rule clean:
     """Remove all pipeline output."""
     shell:
-        f"rm -rf {GVCF_DIR}/ {OUTPUT_DIR}/combined.g.vcf.gz* "
-        f"{JOINT_VCF}* {ADMIX_DIR}/ {ADMIX_VCF}* {OUTPUT_DIR}/logs/"
+        f"rm -rf {OUTPUT_DIR}/"

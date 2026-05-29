@@ -15,7 +15,7 @@ That theory is wrong. `HaplotypeCaller -ERC GVCF` is a local-reassembly caller: 
 
 We verified this empirically on the rhAmpSeq SID panel: across ~9 million reads at admixture-sample hom-ref calls in joint-called VCFs, zero ALT reads were retained in `FORMAT/AD`. The low-fraction signal the joint-calling step was supposed to preserve had been stripped before the joint call ever happened.
 
-No combination of GATK flags fixes this. `-ERC BP_RESOLUTION`, `GenotypeGVCFs --include-non-variant-sites`, `-A DepthPerAlleleBySample`, and `--alleles panel.vcf` (force-call) all affect site emission or annotation but none of them recover minority ALT reads from a hom-ref block, because those reads were never written to the GVCF. Conpair, somalier, and demixtify all extract `AD` from raw pileups for exactly this reason.
+No combination of GATK flags fixes this. `-ERC BP_RESOLUTION`, `GenotypeGVCFs --include-non-variant-sites`, `-A DepthPerAlleleBySample`, and `GenotypeGVCFs --force-output-intervals panel.vcf` all affect site emission or annotation but none of them recover minority ALT reads from a hom-ref block, because those reads were never written to the GVCF. Conpair, somalier, and demixtify all extract `AD` from raw pileups for exactly this reason.
 
 ## Two-phase architecture
 
@@ -49,6 +49,26 @@ Phase 1 (GATK) is used only for what it is good at: producing high-confidence ge
 Phase 2 (bcftools mpileup) handles every admixture timepoint. `bcftools mpileup -a FORMAT/AD,FORMAT/DP` writes raw REF/ALT base counts directly from the pileup, with no local reassembly to filter minority reads. `bcftools call -m -C alleles -T panel.targets.tsv.gz` then constrains genotyping to the phase-1 panel's REF/ALT pair at every panel position, so the output VCF has a `GT` + `AD` row for every panel site in every admix sample regardless of whether the ALT was observed.
 
 The two phases live in one Snakefile and share one DAG. Snakemake skips phase-1 work that already exists when only new admix timepoints are added.
+
+## Why force a genotype at every panel site
+
+When a `panel_alleles_vcf` is configured, phase 1 runs `GenotypeGVCFs --force-output-intervals panel.vcf --include-non-variant-sites` so the output VCF has a host/donor genotype at every panel position, not just the positions GATK called as variant.
+
+Note this is `--force-output-intervals`, not `--alleles`. GenotypeGVCFs has no `--alleles` option (that argument lives on HaplotypeCaller, for the old GENOTYPE_GIVEN_ALLELES behaviour). `--force-output-intervals` is the GenotypeGVCFs-native mechanism for "emit a genotype at these sites even if non-variant in the samples".
+
+The reason for forcing is not the hom-ref/hom-ref sites it adds. Those sites are uninformative for chimerism (no allele distinguishes host from donor) and the estimator masks them anyway. GATK joint calling already emits every informative site without forcing: a site where host and donor differ has at least one non-ref allele, so it is variant in the joint call and both samples get genotyped there regardless.
+
+The payoff is the marginal informative marker that does not clear the calling QUAL threshold (`stand-call-conf`, default 30) in a small two-sample joint call. With only host + donor in the call, a real het with modest evidence can fall below QUAL 30 and drop out of the VCF entirely. Forced output pins its genotype back. A large pooled joint call would clear the threshold on the strength of many samples; forcing recovers the same markers without pooling unrelated patients (see "Why one CSV per patient?").
+
+At the >1000x depth of our rhAmpSeq SID deployment this rarely bites, since a true het clears QUAL 30 easily, so for us the force-output is mostly an organizational convenience: a constant panel size per patient, with the uninformative hom-ref rows as harmless filler. It matters more for lower-depth panels. Either way it is the cheap fix (it only changes the `genotype_gvcfs` step), so we keep it on.
+
+To confirm the panel came through complete, count records per patient:
+
+```bash
+bcftools view -H output/joint_call/<patient>.<panel>.vcf.gz | wc -l
+```
+
+A short count points to a genuine coverage gap at a panel site (no reference block in the combined GVCF for `--force-output-intervals` to act on), which is a QC finding worth surfacing rather than hiding behind a forced `DP=0` row.
 
 ## Why not a somatic variant caller?
 

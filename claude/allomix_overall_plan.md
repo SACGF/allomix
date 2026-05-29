@@ -233,6 +233,7 @@ All MAE values sub-2% (clinically acceptable). Even sibling donors maintain suff
 - Batch runner `scripts/run_xls_batch.py` drives allomix across the patient list in `output/Chimerism project patient list.xlsx`, using the bias table from `output/bias_training/bias_table.tsv` and appending clinical reference columns (`Donor`, `Chimerism result TP2`) to `batch.tsv`
 - Validation runs captured in `output/validation_run_new_bias2/` (post-BB / error-adjusted GoF fix). All 7 PASS samples now produce non-trivial `gof_pval` (previously all 0.0000).
 - Concordance assessment vs. clinical sorted-cell chimerism (CD45 / CD3 / CD13) is not a direct apples-to-apples comparison: allomix reports bulk DNA chimerism, which is a cell-type-weighted average and tracks CD13 myeloid more closely than CD45 in samples with strong lineage disparity (e.g. 20_MO RCAR: allomix 40.79%, CD45 46.78%, CD3 93.19%, CD13 30.58%).
+- **Re-run pending against the new two-phase pipeline (2026-05-29).** The validation above used the all-GATK joint-calling pipeline, which we have since discovered strips minority ALT reads from `FORMAT/AD` at hom-ref calls (confirmed empirically: 0 ALT reads across ~9M reads at hom-ref calls in joint-called VCFs). The new `pipeline/Snakefile` runs GATK only on HOST/DONOR and forced `bcftools mpileup` on ADMIX, preserving raw AD. Real-data results should be regenerated against this pipeline before any downstream analysis is treated as final. Blocks the paper methods/discussion rewrite in Step 18.
 - Next phase (out of this step): controlled dilution series for quantitative accuracy validation.
 
 ---
@@ -358,6 +359,7 @@ Detailed plan: `claude/17_bq_aware_plan.md`.
 
 - [ ] Add bias stability figure (`fig_bias_stability.png`) to `paper/results.md` near the "Effect of Per-Marker Bias Correction" section. This validates the fixed-bias-per-marker assumption (r = correlation between |median_bias| and within-marker SD). Caption template in `supp_synthetic.csv` facts.
 - [ ] Decide: should the ablation study (Figure S4) also include a "no overdispersion" baseline (standard binomial vs beta-binomial)?
+- [ ] **Rewrite joint-calling references for the two-phase pipeline.** Specifically: `methods.md:11` (the "joint calling preserves admix AD" claim is wrong — GATK HaplotypeCaller -ERC GVCF strips minority ALT reads at hom-ref blocks; new pipeline uses GATK for HOST/DONOR + `bcftools mpileup` for ADMIX) and `discussion.md:29` (same claim restated). `supplementary.md:5` is fine as-is (bias estimation uses het sites, which weren't affected). Gated on the Step 11 re-run landing so methods text and real-data results can be updated in one pass.
 
 ---
 

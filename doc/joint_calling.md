@@ -52,9 +52,9 @@ The two phases live in one Snakefile and share one DAG. Snakemake skips phase-1 
 
 ## Why force a genotype at every panel site
 
-When a `panel_alleles_vcf` is configured, phase 1 runs `GenotypeGVCFs --force-output-intervals panel.vcf --include-non-variant-sites` so the output VCF has a host/donor genotype at every panel position, not just the positions GATK called as variant.
+When a `panel_alleles_vcf` is configured, phase 1 runs `GenotypeGVCFs --force-output-intervals panel.vcf` so the output VCF has a host/donor genotype at every panel position, not just the positions GATK called as variant.
 
-Note this is `--force-output-intervals`, not `--alleles`. GenotypeGVCFs has no `--alleles` option (that argument lives on HaplotypeCaller, for the old GENOTYPE_GIVEN_ALLELES behaviour). `--force-output-intervals` is the GenotypeGVCFs-native mechanism for "emit a genotype at these sites even if non-variant in the samples".
+Note this is `--force-output-intervals`, not `--alleles`. GenotypeGVCFs has no `--alleles` option (that argument lives on HaplotypeCaller, for the old GENOTYPE_GIVEN_ALLELES behaviour). `--force-output-intervals` is the GenotypeGVCFs-native mechanism for "emit a genotype at these given sites even if non-variant in the samples". It is mutually exclusive with `--include-non-variant-sites` (the broader all-sites variant); since force-output already genotypes the panel sites whether or not they are variant, we use it on its own.
 
 The reason for forcing is not the hom-ref/hom-ref sites it adds. Those sites are uninformative for chimerism (no allele distinguishes host from donor) and the estimator masks them anyway. GATK joint calling already emits every informative site without forcing: a site where host and donor differ has at least one non-ref allele, so it is variant in the joint call and both samples get genotyped there regardless.
 

@@ -24,22 +24,15 @@ from allomix.report import timeline_json, to_json, to_tsv
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add arguments shared between monitor and timeline."""
-    vcf_group = parser.add_argument_group(
-        "VCF input (choose one mode)",
-        "Either --vcf alone (single combined VCF, legacy) or both "
-        "--panel-vcf and --admix-vcf (recommended: panel VCF for host/donor "
-        "GT, separate admix VCF with pileup AD; see doc/joint_calling.md).",
-    )
-    vcf_group.add_argument(
-        "--vcf",
-        help="Single combined VCF containing host, donor(s), and admix samples",
-    )
-    vcf_group.add_argument(
+    parser.add_argument(
         "--panel-vcf",
-        help="Panel VCF with host/donor genotypes (typically GATK joint-called)",
+        required=True,
+        help="Panel VCF with host/donor genotypes (typically GATK joint-called; "
+             "see doc/joint_calling.md)",
     )
-    vcf_group.add_argument(
+    parser.add_argument(
         "--admix-vcf",
+        required=True,
         help="Admix VCF with raw pileup AD (typically bcftools mpileup output)",
     )
     parser.add_argument("--host-sample", required=True, help="Host sample name in VCF")
@@ -111,32 +104,6 @@ def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
     missing = [s for s in required if s not in available]
     if missing:
         raise SystemExit(f"Sample(s) not found in {vcf_path}: {missing}\nAvailable: {available}")
-
-
-def _resolve_vcf_inputs(args: argparse.Namespace) -> tuple[str, str]:
-    """Resolve (panel_vcf, admix_vcf) from CLI args.
-
-    Accepts either --vcf alone (returned as both) or both --panel-vcf and
-    --admix-vcf. Raises SystemExit on invalid combinations.
-    """
-    has_single = bool(args.vcf)
-    has_split = bool(args.panel_vcf) or bool(args.admix_vcf)
-    if has_single and has_split:
-        raise SystemExit(
-            "Use either --vcf (single combined VCF) or --panel-vcf + "
-            "--admix-vcf (separate panel/admix VCFs), not both."
-        )
-    if has_split and not (args.panel_vcf and args.admix_vcf):
-        raise SystemExit(
-            "--panel-vcf and --admix-vcf must be given together."
-        )
-    if not has_single and not has_split:
-        raise SystemExit(
-            "One VCF input mode required: --vcf, or --panel-vcf + --admix-vcf."
-        )
-    if has_single:
-        return args.vcf, args.vcf
-    return args.panel_vcf, args.admix_vcf
 
 
 def _run_single_sample(
@@ -220,16 +187,15 @@ def _load_errors(args: argparse.Namespace) -> dict | None:
 
 def cmd_monitor(args: argparse.Namespace) -> int:
     """Run the monitor subcommand."""
-    panel_vcf, admix_vcf = _resolve_vcf_inputs(args)
-    _validate_sample_names(panel_vcf, [args.host_sample] + args.donor_sample)
-    _validate_sample_names(admix_vcf, args.sample)
+    _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
+    _validate_sample_names(args.admix_vcf, args.sample)
 
     marker_biases = _load_biases(args)
     marker_errors = _load_errors(args)
 
     # Parse host and donors once — they're the same for every timepoint
-    host = parse_vcf(panel_vcf, sample=args.host_sample, min_gq=args.min_gq)
-    donors = [parse_vcf(panel_vcf, sample=d, min_gq=args.min_gq) for d in args.donor_sample]
+    host = parse_vcf(args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq)
+    donors = [parse_vcf(args.panel_vcf, sample=d, min_gq=args.min_gq) for d in args.donor_sample]
 
     out = _open_output(args.output)
     try:
@@ -237,7 +203,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
             result, qc, genotypes = _run_single_sample(
                 host,
                 donors,
-                admix_vcf,
+                args.admix_vcf,
                 sample_name,
                 args.min_dp,
                 args.min_gq,
@@ -261,23 +227,22 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
 def cmd_timeline(args: argparse.Namespace) -> int:
     """Run the timeline subcommand."""
-    panel_vcf, admix_vcf = _resolve_vcf_inputs(args)
-    _validate_sample_names(panel_vcf, [args.host_sample] + args.donor_sample)
-    _validate_sample_names(admix_vcf, args.sample)
+    _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
+    _validate_sample_names(args.admix_vcf, args.sample)
 
     marker_biases = _load_biases(args)
     marker_errors = _load_errors(args)
 
     # Parse host and donors once
-    host = parse_vcf(panel_vcf, sample=args.host_sample, min_gq=args.min_gq)
-    donors = [parse_vcf(panel_vcf, sample=d, min_gq=args.min_gq) for d in args.donor_sample]
+    host = parse_vcf(args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq)
+    donors = [parse_vcf(args.panel_vcf, sample=d, min_gq=args.min_gq) for d in args.donor_sample]
 
     results = []
     for sample_name in args.sample:
         result, qc, genotypes = _run_single_sample(
             host,
             donors,
-            admix_vcf,
+            args.admix_vcf,
             sample_name,
             args.min_dp,
             args.min_gq,

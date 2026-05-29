@@ -59,18 +59,19 @@ uv pip install -e ".[dev]"
                            → multi-timepoint JSON
 ```
 
-**Joint calling is required.** allomix takes a single multi-sample VCF produced by joint calling all samples for a patient together (host, donor, and all post-HSCT admixture timepoints) in one GATK GenomicsDBImport + GenotypeGVCFs run. Do not pass independently-called VCFs. Joint calling ensures that ALT alleles discovered in the donor are propagated to the admixture samples' AD fields even when those samples are called hom-ref, which is essential for detecting donor fractions below ~5%.
+**Two-VCF input.** allomix takes a panel VCF (host/donor genotypes, typically from GATK joint calling of the reference samples) and a separate admix VCF (per-timepoint AD counts, typically from forced `bcftools mpileup` at the panel sites). Joint calling of HOST + DONOR ensures ALT alleles discovered in the donor are propagated to the panel even when one sample is hom-ref. Pileup of the ADMIX samples preserves raw per-allele counts at the panel sites, which is essential for detecting host fractions below ~5% (GATK's GVCF mode strips minority ALT reads at hom-ref blocks).
 
-A ready-to-use Snakemake pipeline for producing joint-called VCFs from BAM files is included in `pipeline/`. See [Joint Calling Guide](doc/joint_calling.md) for details on why joint calling is needed, which variant callers to use, and how to run the pipeline.
+A ready-to-use Snakemake pipeline that produces both files is included in `pipeline/`. See [Joint Calling Guide](doc/joint_calling.md) for the two-phase rationale and how to run it.
 
-When a new timepoint arrives, re-run the joint calling to include it, then re-run allomix on the updated VCF.
+When a new timepoint arrives, re-run the admix-only pileup for it (the panel does not need rebuilding), then re-run allomix on the updated admix VCF.
 
 ## Usage
 
 ```bash
 # Calculate chimerism for a single timepoint
 allomix monitor \
-    --vcf patient001_joint.vcf \
+    --panel-vcf patient001_panel.vcf.gz \
+    --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
     --sample TP1_20240101 \
@@ -78,7 +79,8 @@ allomix monitor \
 
 # Multi-donor (2 donors)
 allomix monitor \
-    --vcf patient001_joint.vcf \
+    --panel-vcf patient001_panel.vcf.gz \
+    --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR1_001 \
     --donor-sample DONOR2_001 \
@@ -87,7 +89,8 @@ allomix monitor \
 
 # JSON output with per-marker detail
 allomix monitor \
-    --vcf patient001_joint.vcf \
+    --panel-vcf patient001_panel.vcf.gz \
+    --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
     --sample TP1_20240101 \
@@ -96,7 +99,8 @@ allomix monitor \
 
 # Timeline across multiple timepoints (always JSON)
 allomix timeline \
-    --vcf patient001_joint.vcf \
+    --panel-vcf patient001_panel.vcf.gz \
+    --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
     --sample TP1_20240101 \
@@ -117,7 +121,8 @@ allomix estimate-bias \
 
 # Use bias correction during monitoring
 allomix monitor \
-    --vcf patient001_joint.vcf \
+    --panel-vcf patient001_panel.vcf.gz \
+    --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
     --sample TP1_20240101 \

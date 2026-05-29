@@ -411,7 +411,11 @@ TODO:
 
 ---
 
-## Step 22: Decide Whether to Fully Switch to the Pileup / Two-VCF Model 🔲 TODO
+## Step 22: Decide Whether to Fully Switch to the Pileup / Two-VCF Model ✅ COMPLETE
+
+Committed to pileup-only on 2026-05-29. Verification gate ran against `output/validation_run6/batch.tsv` (wide-BED discovery + 71 force-called SID panel sites, additive Snakefile semantics); n_informative and host-presence magnitudes matched the prior run4 numbers, p-values preserved. Migration landed: `--vcf` removed from `monitor` / `timeline` (still present on `estimate-bias` / `estimate-errors`), tests/test_integration.py + tests/test_multidonor.py CLI tests rewritten as panel/admix pairs (joint VCF passed twice for synthetic fixtures), `_resolve_vcf_inputs` deleted, README/CLAUDE.md/doc/joint_calling.md updated. Full test suite: 320 pass.
+
+
 
 Pipeline and CLI now both support the two-VCF model (panel VCF for host/donor `GT` from GATK; admix VCF for `AD` from forced `bcftools mpileup`). The original single-joint-VCF model is still supported as a back-compat path: `allomix monitor --vcf <single>`, synthetic test data (`tests/test_data/`, `scripts/generate_*.py`), the in-silico validation harness, and the paper figures all still live on the single-VCF model.
 
@@ -438,3 +442,22 @@ If we commit to pileup-only, the work to do:
 Gated on: Step 11 re-run landing (need to see that the two-VCF results agree with or improve on the old single-VCF batch before pulling the floor out from under the existing validation).
 
 Decision required before any of the above ships — this is the explicit "do we even want to do this" step.
+
+---
+
+## Step 23: Widen Force-Output Panel to Recover Marginal Markers 🔲 TODO
+
+Spotted during Step 22 verification. Run3 (`output/joint_called/joint_called.union_sid_haem_vendor_probes.vcf.gz`) was a 33-sample joint call (host + donor + bias-training cohort) over the `union_sid_haem_vendor_probes.bed` region and produced 416 sites; run6's per-patient 2-sample joint call over the same BED + force-output of the 71-SNP SID panel produces ~249 sites/patient. Informative-marker count drops accordingly (BHOA 161 → 103; RCAR 139 → 131; NDAD 155 → 91; PCAH 142 → 95 etc.).
+
+Cause: a 2-sample joint call has weaker pooled support than a 33-sample joint call. Sites that cleared `stand-call-conf 30` in the larger pool can fall below it with only host+donor contributing, so GATK simply drops the record — and these are not necessarily hom-ref/hom-ref pairs, they include host=het/donor=hom-ref pairs that are informative. `--force-output-intervals` rescues this category but only at the 71 sites listed in the SID panel VCF; the other ~58 informative wide-BED markers per patient are not in the panel, so they are not force-output, so they vanish in 2-sample mode.
+
+This is surprising at >1000x coverage where an isolated het should clear QUAL 30 easily; the binding constraint is GATK's joint-call population prior (singleton penalty, allele-balance heuristic, strand-bias filters), not raw read evidence. We are not chasing that — the fix is the wider force-output panel:
+
+- Build a population-level VCF of known-polymorphic SNPs across `union_sid_haem_vendor_probes.bed` (e.g. gnomAD AF ≥ 1%, biallelic SNPs, autosomal). Roughly an order of magnitude larger than the SID panel.
+- Use it as `panel_alleles_vcf` alongside the BED (additive semantics already in place from Step 22). GenotypeGVCFs force-emits a row at every site, host+donor get genotyped from their `<NON_REF>` block AD, and admix pileup runs at the same site list.
+- Re-verify: run6 → run7 with the wider panel; expect n_informative to climb back toward run3 (~150+ for typical patients) without losing the pileup AD recovery on the host-presence side.
+- This is independent of the SID panel choice and is panel-stable (same site set per patient regardless of sample count in the joint call), so it preserves the "one CSV per patient" property and removes the marker-count regression from the run3→run6 comparison plot.
+
+No CLI or estimator change. Pipeline + panel only.
+
+Came out of a design discussion on 2026-05-29 during Step 22 verification.

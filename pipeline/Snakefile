@@ -76,6 +76,7 @@ READ_FILTERS = config.get("read_filters", "UNMAP,SECONDARY,QCFAIL,DUP")
 
 # Shared
 TABIX = config.get("tabix", "tabix")
+BGZIP = config.get("bgzip", "bgzip")
 
 
 def _discover_patients():
@@ -318,11 +319,12 @@ rule panel_tsv:
         tbi=PANEL_TSV_TPL + ".tbi",
     params:
         bcftools=BCFTOOLS,
+        bgzip=BGZIP,
         tabix=TABIX,
     shell:
         """
         {params.bcftools} query -f '%CHROM\\t%POS\\t%REF,%ALT\\n' {input.vcf} \
-            | bgzip -c > {output.tsv}
+            | {params.bgzip} -c > {output.tsv}
         {params.tabix} -f -s1 -b2 -e2 {output.tsv}
         """
 

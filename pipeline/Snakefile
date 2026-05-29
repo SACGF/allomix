@@ -85,13 +85,12 @@ else:
     )
 # GenotypeGVCFs has no --alleles option (that lives on HaplotypeCaller). The
 # tool's own mechanism for "emit a genotype at these sites even if non-variant
-# in the samples" is --force-output-intervals, combined with
-# --include-non-variant-sites. See doc/joint_calling.md for why we force every
-# panel site.
+# in the samples" is --force-output-intervals. It is mutually exclusive with
+# --include-non-variant-sites (the all-sites variant): force-output already
+# genotypes the given panel sites whether or not they are variant, so we use it
+# alone. See doc/joint_calling.md for why we force every panel site.
 GENOTYPE_GVCFS_ALLELES_ARG = (
-    f"--force-output-intervals {PANEL_ALLELES_VCF} --include-non-variant-sites"
-    if PANEL_ALLELES_VCF
-    else ""
+    f"--force-output-intervals {PANEL_ALLELES_VCF}" if PANEL_ALLELES_VCF else ""
 )
 
 # Phase 2 (bcftools mpileup)

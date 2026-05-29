@@ -62,27 +62,20 @@ SAMPLES_CSV_DIR = config.get(
 GATK = config.get("gatk", "gatk")
 JAVA_MEM = config.get("java_mem", "8g")
 INTERVALS = config.get("intervals", None)
+if not INTERVALS:
+    raise ValueError(
+        "`intervals:` is required — set it to the capture-panel BED. "
+        "Running GATK genome-wide on every WGS SNP is not a supported mode."
+    )
+INTERVALS_ARG = f"-L {INTERVALS}"
+_intervals_tag = f".{os.path.splitext(os.path.basename(INTERVALS))[0]}"
 # Optional fixed panel of (CHROM,POS,REF,ALT) sites. When set, GenotypeGVCFs
-# forces a genotype at every panel site (--force-output-intervals) and the
-# panel VCF is used as -L intervals throughout phase 1, so the per-patient
-# panel size is constant regardless of how many variants GATK discovers in
-# HOST+DONOR alone. The main payoff is a marginal informative marker that
-# falls below the calling QUAL threshold in a small 2-sample joint call: forced
-# output pins its genotype back. See doc/joint_calling.md. Same VCF is then
-# used by phase 2.
+# uses --force-output-intervals to pin a genotype at every panel site on top
+# of whatever GATK discovers in the `intervals` BED. The payoff is a marginal
+# informative marker that falls below the calling QUAL threshold in a small
+# 2-sample joint call: forced output pins its genotype back. See
+# doc/joint_calling.md. Same VCF is then used by phase 2.
 PANEL_ALLELES_VCF = config.get("panel_alleles_vcf", None)
-if PANEL_ALLELES_VCF:
-    # Panel VCF overrides any intervals BED — using both would just mask
-    # panel sites that fall outside the BED.
-    INTERVALS_ARG = f"-L {PANEL_ALLELES_VCF}"
-    _intervals_tag = (
-        f".{os.path.splitext(os.path.basename(PANEL_ALLELES_VCF))[0].removesuffix('.vcf')}"
-    )
-else:
-    INTERVALS_ARG = f"-L {INTERVALS}" if INTERVALS else ""
-    _intervals_tag = (
-        f".{os.path.splitext(os.path.basename(INTERVALS))[0]}" if INTERVALS else ""
-    )
 # GenotypeGVCFs has no --alleles option (that lives on HaplotypeCaller). The
 # tool's own mechanism for "emit a genotype at these sites even if non-variant
 # in the samples" is --force-output-intervals. It is mutually exclusive with

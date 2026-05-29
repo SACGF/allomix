@@ -408,6 +408,7 @@ rule merge_admix:
         """
         {params.bcftools} merge \
             --threads {threads} \
+            --force-single \
             -m all \
             -Oz -o {output.vcf} \
             {input.vcfs} 2>&1 | tee {log}

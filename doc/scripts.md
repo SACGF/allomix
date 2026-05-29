@@ -42,7 +42,7 @@ ADMIX rows are skipped automatically.
 ```bash
 python scripts/run_csv_batch.py \
     --samples-csv-dir pipeline/sample_csvs \
-    --vcf-dir output/joint_call \
+    --vcf-dir output/genotypes \
     --output-dir output/validation_run2 \
     --bias-table output/bias_training/bias_table.tsv \
     --error-table output/error_training/error_table.tsv
@@ -56,7 +56,7 @@ plus `output/validation_run2/batch.tsv`.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--samples-csv-dir` | `pipeline/sample_csvs` | Directory of per-patient CSVs (one per file). |
-| `--vcf-dir` | `output/joint_call` | Directory containing `<patient>.vcf.gz` and `<patient>.admix.vcf.gz` from `pipeline/Snakefile`. |
+| `--vcf-dir` | `output/genotypes` | Directory containing `<patient>.vcf.gz` and `<patient>.admix.vcf.gz` from `pipeline/Snakefile`. |
 | `--output-dir` | `output/batch` | Where per-patient TSVs and the combined `batch.tsv` are written. |
 | `--bias-table` | none | Per-marker bias table passed through to `allomix monitor`. |
 | `--error-table` | none | Per-site error table passed through to `allomix monitor`. |

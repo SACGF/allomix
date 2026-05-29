@@ -193,9 +193,19 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     marker_biases = _load_biases(args)
     marker_errors = _load_errors(args)
 
-    # Parse host and donors once — they're the same for every timepoint
-    host = parse_vcf(args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq)
-    donors = [parse_vcf(args.panel_vcf, sample=d, min_gq=args.min_gq) for d in args.donor_sample]
+    # Parse host and donors once — they're the same for every timepoint.
+    # gt_ad_consistency=True is the panel-side miscall guard: drops
+    # markers where the called GT contradicts the AD VAF (e.g. GATK
+    # called het from 20% VAF reads in a 2-sample joint call). Without
+    # it, the wider gnomAD-derived panel recovers markers that bias the
+    # estimator toward false host signal — see Step 23 verification.
+    host = parse_vcf(
+        args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
+    )
+    donors = [
+        parse_vcf(args.panel_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
+        for d in args.donor_sample
+    ]
 
     out = _open_output(args.output)
     try:
@@ -233,9 +243,14 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     marker_biases = _load_biases(args)
     marker_errors = _load_errors(args)
 
-    # Parse host and donors once
-    host = parse_vcf(args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq)
-    donors = [parse_vcf(args.panel_vcf, sample=d, min_gq=args.min_gq) for d in args.donor_sample]
+    # Parse host and donors once. See cmd_monitor for gt_ad_consistency.
+    host = parse_vcf(
+        args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
+    )
+    donors = [
+        parse_vcf(args.panel_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
+        for d in args.donor_sample
+    ]
 
     results = []
     for sample_name in args.sample:

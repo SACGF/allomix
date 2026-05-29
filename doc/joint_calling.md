@@ -60,12 +60,14 @@ The reason for forcing is not the hom-ref/hom-ref sites it adds. Those sites are
 
 The payoff is the marginal informative marker that does not clear the calling QUAL threshold (`stand-call-conf`, default 30) in a small two-sample joint call. With only host + donor in the call, a real het with modest evidence can fall below QUAL 30 and drop out of the VCF entirely. Forced output pins its genotype back. A large pooled joint call would clear the threshold on the strength of many samples; forcing recovers the same markers without pooling unrelated patients (see "Why one CSV per patient?").
 
-At the >1000x depth of our rhAmpSeq SID deployment this rarely bites, since a true het clears QUAL 30 easily, so for us the force-output is mostly an organizational convenience: a constant panel size per patient, with the uninformative hom-ref rows as harmless filler. It matters more for lower-depth panels. Either way it is the cheap fix (it only changes the `genotype_gvcfs` step), so we keep it on.
+At the >1000x depth of our rhAmpSeq SID deployment this rarely bites, since a true het clears QUAL 30 easily, so for us the force-output is mostly an organizational convenience: a constant set of panel rows per patient (with the uninformative hom-ref ones as harmless filler) sitting alongside whatever else GATK discovers in the wider `intervals` BED. It matters more for lower-depth panels. Either way it is the cheap fix (it only changes the `genotype_gvcfs` step), so we keep it on.
 
-To confirm the panel came through complete, count records per patient:
+The panel VCF and the `intervals` BED are additive: HaplotypeCaller and GenotypeGVCFs use `-L <intervals.bed>` for discovery scope, and `--force-output-intervals <panel.vcf.gz>` pins the panel sites in addition. The total per-patient site count therefore varies (wide-BED discoveries change between patients) while the panel sites are constant.
+
+To confirm every panel site came through, intersect the patient VCF against the panel and count:
 
 ```bash
-bcftools view -H output/genotypes/<patient>.<panel>.vcf.gz | wc -l
+bcftools isec -n=2 -w1 output/genotypes/<patient>.<bed_tag>.vcf.gz panel.vcf.gz | grep -vc '^#'
 ```
 
 A short count points to a genuine coverage gap at a panel site (no reference block in the combined GVCF for `--force-output-intervals` to act on), which is a QC finding worth surfacing rather than hiding behind a forced `DP=0` row.

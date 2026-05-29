@@ -445,19 +445,23 @@ Decision required before any of the above ships — this is the explicit "do we 
 
 ---
 
-## Step 23: Widen Force-Output Panel to Recover Marginal Markers 🔲 TODO
+## Step 23: Widen Force-Output Panel to Recover Marginal Markers ✅ COMPLETE
 
-Spotted during Step 22 verification. Run3 (`output/joint_called/joint_called.union_sid_haem_vendor_probes.vcf.gz`) was a 33-sample joint call (host + donor + bias-training cohort) over the `union_sid_haem_vendor_probes.bed` region and produced 416 sites; run6's per-patient 2-sample joint call over the same BED + force-output of the 71-SNP SID panel produces ~249 sites/patient. Informative-marker count drops accordingly (BHOA 161 → 103; RCAR 139 → 131; NDAD 155 → 91; PCAH 142 → 95 etc.).
+Landed 2026-05-29 (see [`2026-05-29_wider_panel_validation_notes.md`](2026-05-29_wider_panel_validation_notes.md) for the day's full write-up, before/after numbers, file inventory, and open items).
 
-Cause: a 2-sample joint call has weaker pooled support than a 33-sample joint call. Sites that cleared `stand-call-conf 30` in the larger pool can fall below it with only host+donor contributing, so GATK simply drops the record — and these are not necessarily hom-ref/hom-ref pairs, they include host=het/donor=hom-ref pairs that are informative. `--force-output-intervals` rescues this category but only at the 71 sites listed in the SID panel VCF; the other ~58 informative wide-BED markers per patient are not in the panel, so they are not force-output, so they vanish in 2-sample mode.
+What was actually needed (the wider panel alone wasn't enough):
 
-This is surprising at >1000x coverage where an isolated het should clear QUAL 30 easily; the binding constraint is GATK's joint-call population prior (singleton penalty, allele-balance heuristic, strand-bias filters), not raw read evidence. We are not chasing that — the fix is the wider force-output panel:
+1. gnomAD v4.1-derived panel build: `scripts/build_force_output_panel.sh` + `pipeline/gnomad_refseq_to_hg38_chrs.tsv`. Output panel at `output/union_sid_haem_gnomad_af05.vcf.gz` (258 sites) recommended; af01 alternative kept.
+2. Pipeline fix: `bcftools call -A` in `pipeline/Snakefile:401` so the admix VCF preserves the panel ALT at hom-ref sites (without this ~48 informative SNPs/patient were lost in the join).
+3. Pipeline fix: `-e 'ALT="."'` in `panel_tsv` rule so force-output REF-only rows don't reach `bcftools call -A` (where they trigger malformed PL).
+4. allomix fix: skip indels in `parse_vcf` (pileup can't count indel reads the way GATK's local reassembly does).
+5. allomix fix: GT/AD consistency check on host/donor (drops GATK miscalls where the called het has AD VAF < 0.35 or > 0.65, etc.).
 
-- Build a population-level VCF of known-polymorphic SNPs across `union_sid_haem_vendor_probes.bed` (e.g. gnomAD AF ≥ 1%, biallelic SNPs, autosomal). Roughly an order of magnitude larger than the SID panel.
-- Use it as `panel_alleles_vcf` alongside the BED (additive semantics already in place from Step 22). GenotypeGVCFs force-emits a row at every site, host+donor get genotyped from their `<NON_REF>` block AD, and admix pileup runs at the same site list.
-- Re-verify: run6 → run7 with the wider panel; expect n_informative to climb back toward run3 (~150+ for typical patients) without losing the pileup AD recovery on the host-presence side.
-- This is independent of the SID panel choice and is panel-stable (same site set per patient regardless of sample count in the joint call), so it preserves the "one CSV per patient" property and removes the marker-count regression from the run3→run6 comparison plot.
+run9 verification (`output/validation_run9/batch.tsv`): n_informative up across the board (BHOA 103→144, NDAD 91→146, GBRI 85→128, PCAH 95→132, BCOL 98→150 etc.), donor% matches flow truth on every sample, host-presence detection ("any detected") preserved with stronger p-values, full test suite 320/320.
 
-No CLI or estimator change. Pipeline + panel only.
+### Open items rolled out of this step
 
-Came out of a design discussion on 2026-05-29 during Step 22 verification.
+- **Post-doc follow-up (user owns):** share run9 marker-count gains and "any detection" results with the post-doc. Notes file has the table to send. LNAN host-presence p=0.16 is borderline — discuss treatment.
+- **Possible Step 24 — wider-panel rho calibration.** NDAD, BHOA, PCAH show `gof_pval = 0.0000` in run9 → QC=REVIEW. The chimerism fraction is fine (matches flow); the issue is residual variance exceeding beta-binomial expectation because the wider panel has more diverse per-marker behaviour. Refit `rho` via `scripts/diagnose_sample.py` on a run9 sample and check whether a recalibrated global `rho` resolves it; if not, this folds into the per-marker-type overdispersion work already noted under Step 21.
+- **Comparison plot refresh.** `output/run1_vs_run2_vs_run3_vs_run6.png` should become run1-vs-run2-vs-run3-vs-run9 once the post-doc signs off.
+- **Plan tidying** (cosmetic): Step 22 section above this one still has its original "if we commit to pileup-only, the work to do:" subsection embedded under the ✅ COMPLETE header; remove next time someone is in the file.

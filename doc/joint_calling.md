@@ -65,7 +65,7 @@ At the >1000x depth of our rhAmpSeq SID deployment this rarely bites, since a tr
 To confirm the panel came through complete, count records per patient:
 
 ```bash
-bcftools view -H output/joint_call/<patient>.<panel>.vcf.gz | wc -l
+bcftools view -H output/genotypes/<patient>.<panel>.vcf.gz | wc -l
 ```
 
 A short count points to a genuine coverage gap at a panel site (no reference block in the combined GVCF for `--force-output-intervals` to act on), which is a QC finding worth surfacing rather than hiding behind a forced `DP=0` row.
@@ -113,7 +113,7 @@ Edit `pipeline/config.yaml` or pass values on the command line. Key options:
 ```yaml
 ref: "/path/to/hg38.fa"
 samples_csv: "patient_4MO.csv"
-output_dir: "output/joint_call"
+output_dir: "output/genotypes"
 
 # Phase 2 filters (defaults shown)
 max_depth: 100000      # set well above panel coverage so >1000x is not capped
@@ -153,13 +153,13 @@ Phase-1 HaplotypeCaller and phase-2 pileup are both per-sample and parallelise w
 
 | File | Description |
 |---|---|
-| `output/joint_call/<patient>.vcf.gz` | Phase 1: GATK joint-called VCF for HOST + DONOR. Source of host/donor `GT`. |
-| `output/joint_call/<patient>.admix.vcf.gz` | Phase 2: multi-sample admix VCF with raw pileup `AD` at every panel site. Source of admix `AD`. |
-| `output/joint_call/gvcfs/*.g.vcf.gz` | Phase 1 per-sample GVCFs (intermediate, shared across patients by sample ID) |
-| `output/joint_call/<patient>/combined.g.vcf.gz` | Phase 1 per-patient combined GVCF (intermediate) |
-| `output/joint_call/<patient>/admix/per_sample/*.vcf.gz` | Phase 2 per-admix-sample VCFs (intermediate) |
-| `output/joint_call/<patient>/admix/targets.tsv.gz` | Phase 1 panel sites in `bcftools call -C alleles` format |
-| `output/joint_call/logs/` | Per-rule log files |
+| `output/genotypes/<patient>.vcf.gz` | Phase 1: GATK joint-called VCF for HOST + DONOR. Source of host/donor `GT`. |
+| `output/genotypes/<patient>.admix.vcf.gz` | Phase 2: multi-sample admix VCF with raw pileup `AD` at every panel site. Source of admix `AD`. |
+| `output/genotypes/gvcfs/*.g.vcf.gz` | Phase 1 per-sample GVCFs (intermediate, shared across patients by sample ID) |
+| `output/genotypes/<patient>/combined.g.vcf.gz` | Phase 1 per-patient combined GVCF (intermediate) |
+| `output/genotypes/<patient>/admix/per_sample/*.vcf.gz` | Phase 2 per-admix-sample VCFs (intermediate) |
+| `output/genotypes/<patient>/admix/targets.tsv.gz` | Phase 1 panel sites in `bcftools call -C alleles` format |
+| `output/genotypes/logs/` | Per-rule log files |
 
 allomix then reads `<patient>.vcf.gz` for the host/donor genotypes and `<patient>.admix.vcf.gz` for the admix allele depths, using the existing separate-VCF CLI mode.
 

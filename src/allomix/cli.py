@@ -98,6 +98,13 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Disable the host-presence detection test (see "
              "`allomix.detect`). On by default; cheap to run.",
     )
+    parser.add_argument(
+        "--no-artifact-filter",
+        action="store_true",
+        help="Disable the read-level artifact filter in the host-presence "
+             "test (strand/soft-clip/read-position bias). On by default; "
+             "drops alignment-artifact markers (see `allomix.detect`).",
+    )
 
 
 def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
@@ -128,6 +135,7 @@ def _run_single_sample(
     ) = None,
     run_host_presence: bool = True,
     use_sex_chroms: bool = False,
+    artifact_filter: bool = True,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -174,6 +182,7 @@ def _run_single_sample(
             genotypes.informative,
             marker_errors=marker_errors,
             error_rate=error_rate,
+            artifact_filter=artifact_filter,
         )
 
     qc = assess_quality(result, genotypes)
@@ -239,6 +248,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 marker_errors=marker_errors,
                 run_host_presence=not args.no_host_presence,
                 use_sex_chroms=args.use_sex_chroms,
+                artifact_filter=not args.no_artifact_filter,
             )
 
             if args.format == "json":
@@ -284,6 +294,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             marker_errors=marker_errors,
             run_host_presence=not args.no_host_presence,
             use_sex_chroms=args.use_sex_chroms,
+            artifact_filter=not args.no_artifact_filter,
         )
         results.append((genotypes.sample_name, result, qc))
 

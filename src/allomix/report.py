@@ -28,11 +28,17 @@ def _host_presence_tsv_cells(hp: HostPresenceResult | None) -> list[str]:
     are no usable markers (the source flag still carries information).
     """
     if hp is None:
-        return [_NA] * 6
+        return [_NA] * 7
     if hp.n_markers == 0:
         # Carry the source flag (typically "none") but leave numeric cells
-        # empty since the test was not actually exercised.
-        return [_NA, _NA, _NA, _NA, str(hp.n_markers), hp.error_rate_source]
+        # empty since the test was not actually exercised. The artifact count
+        # is still informative (markers may have been filtered down to zero).
+        return [
+            _NA, _NA, _NA, _NA,
+            str(hp.n_markers),
+            hp.error_rate_source,
+            str(hp.n_artifact_filtered),
+        ]
     f_lo, f_hi = hp.f_host_ci
     return [
         f"{hp.lrt_pval:.4g}",
@@ -41,6 +47,7 @@ def _host_presence_tsv_cells(hp: HostPresenceResult | None) -> list[str]:
         f"{f_hi:.6f}",
         str(hp.n_markers),
         hp.error_rate_source,
+        str(hp.n_artifact_filtered),
     ]
 
 
@@ -60,6 +67,7 @@ def _host_presence_json(hp: HostPresenceResult | None) -> dict | None:
         "expected_background": hp.expected_background,
         "used_per_site_error": hp.used_per_site_error,
         "error_rate_source": hp.error_rate_source,
+        "n_artifact_filtered": hp.n_artifact_filtered,
     }
 
 
@@ -73,6 +81,7 @@ _HOST_PRESENCE_TSV_COLS = [
     "host_f_ci_hi",
     "host_detect_markers",
     "host_err_source",
+    "host_artifact_filtered",
 ]
 
 

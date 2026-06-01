@@ -1,566 +1,148 @@
 # Donor Chimerism Tool — Overall Build Plan
 
-This is the master plan for building a general-purpose, panel-agnostic NGS chimerism monitoring tool. Each step is designed to be fed into a prompt as a self-contained task.
+Master plan for allomix, a general-purpose, panel-agnostic NGS chimerism monitoring tool.
+
+Completed steps are summarised to the decision + rationale; the full implementation detail lives in the code, tests, `doc/`, and the per-step detail docs (`claude/*_plan.md`). Open work keeps enough context to be actioned directly.
 
 ---
 
-## Step 1: Project Setup and README ✅ COMPLETE
+## Step 1: Project Setup ✅
+allomix on PyPI (v0.0.1); package under `src/allomix/`; `monitor` + `timeline` CLI. Context in `CLAUDE.md` / `README.md`.
 
-- Project name: **allomix** (registered on PyPI, v0.0.1 published)
-- Directory structure: `src/allomix/`, `tests/`, `docs/`, `scripts/`, `data/`
-- `pyproject.toml` with dependencies (cyvcf2, numpy, scipy), dev deps (pytest, ruff), CLI entry point
-- `README.md` — general-purpose tool description, workflow, input/output contract, comparison table
-- `CLAUDE.md` — project context + dev conventions
-- CLI stub with `monitor` and `timeline` subcommands
+## Step 2: Input Format — VCF, not BAM ✅
+**Decision: VCF-only, no BAM in v1.** VCF AD (ref/alt/depth) provides everything the estimator needs, and the upstream pipeline can be shaped to emit what we want. Min FORMAT fields: GT, AD, DP. Detail: `claude/step2_bam_vs_vcf_decision.md`.
 
----
+## Step 3: Synthetic Test Data ✅
+`src/allomix/simulate.py` + `scripts/generate_*.py`. VCF blending with binomial-sampled allele counts; per-marker capture bias (`marker_bias_sd`); optional overdispersion `rho` (Step 21). Plain-text VCF I/O so the simulator is dependency-light.
 
-## Step 2: BAM vs VCF — Determine Primary Input Format ✅ COMPLETE
+## Step 4: Reference Tools ✅
+**Why our approach:** MLE likelihood from Crysup & Woerner 2022 (Demixtify Formula 5, simplified by known genotypes); per-marker amplification-bias correction (Vynck); grid-search + Brent refinement (All-FIT / Conpair). **License: reimplement the published math independently, cite the paper; do not copy AGPL (Demixtify) / non-commercial (Conpair) code.** Detail: `claude/historical/step4_reference_tool_analysis.md`.
 
-**Decision: VCF as primary input. No BAM support in v1.**
+## Step 5: Implementation Plan ✅
+6 modules (genotype, chimerism, bias, qc, report, cli); MLE algorithm + test plan. Detail: `claude/step5_implementation_plan.md`.
 
-Full analysis in `claude/step2_bam_vs_vcf_decision.md`. Key points:
+## Step 6: Core Algorithm (single-donor) ✅
+MLE estimation end-to-end: VCF parse → Vynck marker classification → grid search + Brent + profile-likelihood CI → QC → TSV/JSON. CLI commands in `README.md`.
 
-- VCF AD fields provide everything needed (ref count, alt count, depth)
-- Joint calling ensures hom-ref samples at variant sites still have 2-element AD — confirmed with `data/joint_called_example.vcf`
-- Pipeline is flexible and can be adjusted to produce what allomix needs
-- Minimum required FORMAT fields: GT, AD, DP
-- Includes an audit script for running on /tau to verify existing VCFs
+## Step 7: Multi-Donor Support ✅
+host + 2 donors. Sibling-trio simulation (Mendelian segregation), markers informative for ANY donor, triangular grid → Nelder-Mead → per-donor profile CIs. CLI auto-detects donor count. Validated on sibling donors. Detail: `claude/multi_donor_plan.md`.
 
-### Example Data Available
+## Step 8: Bias Correction ✅
+`bias.py`: per-marker bias = median(VAF_het − 0.5) from a training cohort, applied to the expected REF weight in the MLE. ~15% MAE / ~25% max-error reduction at 2000x. CLI: `estimate-bias` + `monitor --bias-table`.
 
-- `data/idt_rhampseq_sid_example.vcf` — single sample, 15 markers (de-identified coordinates)
-- `data/joint_called_example.vcf` — 114 samples, 9 markers (de-identified coordinates) confirms joint-calling provides ref+alt AD at all sites
+## Step 9: In-Silico Validation ✅
+Simulator models four noise sources, all calibrated from empirical panel characterisation (210 VCFs / 18,047 samples, 76-SNP rhAmpSeq): per-marker amplification bias (SD ~0.018), non-uniform depth (CV 0.43), sequencing error (ε=0.01), locus dropout (1.6%). Sub-2% MAE across depths (50–1000x) and relatedness (unrelated→sibling). **CI coverage was low (25–58%) because the plain binomial does not model systematic bias / non-uniform depth — this motivated the beta-binomial work (Step 13) and the per-site error/dropout steps (14, 15).**
 
----
+## Step 10: VariantGrid Integration 🔲
+VG stores donor/host genotypes, exports VCF, ingests allomix JSON per patient, renders the timeline chart. JSON schema + API integration TBD.
 
-## Step 3: Test Data Generation — Synthetic Chimeric Files ✅ COMPLETE
+## Step 11: Real Sample Validation ✅
+Joint-called VCFs for the idt_rhampseq_sid panel produced on /tau. Batch runners drive allomix across the patient list. **Key interpretive note: allomix reports bulk-DNA chimerism (a cell-type-weighted average), so it is not apples-to-apples with sorted-cell flow (CD45/CD3/CD13) and tracks CD13 myeloid more closely than CD45 in lineage-disparate samples (e.g. RCAR).** The current two-phase-pipeline results are run9 → run10 (Steps 23, 27); these supersede the old all-GATK `validation_run_new_bias2`. Next phase: controlled dilution series for quantitative accuracy.
 
-Built in `src/allomix/simulate.py` + `scripts/generate_test_data.py` + `tests/test_simulate.py` (64 tests).
+## Step 12: Per-Marker Likelihood Context Refactor 🔲
+Pure-refactor pre-step for Steps 14–17 (each wants to add a per-marker kwarg threaded through every estimator closure). Introduce a `PerMarkerContext` dataclass built once per call; downstream steps mutate one field instead of threading kwargs. No behaviour change. Detail: `claude/12_marker_context_refactor_plan.md`.
 
-- VCF blending: takes host + donor VCFs, mixture fraction, target depth → synthetic chimeric VCF with binomial-sampled allele counts
-- **Capture bias simulation**: `marker_bias_sd` parameter adds per-marker capture/amplification bias drawn from N(0, sd). 0.0 = ideal, 0.02 = realistic for capture panels. Each marker gets a fixed bias that shifts its observed VAF relative to truth.
-- Plain-text VCF parsing (no cyvcf2 dependency) so simulation code is lightweight
-- CLI scripts: `generate_test_data.py` (chimerism series), `generate_timeline_data.py` (engraftment + relapse scenario)
-- Supports custom fractions, depth, random seed, and `--bias-sd`
+## Step 13: Beta-Binomial Goodness-of-Fit ✅
+The MLE already fit overdispersion `ρ`, but `qc.py` standardised residuals by binomial variance so `gof_pval` was ~0 even on good fits. Fixed: GoF now uses beta-binomial variance with df corrected for fitted params, plus an error-adjusted `p_alt` at saturated (f≈0/1) markers so a ~1% error residual no longer blows up the chi-sq. Detail: `claude/beta_binomial_plan.md`.
 
----
+## Step 14: Empirical Per-Site Error Rates 🔲 (high priority — gates Steps 20/27/28)
+Replace the global `--error-rate 0.01` with empirically measured per-site rates (ALT-read rate at hom-ref sites, REF-read rate at hom-alt). This is the per-site background the host-presence detector needs (Step 20) and the principled fix for the TP53-style artifact (Step 28). `error_rates.py` (`estimate_error_rates`) and the `--error-table` loader already exist; the work is building and adopting the table. Detail: `claude/14_empirical_error_rates_plan.md`.
 
-## Step 4: Clone and Examine Reference Open-Source Projects ✅ COMPLETE
+## Step 15: Per-Site Dropout Rate 🔲
+Integrate per-site no-call rate (already available from the bias cohort) into the likelihood so flaky sites are downweighted. Detail: `claude/per_site_dropout_plan.md`.
 
-Full analysis in `claude/step4_reference_tool_analysis.md`. (now claude/historical/step4_reference_tool_analysis.md) 9 repos examined.
+## Step 16: GQ-Weighted Marker Contributions 🔲
+Replace the hard `--min-gq 20` cutoff with a per-marker likelihood weight so borderline genotypes stay informative but downweighted. Small expected gain; cheap once the per-marker likelihood is being touched. Detail: `claude/16_gq_weighted_markers_plan.md`.
 
-**Key findings:**
-
-| Tool | Key Takeaway |
-|------|-------------|
-| **Demixtify** | MLE likelihood framework (Crysup & Woerner 2022 Formula 5) is our starting point. Known genotypes simplify dramatically. AGPL — reimplement math, cite paper. |
-| **Chimerism-Bias** | Per-marker amplification bias correction is essential; ~30% error reduction. Port the correction formulas. |
-| **Chimerism-FABCASE/nMarkers** | 76 markers is more than sufficient even for sibling pairs. MIT. |
-| **All-FIT** | Grid search + outlier removal pattern. MIT. |
-| **EuroForMix** | Multi-contributor architecture reference. LGPL. |
-| **Conpair** | Brent refinement after grid search; log-space arithmetic. Non-commercial. |
-| **somalier** | Extract-then-analyze architecture; site selection. MIT. |
-
-**License approach:** Implement math independently (published science, cite Crysup & Woerner 2022), do not copy AGPL/non-commercial code.
-
----
-
-## Step 5: Detailed Implementation Plan ✅ COMPLETE
-
-Full plan in `claude/step5_implementation_plan.md`. Defines:
-
-- 6 modules: genotype, chimerism, bias, qc, report, cli
-- MLE algorithm: Demixtify Formula 5 with known-genotype simplification
-- Grid search (1001 points) + Brent refinement + profile likelihood CI
-- 9-phase implementation order
-- Full test plan
-
----
-
-## Step 6: Implement Core Algorithm ✅ COMPLETE (single-donor)
-
-### Implemented modules:
-
-| Module | File | Purpose |
-|--------|------|---------|
-| genotype | `src/allomix/genotype.py` | VCF parsing (cyvcf2), marker joining by (chrom,pos,ref,alt), Vynck type classification (6 types), depth/GQ/PASS filtering |
-| chimerism | `src/allomix/chimerism.py` | MLE estimation: per-marker log-likelihood (Crysup & Woerner Formula 5 with known genotypes), 1001-point grid search, Brent refinement, profile likelihood 95% CI, per-marker residuals, 3-SD outlier flagging |
-| qc | `src/allomix/qc.py` | QC assessment: marker counts, depth stats, GOF chi-squared, CI width, pass/fail with warnings |
-| report | `src/allomix/report.py` | TSV output (summary + verbose per-marker detail), JSON, timeline format |
-| cli | `src/allomix/cli.py` | `allomix monitor` and `allomix timeline` wired end-to-end with all options |
-
-### Test coverage: 261 tests passing
-
-- 29 genotype tests (parsing real VCFs, classification, filtering)
-- 55 chimerism tests (MLE math, estimation accuracy at multiple fractions, CI coverage, edge cases)
-- 48 multi-donor tests (unit + integration + CLI)
-- 21 bias tests
-- 12 QC tests (pass/fail conditions, warnings)
-- 17 report tests (TSV/JSON format, timeline)
-- 64 simulate tests (blending logic, round-trips)
-- 15 integration tests (full pipeline: synthetic VCF → genotype → chimerism → qc → report → CLI)
-
-### What works now:
-
-```bash
-# Single-donor chimerism from VCFs
-allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf -o results.tsv
-
-# JSON output
-allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf --format json
-
-# Timeline across timepoints
-allomix timeline --host host.vcf --donor donor.vcf --sample d30.vcf --sample d60.vcf -o timeline.json
-
-# Verbose per-marker detail
-allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf --verbose
-
-# Estimate per-marker bias from training samples
-allomix estimate-bias --vcfs *.vcf.gz -o bias_table.tsv
-
-# Monitor with bias correction
-allomix monitor --host host.vcf --donor donor.vcf --sample admix.vcf --bias-table bias.tsv
-```
-
----
-
-## Step 7: Implement Multi-Donor Support ✅ COMPLETE
-
-**Goal:** Extend chimerism estimation to host + 2 donors.
-
-### Implementation (complete, 2026-04-08)
-
-Detailed plan: `claude/multi_donor_plan.md`
-
-**simulate.py** — `generate_sibling_trio_genotypes()` (Mendelian segregation from shared parents), `_mendelian_child()`, `expected_vaf_multi()`, `blend_from_genotype_dicts()`
-
-**genotype.py** — `InformativeMarker` gained `marker_types: list[int | None]` and `informative_for: list[bool]` fields. `classify_markers()` now includes markers informative for ANY donor (was: first donor only).
-
-**chimerism.py** — `MultiDonorResult` dataclass, `expected_weight_multi()`, `total_log_likelihood_multi()`, `estimate_multi_donor()` (triangular grid search at 101 steps → Nelder-Mead → profile likelihood CIs with chi2 df=1 per donor), `_per_marker_results_multi()`.
-
-**qc.py** — `QCReport.per_donor_n_informative`, per-donor CI width and informativity warnings.
-
-**report.py** — `_write_tsv_multi()`, multi-donor branches in `to_json()` and `timeline_json()`.
-
-**cli.py** — `_run_single_sample()` auto-detects: 1 donor → `estimate_single_donor()`, 2+ → `estimate_multi_donor()`.
-
-**Test data** — `tests/test_data/multidonor/`: 3-brother sibling VCFs (100 markers, 61 informative for any donor, 46/41 per donor) + 22 chimeric VCFs at a grid of (f1, f2) points. Generated by `scripts/generate_multidonor_test_data.py`.
-
-**Tests** — `tests/test_multidonor.py`: 48 tests (unit + integration + CLI). 261 total tests pass, zero regressions.
-
-**Validation** — Estimation accuracy on sibling donors at 1000x: pure host <1%, balanced 25/25 → 24.3/26.0%, asymmetric 30/10 correctly distinguished, pure donor1 >98%.
-
-### Paper updates ✅ COMPLETE
-
-All paper sections updated: methods (multi-donor extension subsection), results (sibling donor validation), discussion (moved from limitation to capability), abstract (multi-donor mention), README. Validation script (`paper/scripts/run_multidonor_validation.py`) and figure (`paper/scripts/generate_multidonor_figure.py`, `paper/figures/fig_multidonor.png`) complete.
-
----
-
-## Step 8: Implement Bias Correction ✅ COMPLETE
-
-Implemented in `src/allomix/bias.py`.
-
-- `estimate_bias()` — estimate bias from training VCFs: bias = median(VAF_het - 0.5) per marker
-- `load_bias_table()` / `save_bias_table()` — TSV I/O for bias tables
-- Bias correction integrated into MLE: adjusts expected reference allele weight per marker
-- CLI: `allomix estimate-bias --vcfs *.vcf.gz -o bias_table.tsv`
-- CLI: `allomix monitor --bias-table bias.tsv ...`
-- Validation shows bias correction reduces MAE ~15% and max error ~25% at 2000x depth with realistic biases
-
----
-
-## Step 9: In-Silico Validation ✅ COMPLETE
-
-### Simulation framework
-
-The simulator (`src/allomix/simulate.py`) models four sources of measurement noise, all calibrated from empirical panel characterisation (210 joint-called VCFs, 18,047 samples, 76-SNP rhAmpSeq panel — results in `paper/empirical_results/`):
-
-1. **Per-marker amplification bias** — heavy-tailed Gaussian mixture: 95% from N(0, 0.012), 5% from N(0, 0.08), yielding overall SD ~0.018 matching the empirical distribution (median |bias| 0.005, 95th pct 0.041, max 0.10)
-2. **Non-uniform depth across markers** — per-marker depths drawn from log-normal distribution matching empirical CV=0.43 (mean 1,732x, range 285–2,789x)
-3. **Sequencing errors** — symmetric error model at ε=0.01
-4. **Locus dropout** — 1.6% per-marker dropout rate matching empirical no-call rate
-
-### Validation scripts (in `paper/scripts/`)
-
-| Script | What it tests |
-|--------|--------------|
-| `run_depth_validation.py` | Accuracy across 5 depths (50x–1000x), 12 donor fractions |
-| `run_relatedness_validation.py` | Accuracy across 4 relatedness levels (unrelated to sibling), 10 replicates each |
-| `compare_bias_correction.py` | Side-by-side comparison with/without bias correction |
-| `generate_paper_facts.py` | Generates all facts CSVs for the paper |
-
-### Key results
-
-**Depth validation** (100 markers, 80 informative, realistic noise):
-
-| Depth | MAE (%) | RMSE (%) | Max Error (%) |
-|:---:|:---:|:---:|:---:|
-| 50x | 0.97 | 1.09 | 2.04 |
-| 100x | 0.69 | 0.79 | 1.30 |
-| 200x | 0.66 | 0.73 | 1.10 |
-| 500x | 0.62 | 0.66 | 1.03 |
-| 1,000x | 0.61 | 0.68 | 0.96 |
-
-**Relatedness validation** (100 markers, 500x, 10 replicates):
-
-| Relatedness | Mean Informative | MAE (%) |
-|:---|:---:|:---:|
-| Unrelated | 58 | 0.99 |
-| 1st cousin | 55 | 1.04 |
-| Half-sibling | 52 | 0.98 |
-| Full sibling | 38 | 1.16 |
-
-All MAE values sub-2% (clinically acceptable). Even sibling donors maintain sufficient informative markers (min 27, well above the minimum 3 required).
-
-**CI coverage** is 25–58% (below nominal 95%). This is expected: the binomial likelihood does not model the systematic biases and non-uniform depth. The paper discusses this and notes approaches for improvement (bias correction, beta-binomial likelihoods, empirical recalibration).
-
----
-
-## Step 10: VariantGrid Integration 🔲 TODO
-
-- JSON output schema agreed with VG team
-- VG stores donor/host genotypes, exports as VCF
-- VG ingests allomix JSON results per patient
-- VG renders timeline chart from chimerism results across timepoints
-- Exact API integration TBD
-
----
-
-## Step 11: Real Sample Validation ✅ COMPLETE
-
-- Joint-called VCFs for the idt_rhampseq_sid panel produced on /tau; joint-called VCF available locally at `output/joint_called/joint_called.idt_rhampseq_sid_SNPsQC.vcf.gz`
-- Batch runner `scripts/run_xls_batch.py` drives allomix across the patient list in `output/Chimerism project patient list.xlsx`, using the bias table from `output/bias_training/bias_table.tsv` and appending clinical reference columns (`Donor`, `Chimerism result TP2`) to `batch.tsv`
-- Validation runs captured in `output/validation_run_new_bias2/` (post-BB / error-adjusted GoF fix). All 7 PASS samples now produce non-trivial `gof_pval` (previously all 0.0000).
-- Concordance assessment vs. clinical sorted-cell chimerism (CD45 / CD3 / CD13) is not a direct apples-to-apples comparison: allomix reports bulk DNA chimerism, which is a cell-type-weighted average and tracks CD13 myeloid more closely than CD45 in samples with strong lineage disparity (e.g. 20_MO RCAR: allomix 40.79%, CD45 46.78%, CD3 93.19%, CD13 30.58%).
-- **Re-run pending against the new two-phase pipeline (2026-05-29).** The validation above used the all-GATK joint-calling pipeline, which we have since discovered strips minority ALT reads from `FORMAT/AD` at hom-ref calls (confirmed empirically: 0 ALT reads across ~9M reads at hom-ref calls in joint-called VCFs). The new `pipeline/Snakefile` runs GATK only on HOST/DONOR and forced `bcftools mpileup` on ADMIX, preserving raw AD. Real-data results should be regenerated against this pipeline before any downstream analysis is treated as final. Blocks the paper methods/discussion rewrite in Step 18.
-- Next phase (out of this step): controlled dilution series for quantitative accuracy validation.
-
----
-
-## Step 12: Per-Marker Likelihood Context Refactor 🔲 TODO
-
-Pure-refactor pre-step for Steps 14, 15, 16, and 17. Each of those steps independently
-proposes adding a new optional kwarg to `total_log_likelihood_bb`,
-`total_log_likelihood_multi_bb`, `estimate_single_donor_bb`, `estimate_multi_donor`,
-and `_profile_likelihood_cis_multi`, then threading it through every nested closure.
-By the time all four land, those signatures will have grown four new optional
-parameters each, plus the existing `marker_biases`, and every call site has to
-forward all of them.
-
-This step does that plumbing once. Introduce a `PerMarkerContext` dataclass that
-the estimators build once per call from whatever inputs are configured (today:
-`error_rate` + optional `marker_biases`); the aggregators take a single
-`ctx: list[PerMarkerContext]` aligned with the markers list. Each downstream step
-then mutates one field on the context rather than threading another kwarg through
-every closure.
-
-No CLI changes, no behavioural changes. Success criterion is the existing 261-test
-suite passing unchanged plus a numerical-regression spot-check on the multi-donor
-fixture and the April-24 validation batch.
-
-Detailed plan: `claude/12_marker_context_refactor_plan.md`.
-
----
-
-## Step 13: Beta-Binomial Goodness-of-Fit ✅ COMPLETE
-
-The MLE already uses a beta-binomial likelihood (fits both `f` and overdispersion `ρ`), but the gof chi-squared in `qc.py` standardised residuals by binomial variance, so `gof_pval` was ~0 on every real-data sample even when the fit was fine. Fix landed:
-
-- `ρ` now plumbed through `ChimerismResult` and `MultiDonorResult` (default `float("inf")` for backward compatibility with old fixtures).
-- `_compute_gof_pval` in `qc.py` uses beta-binomial variance `p(1-p)(n+ρ)/(n(ρ+1))`, df corrected to `n_markers - n_fitted_params` (single-donor: 2, multi-donor: k+1).
-- Follow-up fix discovered during validation: at f near 0 or 1, the raw `expected_vaf` saturates at 0 or 1, making the variance floor (clamped at `1-1e-6`) collapse. A typical ~1% sequencing-error residual against that tiny floor produced spurious chi-sq blow-ups for 100%-donor samples. Introduced `_error_adjusted_p_alt()` in `qc.py` using the same 4-state error model as `log_likelihood_marker_bb`, driven by `result.error_rate`. The variance floor now reflects the actual error rate at saturated markers.
-- Real-data result: all 7 PASS samples in the idt_haem validation batch now produce sensible `gof_pval` (0.46–1.00 range), vs all 0.0000 previously.
-
-Detailed plan: `claude/beta_binomial_plan.md`.
-
----
-
-## Step 14: Empirical Per-Site Error Rates 🔲 TODO
-
-Replace the global `--error-rate 0.01` constant with empirically measured rates from the bias-training cohort. At hom-ref sites measure observed ALT-read rate, at hom-alt sites measure observed REF-read rate. Per-site (preferred) or per-sample fallback. Removes a chunk of modelling slack and reduces reliance on a hand-tuned constant. Output a per-site error rate table from `estimate-bias`-style tooling so it can be loaded alongside the bias table.
-
-Detailed plan: [`claude/14_empirical_error_rates_plan.md`](14_empirical_error_rates_plan.md).
-
----
-
-## Step 15: Per-Site Dropout Rate 🔲 TODO
-
-The bias-training cohort already gives us per-site no-call rates. Integrate a per-site dropout probability into the likelihood so flaky sites are automatically downweighted rather than treated as fully informative when they happen to call. Estimate alongside the bias and error-rate tables; load as an optional input to `monitor`.
-
-Detailed plan: [`claude/per_site_dropout_plan.md`](per_site_dropout_plan.md).
-
----
-
-## Step 16: GQ-Weighted Marker Contributions 🔲 TODO
-
-Currently `--min-gq 20` is a hard pass/fail. Replace with a per-marker weight on the likelihood contribution so borderline-confidence genotypes (e.g. GQ 20-30) stay informative but downweighted. Likely small gains relative to Steps 14 and 15, but cheap to add once the per-marker likelihood is already being modified.
-
-Detailed plan: [`claude/16_gq_weighted_markers_plan.md`](16_gq_weighted_markers_plan.md).
-
----
-
-## Step 17: Per-Base Quality-Aware Likelihood 🔲 TODO (skeptical, may not ship)
-
-**Status note:** we are not convinced this is worth doing. It is the most invasive
-of the remaining algorithm steps (new upstream `bcftools mpileup -a FORMAT/QS`
-pipeline rule, new `bq.py` module, simulator extension to emit per-read BQs, new
-`MarkerResult` field, new CLI flag, real-data revalidation) for what is likely a
-small accuracy gain on the current panel where most reads sit at Q30+. Step 14
-(empirical per-site error rates) attacks the same source of slack — over-reliance
-on the global `--error-rate` constant — at a fraction of the engineering cost,
-and the mean-phred → mean-error approximation in the BQ plan (Jensen's inequality;
-see plan §"Mean-phred vs mean-error approximation") means BQ-aware is itself only
-a partial fix. Decision gate: revisit only if Steps 14, 15, 16 land and CIs on
-real data are still wider than we want.
-
-The current MLE uses a flat sequencing error rate (default 1%) for all reads at all
-markers. A more accurate model would weight each read's contribution to the likelihood
-by its base quality (BQ/QUAL), following the approach used by Conpair (Bergmann et al.):
-
-- Parse per-read base qualities from the VCF (if available) or BAM pileup
-- Replace the flat error rate `e` in the likelihood with a per-read error probability
-  derived from the Phred quality score: `e_i = 10^(-Q_i/10)`
-- Per-marker likelihood becomes a product over individual reads rather than a binomial
-  with aggregate counts
-- This gives more weight to high-quality reads and down-weights low-quality bases,
-  improving accuracy at low depths and near the detection limit
-- Requires either BQ annotation in VCF FORMAT fields, or falling back to BAM access
-- Profile likelihood CIs should improve as the model better captures per-read uncertainty
-
-Implementation notes:
-- Add optional `--bq-aware` flag to CLI (default off for backwards compatibility)
-- If BQ data unavailable, fall back to current flat error rate
-- Benchmark accuracy improvement vs computational cost on real data
-
-Sequenced last because it requires an upstream pipeline change (`bcftools mpileup -a
-FORMAT/QS` + `bcftools annotate`) and partially overlaps Step 14 in motivation
-(both reduce dependence on the global `--error-rate` constant). Defer until 14, 15,
-16 are in and we have seen whether they close the gap on real-data CIs.
-
-Detailed plan: `claude/17_bq_aware_plan.md`.
-
----
+## Step 17: Per-Base Quality-Aware Likelihood 🔲 (skeptical, may not ship)
+Weight each read's likelihood contribution by its base quality (Conpair-style). **Decision gate: revisit only if Steps 14–16 land and real-data CIs are still wider than we want.** It is the most invasive remaining algorithm step (upstream `bcftools mpileup -a FORMAT/QS`, new module, simulator + CLI changes) for a likely small gain on a Q30+ panel, and Step 14 attacks the same slack far more cheaply. Detail: `claude/17_bq_aware_plan.md`.
 
 ## Step 18: Publication 🟡 IN PROGRESS
+Method paper (vibepaper), target JMD Technical Advance. In-silico validation, multi-donor, and simulation-calibration supplementary figures done. Cite Crysup & Woerner 2022 + Vynck.
 
-- Method paper describing the approach — framework set up with vibepaper
-- Target journal: Journal of Molecular Diagnostics (Technical Advance)
-- Paper sections in `paper/`, analysis scripts in `paper/scripts/`
-- Cite: Crysup & Woerner 2022 (Demixtify MLE framework), Vynck et al. (bias correction)
-- In silico validation complete (depth series, relatedness, bias correction, multi-donor)
-- Multi-donor paper updates complete (methods, results, discussion, abstract, figures)
-- Simulation calibrated from empirical panel characterisation (210 VCFs, 18,047 samples)
-- Supplementary figures (S1-S6) for simulation model validation complete (`paper/scripts/generate_supp_synthetic.py`, Snakefile rules, supplementary text)
-- Validation with real samples (Step 11) still needed
-- Open-source tool release (MIT license, PyPI)
+Remaining:
+- [ ] Add bias-stability figure (`fig_bias_stability.png`) to `results.md` (validates the fixed-bias-per-marker assumption).
+- [ ] Decide whether the ablation study (Fig S4) adds a no-overdispersion (binomial) baseline.
+- [ ] **Rewrite the joint-calling references for the two-phase pipeline** (`methods.md:11`, `discussion.md:29` still carry the wrong "joint calling preserves admix AD" claim; `supplementary.md` is fine). Gate on the real-data results being final.
+- [ ] Real-sample validation (Step 11 dilution series) still needed before submission.
 
-### Remaining paper tasks
+## Step 19: Intronic Shoulder Marker Evaluation 🔲
+Our capture panel's depth extends past exon boundaries into flanking introns, a source of extra high-heterozygosity (near-0.5 MAF) markers → tighter estimate, lower LOD. **Open risk to check: read-end mapping bias.** These SNPs sit near read ends, so ALT reads carry a terminal mismatch and are preferentially soft-clipped / MAPQ-penalised, dropping ALT from AD and skewing VAF toward REF. This is allele-asymmetric and NOT caught by the (allele-blind) depth filter. Analysis (summary-stats script against /tau, no coordinates/IDs out): per-marker median het VAF, depth, dropout vs intron offset — does het VAF leave 0.5 only after depth has already fallen below QC, or while depth is still healthy? Latter → need an explicit allele-balance filter. From a 2026-05-27 design discussion. (Note: this is the same read-end/soft-clip failure mode the Step 27 artifact filter keys on.)
 
-- [ ] Add bias stability figure (`fig_bias_stability.png`) to `paper/results.md` near the "Effect of Per-Marker Bias Correction" section. This validates the fixed-bias-per-marker assumption (r = correlation between |median_bias| and within-marker SD). Caption template in `supp_synthetic.csv` facts.
-- [ ] Decide: should the ablation study (Figure S4) also include a "no overdispersion" baseline (standard binomial vs beta-binomial)?
-- [ ] **Rewrite joint-calling references for the two-phase pipeline.** Specifically: `methods.md:11` (the "joint calling preserves admix AD" claim is wrong — GATK HaplotypeCaller -ERC GVCF strips minority ALT reads at hom-ref blocks; new pipeline uses GATK for HOST/DONOR + `bcftools mpileup` for ADMIX) and `discussion.md:29` (same claim restated). `supplementary.md:5` is fine as-is (bias estimation uses het sites, which weren't affected). Gated on the Step 11 re-run landing so methods text and real-data results can be updated in one pass.
+## Step 20: Host-Presence Detection at Donor-Homozygous Markers ✅ (route A) / 🔲 (route B)
+A detection test for "is the host present at all?", separate from the fraction MLE, for low-level host re-occurrence (relapse). Uses markers where the donor is homozygous and the host carries the donor-absent allele: that allele sits at the sequencing-error background in pure donor, so its pooled counts give a one-sided test + an LRT host-fraction estimate against that background — freed from the MLE's single shared `ρ` and global error rate, which blunt it at low fraction.
 
----
-
-## Step 19: Intronic Shoulder Marker Evaluation 🔲 TODO
-
-Our Haem capture panel's depth extends past the exon boundaries into the flanking introns (reads sequencing off the ends of captured fragments), forming a declining-depth shoulder. These intronic positions are a potential source of extra informative markers. Introns are under weaker purifying selection than exons, so their site frequency spectrum is shifted toward common (near-0.5 MAF) variants, which are exactly the high-heterozygosity markers most likely to distinguish host from donor. More informative markers means a tighter chimerism estimate and lower LOD.
-
-The open question is whether they carry allele-specific bias that would distort VAF (and therefore the chimerism estimate):
-
-- **Capture (hybridization) bias: expected to be negligible.** The intronic SNP sits outside the probe footprint (the probe is over the exon), so the polymorphic base does not affect duplex stability and both haplotypes are pulled down equally. The only capture effect is the depth drop, which is allele-symmetric and already handled by the beta-binomial weighting plus depth/dropout QC.
-- **Read-end mapping bias: the real risk to check.** By construction these SNPs sit near read ends (reads sequence from the exon out into the intron). Alt reads carry a mismatch and are more likely to be soft-clipped or MAPQ-penalised there, dropping alt reads from AD and skewing observed VAF toward reference. This is allele-asymmetric and is NOT caught by the depth filter, because depth is allele-blind: a marker can have healthy depth and still carry a quiet reference skew.
-
-**Analysis to run** (summary-stats script against /tau, no coordinates or patient IDs in output): for intronic-shoulder markers vs exon-core markers, report per-marker median het VAF (should center on 0.5), depth distribution, and dropout rate, binned by distance into the intron (intron offset).
-
-- If het VAF only departs from 0.5 once depth has already fallen below the QC threshold, the depth filter alone suffices and the introns can be harvested directly.
-- If het VAF drifts off 0.5 while depth is still healthy, the read-end mapping bias is real in the intermediate band and an explicit allele-balance filter (orthogonal to depth) is needed. Where bias is moderate and stable it folds into the existing per-marker bias term (`bias.py`); where large, filter the marker out.
-
-Optionally rank candidate intronic markers by population MAF / expected heterozygosity (gnomAD AF) to prioritise the most informative ones.
-
-Came out of a design discussion on 2026-05-27.
-
----
-
-## Step 20: Host-Presence Detection at Donor-Homozygous Markers 🔲 TODO
-
-A dedicated detection test for "is the host present at all?", separate from the fraction MLE, aimed at low-level host re-occurrence (relapse) post-HSCT. It uses only the markers where the donor is homozygous and the host carries the donor-absent allele: there the donor-absent allele sits at the sequencing-error background in a pure-donor sample, so its read counts give a one-sided count test (and an LRT yielding a host-fraction estimate) against that background, combined across markers. Same reads the MLE already sees, but reframed as detection and freed from the single shared overdispersion `ρ` and the global error rate, both of which blunt the MLE at very low fractions. Reported alongside the MLE (route A); a unified two-component likelihood is a follow-up (route B).
-
-Depends on Step 14 (empirical per-site error rates) for the per-site background that sets the achievable detection limit; without it the test falls back to the global `--error-rate` and the limit is error-floor-bound. Soft dependency on Step 12 (per-marker context refactor) for route B only.
-
-Build the validation controls first: we do not yet have extremely-low-fraction synthetic data (the issue #8 LoD sweep stops at 0.1%). The plan adds a control-generation + calibration step before any CLI work, generating low-fraction positive controls and error-only negative controls (EP17 LoB/LoD applied to the detection statistic) and checking the test is calibrated. Quality scores (Step 17) are not needed: the detector uses AD counts plus per-site error rates, and the controls declare their error rate rather than deriving it from per-read qualities.
-
-Came out of a design discussion on 2026-05-28.
-
-Detailed plan: [`claude/20_host_presence_detection_plan.md`](20_host_presence_detection_plan.md).
+Route A (reported alongside the MLE) is **done**: `src/allomix/detect.py` (`host_presence_test`), on by default in `monitor`, results in `batch.tsv` (`host_present_p`, `host_f_est`, CI, `host_err_source`, `host_artifact_filtered`). The achievable limit is error-floor-bound until the per-site background (Step 14 / Step 28) is supplied (`host_err_source=global-fallback` today). Route B (unified two-component likelihood) is still TODO. Detail: `claude/20_host_presence_detection_plan.md`.
 
 ## Step 21: Calibrate Simulator Overdispersion for Realistic LoD 🟡 IN PROGRESS
-
-Discovered 2026-05-28 while reconciling the in-silico LoD against real run3 patient LoDs (~0.5–1%) vs the paper's headline in-silico LoD (~0.13–0.32%). The simulator drew reads from a pure binomial, so the in-silico LoD reflects near-binomial sampling and is optimistic by ~3–5x. The per-marker beta-binomial variance approaches `p(1-p)/(ρ+1)` as depth grows, so the effective depth caps near `ρ+1` reads and the LoD saturates; overdispersion, not depth, is the dominant LoD control at clinical coverage.
-
-Done:
-- `simulate.sample_allele_counts` / `blend_vcfs` / `blend_from_genotype_dicts` now take a `rho` arg (default `inf` = binomial, unchanged). Tests in `tests/test_simulate.py`.
-- New paper artefacts: `paper/scripts/plot_lod_saturation.py` (LoD vs depth, reconciles sim vs real) and `paper/scripts/run_overdispersion_lod.py` (LoD vs ρ). Wired into `paper/Snakefile` (rules `lod_saturation`, `overdispersion_lod`); figures added as Supplementary S7/S8 with `overdispersion_lod_headline.csv` facts; discussion + methods updated.
-- `scripts/diagnose_sample.py` prints each real sample's fitted `rho` (per-sample, authoritative).
+**Key finding (2026-05-28):** the simulator drew from a pure binomial, so its in-silico LoD (~0.13–0.32%) was optimistic by ~3–5x vs real run3 LoDs (~0.5–1%). Beta-binomial variance approaches `p(1-p)/(ρ+1)`, so effective depth caps near `ρ+1` reads — **overdispersion, not depth, is the dominant LoD control at clinical coverage.** Done: `rho` arg in the simulator; `plot_lod_saturation.py` + `run_overdispersion_lod.py` (Supp S7/S8); `scripts/diagnose_sample.py` prints per-sample fitted `rho`.
 
 TODO:
-- [ ] Calibrate `rho` from real per-sample fits (`diagnose_sample.py` on run3 VCFs), then re-run `lod_validation` with that `rho` so the **headline** LoD reflects real overdispersion rather than the binomial best case. This re-runs the expensive `lod_validation` job (warn before triggering).
-- [ ] The simulator applies a single global `rho` to every marker/allele uniformly, including the near-zero donor-absent allele where overdispersion is not physical (it is a het/intermediate-marker amplification phenomenon). A marker-type-aware (or allele-aware) overdispersion model is needed before `rho` can be used to validate host-presence detection (Step 20) — otherwise turning on a global `rho` miscalibrates the presence-test null. See the note added to `claude/20_host_presence_detection_plan.md`.
-- [ ] Decide whether the headline-LoD wording in `discussion.md` should switch from the binomial number to the overdispersion-calibrated number once the above lands.
+- [ ] Calibrate `rho` from real per-sample fits and re-run the headline `lod_validation` so it reflects real overdispersion (expensive job; warn first).
+- [ ] The simulator applies one global `rho` to every marker/allele, including the near-zero donor-absent allele where overdispersion is not physical. A marker-type/allele-aware model is needed before `rho` can validate host-presence detection (Step 20).
+- [ ] Decide whether `discussion.md`'s headline LoD switches to the overdispersion-calibrated number.
 
----
+## Step 22: Pileup / Two-VCF Model ✅
+**Decision (2026-05-29): committed to pileup-only.** Why: GATK `HaplotypeCaller -ERC GVCF` strips minority ALT reads at hom-ref blocks (verified: 0 ALT across ~9M reads), destroying the low-fraction signal. The two-phase pipeline uses GATK only for HOST/DONOR `GT` and forced `bcftools mpileup` for ADMIX `AD`. Migration landed: `--vcf` removed from `monitor`/`timeline` (kept on `estimate-bias`/`estimate-errors`), fixtures rebuilt as panel/admix pairs. Full rationale in `doc/joint_calling.md` (including why a somatic caller is also wrong).
 
-## Step 22: Decide Whether to Fully Switch to the Pileup / Two-VCF Model ✅ COMPLETE
+## Step 23: Widen Force-Output Panel ✅
+Recovered marginal markers (2026-05-29). Full write-up + before/after numbers: `claude/2026-05-29_wider_panel_validation_notes.md`. What was needed beyond the wider panel:
+1. gnomAD v4.1-derived panel build (`scripts/build_force_output_panel.sh`); recommended `output/union_sid_haem_gnomad_af05.vcf.gz` (258 sites).
+2. `bcftools call -A` so the admix VCF keeps the panel ALT at hom-ref sites (~48 informative SNPs/patient otherwise lost in the join).
+3. `-e 'ALT="."'` in the `panel_tsv` rule (force-output REF-only rows produce malformed PL under `-A`).
+4. Skip indels in `parse_vcf` (pileup can't count indel reads like GATK reassembly).
+5. GT/AD consistency check on host/donor (drops GATK miscalls where a called het has AD VAF <0.35 or >0.65).
 
-Committed to pileup-only on 2026-05-29. Verification gate ran against `output/validation_run6/batch.tsv` (wide-BED discovery + 71 force-called SID panel sites, additive Snakefile semantics); n_informative and host-presence magnitudes matched the prior run4 numbers, p-values preserved. Migration landed: `--vcf` removed from `monitor` / `timeline` (still present on `estimate-bias` / `estimate-errors`), tests/test_integration.py + tests/test_multidonor.py CLI tests rewritten as panel/admix pairs (joint VCF passed twice for synthetic fixtures), `_resolve_vcf_inputs` deleted, README/CLAUDE.md/doc/joint_calling.md updated. Full test suite: 320 pass.
+Result (run9): n_informative up across the board, donor% matches flow on every sample.
+- **Open (user owns):** share run9 gains + "any detection" results with the post-doc; LNAN host-presence p=0.16 is borderline — discuss.
 
+## Step 24: Overdispersion / REVIEW Samples (NDAD, BHOA, PCAH) 🔲
+These come up `gof_pval = 0.0000` (QC=REVIEW): the chimerism fraction matches flow, but residual per-marker variance exceeds beta-binomial expectation. The TP53 artifact (Step 27) was one contributor and is now filtered. **Likely resolved by the per-site error null (Step 28)**, which down-weights each noisy locus by its own measured background rather than inflating a global `rho`. If a gap remains after Step 28, refit `rho` via `scripts/diagnose_sample.py` or move to per-marker-type overdispersion (Step 21).
 
+## Step 25: Host-Presence Visualisation and Per-Marker Diagnostics ✅ (2026-06-01)
+Standalone diagnostic plots for the host-presence detector (all in `scripts/`, not the package; force `use_sex_chroms=True` so chrX stays visible for investigation):
+- `plot_presence_lod_curve.py` — detection probability vs spiked level, binomial vs beta-binomial panels.
+- `plot_host_presence_per_marker.py` — dose-normalised implied host fraction per marker vs rank, with the pooled MLE line and "off the line" count.
+- `host_presence_manhattan.py` — genomic ("Manhattan") view of per-marker implied host fraction, chromosome-banded, per-chrom mean line, nearest-gene labels on upregulated markers; **filter-aware (artifact markers drawn as grey × and excluded from the means, Step 27)**. Uses `output/refseq109_genes.bed`.
+- `host_presence_markers_vcf.py` — per-sample VCF of donor-hom markers with per-marker INFO (HOSTY/DP/DOSE/RAWVAF/IMPLIEDF/POOLEDF/FOLD/PUP/UPREG) for VEP / driver-panel intersection.
+- `plot_chimerism_comparison.py` integration: draws the host-presence estimate + CI as a green/grey diamond beside each primary-run point (green = detected p≤0.05, grey = not), more sensitive near full donor than the donor MLE CI. The `*_presence.png` plots come from here. The old standalone `plot_host_presence.py` is retired (subsumed).
 
-Pipeline and CLI now both support the two-VCF model (panel VCF for host/donor `GT` from GATK; admix VCF for `AD` from forced `bcftools mpileup`). The original single-joint-VCF model is still supported as a back-compat path: `allomix monitor --vcf <single>`, synthetic test data (`tests/test_data/`, `scripts/generate_*.py`), the in-silico validation harness, and the paper figures all still live on the single-VCF model.
+**Convention settled:** donor % wherever a measured chimerism value is plotted; host fraction only in the per-marker diagnostics where the spread of the small signal is the point.
 
-This step is the decision and the follow-through: do we keep dual support, or commit to pileup-only and delete the single-VCF branches?
+- [ ] **LoD-overlay full re-run (pending).** Presence LoD was overlaid on `fig5_lod_curves.png` as a quick proof-of-concept (`output/fig5_lod_curves_with_presence.png`), not a full re-run. Before the real run, pick one realistic per-site error rate (ideally Step 14's empirical value) and run both `run_lod_validation.py` and `run_presence_lod.py` at it — presence is far more error-sensitive (its LoD collapses to ~14% at 1% error), so a fair overlay needs matched error. Expensive; warn first.
 
-Arguments for fully switching:
-- The two-phase pipeline is now the only sane way to produce admix `AD` (see the empirical 0-ALT-reads-at-hom-ref result in Step 11 and `doc/joint_calling.md`).
-- Dual support is maintenance drag: every new CLI arg, every estimator change, every paper figure has to consider both modes.
-- Synthetic data generated under the single-VCF assumption can hide AD-stripping bugs that real data exposes.
-
-Arguments against:
-- The single-VCF mode is exactly how the in-silico simulator currently emits data — synthetic ground truth is convenient because we control both the panel GTs and the admix AD in one file.
-- Existing paper validation runs (Steps 8, 9, 13) were done against single-VCF synthetic data; tearing this out invalidates a chunk of reproducibility.
-- All 21 integration tests in `tests/test_integration.py` currently drive the single-VCF path. A switch means rebuilding the fixtures as two-file panel/admix pairs.
-
-If we commit to pileup-only, the work to do:
-- [ ] Drop `--vcf` from `monitor` / `timeline`; make `--panel-vcf` + `--admix-vcf` the only mode. Update `_resolve_vcf_inputs` accordingly.
-- [ ] Update synthetic data generation (`scripts/generate_test_data.py`, `scripts/generate_timeline_data.py`, `scripts/generate_multidonor_test_data.py`, `src/allomix/simulate.py`) to emit a panel VCF + admix VCF pair rather than one joint VCF. Decide whether the simulator should model `bcftools mpileup`'s actual behaviour (raw AD, no GVCF rounding) or keep the current binomial draw and just route the GTs/ADs into two files.
-- [ ] Rebuild `tests/test_data/` fixtures as panel+admix pairs; update all 21 single-VCF integration tests and the multi-donor / LOD / detection fixtures.
-- [ ] Re-run all paper validation scripts (`paper/scripts/run_*.py`) against pipeline-style synthetic data and update facts CSVs, figures, methods text, and any results numbers that move.
-- [ ] Remove the back-compat branch in `_resolve_vcf_inputs` and the `test_monitor_two_vcf_mode` parity test (becomes the only mode).
-- [ ] Sweep for residual single-VCF assumptions in `doc/`, `claude/`, `README.md`.
-
-Gated on: Step 11 re-run landing (need to see that the two-VCF results agree with or improve on the old single-VCF batch before pulling the floor out from under the existing validation).
-
-Decision required before any of the above ships — this is the explicit "do we even want to do this" step.
-
----
-
-## Step 23: Widen Force-Output Panel to Recover Marginal Markers ✅ COMPLETE
-
-Landed 2026-05-29 (see [`2026-05-29_wider_panel_validation_notes.md`](2026-05-29_wider_panel_validation_notes.md) for the day's full write-up, before/after numbers, file inventory, and open items).
-
-What was actually needed (the wider panel alone wasn't enough):
-
-1. gnomAD v4.1-derived panel build: `scripts/build_force_output_panel.sh` + `pipeline/gnomad_refseq_to_hg38_chrs.tsv`. Output panel at `output/union_sid_haem_gnomad_af05.vcf.gz` (258 sites) recommended; af01 alternative kept.
-2. Pipeline fix: `bcftools call -A` in `pipeline/Snakefile:401` so the admix VCF preserves the panel ALT at hom-ref sites (without this ~48 informative SNPs/patient were lost in the join).
-3. Pipeline fix: `-e 'ALT="."'` in `panel_tsv` rule so force-output REF-only rows don't reach `bcftools call -A` (where they trigger malformed PL).
-4. allomix fix: skip indels in `parse_vcf` (pileup can't count indel reads the way GATK's local reassembly does).
-5. allomix fix: GT/AD consistency check on host/donor (drops GATK miscalls where the called het has AD VAF < 0.35 or > 0.65, etc.).
-
-run9 verification (`output/validation_run9/batch.tsv`): n_informative up across the board (BHOA 103→144, NDAD 91→146, GBRI 85→128, PCAH 95→132, BCOL 98→150 etc.), donor% matches flow truth on every sample, host-presence detection ("any detected") preserved with stronger p-values, full test suite 320/320.
-
-### Open items rolled out of this step
-
-- **Post-doc follow-up (user owns):** share run9 marker-count gains and "any detection" results with the post-doc. Notes file has the table to send. LNAN host-presence p=0.16 is borderline — discuss treatment.
-- **Possible Step 24 — wider-panel rho calibration.** NDAD, BHOA, PCAH show `gof_pval = 0.0000` in run9 → QC=REVIEW. The chimerism fraction is fine (matches flow); the issue is residual variance exceeding beta-binomial expectation because the wider panel has more diverse per-marker behaviour. Refit `rho` via `scripts/diagnose_sample.py` on a run9 sample and check whether a recalibrated global `rho` resolves it; if not, this folds into the per-marker-type overdispersion work already noted under Step 21.
-- **Comparison plot refresh.** `output/run1_vs_run2_vs_run3_vs_run6.png` should become run1-vs-run2-vs-run3-vs-run9 once the post-doc signs off.
-- **Plan tidying** (cosmetic): Step 22 section above this one still has its original "if we commit to pileup-only, the work to do:" subsection embedded under the ✅ COMPLETE header; remove next time someone is in the file.
-
----
-
-## Step 24: Calibrate Wider-Panel Overdispersion (rho) for run9 REVIEW Samples 🔲 TODO
-
-Formalises the item earmarked under Step 23. NDAD, BHOA, PCAH come up `gof_pval = 0.0000` in run9 (QC=REVIEW): the chimerism fraction matches flow, but residual per-marker variance exceeds beta-binomial expectation. Step 27 partly explains why: some "outlier" markers carry real localised recipient signal from clonal LOH, not noise, so a single global `rho` may not be the right fix. Options: refit `rho` on a run9 sample via `scripts/diagnose_sample.py`; move to per-marker-type / per-locus overdispersion (Step 21 TODO); or mask the genuine clonal-imbalance markers (Step 27) before fitting. Decide after Step 27's timepoint test clarifies which markers are real signal vs noise.
-
-## Step 25: Host-Presence Visualisation and Per-Marker Diagnostics ✅ COMPLETE (2026-06-01)
-
-A suite of standalone diagnostic / validation plots for the host-presence detector (Step 20), plus the per-marker tooling that drove the Step 27 discovery. All scripts are standalone (not in the package), matching `scripts/plot_chimerism_comparison.py`.
-
-- `scripts/plot_presence_lod_curve.py` — simulated detection probability vs spiked level, x-axis in donor % (log-spaced by distance from 100%), two panels (binomial vs beta-binomial overdispersion) showing the rho penalty. Reads `output/facts/presence_lod_*.csv`.
-- `scripts/plot_host_presence.py` — RETIRED. Was the run9 cohort presence forest (per-sample host-fraction estimate + CI, donor-% Y axis, presence p-values along the bottom). The comparison plot now carries the same host estimate + CI + p as a per-sample dot+line, so the standalone was removed. Regenerate `output/host_presence_run9.png` from the comparison script with a single run (no `--compare-tsv`): `python scripts/plot_chimerism_comparison.py output/validation_run9/batch.tsv --labels run9 --label-code --sort chimerism --title "Host-presence detection (run9)" --output output/host_presence_run9.png`. The single run becomes the primary so the host diamond/CI/p render; `--sort chimerism` gives the old effect-size order (full donor at left). The donor dot, flow markers and LOD band stay as context.
-- `scripts/plot_host_presence_per_marker.py` — per donor-homozygous marker, the dose-normalised implied host fraction (background-subtracted) vs marker rank, with the pooled MLE line and a count of markers whose CI excludes the pooled value ("off the line" = overdispersion / a few drivers). Recomputed MLE matches `batch.tsv` exactly.
-- `scripts/host_presence_manhattan.py` — genomic-position ("Manhattan") view of per-marker implied host fraction, chromosome-banded, with a per-chromosome mean line and nearest-gene labels on Bonferroni-upregulated markers. Local-only (x-axis shows coordinates). Uses `output/refseq109_genes.bed` (protein-coding genes extracted once from `/data/cdot_data/downloads/Homo_sapiens_GRCh38_RefSeq_109.gff3.gz`).
-- `scripts/host_presence_markers_vcf.py` — per-sample VCF of donor-homozygous markers with INFO annotations (HOSTY/DP/DOSE/RAWVAF/IMPLIEDF/POOLEDF/FOLD/PUP) and an UPREG flag, sorted by position for VEP / driver-panel intersection. Local-only (coordinates).
-- Comparison-plot integration: `scripts/plot_chimerism_comparison.py` draws the host-presence estimate + CI as a separate green/grey diamond dodged just right of the primary-run point (reads `host_f_est` / `host_f_ci_lo` / `host_f_ci_hi` / `host_present_p` from `batch.tsv`), green when detected (p<=0.05) and grey (CI reaching the 100%-donor line) when not, with the exact presence p listed along the bottom. This replaced the earlier green/grey ring on the donor point, and subsumes the retired `plot_host_presence.py`. The diamond is the more sensitive measurement near full donor (tight host CI where the donor MLE CI is uninformative, e.g. the 3-marker PCAH sample). `output/run2_run3_run9_presence.png` is the run9 example (partially addresses the Step 23 "comparison plot refresh" item, with run2/run3/run9 rather than run1).
-
-Convention settled this session: donor % wherever a measured chimerism value is plotted (Graph 1 X-axis, Graph 2 Y-axis, the comparison-plot Y-axis); host fraction only in the per-marker diagnostics where the spread of the small signal is the point.
-
-### Open: LoD overlay full re-run 🟡
-Presence LoD was overlaid on the panel-size LoD figure (`fig5_lod_curves.png`). Code done: `paper/scripts/run_presence_lod.py` gained `--host-fractions` (so the LoD resolves across the low-depth / small-panel cells); `paper/scripts/plot_lod_curves.py` gained `--presence-summary`; `paper/scripts/run_lod_validation.py` gained `--error-rate` (was hardcoded 0.01). A quick 20-blank sweep produced `output/facts/presence_lod_bypanel_summary.csv` and `output/fig5_lod_curves_with_presence.png` as proof of concept. NOT a full re-run.
-- [ ] **Decision before the full re-run:** the chimerism LoD curves are at 1% simulated error; presence is far more error-sensitive (its LoD collapses to ~14% at 1% error). For a fair overlay both sweeps must run at the same, realistic per-site error. Pick the error rate (ideally the empirical panel value from Step 14), then re-run both `run_lod_validation.py` and `run_presence_lod.py` at that rate and regenerate. Expensive job; warn before triggering.
-
-## Step 26: Sex-Chromosome Handling ✅ COMPLETE (2026-06-01)
-
-Sex and mitochondrial contigs (X/Y/M) are unreliable for chimerism in sex-mismatched transplants (recipient/donor allele dosage on chrX/chrY is wrong).
-- `genotype.classify_markers` gained `use_sex_chroms: bool = False` (default excludes X/Y/M) and reports `n_sex_chrom_excluded`. Helper `genotype.is_sex_chrom`.
-- CLI: `--use-sex-chroms` on `monitor` / `timeline` (default off); prints the dropped count per sample to stderr.
-- Reportable results default to excluding sex chroms; the diagnostic scripts (Step 25) force `use_sex_chroms=True` so chrX stays visible for investigation, just not in reportable output.
-- Cost in run9: 5 / 6 / 7 chrX informative markers (no chrY) for NDAD / BHOA / PCAH.
-- Re-enable per run once recipient and donor sex are confirmed to match. Sex is being added to the project xls files (user owns).
+## Step 26: Sex-Chromosome Handling ✅ (2026-06-01)
+X/Y/M allele dosage is wrong in sex-mismatched transplants. `classify_markers(use_sex_chroms=False)` (default) excludes them and reports `n_sex_chrom_excluded`; CLI `--use-sex-chroms` re-enables. Reportable runs exclude them; the Step 25 diagnostics keep them visible. Cost in run9: 5/6/7 chrX markers for NDAD/BHOA/PCAH. Re-enable per run once host+donor sex are confirmed matched (sex being added to the project xls; user owns).
 
 ## Step 27: TP53/17p "Clonal LOH" Signal — REFUTED as an Alignment Artifact ❌ (2026-06-01)
 
-> **RESOLUTION (later same session, 2026-06-01).** The hypothesis below (per-marker clonal LOH at TP53/17p as an incidental relapse signal) was **refuted**. The chr17:7676483 "host presence" signal is a single-base alignment artifact, not biology. Evidence:
-> - **Segmental check (decisive).** chr17:7676483 is a lone single-base spike. Its immediate neighbours are flat at high depth: chr17:7676301 (182 bp away) and chr17:7676154 (rs1042522, 329 bp) read 0.00% implied host fraction in NDAD/BHOA. No CN-LOH/UPD/amplification has a footprint under 182 bp, so both the relapse and the somatic-rescue (UPD) versions are excluded.
-> - **Read geometry.** The donor-absent (host) allele reads at 7676483 are strand-skewed (2:34, 4:76, 13:30), soft-clipped (SCBZ −5 to −11), read-position-biased (RPBZ 4–11), and low base-quality (BQBZ 4–8) vs ~0 at clean neighbours. These are misalignment signatures. Structural cause: a 16-bp deletion at chr17:7676325 (TP53 intron-3 / PIN3, low-complexity) makes spanning reads soft-clip and dump spurious bases at 7676483.
-> - **Not host-specific (kills the "even if artifact, is the cause host-only?" rescue).** The artifact VAF is ~2–3% essentially constant across the whole host-fraction range, *including pure-donor samples with zero host* (PNOL 3.04%, GBRI 1.93%) and RCAR at 58% host (2.37%). A host-derived cause would scale with host fraction; it does not. The internal control is LNAN, where host and donor are both genuinely het at the site: there the allele reads 56% with balanced strands (124:113), i.e. what a real allele looks like.
-> - **Why the original donor-pileup "proof" was insufficient.** A clean true-donor pileup only rules out a universal reference-genome artifact affecting all samples equally. It does not test whether the *admix* reads are genuine; those carry every misalignment signature. PCAH is the clearest case: its true donor is clean at the base yet its admix is artifact-laden.
->
-> **Handling (implemented).** Read-level artifact filter in `allomix.detect` (`ArtifactThresholds` + `_is_artifact_marker`), wired into `host_presence_test` (on by default, togglable via `--no-artifact-filter`). It drops donor-homozygous markers whose donor-absent allele shows extreme strand skew (minor strand <10%, effect-size not p-value), soft-clip bias (|SCBZ|>3), or read-position bias (|RPBZ|>6). `genotype.parse_vcf` now captures DP4/RPBZ/SCBZ/BQBZ from the admix mpileup; the count is reported as `host_artifact_filtered` in the TSV (`report.py`). This auto-drops 7676483 and its intron-3 neighbours without a hardcoded blacklist and generalises to new panels. The bias filter is the cheap, control-free first pass; the preferred long-term null is still the empirical per-marker error table (panel of normals via `estimate-errors`, the `host_err_source=global-fallback` gap), which is fraction-preserving and makes no per-read judgment. See `doc/joint_calling.md` discussion (raw pileup keeps minor MAF but loses GATK's realignment; the filter re-adds alignment-correctness only, never fraction suppression).
->
-> **Effect on results (run9 → run10, `output/validation_run10/batch.tsv`).** Two host-presence "detections" were artifact-driven and correctly flip to not-detected: **BHOA** (p 1.3e-4 → 0.16) and **PCAH TP2** (`14_MO_IDH_APM5`, p 1.9e-13 → 1.0, where 2 of its 3 markers were intron-3 artifacts and the only real marker is in IDH1). Real detections preserved: QUDO TP2 (0.72%), RCAR (58%), BCOL (2.37%), PCAH TP1 (0.64%). The chimerism MLE (`donor_pct`) is unaffected — the filter touches only the host-presence detector. (Small donor%/`n_informative` drift between run9 and run10 is code evolution since run9 was generated, not the filter.)
->
-> Novelty question is therefore moot. The mechanism + literature subsections below are kept for the record but are superseded.
+The host-presence diagnostics flagged chr17:7676483 (TP53 intron 3) as a several-fold host-allele spike in NDAD/BHOA/PCAH, which looked like it might be a clonal-LOH relapse signal. It is **not** — it is a single-base alignment artifact. How that was settled:
 
-The most interesting find of the session. The host-presence detector flagged markers (via the Step 25 diagnostics) where the recipient-distinguishing allele reads several-fold higher than the genome-wide recipient fraction. The Bonferroni-upregulated markers were TP53 (chr17:7676483) in all three REVIEW samples (NDAD, BHOA, PCAH) and BCOR (chrX) in PCAH.
+- **Segmental check (decisive).** It is a lone single-base spike; immediate neighbours are flat at high depth (chr17:7676301 at 182 bp, rs1042522 at 7676154 at 329 bp, both ~0%). No CN-LOH/UPD/amplification has a footprint under 182 bp, so both the relapse and somatic-rescue (UPD) readings are excluded.
+- **Read geometry.** The host-allele reads are strand-skewed (e.g. 2:34, 4:76), soft-clipped (SCBZ −5 to −11), read-position-biased (RPBZ 4–11) vs ~0 at clean neighbours — misalignment. Structural cause: a 16-bp deletion at chr17:7676325 (low-complexity PIN3 region) makes spanning reads soft-clip and dump spurious bases at 7676483.
+- **Not host-specific.** The artifact VAF is ~2–3% essentially constant across the whole host-fraction range, *including pure-donor samples with zero host* (PNOL 3.04%, GBRI 1.93%) and RCAR at 58% host (2.37%). A host-derived cause would scale with host fraction; it doesn't. Control: LNAN (host+donor both genuinely het) shows the real allele at 56% with balanced strands.
+- **Why the donor-pileup "proof" was wrong.** A clean true-donor pileup only rules out a *universal reference* artifact, not a per-library alignment artifact in the admix pileup. The admix reads must be judged on their own, and they fail every read-quality test.
 
-**[SUPERSEDED — see RESOLUTION above; this conclusion was wrong.] It is real recipient signal, not a mapping artifact.** Proven by a forced `samtools mpileup` (mapq>=20, baseq>=20, `--excl-flags 1796`, matching the pipeline's admix pileup) on the two TRUE donor BAMs (now at `output/bams/`) at chr17:7676483: the host-free donors show ~0% of the recipient allele (QUDO donor 0.00%, PCAH donor 0.03% at >3000x), while patient admix samples show 2-3%. GATK AD on the donors also reads ~0% but cannot see a pileup artifact (local reassembly discards the mismapped reads), so the pileup is the definitive control. Note: the earlier "pure donor" samples (GBRI/PNOL) were TP1-proxy donors, NOT verified host-free, and must not be used as controls.
+**Handling (done).** Read-level artifact filter in `allomix.detect` (`ArtifactThresholds` + `_is_artifact_marker`), on by default in `host_presence_test`, togglable via `--no-artifact-filter`. Drops donor-hom markers whose donor-absent allele shows extreme strand skew (minor strand <10%, by effect size not p-value — a p-value over-drops at high depth), soft-clip bias (|SCBZ|>3), or read-position bias (|RPBZ|>6). `parse_vcf` captures DP4/RPBZ/SCBZ/BQBZ; `host_artifact_filtered` is in the TSV. Auto-drops 7676483 + its intron-3 neighbours, no hardcoded blacklist, generalises to new panels. **This is the cheap, control-free stopgap; the principled fix is the per-site empirical null (Step 28), which is fraction-preserving.**
 
-**Mechanism hypothesis:** the residual recipient cells are the relapsing TP53-aberrant clone carrying 17p CN-LOH (acquired UPD) or amplification, so the retained recipient allele is locally over-represented relative to the genome-wide recipient fraction. Loss of the wild-type allele (function down) and increased reads of the retained allele (signal up) are the same event. CN-LOH alone gives ~2x; the observed ~2-5x (after dose correction) implies copy gain on top, consistent with complex-karyotype 17p amplification. Recurrence across three unrelated patients fits a relapse-surveillance cohort enriched for TP53/17p-aberrant disease, not an artifact.
+**Effect (run9 → run10, `output/validation_run10/`).** Two host-presence detections were artifact-driven and correctly flip to not-detected: BHOA (p 1.3e-4 → 0.16) and PCAH-TP2 (`14_MO_IDH_APM5`, p 1.9e-13 → 1.0; 2 of its 3 markers were intron-3 artifacts, the only real one is in IDH1). Real detections preserved (QUDO-TP2, RCAR, BCOL, PCAH-TP1). Chimerism MLE unaffected (filter is host-presence-only).
 
-**Literature search (deep-research, 2026-06-01): the specific idea appears novel / underexplored.**
-- Confounder is old and robust: LOH/CNV at marker loci distorts chimerism; STR loci with gain/loss are routinely excluded (Vietz/Lin PMC3219907; ASH 2018 Blood 132:5135; UK NEQAS Br J Haematol 2014, 10.1111/bjh.13073).
-- Feature version exists but narrowly: STR gain/loss loci as a relapse marker (Vietz/Lin, n=4 case series); and NGS HLA-loss assays (Devyser HLA Loss, PMC12259423; HLA-CLN, 10.1177/09636897221102902; concept from Vago Blood 2009;115:3158) that detect CN-LOH/UPD of 6p by per-marker imbalance over the HLA region BY DESIGN.
-- TP53/17p biology firmly established but in diagnostic/MDS papers, not chimerism (Jasek Leukemia 2009, PMID 19759556; Sugimoto Leuk Res 2016, PMID 26851439).
-- Mixed chimerism + MRD integration uses genome-wide-average chimerism plus a separate MRD readout, never per-marker LOH (Kanaan Blood Adv 2023; FIGARO/Pearce Blood Adv 2023; Lee/Jo J Clin Med 2019, 121 SNPs averaged).
-- Mainstream NGS-SNP chimerism treats chromosomal deletion as a false-negative to dilute out with more markers (AlloSeq HCT review PMC10380370; Kim/Stahl J Mol Diagn 2024, PMID 38307253, no mention of CNV/LOH/TP53). The opposite of exploiting it.
-- The gap: nobody applies incidental per-marker clonal CN-LOH detection at non-HLA driver loci (TP53/17p) within a general SNP/NGS chimerism panel as a relapse feature. The HLA-loss assays are the precedent/roadmap (they prove the concept works in NGS), not competition. allomix already exposes per-marker chimerism genome-wide (Step 25), so generalising it is the novel step.
-- Direction nuance: the literature focuses on the deletion / reduced-signal (false-negative) direction; the over-representation (CN-LOH up-signal) direction we observe is even less characterised.
+**Caveat for any future write-up:** a deep-research literature pass found that LOH/CNV distorting chimerism is textbook (mostly STR), the feature version exists only narrowly (STR case series + NGS HLA-loss/6p assays), and per-marker LOH at non-HLA driver loci in an SNP chimerism panel *appears* under-explored — but that is moot here since the signal was an artifact, and the search was web-based ("appears novel" ≠ proven). **If revisited, do NOT cite the two claims that were refuted in verification: the "12% vs 2%" HLA-loss discordance figure, and "HLA-CLN is a general-LOH precedent."** The full original hypothesis/mechanism/literature write-up is in git history (pre-2026-06-01 cleanup) if needed.
 
-**Open tests / next steps (in order of decisiveness):** [SUPERSEDED by the RESOLUTION above. The segmental check and ground-truth cross-check were done and refuted the hypothesis; the timepoint test is moot (no real signal). Kept for record.]
-- [x] **Timepoint test (the discriminator).** Moot: the signal is an artifact, so there is nothing to track over time.
-- [x] **Segmental check — DONE, refuted the hypothesis.** chr17:7676483 is a lone single-base spike; neighbours 182/329 bp away (incl. rs1042522) are flat at high depth. No CN event has a <182 bp footprint. Also cross-checked ground truth: the three signal-positive patients (NDAD/BHOA/PCAH) are TP53-wild-type with normal karyotypes, so a residual TP53/17p clone could not be the source in exactly the patients showing it.
-- [ ] **Ground truth.** Cross-check the patients' molecular / cytogenetic reports for TP53 mutation, 17p loss, or complex karyotype.
-- [ ] **BCOR/chrX.** Run the same true-donor pileup on the BCOR chrX sites (chrX has the sex-mismatch dosage caveat, Step 26).
-- [ ] **Per-marker null.** Any rigorous version must separate true clonal imbalance from per-marker technical bias / dropout (STR uses per-locus baselines; the HLA assays compare region-vs-rest). This is the same calibrated per-marker null as Step 14 (per-site error table) and Step 24 (overdispersion), so the machinery that cleans up quantification is what would make the relapse feature rigorous.
-- [ ] Proper PubMed / Scholar plus patent sweep before claiming novelty (the search above is web-based; "appears novel" is not "proven novel"). Two sub-claims were refuted in verification and must not be cited: a "12% vs 2%" HLA-loss discordance figure, and a "HLA-CLN is a general-LOH precedent" framing.
+## Step 28: Per-Site Empirical Error Null (Panel of Normals) 🔲 (the principled background fix)
+The Step 27 bias filter is a stopgap (drops whole loci, heuristic thresholds). The principled fix is the per-site empirical error table (`error_rates.estimate_error_rates`), already consumable via `monitor --error-table` (`detect._resolve_e_per_marker`). run9/run10 ran without one (`host_err_source=global-fallback`), so a 2–3% background site like 7676483 trips against the global floor. The table is calibration not filtering: fraction-preserving, no per-read judgment, down-weights (not drops) noisy loci, and regenerates from controls when the panel changes.
 
-Implication for the rest of the tool: these markers are not noise to blacklist. They may detect a real residual clone (potentially useful), but they remain a quantification confound that feeds the Step 24 overdispersion / REVIEW flags. Handling is a policy choice once the timepoint test resolves whether the signal is what we think it is.
+- [ ] **Build the table** with `estimate-errors` on host-free samples piled through the SAME admix path (forced `bcftools mpileup`), NOT GATK (GATK reassembly hides the artifact). Host-free cohort = fully-reconstituted pure-donor timepoints PNOL (`6_MO`), GBRI (`30_MO`), QUDO-TP1 (`5_MO`); these emit the 7676483 background at full strength with zero host, so the table will learn it.
+- [ ] **Wire it in** (`--error-table` on `monitor` / `run_csv_batch`); confirm `host_err_source` → `per-site`/`mixed` and the 7676483 calls collapse even with the bias filter off.
+- [ ] **Re-check NDAD/BHOA GoF (Step 24)** — expect REVIEW to clear once artifact markers are down-weighted by their own background.
+- [ ] Then the bias filter + any 7676483 blacklist are safety belts (no-controls fallback for new panels), not the mechanism.
 
-## Step 28: Per-Site Empirical Error Null (Panel of Normals) — the Principled Background Fix 🔲 TODO (2026-06-01)
+---
 
-The read-bias artifact filter (Step 27) is a cheap, control-free stopgap: it respects the "never decide on minor-allele fraction" invariant (it keys on read geometry, not VAF), but it drops whole loci and uses heuristic thresholds. The principled fix is the per-site empirical error table (`allomix.error_rates.estimate_error_rates`), which the host-presence detector already consumes via `--error-table` (`detect._resolve_e_per_marker`). run9/run10 ran without one, so `host_err_source=global-fallback`: every marker uses the global error floor, and a 2-3% background site like chr17:7676483 trips against it. The table is calibration, not filtering: fraction-preserving, no per-read judgment, and it down-weights (not drops) noisy loci. It also generalises automatically when the panel changes (re-run on controls), with no blacklist to maintain. See the pileup-vs-caller rationale in `doc/joint_calling.md` (raw pileup keeps minor MAF but loses GATK's realignment; the table re-adds background-correctness without re-adding fraction suppression).
+## Notes / gotchas (2026-06-01)
 
-Concrete work:
-- [ ] **Build the table.** `estimate-errors` on host-free samples piled through the SAME admix path (forced bcftools mpileup), NOT GATK — the artifact is invisible to GATK local reassembly but present in the production pileup, so a GATK-derived table would not protect against it. Host-free cohort = the fully-reconstituted pure-donor timepoints: PNOL (`6_MO`), GBRI (`30_MO`), QUDO TP1 (`5_MO`). We already showed these emit the 7676483 background at full strength with zero host (PNOL 3.04%, GBRI 1.93%), so the table will learn `e_altref` ~2-3% there.
-- [ ] **Wire it in.** Pass `--error-table` to `monitor` / `run_csv_batch`; confirm `host_err_source` flips to `per-site`/`mixed` and the chr17:7676483 calls collapse even with the bias filter off.
-- [ ] **Re-check NDAD/BHOA GoF (Step 24).** The `gof_pval=0.0000` REVIEW samples should clear once the artifact markers are correctly down-weighted by their own background, rather than needing a global `rho` inflation. This is the Step 24 resolution.
-- [ ] **Demote the filter + blacklist to safety belts.** Once the null is in place, the read-bias filter (Step 27) and any one-off chr17:7676483 blacklist are belt-and-suspenders, not the mechanism. Keep the filter as the no-controls fallback for a brand-new panel before a normals set exists.
-
-Optional, only if the somatic-caller question is reopened (see `doc/joint_calling.md`): settle it with the same empirical test the doc used to kill GATK — run Mutect2 in force-call mode (`--alleles panel.vcf`) on a pure-donor + a known-low-fraction sample and check (a) whether it retains the sub-1% ALT reads at panel sites vs the raw pileup, and (b) whether 7676483 comes out clean. If it strips the low-fraction reads the way HaplotypeCaller did (zero ALT retained across ~9M reads), it is disqualified by the same evidence.
-
-## Loose ends recorded 2026-06-01 (run/plot housekeeping)
-
-- **run10 is the current-code canonical validation batch** (`output/validation_run10/batch.tsv`), produced by `scripts/run_csv_batch.py` (CSV-driven, not Snakemake) with the Step 27 artifact filter on by default. run9 (`output/validation_run9/`) predates current `main`, so its `donor_pct`/`n_informative` differ slightly from run10 — that drift is code evolution, NOT the filter (the filter only touches the host-presence detector, never the chimerism MLE).
-- **Comparison/presence plots need flow context columns that `run_csv_batch` does not emit.** `plot_chimerism_comparison.py` reads `Donor` + `Chimerism result TP2` from the primary batch.tsv; run9's batch had these joined from `Chimerism project patient list_run2.xlsx`, but the raw tool output does not. For run10 they were merged ad-hoc into `output/validation_run10/batch_flow.tsv`. GAP: no scripted join exists — either add one, or have `run_csv_batch` optionally merge the xlsx columns by sample.
-- **Presence-plot regeneration command (run10 primary, filtered):**
-  ```
-  python scripts/plot_chimerism_comparison.py output/validation_run10/batch_flow.tsv \
-      --compare-tsv output/validation_run2/batch.tsv output/validation_run3/batch.tsv \
-      --labels run2 run3 run10 --flow-column "Chimerism result TP2" --label-code \
-      --output output/run2_run3_run10_presence.png
-  ```
-  `--label-code` is required or the x-axis shows full sample IDs (e.g. `14_MO_IDH_APM5_PCAH_26_033_09003H`) instead of the patient code (`PCAH`). In the run10 plot BHOA and PCAH-TP2 render grey (not detected) because those run9 detections were artifact-driven; PCAH-TP1, QUDO-TP2, RCAR, BCOL stay green (real host).
-- **Only `output/run1_vs_run2.png` was ever sent to colleagues.** Every other comparison/presence PNG (`run2_run3_run9_presence.png`, `run2_run3_run10_presence.png`, the manhattan/per-marker plots, etc.) is internal and regenerable; do not treat them as published.
-- **Ad-hoc-script gotcha: panel VCF sample column order is not consistently (host, donor) across patients.** Always select host/donor by name from the patient CSV `sample_type` (which `run_csv_batch` does via `--host-sample`/`--donor-sample`). A naive column-index script swaps some patients (e.g. BHOA panel VCF is ordered donor, host), producing a ~99% "host fraction".
-- **`scripts/demo_artifact_filter.py`** is the standalone before/after A/B for the Step 27 filter (filter off vs on per patient, lists dropped markers); not part of the package.
+- **run10 is the current-code canonical validation batch** (`output/validation_run10/batch.tsv`), from `scripts/run_csv_batch.py` (CSV-driven, not Snakemake), filter on by default. run9 predates current `main`, so its `donor_pct`/`n_informative` differ slightly — code evolution, NOT the filter (which touches only host-presence).
+- **Presence/comparison plots need `Donor` + `Chimerism result TP2` flow columns that `run_csv_batch` does not emit** (run9 had them joined from `Chimerism project patient list_run2.xlsx`). For run10 they were merged ad-hoc into `output/validation_run10/batch_flow.tsv`. GAP: no scripted join — either add one or have `run_csv_batch` optionally merge the xlsx columns.
+- **Presence-plot regen (run10):** `plot_chimerism_comparison.py output/validation_run10/batch_flow.tsv --compare-tsv .../run2 .../run3 --labels run2 run3 run10 --flow-column "Chimerism result TP2" --label-code --output output/run2_run3_run10_presence.png`. `--label-code` is required or the x-axis shows full sample IDs instead of patient codes.
+- **Only `output/run1_vs_run2.png` was ever sent to colleagues.** Every other comparison/presence/manhattan PNG is internal and regenerable.
+- **Ad-hoc-script gotcha:** panel VCF sample column order is NOT consistently (host, donor) across patients — select by name from the CSV `sample_type` (as `run_csv_batch` does). A column-index script swaps some patients (e.g. BHOA is donor, host) and reports a ~99% "host fraction".

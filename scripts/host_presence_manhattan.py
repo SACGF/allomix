@@ -39,7 +39,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.stats import binom
 
-from allomix.detect import host_presence_test, select_donor_hom_markers
+from allomix.detect import (
+    ArtifactThresholds,
+    _is_artifact_marker,
+    host_presence_test,
+    select_donor_hom_markers,
+)
 from allomix.genotype import classify_markers, parse_vcf
 
 ALPHA = 0.05
@@ -165,6 +170,7 @@ def build_markers(
     e = error_rate / 3.0
     rows = select_donor_hom_markers(genotypes.informative)
     bonf = ALPHA / len(rows) if rows else ALPHA
+    thr = ArtifactThresholds()
 
     out: list[dict] = []
     for m in rows:
@@ -175,9 +181,13 @@ def build_markers(
         vaf = m.y / m.n if m.n else 0.0
         p0 = min(max(e + f * coef, 1e-9), 0.5)
         p_up = float(binom.sf(m.y - 1, m.n, p0)) if m.y > 0 else 1.0
-        upreg = p_up < bonf
+        # Markers the host-presence detector now drops (strand/soft-clip/
+        # read-position bias). They are marked, not counted as upregulated
+        # discoveries, and excluded from the per-chromosome means.
+        artifact = _is_artifact_marker(m, thr)
+        upreg = (p_up < bonf) and not artifact
         gene = ""
-        if upreg:
+        if upreg or artifact:
             gname, gdist = nearest_gene(genes, chrom, pos)
             gene = gname if gdist == 0 else (f"{gname}~{gdist // 1000}kb" if gname else "")
         out.append(
@@ -186,6 +196,7 @@ def build_markers(
                 "x": _OFFSET[chrom] + pos,
                 "implied_pct": 100.0 * max(0.0, vaf - e) / coef,
                 "upreg": upreg,
+                "artifact": artifact,
                 "gene": gene,
             }
         )
@@ -197,6 +208,21 @@ def _draw_panel(ax, label: str, markers: list[dict], pooled: dict) -> None:
     """One sample panel: markers along the genome, pooled line, per-chrom mean."""
     by_chrom: dict[str, list[dict]] = {}
     for m in markers:
+        if m.get("artifact"):
+            # Artifact-filtered marker: grey x, not part of the per-chrom mean.
+            ax.plot(m["x"], m["implied_pct"], "x", ms=7, color="#999999", mew=1.6, zorder=4)
+            if m["gene"]:
+                ax.annotate(
+                    f"{m['gene']} (filtered)",
+                    (m["x"], m["implied_pct"]),
+                    textcoords="offset points",
+                    xytext=(4, 4),
+                    fontsize=6.5,
+                    color="#777777",
+                    fontstyle="italic",
+                    zorder=5,
+                )
+            continue
         by_chrom.setdefault(m["chrom"], []).append(m)
         ci = CHROM_ORDER.index(m["chrom"]) % 2
         ax.plot(m["x"], m["implied_pct"], "o", ms=5, color=ALT_COLORS[ci], zorder=2)
@@ -232,9 +258,11 @@ def _draw_panel(ax, label: str, markers: list[dict], pooled: dict) -> None:
                 )
 
     n_up = sum(1 for m in markers if m["upreg"])
+    n_art = sum(1 for m in markers if m.get("artifact"))
     ax.set_title(
         f"{label}   pooled host {pooled['f_pct']:.3f}%   "
-        f"{pooled['n']} markers, {n_up} upregulated (ringed, gene-labelled)",
+        f"{pooled['n']} markers, {n_up} upregulated (ringed), "
+        f"{n_art} artifact-filtered (grey x)",
         fontsize=10,
     )
     ax.set_ylabel("implied host %")
@@ -258,7 +286,14 @@ def main() -> None:
     ap.add_argument("--error-rate", type=float, default=0.01)
     ap.add_argument("--genes-bed", type=Path, default=Path("output/refseq109_genes.bed"))
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument(
+        "--label",
+        default=None,
+        help="Run tag for the figure title (default: trailing token of --out stem, "
+             "e.g. 'run10' from host_presence_manhattan_run10.png)",
+    )
     args = ap.parse_args()
+    run_label = args.label or args.out.stem.split("_")[-1]
 
     genes = load_genes(args.genes_bed)
     csv_index = index_csvs(args.samples_csv_dir)
@@ -303,9 +338,15 @@ def main() -> None:
             mew=1.5,
             label="upregulated (Bonferroni), gene-labelled",
         ),
+        plt.Line2D(
+            [], [], marker="x", ls="", color="#999999", mew=1.6,
+            label="artifact-filtered (strand/soft-clip/read-pos bias)",
+        ),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=3, frameon=False, fontsize=8.5)
-    fig.suptitle("Host-presence signal along the genome (CNV view) — run9", fontsize=12)
+    fig.suptitle(
+        f"Host-presence signal along the genome (CNV view) — {run_label}", fontsize=12
+    )
     fig.tight_layout(rect=(0, 0.04, 1, 0.97))
     fig.savefig(args.out, dpi=150)
     print(f"Wrote {args.out} (local only; x axis shows genomic coordinates)")

@@ -64,6 +64,9 @@ class HostPresenceResult:
         error_rate_source: "per-site" (all markers per-site), "global-fallback"
             (all markers fell back to ``error_rate / 3``), "mixed" (some of
             each), or "none" (no usable markers, the test is degenerate).
+        n_artifact_filtered: Donor-homozygous markers dropped by the read-level
+            artifact filter before testing (0 when the filter is off or the
+            admix VCF carried no bias annotations).
     """
 
     n_markers: int
@@ -75,6 +78,7 @@ class HostPresenceResult:
     f_host_ci: tuple[float, float]
     used_per_site_error: bool
     error_rate_source: ErrorRateSource
+    n_artifact_filtered: int = 0
 
 
 @dataclass
@@ -91,6 +95,13 @@ class _DonorAbsentMarker:
     n: int  # admixture depth
     h: int  # host dose of the donor-absent allele (1 or 2)
     direction: Direction
+    # Read-level bias from the admix mpileup, for the artifact filter. Strand
+    # counts are for the donor-absent allele specifically; z-scores are
+    # site-level. All None when the admix VCF carried no bias annotations.
+    da_fwd: int | None = None  # donor-absent allele forward-strand reads
+    da_rev: int | None = None  # donor-absent allele reverse-strand reads
+    rpbz: float | None = None
+    scbz: float | None = None
 
 
 def _all_donors_uniform_hom(
@@ -155,6 +166,17 @@ def select_donor_hom_markers(
             direction = "alt->ref"
             y = m.admix_ad_ref
 
+        # Donor-absent allele strand counts from DP4 (ref_fwd, ref_rev,
+        # alt_fwd, alt_rev): the donor-absent allele is ALT for "ref->alt"
+        # and REF for "alt->ref".
+        da_fwd = da_rev = None
+        if m.admix_dp4 is not None:
+            rf, rr, af, ar = m.admix_dp4
+            if direction == "ref->alt":
+                da_fwd, da_rev = af, ar
+            else:
+                da_fwd, da_rev = rf, rr
+
         out.append(
             _DonorAbsentMarker(
                 key=(m.chrom, m.pos, m.ref, m.alt),
@@ -162,9 +184,74 @@ def select_donor_hom_markers(
                 n=m.admix_dp,
                 h=h,
                 direction=direction,
+                da_fwd=da_fwd,
+                da_rev=da_rev,
+                rpbz=m.admix_rpbz,
+                scbz=m.admix_scbz,
             )
         )
     return out
+
+
+@dataclass
+class ArtifactThresholds:
+    """Read-level thresholds for the host-presence artifact filter.
+
+    A donor-homozygous marker is dropped if the donor-absent allele's reads
+    look like an alignment artifact rather than a real minor allele. The
+    defaults are deliberately loose: genuine artifacts (e.g. the TP53 intron-3
+    indel site chr17:7676483) sit far past them (minor-strand fraction <6%,
+    |SCBZ| 5-11), while real host signal is strand-balanced (minor strand
+    typically >20%) with near-zero bias z-scores, so the filter has a wide
+    safety margin.
+
+    Strand bias is judged by effect size (minor-strand fraction), not by a
+    significance test: at high depth a real allele's mild 55:45 capture-strand
+    skew is highly significant yet harmless, whereas an artifact is extreme
+    (~95:5) regardless of depth.
+
+    Attributes:
+        min_strand_reads: Minimum donor-absent reads before the strand test
+            is applied (below this the strand split is too noisy to judge).
+        max_strand_minor_frac: Flag if the lesser strand holds less than this
+            fraction of the donor-absent reads (one-sided strand artifact).
+        max_abs_scbz: Maximum |soft-clip-length bias z|; above this the
+            donor-absent reads are systematically soft-clipped (misaligned).
+        max_abs_rpbz: Maximum |read-position bias z|; above this the allele is
+            clustered at read positions (ends), a classic artifact signature.
+    """
+
+    min_strand_reads: int = 20
+    max_strand_minor_frac: float = 0.10
+    max_abs_scbz: float = 3.0
+    max_abs_rpbz: float = 6.0
+
+
+def _is_artifact_marker(r: _DonorAbsentMarker, thr: ArtifactThresholds) -> bool:
+    """True if a donor-homozygous marker's donor-absent reads look artifactual.
+
+    Three independent signatures, any of which flags the marker:
+      1. Soft-clip-length bias (|SCBZ| large): donor-absent reads are
+         soft-clipped, i.e. mismapped through a nearby indel/repeat.
+      2. Read-position bias (|RPBZ| large): donor-absent reads cluster at read
+         ends rather than spanning the site like a real allele.
+      3. Strand bias: the donor-absent allele reads come almost entirely from
+         one strand, which a genuine amplified/sequenced allele does not.
+
+    Markers with no admix bias annotations (all fields None) never flag, so a
+    panel processed without these tags is simply left unfiltered.
+    """
+    if r.scbz is not None and abs(r.scbz) > thr.max_abs_scbz:
+        return True
+    if r.rpbz is not None and abs(r.rpbz) > thr.max_abs_rpbz:
+        return True
+    if r.da_fwd is not None and r.da_rev is not None:
+        total = r.da_fwd + r.da_rev
+        if total >= thr.min_strand_reads:
+            minor_frac = min(r.da_fwd, r.da_rev) / total
+            if minor_frac < thr.max_strand_minor_frac:
+                return True
+    return False
 
 
 def _resolve_e_per_marker(
@@ -267,6 +354,8 @@ def host_presence_test(
     ) = None,
     error_rate: float = 0.01,
     error_floor: float = 1e-5,
+    artifact_filter: bool = True,
+    artifact_thresholds: ArtifactThresholds | None = None,
 ) -> HostPresenceResult:
     """Run the host-presence detection test.
 
@@ -285,6 +374,13 @@ def host_presence_test(
         error_floor: Per-direction lower bound applied to every per-marker
             background rate. Prevents a zero rate from producing -inf
             log-likelihood on a single stray read.
+        artifact_filter: When True (default), drop donor-homozygous markers
+            whose donor-absent reads show alignment-artifact signatures
+            (strand bias, soft-clip bias, read-position bias) before testing.
+            See ``ArtifactThresholds``. Requires admix bias annotations
+            (DP4/SCBZ/RPBZ); a no-op on VCFs lacking them.
+        artifact_thresholds: Thresholds for the artifact filter. Defaults to
+            ``ArtifactThresholds()`` when None.
 
     Returns:
         A ``HostPresenceResult`` summarising both statistics, the MLE host
@@ -293,6 +389,13 @@ def host_presence_test(
     """
     rows = select_donor_hom_markers(informative_markers)
     fallback_e = error_rate / 3.0
+
+    n_artifact_filtered = 0
+    if artifact_filter:
+        thr = artifact_thresholds or ArtifactThresholds()
+        kept = [r for r in rows if not _is_artifact_marker(r, thr)]
+        n_artifact_filtered = len(rows) - len(kept)
+        rows = kept
 
     if not rows:
         return HostPresenceResult(
@@ -305,6 +408,7 @@ def host_presence_test(
             f_host_ci=(0.0, 0.0),
             used_per_site_error=False,
             error_rate_source="none",
+            n_artifact_filtered=n_artifact_filtered,
         )
 
     e_list, n_per_site, n_fallback = _resolve_e_per_marker(
@@ -361,6 +465,7 @@ def host_presence_test(
             f_host_ci=(0.0, 0.0),
             used_per_site_error=n_per_site > 0,
             error_rate_source=source,
+            n_artifact_filtered=n_artifact_filtered,
         )
 
     D = 2.0 * (ll_hat - ll0)
@@ -377,10 +482,12 @@ def host_presence_test(
         f_host_ci=(f_lo, f_hi),
         used_per_site_error=n_per_site > 0,
         error_rate_source=source,
+        n_artifact_filtered=n_artifact_filtered,
     )
 
 
 __all__ = [
+    "ArtifactThresholds",
     "Direction",
     "ErrorRateSource",
     "HostPresenceResult",

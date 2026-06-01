@@ -465,3 +465,62 @@ run9 verification (`output/validation_run9/batch.tsv`): n_informative up across 
 - **Possible Step 24 — wider-panel rho calibration.** NDAD, BHOA, PCAH show `gof_pval = 0.0000` in run9 → QC=REVIEW. The chimerism fraction is fine (matches flow); the issue is residual variance exceeding beta-binomial expectation because the wider panel has more diverse per-marker behaviour. Refit `rho` via `scripts/diagnose_sample.py` on a run9 sample and check whether a recalibrated global `rho` resolves it; if not, this folds into the per-marker-type overdispersion work already noted under Step 21.
 - **Comparison plot refresh.** `output/run1_vs_run2_vs_run3_vs_run6.png` should become run1-vs-run2-vs-run3-vs-run9 once the post-doc signs off.
 - **Plan tidying** (cosmetic): Step 22 section above this one still has its original "if we commit to pileup-only, the work to do:" subsection embedded under the ✅ COMPLETE header; remove next time someone is in the file.
+
+---
+
+## Step 24: Calibrate Wider-Panel Overdispersion (rho) for run9 REVIEW Samples 🔲 TODO
+
+Formalises the item earmarked under Step 23. NDAD, BHOA, PCAH come up `gof_pval = 0.0000` in run9 (QC=REVIEW): the chimerism fraction matches flow, but residual per-marker variance exceeds beta-binomial expectation. Step 27 partly explains why: some "outlier" markers carry real localised recipient signal from clonal LOH, not noise, so a single global `rho` may not be the right fix. Options: refit `rho` on a run9 sample via `scripts/diagnose_sample.py`; move to per-marker-type / per-locus overdispersion (Step 21 TODO); or mask the genuine clonal-imbalance markers (Step 27) before fitting. Decide after Step 27's timepoint test clarifies which markers are real signal vs noise.
+
+## Step 25: Host-Presence Visualisation and Per-Marker Diagnostics ✅ COMPLETE (2026-06-01)
+
+A suite of standalone diagnostic / validation plots for the host-presence detector (Step 20), plus the per-marker tooling that drove the Step 27 discovery. All scripts are standalone (not in the package), matching `scripts/plot_chimerism_comparison.py`.
+
+- `scripts/plot_presence_lod_curve.py` — simulated detection probability vs spiked level, x-axis in donor % (log-spaced by distance from 100%), two panels (binomial vs beta-binomial overdispersion) showing the rho penalty. Reads `output/facts/presence_lod_*.csv`.
+- `scripts/plot_host_presence.py` — run9 cohort presence forest. Donor % on the Y axis (house style, log-from-100, full donor at top), samples across X, exact presence p-values listed along the bottom coloured by call. A p-value bar was rejected on purpose (its magnitude saturates; only the alpha crossing matters for the call).
+- `scripts/plot_host_presence_per_marker.py` — per donor-homozygous marker, the dose-normalised implied host fraction (background-subtracted) vs marker rank, with the pooled MLE line and a count of markers whose CI excludes the pooled value ("off the line" = overdispersion / a few drivers). Recomputed MLE matches `batch.tsv` exactly.
+- `scripts/host_presence_manhattan.py` — genomic-position ("Manhattan") view of per-marker implied host fraction, chromosome-banded, with a per-chromosome mean line and nearest-gene labels on Bonferroni-upregulated markers. Local-only (x-axis shows coordinates). Uses `output/refseq109_genes.bed` (protein-coding genes extracted once from `/data/cdot_data/downloads/Homo_sapiens_GRCh38_RefSeq_109.gff3.gz`).
+- `scripts/host_presence_markers_vcf.py` — per-sample VCF of donor-homozygous markers with INFO annotations (HOSTY/DP/DOSE/RAWVAF/IMPLIEDF/POOLEDF/FOLD/PUP) and an UPREG flag, sorted by position for VEP / driver-panel intersection. Local-only (coordinates).
+- Comparison-plot integration: `scripts/plot_chimerism_comparison.py` now rings the primary-run points green/grey by host-presence call and lists the presence p along the bottom (reads `host_present_p` from `batch.tsv`). `output/run2_run3_run9_presence.png` is the run9 example (partially addresses the Step 23 "comparison plot refresh" item, with run2/run3/run9 rather than run1).
+
+Convention settled this session: donor % wherever a measured chimerism value is plotted (Graph 1 X-axis, Graph 2 Y-axis, the comparison-plot Y-axis); host fraction only in the per-marker diagnostics where the spread of the small signal is the point.
+
+### Open: LoD overlay full re-run 🟡
+Presence LoD was overlaid on the panel-size LoD figure (`fig5_lod_curves.png`). Code done: `paper/scripts/run_presence_lod.py` gained `--host-fractions` (so the LoD resolves across the low-depth / small-panel cells); `paper/scripts/plot_lod_curves.py` gained `--presence-summary`; `paper/scripts/run_lod_validation.py` gained `--error-rate` (was hardcoded 0.01). A quick 20-blank sweep produced `output/facts/presence_lod_bypanel_summary.csv` and `output/fig5_lod_curves_with_presence.png` as proof of concept. NOT a full re-run.
+- [ ] **Decision before the full re-run:** the chimerism LoD curves are at 1% simulated error; presence is far more error-sensitive (its LoD collapses to ~14% at 1% error). For a fair overlay both sweeps must run at the same, realistic per-site error. Pick the error rate (ideally the empirical panel value from Step 14), then re-run both `run_lod_validation.py` and `run_presence_lod.py` at that rate and regenerate. Expensive job; warn before triggering.
+
+## Step 26: Sex-Chromosome Handling ✅ COMPLETE (2026-06-01)
+
+Sex and mitochondrial contigs (X/Y/M) are unreliable for chimerism in sex-mismatched transplants (recipient/donor allele dosage on chrX/chrY is wrong).
+- `genotype.classify_markers` gained `use_sex_chroms: bool = False` (default excludes X/Y/M) and reports `n_sex_chrom_excluded`. Helper `genotype.is_sex_chrom`.
+- CLI: `--use-sex-chroms` on `monitor` / `timeline` (default off); prints the dropped count per sample to stderr.
+- Reportable results default to excluding sex chroms; the diagnostic scripts (Step 25) force `use_sex_chroms=True` so chrX stays visible for investigation, just not in reportable output.
+- Cost in run9: 5 / 6 / 7 chrX informative markers (no chrY) for NDAD / BHOA / PCAH.
+- Re-enable per run once recipient and donor sex are confirmed to match. Sex is being added to the project xls files (user owns).
+
+## Step 27: Per-Marker Clonal Allelic Imbalance (TP53/17p LOH) as an Incidental Relapse Signal 🟡 HYPOTHESIS (2026-06-01)
+
+The most interesting find of the session. The host-presence detector flagged markers (via the Step 25 diagnostics) where the recipient-distinguishing allele reads several-fold higher than the genome-wide recipient fraction. The Bonferroni-upregulated markers were TP53 (chr17:7676483) in all three REVIEW samples (NDAD, BHOA, PCAH) and BCOR (chrX) in PCAH.
+
+**It is real recipient signal, not a mapping artifact.** Proven by a forced `samtools mpileup` (mapq>=20, baseq>=20, `--excl-flags 1796`, matching the pipeline's admix pileup) on the two TRUE donor BAMs (now at `output/bams/`) at chr17:7676483: the host-free donors show ~0% of the recipient allele (QUDO donor 0.00%, PCAH donor 0.03% at >3000x), while patient admix samples show 2-3%. GATK AD on the donors also reads ~0% but cannot see a pileup artifact (local reassembly discards the mismapped reads), so the pileup is the definitive control. Note: the earlier "pure donor" samples (GBRI/PNOL) were TP1-proxy donors, NOT verified host-free, and must not be used as controls.
+
+**Mechanism hypothesis:** the residual recipient cells are the relapsing TP53-aberrant clone carrying 17p CN-LOH (acquired UPD) or amplification, so the retained recipient allele is locally over-represented relative to the genome-wide recipient fraction. Loss of the wild-type allele (function down) and increased reads of the retained allele (signal up) are the same event. CN-LOH alone gives ~2x; the observed ~2-5x (after dose correction) implies copy gain on top, consistent with complex-karyotype 17p amplification. Recurrence across three unrelated patients fits a relapse-surveillance cohort enriched for TP53/17p-aberrant disease, not an artifact.
+
+**Literature search (deep-research, 2026-06-01): the specific idea appears novel / underexplored.**
+- Confounder is old and robust: LOH/CNV at marker loci distorts chimerism; STR loci with gain/loss are routinely excluded (Vietz/Lin PMC3219907; ASH 2018 Blood 132:5135; UK NEQAS Br J Haematol 2014, 10.1111/bjh.13073).
+- Feature version exists but narrowly: STR gain/loss loci as a relapse marker (Vietz/Lin, n=4 case series); and NGS HLA-loss assays (Devyser HLA Loss, PMC12259423; HLA-CLN, 10.1177/09636897221102902; concept from Vago Blood 2009;115:3158) that detect CN-LOH/UPD of 6p by per-marker imbalance over the HLA region BY DESIGN.
+- TP53/17p biology firmly established but in diagnostic/MDS papers, not chimerism (Jasek Leukemia 2009, PMID 19759556; Sugimoto Leuk Res 2016, PMID 26851439).
+- Mixed chimerism + MRD integration uses genome-wide-average chimerism plus a separate MRD readout, never per-marker LOH (Kanaan Blood Adv 2023; FIGARO/Pearce Blood Adv 2023; Lee/Jo J Clin Med 2019, 121 SNPs averaged).
+- Mainstream NGS-SNP chimerism treats chromosomal deletion as a false-negative to dilute out with more markers (AlloSeq HCT review PMC10380370; Kim/Stahl J Mol Diagn 2024, PMID 38307253, no mention of CNV/LOH/TP53). The opposite of exploiting it.
+- The gap: nobody applies incidental per-marker clonal CN-LOH detection at non-HLA driver loci (TP53/17p) within a general SNP/NGS chimerism panel as a relapse feature. The HLA-loss assays are the precedent/roadmap (they prove the concept works in NGS), not competition. allomix already exposes per-marker chimerism genome-wide (Step 25), so generalising it is the novel step.
+- Direction nuance: the literature focuses on the deletion / reduced-signal (false-negative) direction; the over-representation (CN-LOH up-signal) direction we observe is even less characterised.
+
+**Open tests / next steps (in order of decisiveness):**
+- [ ] **Timepoint test (the discriminator).** Pull the TP53 recipient-allele VAF across serial timepoints for relapsers; the MRD signature is a rise over time, ideally leading the genome-wide chimerism. Data is local. This makes or breaks the hypothesis.
+- [ ] **Segmental check.** Real 17p LOH lifts a run of adjacent 17p markers, not a lone SNP. Read the per-chromosome mean line on the Manhattan (Step 25). A lone spike forces a focal / structural explanation instead.
+- [ ] **Ground truth.** Cross-check the patients' molecular / cytogenetic reports for TP53 mutation, 17p loss, or complex karyotype.
+- [ ] **BCOR/chrX.** Run the same true-donor pileup on the BCOR chrX sites (chrX has the sex-mismatch dosage caveat, Step 26).
+- [ ] **Per-marker null.** Any rigorous version must separate true clonal imbalance from per-marker technical bias / dropout (STR uses per-locus baselines; the HLA assays compare region-vs-rest). This is the same calibrated per-marker null as Step 14 (per-site error table) and Step 24 (overdispersion), so the machinery that cleans up quantification is what would make the relapse feature rigorous.
+- [ ] Proper PubMed / Scholar plus patent sweep before claiming novelty (the search above is web-based; "appears novel" is not "proven novel"). Two sub-claims were refuted in verification and must not be cited: a "12% vs 2%" HLA-loss discordance figure, and a "HLA-CLN is a general-LOH precedent" framing.
+
+Implication for the rest of the tool: these markers are not noise to blacklist. They may detect a real residual clone (potentially useful), but they remain a quantification confound that feeds the Step 24 overdispersion / REVIEW flags. Handling is a policy choice once the timepoint test resolves whether the signal is what we think it is.

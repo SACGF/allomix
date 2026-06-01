@@ -542,6 +542,13 @@ def main(argv: list[str] | None = None) -> int:
         "--error-rates", type=float, nargs="+", default=None,
     )
     parser.add_argument(
+        "--host-fractions", type=float, nargs="+", default=None,
+        help="Override the host-fraction grid (must include 0.0 as the blank). "
+             "Default is the very-low grid used for the gate evidence; pass a "
+             "wider grid (e.g. up to 0.05) to resolve the LoD across the "
+             "panel-size / low-depth cells that match fig5_lod_curves.",
+    )
+    parser.add_argument(
         "--out-raw", default=str(FACTS_DIR / "presence_lod_raw.csv"),
     )
     parser.add_argument(
@@ -576,6 +583,13 @@ def main(argv: list[str] | None = None) -> int:
         n_blanks = args.n_blanks
         n_positives = args.n_positives
 
+    host_fractions = (
+        args.host_fractions if args.host_fractions is not None else HOST_FRACTIONS
+    )
+    if 0.0 not in host_fractions:
+        parser.error("--host-fractions must include 0.0 (the negative-control blank)")
+    positive_fractions = [f for f in host_fractions if f > 0]
+
     FACTS_DIR.mkdir(parents=True, exist_ok=True)
     if args.workdir is not None:
         workdir = Path(args.workdir)
@@ -585,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
 
     tasks = build_tasks(
         args.relatedness, args.n_markers, depths, error_rates,
-        HOST_FRACTIONS, n_blanks, n_positives, args.seed, workdir,
+        host_fractions, n_blanks, n_positives, args.seed, workdir,
         args.rho, args.rho_marker_type,
     )
 
@@ -600,7 +614,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(
         f"Replicates per cell: blanks={n_blanks}, positives={n_positives} "
-        f"(at each of {len(POSITIVE_FRACTIONS)} positive fractions)",
+        f"(at each of {len(positive_fractions)} positive fractions)",
         file=sys.stderr,
     )
     print(f"Total replicate tasks: {len(tasks)}", file=sys.stderr)

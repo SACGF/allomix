@@ -54,6 +54,14 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min-dp", type=int, default=100, help="Minimum depth (default: 100)")
     parser.add_argument("--min-gq", type=int, default=20, help="Minimum GQ (default: 20)")
     parser.add_argument(
+        "--use-sex-chroms",
+        action="store_true",
+        help="Include sex / mitochondrial contigs (X/Y/M). Off by default: in "
+             "sex-mismatched transplants the host/donor dosage on chrX/chrY is "
+             "wrong. Enable per run only once host and donor sex are known to "
+             "match. The informative sex-chrom markers dropped are reported.",
+    )
+    parser.add_argument(
         "--error-rate",
         type=float,
         default=0.01,
@@ -119,6 +127,7 @@ def _run_single_sample(
         dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
     ) = None,
     run_host_presence: bool = True,
+    use_sex_chroms: bool = False,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -130,8 +139,16 @@ def _run_single_sample(
     """
     admix = parse_vcf(vcf_path, sample=admix_sample, min_dp=0)
 
-    genotypes = classify_markers(host, donors, admix, min_dp=min_dp, min_gq=min_gq)
+    genotypes = classify_markers(
+        host, donors, admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=use_sex_chroms
+    )
     genotypes.sample_name = admix_sample
+    if not use_sex_chroms and genotypes.n_sex_chrom_excluded:
+        print(
+            f"{admix_sample}: excluded {genotypes.n_sex_chrom_excluded} informative "
+            "sex-chromosome marker(s) (use --use-sex-chroms to keep them)",
+            file=sys.stderr,
+        )
 
     if len(donors) == 1:
         result = estimate_single_donor_bb(
@@ -221,6 +238,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 marker_biases=marker_biases,
                 marker_errors=marker_errors,
                 run_host_presence=not args.no_host_presence,
+                use_sex_chroms=args.use_sex_chroms,
             )
 
             if args.format == "json":
@@ -265,6 +283,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             marker_biases=marker_biases,
             marker_errors=marker_errors,
             run_host_presence=not args.no_host_presence,
+            use_sex_chroms=args.use_sex_chroms,
         )
         results.append((genotypes.sample_name, result, qc))
 

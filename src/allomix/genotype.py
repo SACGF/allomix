@@ -78,6 +78,16 @@ class MarkerGenotypes:
     n_filtered: int
     sample_name: str = ""
     marker_counts: MarkerCounts | None = None  # per-input diagnostic counts (see MarkerCounts)
+    n_sex_chrom_excluded: int = 0  # informative sex-chrom markers dropped (use_sex_chroms=False)
+
+
+_SEX_CHROM_NAMES = {"X", "Y", "M", "MT"}
+
+
+def is_sex_chrom(chrom: str) -> bool:
+    """True if ``chrom`` is a sex or mitochondrial contig (chr-prefix optional)."""
+    c = chrom[3:] if chrom.lower().startswith("chr") else chrom
+    return c.upper() in _SEX_CHROM_NAMES
 
 
 def parse_vcf(
@@ -271,6 +281,7 @@ def classify_markers(
     min_gq: int = 20,
     pass_only: bool = True,
     sample_name: str = "",
+    use_sex_chroms: bool = False,
 ) -> MarkerGenotypes:
     """Classify shared markers as informative or non-informative.
 
@@ -285,6 +296,12 @@ def classify_markers(
         min_dp: Minimum depth for admixture sample at a marker.
         min_gq: Minimum GQ for host/donor genotyping samples.
         pass_only: Only use PASS-filtered markers.
+        use_sex_chroms: If False (default), markers on the sex and mitochondrial
+            contigs (X/Y/M) are excluded. They are unreliable for chimerism in
+            sex-mismatched transplants, where the host/donor allele dosage on
+            chrX/chrY is wrong. Enable per run only once host and donor sex are
+            known to match. The count of informative sex-chrom markers dropped is
+            reported in ``MarkerGenotypes.n_sex_chrom_excluded``.
 
     Returns:
         MarkerGenotypes with classified markers.
@@ -315,6 +332,7 @@ def classify_markers(
     n_drop_gq_host = 0
     n_drop_gq_donor = 0
     n_drop_admix_dp = 0
+    n_sex_chrom_excluded = 0
 
     for key in sorted(shared_keys):
         h = host_idx[key]
@@ -346,6 +364,13 @@ def classify_markers(
         donor_gts = [d.gt for d in ds]
         mtypes = [marker_type(h.gt, d.gt) for d in ds]
         any_informative = any(mt is not None for mt in mtypes)
+
+        # Drop sex / mitochondrial contigs unless explicitly enabled, counting
+        # the informative ones lost so the cost is visible.
+        if not use_sex_chroms and is_sex_chrom(key[0]):
+            if any_informative:
+                n_sex_chrom_excluded += 1
+            continue
 
         if any_informative:
             # Use first donor's type for backward compat; fall back to first non-None
@@ -391,4 +416,5 @@ def classify_markers(
         n_filtered=n_drop_pass + n_drop_gq_host + n_drop_gq_donor + n_drop_admix_dp,
         sample_name=sample_name,
         marker_counts=counts,
+        n_sex_chrom_excluded=n_sex_chrom_excluded,
     )

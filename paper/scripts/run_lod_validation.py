@@ -624,11 +624,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Override the depth grid (default uses the full sweep).",
     )
     parser.add_argument("--workdir", default=str(WORK_DIR))
+    parser.add_argument(
+        "--error-rate", type=float, default=ERROR_RATE,
+        help=f"Symmetric sequencing error rate (default {ERROR_RATE}). For a fair "
+             "overlay against the presence LoD (plot_lod_curves --presence-summary), "
+             "run BOTH sweeps at the same error rate: the presence test is far more "
+             "error-sensitive, so comparing them at mismatched rates is misleading.",
+    )
     args = parser.parse_args(argv)
 
-    global DEPTHS
+    global DEPTHS, ERROR_RATE
     if args.depths is not None:
         DEPTHS = sorted(args.depths)
+    ERROR_RATE = args.error_rate
 
     FACTS_DIR.mkdir(parents=True, exist_ok=True)
     work_root = Path(args.workdir)

@@ -137,6 +137,12 @@ def read_batch(path: Path, flow_column: str | None, donor_column: str = "Donor")
             # Host-presence p-value, present only on pileup-mode batch.tsv files.
             if row.get("host_present_p") not in (None, "", "NA"):
                 rec["host_present_p"] = float(row["host_present_p"])
+            # Host-presence fraction estimate and CI (fractions in the file; stored
+            # as host %, the same distance-from-100 axis as the donor points).
+            if row.get("host_f_est") not in (None, "", "NA"):
+                rec["host_f_est"] = float(row["host_f_est"]) * 100.0
+                rec["host_f_ci_lo"] = float(row["host_f_ci_lo"]) * 100.0
+                rec["host_f_ci_hi"] = float(row["host_f_ci_hi"]) * 100.0
             if flow_column and row.get(flow_column):
                 rec["lineages"] = parse_lineages(row[flow_column])
             out[sample] = rec
@@ -335,20 +341,16 @@ def plot(
                 )
                 review_drawn = True
 
-            # Mark the primary point with the host-presence call: a green ring
-            # if host was detected (p <= 0.05), grey if not. Sits inside any
-            # REVIEW ring, so the two read as concentric.
-            if is_primary and "host_present_p" in rec:
-                detected = rec["host_present_p"] <= 0.05
-                ax.scatter(
-                    x + offsets[k],
-                    clamp(host(rec["donor_pct"])),
-                    s=95,
-                    facecolors="none",
-                    edgecolors=PRESENCE_DET if detected else PRESENCE_NOT,
-                    linewidths=1.4,
-                    zorder=6,
-                )
+            # Host-presence estimate as its own dot + CI, dodged just right of the
+            # primary point. Green when host is detected (p <= 0.05), grey when
+            # not; a not-detected CI runs up to the 100%-donor line (host = 0).
+            # Near full donor this estimate is tighter than the donor MLE (it uses
+            # the donor-homozygous markers directly), so it can be a confident
+            # small detection where the donor CI is uninformative. The clean
+            # full-donor samples have a degenerate zero estimate (nothing to draw).
+            if is_primary and rec.get("host_f_ci_hi", 0.0) > 0:
+                detected = rec.get("host_present_p", 1.0) <= 0.05
+                _host_point(ax, x + offsets[k] + 0.12, rec, clamp, detected)
 
     # Reference lines at clinically relevant donor fractions (99%, 95%).
     for donor_thr in (99.0, 95.0):
@@ -485,12 +487,28 @@ def plot(
         )
     if has_presence:
         handles.append(
-            Line2D([], [], color=PRESENCE_DET, marker="o", mfc="none", mew=1.4, ms=9, lw=0,
-                   label="host presence detected")
+            Line2D(
+                [],
+                [],
+                color=PRESENCE_DET,
+                marker="D",
+                mfc=PRESENCE_DET,
+                ms=6,
+                lw=0,
+                label="host presence est. (detected)",
+            )
         )
         handles.append(
-            Line2D([], [], color=PRESENCE_NOT, marker="o", mfc="none", mew=1.4, ms=9, lw=0,
-                   label="host presence not detected")
+            Line2D(
+                [],
+                [],
+                color=PRESENCE_NOT,
+                marker="D",
+                mfc=PRESENCE_NOT,
+                ms=6,
+                lw=0,
+                label="host presence est. (not detected)",
+            )
         )
     # Legend below the x-axis label rows, laid out horizontally.
     ax.legend(
@@ -525,6 +543,32 @@ def _ngs_point(ax, x, rec, color, clamp, hollow=False) -> None:
         capsize=3,
         ms=7,
         zorder=4,
+    )
+
+
+def _host_point(ax, x, rec, clamp, detected: bool) -> None:
+    """Plot the host-presence estimate as a dot + asymmetric CI.
+
+    The estimate and CI are host fraction (% distance from 100% donor), the same
+    axis as the donor points, so this dot reads as a second, more sensitive
+    measurement of the same quantity. A diamond marker keeps it distinct from the
+    round per-run NGS dots. Green when host is detected (p <= 0.05), grey when
+    not; a not-detected CI reaches the floor (the 100%-donor line, host = 0).
+    """
+    color = PRESENCE_DET if detected else PRESENCE_NOT
+    y = clamp(rec["host_f_est"])
+    y_lo = clamp(rec["host_f_ci_lo"])
+    y_hi = clamp(rec["host_f_ci_hi"])
+    ax.errorbar(
+        x,
+        y,
+        yerr=[[max(0.0, y - y_lo)], [max(0.0, y_hi - y)]],
+        fmt="D",
+        color=color,
+        mfc=color,
+        ms=5,
+        capsize=3,
+        zorder=5,
     )
 
 

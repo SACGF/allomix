@@ -25,15 +25,21 @@ reference line matches the reported result exactly.
 Convention: the y axis is host fraction %, because this figure is about where
 the (small) host signal sits; the cohort figure stays in donor %.
 
+Markers the detector drops as alignment artifacts (strand / soft-clip /
+read-position bias, e.g. the TP53 intron-3 indel site) are drawn as black X
+marks and left out of the pooled MLE line and the marker counts, so the figure
+shows both where the artifact markers sat and the cleaned-up pooled estimate.
+
 Usage:
     python scripts/plot_host_presence_per_marker.py \
         --vcf-dir output/joint_called \
         --samples-csv-dir pipeline/sample_csvs \
-        --batch output/validation_run9/batch.tsv \
+        --batch output/validation_run10/batch.tsv \
+        --run-label run10 \
         --panel-suffix .union_sid_haem_vendor_probes.vcf.gz \
         --admix 29_MO_HP_FULL_REDACTED_REDACTED 18_MO_HP_FULL_REDACTED_REDACTED \
                 37_MO_HP_FULL_REDACTED_REDACTED 2_MO_HP_FULL_REDACTED_REDACTED \
-        --output output/host_presence_per_marker_run9.png
+        --output output/host_presence_per_marker_run10.png
 """
 
 from __future__ import annotations
@@ -50,7 +56,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from allomix.detect import host_presence_test, select_donor_hom_markers
+from allomix.detect import (
+    ArtifactThresholds,
+    _is_artifact_marker,
+    host_presence_test,
+    select_donor_hom_markers,
+)
 from allomix.genotype import classify_markers, parse_vcf
 
 # Wilson-interval z for a 95% CI.
@@ -130,6 +141,7 @@ def per_marker_rows(
     min_gq: int,
     min_dp: int,
     error_rate: float,
+    use_sex_chroms: bool,
 ) -> tuple[list[dict], dict]:
     """Compute per-marker implied host fraction and the pooled MLE for a sample.
 
@@ -144,11 +156,12 @@ def per_marker_rows(
     donor = parse_vcf(panel, sample=meta["donor"], min_gq=min_gq, gt_ad_consistency=True)
     admix = parse_vcf(admix_vcf, sample=admix_sample, min_dp=0)
     genotypes = classify_markers(
-        host, [donor], admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=True
+        host, [donor], admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=use_sex_chroms
     )
 
     result = host_presence_test(genotypes.informative, error_rate=error_rate)
     e = error_rate / 3.0  # per-direction background under the global fallback
+    thr = ArtifactThresholds()
 
     def implied(p: float, coef: float) -> float:
         return 100.0 * max(0.0, p - e) / coef
@@ -165,6 +178,11 @@ def per_marker_rows(
                 "n": m.n,
                 "h": m.h,
                 "y": m.y,
+                # Markers the detector drops as alignment artifacts (strand /
+                # soft-clip / read-position bias). The pooled MLE line below is
+                # computed by host_presence_test with the filter on, so these
+                # points are shown but excluded from the line and the counts.
+                "artifact": _is_artifact_marker(m, thr),
             }
         )
     pooled = {
@@ -187,15 +205,24 @@ def _draw_panel(ax, label: str, markers: list[dict], pooled: dict | None) -> Non
     """
     markers = sorted(markers, key=lambda d: d["f_pct"])
     x = list(range(len(markers)))
+    kept = [d for d in markers if not d["artifact"]]
+    n_art = sum(1 for d in markers if d["artifact"])
     # "Has host presence" = signal above background: the background-subtracted
     # 95% CI lower bound clears 0. Counting y > 0 only measures coverage,
     # because at this depth nearly every marker catches a background read.
-    n_lit = sum(1 for d in markers if d["lo_pct"] > 0)
-    n_tot = len(markers)
+    # Counts use the kept (non-artifact) markers, matching the pooled line.
+    n_lit = sum(1 for d in kept if d["lo_pct"] > 0)
+    n_tot = len(kept)
     f_mle = pooled["f_pct"] if pooled is not None else None
 
     n_inconsistent = 0
     for xi, d in zip(x, markers):
+        if d["artifact"]:
+            # Filtered as an alignment artifact: black X, no CI bar, and left
+            # out of the pooled line and all counts. This is the same set the
+            # Manhattan plot rings with an X.
+            ax.plot(xi, d["f_pct"], "x", color="#000000", ms=7.0, mew=1.7, zorder=5)
+            continue
         c = DOSE_COLOR.get(d["h"], "#888888")
         excludes = f_mle is not None and (d["hi_pct"] < f_mle or d["lo_pct"] > f_mle)
         n_inconsistent += excludes
@@ -230,7 +257,8 @@ def _draw_panel(ax, label: str, markers: list[dict], pooled: dict | None) -> Non
         )
 
     ax.axhline(0, color="#cccccc", lw=0.8, zorder=1)
-    ax.set_title(f"{label}   ({n_lit}/{n_tot} markers above background)", fontsize=11)
+    art_note = f", {n_art} filtered" if n_art else ""
+    ax.set_title(f"{label}   ({n_lit}/{n_tot} markers above background{art_note})", fontsize=11)
     ax.set_xlabel("donor-homozygous marker (sorted by implied host fraction)")
     ax.set_ylabel("implied host fraction (%)")
     ax.grid(axis="y", color="#eeeeee", lw=0.6, zorder=0)
@@ -240,11 +268,22 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--vcf-dir", default="output/joint_called")
     ap.add_argument("--samples-csv-dir", default="pipeline/sample_csvs")
-    ap.add_argument("--batch", type=Path, default=Path("output/validation_run9/batch.tsv"))
+    ap.add_argument("--batch", type=Path, default=Path("output/validation_run10/batch.tsv"))
+    ap.add_argument(
+        "--run-label",
+        default="run10",
+        help="Label shown in the figure title (default run10)",
+    )
     ap.add_argument("--panel-suffix", default=".union_sid_haem_vendor_probes.vcf.gz")
     ap.add_argument("--admix", nargs="+", required=True, help="ADMIX sample ids to plot")
     ap.add_argument("--min-gq", type=int, default=20)
     ap.add_argument("--min-dp", type=int, default=20)
+    ap.add_argument(
+        "--use-sex-chroms",
+        action="store_true",
+        help="Keep sex/MT markers. Default off, matching the monitor run "
+        "default; leave off for sex-mismatched pairs.",
+    )
     ap.add_argument(
         "--error-rate",
         type=float,
@@ -270,6 +309,7 @@ def main() -> None:
             args.min_gq,
             args.min_dp,
             args.error_rate,
+            args.use_sex_chroms,
         )
         # Cross-check the recomputed MLE against the reported run value.
         b = batch.get(admix_sample)
@@ -294,9 +334,12 @@ def main() -> None:
         plt.Line2D([], [], marker="o", ls="", color=DOSE_COLOR[2], label="host hom (dose 2)"),
         plt.Line2D([], [], marker="o", ls="", color=DOSE_COLOR[1], label="host het (dose 1)"),
         plt.Line2D([], [], color="#c0392b", lw=1.3, label="pooled MLE host fraction"),
+        plt.Line2D(
+            [], [], marker="x", ls="", color="#000000", mew=1.7, label="filtered (artifact)"
+        ),
     ]
-    fig.legend(handles=handles, loc="lower center", ncol=3, frameon=False, fontsize=9)
-    fig.suptitle("Per-marker host-presence structure — run9", fontsize=12)
+    fig.legend(handles=handles, loc="lower center", ncol=4, frameon=False, fontsize=9)
+    fig.suptitle(f"Per-marker host-presence structure — {args.run_label}", fontsize=12)
     fig.tight_layout(rect=(0, 0.04, 1, 0.97))
     fig.savefig(args.output, dpi=150)
     print(f"Wrote {args.output}")

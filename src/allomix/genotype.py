@@ -27,6 +27,14 @@ class MarkerData:
     dp: int
     gq: int | None = None
     filter: str = "PASS"
+    # Read-level bias annotations from bcftools mpileup INFO. Present on admix
+    # samples; None for GATK-called panel samples (which do not emit them) and
+    # at sites without contrasting reads. Consumed by the host-presence
+    # artifact filter in ``allomix.detect``.
+    dp4: tuple[int, int, int, int] | None = None  # ref_fwd, ref_rev, alt_fwd, alt_rev
+    rpbz: float | None = None  # read-position bias z-score (|.| large => artifact)
+    scbz: float | None = None  # soft-clip-length bias z-score
+    bqbz: float | None = None  # base-quality bias z-score
 
 
 @dataclass
@@ -45,6 +53,12 @@ class InformativeMarker:
     admix_dp: int
     marker_types: list[int | None] | None = None  # Vynck type per donor (None = non-informative)
     informative_for: list[bool] | None = None  # True per donor if informative
+    # Admix-side read-level bias (copied from the admix MarkerData), passed to
+    # the host-presence artifact filter in ``allomix.detect``.
+    admix_dp4: tuple[int, int, int, int] | None = None
+    admix_rpbz: float | None = None
+    admix_scbz: float | None = None
+    admix_bqbz: float | None = None
 
 
 @dataclass
@@ -207,6 +221,19 @@ def parse_vcf(
         if filt is None:
             filt = "PASS"
 
+        # Read-level bias annotations (bcftools mpileup). Absent in GATK VCFs
+        # and at sites without contrasting reads; missing -> None.
+        info = variant.INFO
+        dp4_raw = info.get("DP4")
+        dp4: tuple[int, int, int, int] | None = None
+        if dp4_raw is not None:
+            dp4_vals = tuple(int(x) for x in dp4_raw)
+            if len(dp4_vals) == 4:
+                dp4 = dp4_vals  # type: ignore[assignment]
+        rpbz = info.get("RPBZ")
+        scbz = info.get("SCBZ")
+        bqbz = info.get("BQBZ")
+
         markers.append(
             MarkerData(
                 chrom=variant.CHROM,
@@ -219,6 +246,10 @@ def parse_vcf(
                 dp=dp,
                 gq=gq,
                 filter=filt,
+                dp4=dp4,
+                rpbz=float(rpbz) if rpbz is not None else None,
+                scbz=float(scbz) if scbz is not None else None,
+                bqbz=float(bqbz) if bqbz is not None else None,
             )
         )
 
@@ -391,6 +422,10 @@ def classify_markers(
                     admix_dp=a.dp,
                     marker_types=mtypes,
                     informative_for=[mt is not None for mt in mtypes],
+                    admix_dp4=a.dp4,
+                    admix_rpbz=a.rpbz,
+                    admix_scbz=a.scbz,
+                    admix_bqbz=a.bqbz,
                 )
             )
         else:

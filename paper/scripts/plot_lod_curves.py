@@ -44,6 +44,30 @@ THRESHOLDS = [0.5, 1.0]  # percent (0.1% is below the trimmed y-range)
 MIN_PLOT_MARKERS = 50
 
 
+def _read_presence(path: Path, error_rate: float) -> dict[str, dict[int, list[tuple]]]:
+    """Read presence_lod summary into by_rel[rel][depth] -> [(n_markers, lod_pct)].
+
+    Filters to a single error rate (the presence sweep has an error-rate axis the
+    chimerism sweep does not). ``presence_lod`` is a host fraction, converted to
+    percent to share the chimerism LoD axis. Non-finite / unresolved cells are
+    skipped.
+    """
+    by_rel: dict[str, dict[int, list[tuple]]] = defaultdict(lambda: defaultdict(list))
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            try:
+                if abs(float(r["error_rate"]) - error_rate) > 1e-12:
+                    continue
+                nm = int(r["n_markers"])
+                lod = float(r["presence_lod"])
+            except (ValueError, KeyError):
+                continue
+            if not math.isfinite(lod) or lod <= 0:
+                continue
+            by_rel[r["relatedness"]][int(r["depth"])].append((nm, lod * 100.0))
+    return by_rel
+
+
 def _read_summary(path: Path) -> list[dict]:
     rows = []
     with open(path, newline="", encoding="utf-8") as f:
@@ -77,10 +101,21 @@ def _finite_xy(xs: list[int], ys: list[float],
     return out_x, out_y, out_lo, out_hi
 
 
-def plot(summary_path: Path, out_path: Path) -> None:
+def plot(
+    summary_path: Path,
+    out_path: Path,
+    presence_path: Path | None = None,
+    presence_error_rate: float = 0.001,
+) -> None:
     rows = _read_summary(summary_path)
     if not rows:
         raise SystemExit(f"No rows in {summary_path}")
+
+    presence = (
+        _read_presence(presence_path, presence_error_rate)
+        if presence_path is not None and presence_path.exists()
+        else None
+    )
 
     # Group: by_rel[rel][depth] -> list of (n_markers, lod_pct, ci_lo, ci_hi, lob_pct) sorted
     by_rel: dict[str, dict[int, list[tuple]]] = defaultdict(lambda: defaultdict(list))
@@ -144,6 +179,22 @@ def plot(summary_path: Path, out_path: Path) -> None:
                 ax.plot(lob_x, lob_y, "--", color=colors[depth], linewidth=1.0,
                         alpha=0.55)
 
+        # Overlay presence-test LoD (dotted, square markers) at matched depths,
+        # same colour map. The presence sweep carries an error-rate axis; this
+        # is the single rate chosen in main(). Markers shared with the chimerism
+        # curve let you read the presence-vs-MLE LoD gap at each panel size.
+        if presence is not None:
+            for depth in depths:
+                cell = sorted(presence.get(rel, {}).get(depth, []),
+                              key=lambda t: t[0])
+                pts = [(nm, lod) for nm, lod in cell
+                       if nm >= MIN_PLOT_MARKERS and math.isfinite(lod) and lod > 0]
+                if not pts:
+                    continue
+                ax.plot([p[0] for p in pts], [p[1] for p in pts], "s:",
+                        color=colors.get(depth, "grey"), linewidth=1.6,
+                        markersize=5, alpha=0.9)
+
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xticks(nmarkers)
@@ -181,10 +232,15 @@ def plot(summary_path: Path, out_path: Path) -> None:
     # Style key on the left facet: solid = LoD, dashed = LoB.
     style_handles = [
         plt.Line2D([0], [0], color="grey", linewidth=1.8, linestyle="-",
-                   label="LoD (solid)"),
+                   label="chimerism MLE LoD"),
         plt.Line2D([0], [0], color="grey", linewidth=1.0, linestyle="--",
                    alpha=0.7, label="LoB (dashed)"),
     ]
+    if presence is not None:
+        style_handles.append(
+            plt.Line2D([0], [0], color="grey", linewidth=1.6, linestyle=":",
+                       marker="s", markersize=5, label="presence LoD")
+        )
     axes[0].legend(handles=style_handles, fontsize=8.5, loc="lower left",
                    framealpha=0.9)
 
@@ -192,6 +248,16 @@ def plot(summary_path: Path, out_path: Path) -> None:
         "Limit of detection as a function of panel size and sequencing depth",
         fontsize=13, y=1.02,
     )
+    if presence is not None:
+        # Make the error assumption explicit: the presence test is far more
+        # error-sensitive than the MLE, so the two curves are only comparable
+        # when the chimerism sweep was run at this same error rate.
+        fig.text(
+            0.5, 0.985,
+            f"presence LoD overlaid at error rate {presence_error_rate:g}; "
+            "valid only if the chimerism sweep used the same rate",
+            ha="center", va="top", fontsize=9, color="0.35",
+        )
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -202,8 +268,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--summary", default=str(FACTS_DIR / "lod_summary.csv"))
     parser.add_argument("--out", default=str(FACTS_DIR / "fig5_lod_curves.png"))
+    parser.add_argument(
+        "--presence-summary", default=None,
+        help="Optional presence_lod summary to overlay (e.g. "
+             "output/facts/presence_lod_bypanel_summary.csv).",
+    )
+    parser.add_argument(
+        "--presence-error-rate", type=float, default=0.001,
+        help="Error-rate slice of the presence sweep to overlay (default 0.001).",
+    )
     args = parser.parse_args(argv)
-    plot(Path(args.summary), Path(args.out))
+    plot(
+        Path(args.summary),
+        Path(args.out),
+        Path(args.presence_summary) if args.presence_summary else None,
+        args.presence_error_rate,
+    )
     return 0
 
 

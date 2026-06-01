@@ -134,6 +134,9 @@ def read_batch(path: Path, flow_column: str | None, donor_column: str = "Donor")
             # after the per-sample LOD change; tolerate their absence.
             if row.get("lod_pct") not in (None, "", "NA"):
                 rec["lod_pct"] = float(row["lod_pct"])
+            # Host-presence p-value, present only on pileup-mode batch.tsv files.
+            if row.get("host_present_p") not in (None, "", "NA"):
+                rec["host_present_p"] = float(row["host_present_p"])
             if flow_column and row.get(flow_column):
                 rec["lineages"] = parse_lineages(row[flow_column])
             out[sample] = rec
@@ -172,6 +175,15 @@ def short_label(name: str, field: int | None, code: bool) -> str:
 RUN_PALETTE = ["#ff7f0e", "#1f77b4", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
 LINEAGE_COLOR = "#888888"
 REVIEW_COLOR = "#d62728"  # ring around QC-REVIEW primary points
+PRESENCE_DET = "#1b7837"  # host-presence detected (p <= 0.05)
+PRESENCE_NOT = "#999999"  # host-presence not detected
+
+
+def _fmt_p(p: float) -> str:
+    """Compact presence p-value: bound on underflow, decimal near 1, else sci."""
+    if p <= 1e-300:
+        return "<1e-300"
+    return f"{p:.2f}" if p >= 0.01 else f"{p:.0e}"
 
 
 def plot(
@@ -323,6 +335,21 @@ def plot(
                 )
                 review_drawn = True
 
+            # Mark the primary point with the host-presence call: a green ring
+            # if host was detected (p <= 0.05), grey if not. Sits inside any
+            # REVIEW ring, so the two read as concentric.
+            if is_primary and "host_present_p" in rec:
+                detected = rec["host_present_p"] <= 0.05
+                ax.scatter(
+                    x + offsets[k],
+                    clamp(host(rec["donor_pct"])),
+                    s=95,
+                    facecolors="none",
+                    edgecolors=PRESENCE_DET if detected else PRESENCE_NOT,
+                    linewidths=1.4,
+                    zorder=6,
+                )
+
     # Reference lines at clinically relevant donor fractions (99%, 95%).
     for donor_thr in (99.0, 95.0):
         ax.axhline(host(donor_thr), color="0.8", ls="--", lw=0.8, zorder=0)
@@ -352,8 +379,12 @@ def plot(
     trans = ax.get_xaxis_transform()
     row0_y = -0.02
     row_step = 0.05
-    # Row y-positions below the axis: the run rows, then donor type, then key.
-    donor_y = row0_y - row_step * (n_runs - 1) - 0.065
+    # Row y-positions below the axis: the run rows, then (optionally) the
+    # host-presence p row, then donor type, then key.
+    has_presence = any("host_present_p" in primary.get(s, {}) for s in samples)
+    last_run_y = row0_y - row_step * (n_runs - 1)
+    presence_y = last_run_y - 0.05
+    donor_y = (presence_y - 0.05) if has_presence else (last_run_y - 0.065)
     xlabel_y = donor_y - 0.135
     for i, s in enumerate(samples):
         code = code_for(i, s)
@@ -379,6 +410,21 @@ def plot(
                 # A single run keeps the default black label for readability.
                 color=run_colors[k] if n_runs > 1 else "black",
             )
+        # Host-presence p-value row (primary run only), coloured by the call.
+        if has_presence:
+            p = primary.get(s, {}).get("host_present_p")
+            if p is not None:
+                ax.text(
+                    i,
+                    presence_y,
+                    _fmt_p(p),
+                    transform=trans,
+                    ha="center",
+                    va="top",
+                    fontsize=7.5,
+                    color=PRESENCE_DET if p <= 0.05 else PRESENCE_NOT,
+                )
+
         # Donor type (consistent across runs, so read once from primary).
         donor = primary[s]["donor"]
         if donor:
@@ -396,6 +442,8 @@ def plot(
 
     # Key for the tick-label format, below the rows.
     xlabel = "Sample: M = informative markers, D = mean depth"
+    if has_presence:
+        xlabel += "   |   p = host-presence test (green = host detected, grey = not)"
     ax.text((n - 1) / 2.0, xlabel_y, xlabel, transform=trans, ha="center", va="top", fontsize=9)
 
     # Legend order matches the left-to-right draw order: flow, then the runs.
@@ -434,6 +482,15 @@ def plot(
     if lod_drawn:
         handles.append(
             Patch(facecolor="0.6", alpha=0.13, label=f"≤ {labels[-1]} LOD (not detected)")
+        )
+    if has_presence:
+        handles.append(
+            Line2D([], [], color=PRESENCE_DET, marker="o", mfc="none", mew=1.4, ms=9, lw=0,
+                   label="host presence detected")
+        )
+        handles.append(
+            Line2D([], [], color=PRESENCE_NOT, marker="o", mfc="none", mew=1.4, ms=9, lw=0,
+                   label="host presence not detected")
         )
     # Legend below the x-axis label rows, laid out horizontally.
     ax.legend(

@@ -18,10 +18,7 @@ import statistics
 from dataclasses import dataclass
 from pathlib import Path
 
-from allomix.genotype import MarkerData
-
-# Type alias for marker key: (chrom, pos, ref, alt)
-MarkerKey = tuple[str, int, str, str]
+from allomix.genotype import MarkerData, MarkerKey, marker_key
 
 
 @dataclass
@@ -34,10 +31,6 @@ class MarkerBias:
     alt: str
     bias: float  # median(observed_het_VAF - 0.5); positive = ALT-favoured
     n_het: int  # number of het observations used
-
-
-def _marker_key(m: MarkerData) -> MarkerKey:
-    return (m.chrom, m.pos, m.ref, m.alt)
 
 
 def estimate_biases(
@@ -71,7 +64,7 @@ def estimate_biases(
             if dp <= 0:
                 continue
             vaf = m.ad_alt / dp
-            key = _marker_key(m)
+            key = marker_key(m)
             het_deviations.setdefault(key, []).append(vaf - 0.5)
             marker_info[key] = (m.chrom, m.pos, m.ref, m.alt)
 

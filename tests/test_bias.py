@@ -20,7 +20,6 @@ from allomix.chimerism import (
 )
 from allomix.genotype import InformativeMarker, MarkerData
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

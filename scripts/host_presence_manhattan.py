@@ -39,13 +39,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.stats import binom
 
-from allomix.detect import (
-    ArtifactThresholds,
-    _is_artifact_marker,
-    host_presence_test,
-    select_donor_hom_markers,
-)
-from allomix.genotype import classify_markers, parse_vcf
+from allomix.analysis import analyse_sample
+from allomix.genotype import parse_vcf
 
 ALPHA = 0.05
 
@@ -161,46 +156,49 @@ def build_markers(
     host = parse_vcf(panel, sample=meta["host"], min_gq=min_gq, gt_ad_consistency=True)
     donor = parse_vcf(panel, sample=meta["donor"], min_gq=min_gq, gt_ad_consistency=True)
     admix = parse_vcf(admix_vcf, sample=admix_sample, min_dp=0)
-    genotypes = classify_markers(
-        host, [donor], admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=True
+    # Shared analysis path (allomix.analysis); sex chroms kept here so the
+    # genomic view shows chrX/Y markers for investigation.
+    analysis = analyse_sample(
+        host,
+        [donor],
+        admix,
+        min_dp=min_dp,
+        min_gq=min_gq,
+        error_rate=error_rate,
+        use_sex_chroms=True,
     )
-
-    result = host_presence_test(genotypes.informative, error_rate=error_rate)
-    f = result.f_host_mle
+    hp = analysis.result.host_presence
+    f = hp.f_host_mle
     e = error_rate / 3.0
-    rows = select_donor_hom_markers(genotypes.informative)
-    bonf = ALPHA / len(rows) if rows else ALPHA
-    thr = ArtifactThresholds()
+    markers = analysis.donor_hom_markers
+    bonf = ALPHA / len(markers) if markers else ALPHA
 
     out: list[dict] = []
-    for m in rows:
-        chrom, pos, _ref, _alt = m.key
-        if chrom not in _OFFSET:
+    for m in markers:
+        if m.chrom not in _OFFSET:
             continue
-        coef = m.h / 2.0
         vaf = m.y / m.n if m.n else 0.0
-        p0 = min(max(e + f * coef, 1e-9), 0.5)
+        p0 = min(max(e + f * m.coef, 1e-9), 0.5)
         p_up = float(binom.sf(m.y - 1, m.n, p0)) if m.y > 0 else 1.0
-        # Markers the host-presence detector now drops (strand/soft-clip/
-        # read-position bias). They are marked, not counted as upregulated
-        # discoveries, and excluded from the per-chromosome means.
-        artifact = _is_artifact_marker(m, thr)
-        upreg = (p_up < bonf) and not artifact
+        # Artifact markers (strand/soft-clip/read-position bias) the detector
+        # drops: marked, not counted as upregulated discoveries, and excluded
+        # from the per-chromosome means.
+        upreg = (p_up < bonf) and not m.artifact
         gene = ""
-        if upreg or artifact:
-            gname, gdist = nearest_gene(genes, chrom, pos)
+        if upreg or m.artifact:
+            gname, gdist = nearest_gene(genes, m.chrom, m.pos)
             gene = gname if gdist == 0 else (f"{gname}~{gdist // 1000}kb" if gname else "")
         out.append(
             {
-                "chrom": chrom,
-                "x": _OFFSET[chrom] + pos,
-                "implied_pct": 100.0 * max(0.0, vaf - e) / coef,
+                "chrom": m.chrom,
+                "x": _OFFSET[m.chrom] + m.pos,
+                "implied_pct": 100.0 * max(0.0, vaf - e) / m.coef,
                 "upreg": upreg,
-                "artifact": artifact,
+                "artifact": m.artifact,
                 "gene": gene,
             }
         )
-    pooled = {"f_pct": f * 100.0, "p": result.lrt_pval, "n": len(rows)}
+    pooled = {"f_pct": f * 100.0, "p": hp.lrt_pval, "n": len(markers)}
     return out, pooled
 
 

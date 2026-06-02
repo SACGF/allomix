@@ -4,9 +4,13 @@
 Produces joint VCFs containing host, donor, and admixture samples at multiple
 mixture fractions, along with a truth table (TSV) for validation.
 
+The --host VCF is used only as a template (positions and host genotypes); a
+flipped donor is derived from it. Use a synthetic VCF, not a real panel VCF
+(vendor marker positions are proprietary).
+
 Usage:
     python scripts/generate_test_data.py \
-        --host data/idt_rhampseq_sid_example.vcf \
+        --host tests/test_data/single_sample_example.vcf \
         --outdir tests/test_data \
         --depth 2000 \
         --seed 42

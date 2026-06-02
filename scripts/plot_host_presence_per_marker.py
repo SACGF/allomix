@@ -56,13 +56,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from allomix.detect import (
-    ArtifactThresholds,
-    _is_artifact_marker,
-    host_presence_test,
-    select_donor_hom_markers,
-)
-from allomix.genotype import classify_markers, parse_vcf
+from allomix.analysis import analyse_sample
+from allomix.genotype import parse_vcf
 
 # Wilson-interval z for a 95% CI.
 Z = 1.959963984540054
@@ -155,41 +150,45 @@ def per_marker_rows(
     host = parse_vcf(panel, sample=meta["host"], min_gq=min_gq, gt_ad_consistency=True)
     donor = parse_vcf(panel, sample=meta["donor"], min_gq=min_gq, gt_ad_consistency=True)
     admix = parse_vcf(admix_vcf, sample=admix_sample, min_dp=0)
-    genotypes = classify_markers(
-        host, [donor], admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=use_sex_chroms
+    # One shared analysis path (allomix.analysis): same classify -> presence ->
+    # donor-hom selection the `monitor` CLI runs, so the points and the pooled
+    # line here match the reported batch exactly.
+    analysis = analyse_sample(
+        host,
+        [donor],
+        admix,
+        min_dp=min_dp,
+        min_gq=min_gq,
+        error_rate=error_rate,
+        use_sex_chroms=use_sex_chroms,
     )
-
-    result = host_presence_test(genotypes.informative, error_rate=error_rate)
+    hp = analysis.result.host_presence
     e = error_rate / 3.0  # per-direction background under the global fallback
-    thr = ArtifactThresholds()
 
     def implied(p: float, coef: float) -> float:
         return 100.0 * max(0.0, p - e) / coef
 
     out: list[dict] = []
-    for m in select_donor_hom_markers(genotypes.informative):
-        coef = m.h / 2.0
+    # donor_hom_markers carries the same artifact flag host_presence_test uses,
+    # so the artifact points are drawn but excluded from the pooled line/counts.
+    for m in analysis.donor_hom_markers:
         p_hat, lo, hi = _wilson(m.y, m.n)
         out.append(
             {
-                "f_pct": implied(p_hat, coef),
-                "lo_pct": implied(lo, coef),
-                "hi_pct": implied(hi, coef),
+                "f_pct": implied(p_hat, m.coef),
+                "lo_pct": implied(lo, m.coef),
+                "hi_pct": implied(hi, m.coef),
                 "n": m.n,
                 "h": m.h,
                 "y": m.y,
-                # Markers the detector drops as alignment artifacts (strand /
-                # soft-clip / read-position bias). The pooled MLE line below is
-                # computed by host_presence_test with the filter on, so these
-                # points are shown but excluded from the line and the counts.
-                "artifact": _is_artifact_marker(m, thr),
+                "artifact": m.artifact,
             }
         )
     pooled = {
-        "f_pct": result.f_host_mle * 100.0,
-        "p": result.lrt_pval,
-        "capped": result.lrt_pval <= 1e-300,
-        "n": result.n_markers,
+        "f_pct": hp.f_host_mle * 100.0,
+        "p": hp.lrt_pval,
+        "capped": hp.lrt_pval <= 1e-300,
+        "n": hp.n_markers,
     }
     return out, pooled
 

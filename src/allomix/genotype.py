@@ -257,8 +257,15 @@ def parse_vcf(
     return markers
 
 
-def _marker_key(m: MarkerData) -> tuple[str, int, str, str]:
-    """Key for joining markers across samples."""
+#: Marker key shape ``(chrom, pos, ref, alt)``. Canonical definition for the
+#: whole package: the bias table (``allomix.bias``), the error table
+#: (``allomix.error_rates``), and the host-presence detector (``allomix.detect``)
+#: all key markers by this tuple and import it from here.
+MarkerKey = tuple[str, int, str, str]
+
+
+def marker_key(m: MarkerData) -> MarkerKey:
+    """Key for joining the same marker across samples and tables."""
     return (m.chrom, m.pos, m.ref, m.alt)
 
 
@@ -340,9 +347,9 @@ def classify_markers(
     n_total = len(admixture)
 
     # Index all inputs by key
-    host_idx = {_marker_key(m): m for m in host}
-    donor_idxs = [{_marker_key(m): m for m in d} for d in donors]
-    admix_idx = {_marker_key(m): m for m in admixture}
+    host_idx = {marker_key(m): m for m in host}
+    donor_idxs = [{marker_key(m): m for m in d} for d in donors]
+    admix_idx = {marker_key(m): m for m in admixture}
 
     # Per-input coverage of the admixture marker set (the universe), to show
     # which input genotyping is sparse.

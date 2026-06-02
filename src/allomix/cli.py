@@ -9,16 +9,14 @@ import sys
 from cyvcf2 import VCF
 
 from allomix import __version__
+from allomix.analysis import analyse_sample
 from allomix.bias import estimate_biases, load_bias_table, save_bias_table
-from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
-from allomix.detect import host_presence_test
 from allomix.error_rates import (
     estimate_error_rates,
     load_error_table,
     save_error_table,
 )
-from allomix.genotype import classify_markers, parse_vcf
-from allomix.qc import assess_quality
+from allomix.genotype import parse_vcf
 from allomix.report import timeline_json, to_json, to_tsv
 
 
@@ -139,55 +137,38 @@ def _run_single_sample(
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
-    Takes pre-parsed host and donor markers to avoid redundant VCF reads.
-    Automatically uses multi-donor estimation when more than one donor
-    is provided.
+    Takes pre-parsed host and donor markers to avoid redundant VCF reads, then
+    delegates to ``allomix.analysis.analyse_sample`` (shared with the
+    diagnostic scripts). Automatically uses multi-donor estimation when more
+    than one donor is provided.
 
     Returns (ChimerismResult | MultiDonorResult, QCReport, MarkerGenotypes).
     """
     admix = parse_vcf(vcf_path, sample=admix_sample, min_dp=0)
 
-    genotypes = classify_markers(
-        host, donors, admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=use_sex_chroms
+    analysis = analyse_sample(
+        host,
+        donors,
+        admix,
+        min_dp=min_dp,
+        min_gq=min_gq,
+        error_rate=error_rate,
+        marker_biases=marker_biases,
+        marker_errors=marker_errors,
+        run_host_presence=run_host_presence,
+        use_sex_chroms=use_sex_chroms,
+        artifact_filter=artifact_filter,
+        sample_name=admix_sample,
     )
-    genotypes.sample_name = admix_sample
-    if not use_sex_chroms and genotypes.n_sex_chrom_excluded:
+
+    if not use_sex_chroms and analysis.genotypes.n_sex_chrom_excluded:
         print(
-            f"{admix_sample}: excluded {genotypes.n_sex_chrom_excluded} informative "
-            "sex-chromosome marker(s) (use --use-sex-chroms to keep them)",
+            f"{admix_sample}: excluded {analysis.genotypes.n_sex_chrom_excluded} "
+            "informative sex-chromosome marker(s) (use --use-sex-chroms to keep them)",
             file=sys.stderr,
         )
 
-    if len(donors) == 1:
-        result = estimate_single_donor_bb(
-            genotypes.informative,
-            error_rate=error_rate,
-            marker_biases=marker_biases,
-            marker_errors=marker_errors,
-        )
-    else:
-        result = estimate_multi_donor(
-            genotypes.informative,
-            n_donors=len(donors),
-            error_rate=error_rate,
-            marker_biases=marker_biases,
-            marker_errors=marker_errors,
-        )
-
-    # Host-presence detector is on by default; cheap and complementary to the
-    # MLE (see ``allomix.detect`` / ``claude/20_host_presence_detection_plan.md``).
-    # Attached to the result before QC so the QC step can read it.
-    if run_host_presence:
-        result.host_presence = host_presence_test(
-            genotypes.informative,
-            marker_errors=marker_errors,
-            error_rate=error_rate,
-            artifact_filter=artifact_filter,
-        )
-
-    qc = assess_quality(result, genotypes)
-
-    return result, qc, genotypes
+    return analysis.result, analysis.qc, analysis.genotypes
 
 
 def _open_output(path: str):

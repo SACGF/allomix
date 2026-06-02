@@ -22,7 +22,7 @@ from allomix.simulate import (
     generate_related_genotypes,
     gt_from_counts,
     is_informative,
-    parse_vcf,
+    parse_text_vcf,
     sample_allele_counts,
     write_genotype_vcf,
     write_joint_vcf,
@@ -414,7 +414,7 @@ class TestExtractGt:
                 ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "0/1:500,500:1000:99:100,0,100:0.5"),
             ],
         )
-        _, records = parse_vcf(tmp_path / "test.vcf")
+        _, records = parse_text_vcf(tmp_path / "test.vcf")
         assert extract_gt(records[0]) == (0, 1)
 
     def test_hom_alt(self, tmp_path: Path) -> None:
@@ -425,7 +425,7 @@ class TestExtractGt:
                 ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "1/1:0,1000:1000:99:100,100,0:1.0"),
             ],
         )
-        _, records = parse_vcf(tmp_path / "test.vcf")
+        _, records = parse_text_vcf(tmp_path / "test.vcf")
         assert extract_gt(records[0]) == (1, 1)
 
     def test_nocall(self, tmp_path: Path) -> None:
@@ -436,7 +436,7 @@ class TestExtractGt:
                 ("chr1", 100, "A", "T", "GT:AD:DP", "./.:.:."),
             ],
         )
-        _, records = parse_vcf(tmp_path / "test.vcf")
+        _, records = parse_text_vcf(tmp_path / "test.vcf")
         assert extract_gt(records[0]) is None
 
 
@@ -449,7 +449,7 @@ class TestExtractDepth:
                 ("chr1", 100, "A", "T", "GT:AD:DP:GQ:PL:AF", "0/1:500,500:1000:99:100,0,100:0.5"),
             ],
         )
-        _, records = parse_vcf(tmp_path / "test.vcf")
+        _, records = parse_text_vcf(tmp_path / "test.vcf")
         assert extract_depth(records[0]) == 1000
 
     def test_from_ad_fallback(self, tmp_path: Path) -> None:
@@ -460,7 +460,7 @@ class TestExtractDepth:
                 ("chr1", 100, "A", "T", "GT:AD", "0/1:600,400"),
             ],
         )
-        _, records = parse_vcf(tmp_path / "test.vcf")
+        _, records = parse_text_vcf(tmp_path / "test.vcf")
         assert extract_depth(records[0]) == 1000
 
 
@@ -606,7 +606,7 @@ class TestBlendVcfs:
         write_vcf(result, out_path)
 
         # Re-parse the written VCF
-        header, records = parse_vcf(out_path)
+        header, records = parse_text_vcf(out_path)
         assert any("#CHROM" in line for line in header)
         assert len(records) == 2
         # Sample name should appear in the header
@@ -668,21 +668,21 @@ class TestBlendVcfs:
 
 
 # ---------------------------------------------------------------------------
-# Tests: parse_vcf with real example data
+# Tests: parse_text_vcf with the synthetic example VCF
 # ---------------------------------------------------------------------------
 
 
-class TestParseRealVcf:
-    """Test parsing against the example VCF shipped with the project."""
+class TestParseExampleVcf:
+    """Test parsing the synthetic single-sample example VCF.
 
-    EXAMPLE_VCF = Path(__file__).resolve().parent.parent / "data" / "idt_rhampseq_sid_example.vcf"
+    Uses the committed synthetic fixture (made-up coordinates) rather than a
+    real panel VCF, whose marker positions are proprietary.
+    """
 
-    @pytest.mark.skipif(
-        not EXAMPLE_VCF.exists(),
-        reason="Example VCF not available",
-    )
+    EXAMPLE_VCF = Path(__file__).resolve().parent / "test_data" / "single_sample_example.vcf"
+
     def test_parse_example_vcf(self) -> None:
-        header, records = parse_vcf(self.EXAMPLE_VCF)
+        header, records = parse_text_vcf(self.EXAMPLE_VCF)
         assert len(header) > 0
         assert any(line.startswith("##fileformat") for line in header)
         assert len(records) > 0
@@ -788,8 +788,8 @@ class TestBuildJointVcf:
         out = tmp_path / "joint.vcf"
         write_joint_vcf(result, out)
 
-        # Re-parse with simulate.parse_vcf (text-based parser)
-        header, records = parse_vcf(out)
+        # Re-parse with simulate.parse_text_vcf (text-based parser)
+        header, records = parse_text_vcf(out)
         assert len(records) == 2
         chrom_line = [line for line in header if line.startswith("#CHROM")][0]
         assert "HOST" in chrom_line

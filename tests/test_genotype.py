@@ -12,9 +12,11 @@ from allomix.genotype import (
     parse_vcf,
 )
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
-EXAMPLE_VCF = DATA_DIR / "idt_rhampseq_sid_example.vcf"
+# Synthetic single-sample VCF (made-up coordinates, fully synthetic counts).
+# Deliberately not a real panel VCF: marker positions from a vendor panel are
+# proprietary, so the suite must not depend on one.
+EXAMPLE_VCF = TEST_DATA_DIR / "single_sample_example.vcf"
 JOINT_VCF = TEST_DATA_DIR / "joint_single_donor.vcf"
 
 
@@ -76,7 +78,7 @@ class TestAltDose:
 
 
 class TestParseVcfSingleSample:
-    """Test parsing the de-identified single-sample example VCF."""
+    """Test parsing the synthetic single-sample example VCF."""
 
     @pytest.fixture
     def markers(self):

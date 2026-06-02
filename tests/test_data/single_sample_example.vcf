@@ -1,0 +1,31 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth">
+##contig=<ID=chr1,length=248956422>
+##contig=<ID=chr2,length=242193529>
+##contig=<ID=chr3,length=198295559>
+##contig=<ID=chr4,length=190214555>
+##contig=<ID=chr5,length=181538259>
+##contig=<ID=chr6,length=170805979>
+##contig=<ID=chr7,length=159345973>
+##contig=<ID=chr8,length=145138636>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE
+chr1	1000000	.	A	G	.	PASS	.	GT:AD:DP:GQ	0/1:1550,1480:3030:99
+chr1	2000000	.	C	T	.	PASS	.	GT:AD:DP:GQ	0/1:1490,1505:2995:99
+chr2	1500000	.	G	A	.	PASS	.	GT:AD:DP:GQ	0/1:2010,1990:4000:99
+chr2	3000000	.	T	C	.	PASS	.	GT:AD:DP:GQ	1/1:8,3200:3208:99
+chr3	500000	.	A	T	.	PASS	.	GT:AD:DP:GQ	1/1:12,4500:4512:99
+chr3	2500000	.	C	G	.	PASS	.	GT:AD:DP:GQ	1/1:5,600:605:99
+chr4	1000000	.	G	C	.	PASS	.	GT:AD:DP:GQ	0/0:3100,6:3106:99
+chr4	4000000	.	A	G	.	PASS	.	GT:AD:DP:GQ	0/0:4200,8:4208:99
+chr5	800000	.	T	A	.	PASS	.	GT:AD:DP:GQ	0/0:700,3:703:99
+chr5	3000000	.	C	.	.	PASS	.	GT:AD:DP:GQ	0/0:3500:3500:99
+chr6	1000000	.	G	.	.	PASS	.	GT:AD:DP:GQ	0/0:4100:4100:99
+chr6	5000000	.	A	C	.	PASS	.	GT:AD:DP:GQ	0/1:1700,1650:3350:99
+chr7	2000000	.	T	G	.	PASS	.	GT:AD:DP:GQ	1/1:9,3900:3909:99
+chr7	6000000	.	C	A	.	PASS	.	GT:AD:DP:GQ	0/1:1820,1780:3600:99
+chr8	1000000	.	G	T	.	PASS	.	GT:AD:DP:GQ	1/1:7,4100:4107:99

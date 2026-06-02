@@ -213,7 +213,7 @@ tests/                # pytest tests
 data/                 # De-identified example VCFs
 ```
 
-**`src/allomix/`** contains everything a user gets when they `pip install allomix`: the core library modules (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point.
+**`src/allomix/`** contains everything a user gets when they `pip install allomix`: the core library modules (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point. See the [Architecture Guide](doc/architecture.md) for a module-by-module code map and the data flow through the package.
 
 **`scripts/`** contains developer-facing tools that support building and testing allomix: generating synthetic test data, measuring panel bias from empirical data, and running validation suites. These are not part of the installed package. See the [Scripts Guide](doc/scripts.md) for what each script does and how to run it.
 

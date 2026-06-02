@@ -11,7 +11,6 @@ import pytest
 from allomix.qc import ChimerismResult, MarkerResult, QCReport
 from allomix.report import timeline_json, to_json, to_tsv
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

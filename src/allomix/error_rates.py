@@ -24,11 +24,7 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
-from allomix.genotype import MarkerData
-
-# Type alias for marker key: (chrom, pos, ref, alt). Same shape as in
-# ``allomix.bias`` so the two tables can be keyed identically.
-MarkerKey = tuple[str, int, str, str]
+from allomix.genotype import MarkerData, MarkerKey, marker_key
 
 # Default floor applied at load time. Per-site rates with fewer observations
 # than ``min_reads`` are excluded by the estimator, but even at the cutoff a
@@ -57,10 +53,6 @@ class MarkerError:
     e_altref: float | None  # REF-read rate at hom-alt calls
     n_reads_homref: int
     n_reads_homalt: int
-
-
-def _marker_key(m: MarkerData) -> MarkerKey:
-    return (m.chrom, m.pos, m.ref, m.alt)
 
 
 def estimate_error_rates(
@@ -105,7 +97,7 @@ def estimate_error_rates(
             dp = m.ad_ref + m.ad_alt
             if dp <= 0:
                 continue
-            key = _marker_key(m)
+            key = marker_key(m)
             info.setdefault(key, (m.chrom, m.pos, m.ref, m.alt))
             vaf = m.ad_alt / dp
             if m.gt == (0, 0):

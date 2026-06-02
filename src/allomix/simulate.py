@@ -16,7 +16,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -62,8 +61,13 @@ class VcfRecord:
 # ---------------------------------------------------------------------------
 
 
-def parse_vcf(path: str | Path) -> tuple[list[str], list[VcfRecord]]:
-    """Read a VCF file and return (header_lines, records).
+def parse_text_vcf(path: str | Path) -> tuple[list[str], list[VcfRecord]]:
+    """Read a plain-text VCF and return (header_lines, records).
+
+    This is the simulator's own line-based parser, kept separate from
+    ``allomix.genotype.parse_vcf`` (cyvcf2-backed, returns ``MarkerData``).
+    The simulator stays dependency-light and round-trips raw VCF text, so it
+    uses this instead.
 
     Args:
         path: Path to a plain-text VCF file (not gzipped).
@@ -797,8 +801,8 @@ def blend_vcfs(
         raise ValueError(f"donor_fraction must be 0.0-1.0, got {donor_fraction}")
 
     rng = random.Random(seed)
-    host_header, host_records = parse_vcf(host_path)
-    _, donor_records = parse_vcf(donor_path)
+    host_header, host_records = parse_text_vcf(host_path)
+    _, donor_records = parse_text_vcf(donor_path)
 
     # Index donor records by locus
     donor_by_locus: dict[str, VcfRecord] = {}
@@ -1141,8 +1145,8 @@ def build_joint_vcf(
     rng = random.Random(seed)
 
     # Parse host and donor VCFs
-    host_header, host_records = parse_vcf(host_path)
-    donor_record_lists = [parse_vcf(dp)[1] for dp in donor_paths]
+    host_header, host_records = parse_text_vcf(host_path)
+    donor_record_lists = [parse_text_vcf(dp)[1] for dp in donor_paths]
 
     # Default donor names
     if donor_sample_names is None:

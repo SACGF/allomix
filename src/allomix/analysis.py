@@ -1,0 +1,141 @@
+"""Single-sample analysis pipeline shared by the CLI and diagnostic scripts.
+
+Given pre-parsed host, donor and admixture markers, ``analyse_sample`` runs the
+full per-sample path once: classify markers, estimate the chimerism fraction
+(single- or multi-donor), run the host-presence detector, assess QC, and select
+the donor-homozygous markers with their artifact flags. Both ``allomix.cli`` and
+the ``scripts/`` diagnostics call this so the genotype -> classify ->
+select-donor-hom -> presence path lives in exactly one place and every knob
+(sex chromosomes, artifact filter, bias/error tables) is handled identically.
+
+This is library code: it does not read VCFs (callers parse first, since the
+input conventions differ) and it does not print. Callers own I/O and messaging.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from allomix.chimerism import (
+    ChimerismResult,
+    MultiDonorResult,
+    estimate_multi_donor,
+    estimate_single_donor_bb,
+)
+from allomix.detect import DonorHomMarker, donor_hom_markers, host_presence_test
+from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
+from allomix.qc import QCReport, assess_quality
+
+
+@dataclass
+class SampleAnalysis:
+    """Everything one admixture sample produces.
+
+    Attributes:
+        genotypes: Classified markers (informative subset, sex-chrom tally).
+        result: The chimerism estimate, single- or multi-donor. The
+            host-presence result is attached as ``result.host_presence`` when
+            ``run_host_presence`` was True.
+        qc: Quality-control verdict for ``result``.
+        donor_hom_markers: Donor-homozygous host-presence markers with their
+            artifact flags, the per-marker detail the diagnostics plot. Empty
+            when ``run_host_presence`` is False.
+    """
+
+    genotypes: MarkerGenotypes
+    result: ChimerismResult | MultiDonorResult
+    qc: QCReport
+    donor_hom_markers: list[DonorHomMarker]
+
+
+def analyse_sample(
+    host: list[MarkerData],
+    donors: list[list[MarkerData]],
+    admix: list[MarkerData],
+    *,
+    min_dp: int,
+    min_gq: int,
+    error_rate: float,
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
+    run_host_presence: bool = True,
+    use_sex_chroms: bool = False,
+    artifact_filter: bool = True,
+    sample_name: str | None = None,
+) -> SampleAnalysis:
+    """Run the chimerism pipeline for one pre-parsed admixture sample.
+
+    Single-donor estimation is used when ``donors`` has one entry, multi-donor
+    otherwise. The host-presence detector (on by default) is cheap and
+    complementary to the MLE; see ``allomix.detect``.
+
+    Args:
+        host: Parsed host markers.
+        donors: One parsed marker list per donor.
+        admix: Parsed admixture markers (parse with ``min_dp=0``; filtering is
+            applied here via ``min_dp``).
+        min_dp: Minimum admix depth for a marker to be used.
+        min_gq: Minimum host/donor genotype quality.
+        error_rate: Global symmetric sequencing error rate.
+        marker_biases: Optional per-marker bias table.
+        marker_errors: Optional per-site, per-direction error table.
+        run_host_presence: Run the host-presence detector and select the
+            donor-homozygous markers. When False, ``result.host_presence`` is
+            left unset and ``donor_hom_markers`` is empty.
+        use_sex_chroms: Keep sex-chromosome markers (default drops them; their
+            allele dosage is wrong in sex-mismatched transplants).
+        artifact_filter: Drop alignment-artifact markers from the
+            host-presence test (the returned ``donor_hom_markers`` still lists
+            them, flagged).
+        sample_name: Optional name stamped onto ``genotypes.sample_name``.
+
+    Returns:
+        A ``SampleAnalysis`` bundling the genotypes, estimate, QC and the
+        flagged donor-homozygous markers.
+    """
+    genotypes = classify_markers(
+        host, donors, admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=use_sex_chroms
+    )
+    if sample_name is not None:
+        genotypes.sample_name = sample_name
+
+    if len(donors) == 1:
+        result: ChimerismResult | MultiDonorResult = estimate_single_donor_bb(
+            genotypes.informative,
+            error_rate=error_rate,
+            marker_biases=marker_biases,
+            marker_errors=marker_errors,
+        )
+    else:
+        result = estimate_multi_donor(
+            genotypes.informative,
+            n_donors=len(donors),
+            error_rate=error_rate,
+            marker_biases=marker_biases,
+            marker_errors=marker_errors,
+        )
+
+    dh_markers: list[DonorHomMarker] = []
+    if run_host_presence:
+        # Attached to the result before QC so the QC step can read it.
+        result.host_presence = host_presence_test(
+            genotypes.informative,
+            marker_errors=marker_errors,
+            error_rate=error_rate,
+            artifact_filter=artifact_filter,
+        )
+        dh_markers = donor_hom_markers(genotypes.informative)
+
+    qc = assess_quality(result, genotypes)
+
+    return SampleAnalysis(
+        genotypes=genotypes,
+        result=result,
+        qc=qc,
+        donor_hom_markers=dh_markers,
+    )
+
+
+__all__ = ["SampleAnalysis", "analyse_sample"]

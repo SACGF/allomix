@@ -33,10 +33,7 @@ import numpy as np
 from scipy.optimize import brentq, minimize_scalar
 from scipy.stats import chi2, poisson
 
-from allomix.genotype import InformativeMarker
-
-# Marker key shape used by the Step 14 error table and the bias table.
-MarkerKey = tuple[str, int, str, str]
+from allomix.genotype import InformativeMarker, MarkerKey  # MarkerKey re-exported below
 
 # Direction of the per-site error rate we use at a donor-homozygous marker:
 # "ref->alt" picks ``e_refalt`` (donor is hom-ref, donor-absent allele is ALT);
@@ -254,8 +251,82 @@ def _is_artifact_marker(r: _DonorAbsentMarker, thr: ArtifactThresholds) -> bool:
     return False
 
 
+@dataclass(frozen=True)
+class DonorHomMarker:
+    """Public per-marker view of a donor-homozygous host-presence marker.
+
+    Returned by :func:`donor_hom_markers`. This is the stable surface the
+    diagnostic plots consume, so they neither re-run the selection logic nor
+    reach into the private ``_DonorAbsentMarker`` / ``_is_artifact_marker``
+    internals. ``artifact`` is the verdict of the same filter
+    ``host_presence_test`` applies, so a plot can show every marker while
+    excluding ``artifact=True`` ones from pooled lines and counts exactly as
+    the detector does.
+    """
+
+    chrom: str
+    pos: int
+    ref: str
+    alt: str
+    y: int  # donor-absent allele read count
+    n: int  # admix depth
+    h: int  # host dose of the donor-absent allele (1 or 2)
+    direction: Direction
+    artifact: bool
+
+    @property
+    def key(self) -> MarkerKey:
+        """Marker key ``(chrom, pos, ref, alt)``, for joining to tables."""
+        return (self.chrom, self.pos, self.ref, self.alt)
+
+    @property
+    def coef(self) -> float:
+        """Per-read host-fraction coefficient ``h / 2`` (``q = e + coef * f_h``)."""
+        return self.h / 2.0
+
+
+def donor_hom_markers(
+    informative_markers: list[InformativeMarker],
+    artifact_thresholds: ArtifactThresholds | None = None,
+) -> list[DonorHomMarker]:
+    """Select donor-homozygous markers and flag alignment artifacts.
+
+    Combines :func:`select_donor_hom_markers` with the artifact filter that
+    ``host_presence_test`` applies, returning one stable public record per
+    marker (artifacts flagged, not dropped). The diagnostic plots consume
+    this so the kept/filtered split they draw matches the detector's exactly.
+
+    Args:
+        informative_markers: Informative markers from ``classify_markers``.
+        artifact_thresholds: Override the artifact-filter thresholds. Defaults
+            to ``ArtifactThresholds()``. Markers lacking admix bias
+            annotations never flag.
+
+    Returns:
+        One ``DonorHomMarker`` per donor-homozygous marker, in selection order.
+    """
+    thr = artifact_thresholds or ArtifactThresholds()
+    out: list[DonorHomMarker] = []
+    for r in select_donor_hom_markers(informative_markers):
+        chrom, pos, ref, alt = r.key
+        out.append(
+            DonorHomMarker(
+                chrom=chrom,
+                pos=pos,
+                ref=ref,
+                alt=alt,
+                y=r.y,
+                n=r.n,
+                h=r.h,
+                direction=r.direction,
+                artifact=_is_artifact_marker(r, thr),
+            )
+        )
+    return out
+
+
 def _resolve_e_per_marker(
-    rows: list[_DonorAbsentMarker],
+    rows: list[DonorHomMarker],
     marker_errors: (
         dict[MarkerKey, tuple[float | None, float | None]] | None
     ),
@@ -387,15 +458,15 @@ def host_presence_test(
         fraction and its profile CI, and the provenance of the background
         rates.
     """
-    rows = select_donor_hom_markers(informative_markers)
+    markers = donor_hom_markers(informative_markers, artifact_thresholds)
     fallback_e = error_rate / 3.0
 
-    n_artifact_filtered = 0
     if artifact_filter:
-        thr = artifact_thresholds or ArtifactThresholds()
-        kept = [r for r in rows if not _is_artifact_marker(r, thr)]
-        n_artifact_filtered = len(rows) - len(kept)
-        rows = kept
+        rows = [m for m in markers if not m.artifact]
+        n_artifact_filtered = len(markers) - len(rows)
+    else:
+        rows = markers
+        n_artifact_filtered = 0
 
     if not rows:
         return HostPresenceResult(
@@ -489,9 +560,11 @@ def host_presence_test(
 __all__ = [
     "ArtifactThresholds",
     "Direction",
+    "DonorHomMarker",
     "ErrorRateSource",
     "HostPresenceResult",
     "MarkerKey",
+    "donor_hom_markers",
     "host_presence_test",
     "select_donor_hom_markers",
 ]

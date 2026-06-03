@@ -65,6 +65,23 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=0.01,
         help="Sequencing error rate (default: 0.01)",
     )
+    parser.add_argument(
+        "--robust",
+        choices=["off", "auto", "force"],
+        default="auto",
+        help="Robust refit: iteratively drop residual-outlier markers "
+             "(host copy-number / LoH, genotyping errors) and refit. 'auto' "
+             "(default) keeps a marker floor and is a no-op on clean data; "
+             "'force' trims further; 'off' disables. A large exclusion is "
+             "flagged for REVIEW.",
+    )
+    parser.add_argument(
+        "--robust-k",
+        type=float,
+        default=3.5,
+        help="Robust residual cut in robust SDs (median/MAD) for --robust "
+             "(default: 3.5)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Include per-marker detail")
     parser.add_argument(
         "--bias-table",
@@ -134,6 +151,8 @@ def _run_single_sample(
     run_host_presence: bool = True,
     use_sex_chroms: bool = False,
     artifact_filter: bool = True,
+    robust: str = "off",
+    robust_k: float = 3.5,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -159,6 +178,8 @@ def _run_single_sample(
         use_sex_chroms=use_sex_chroms,
         artifact_filter=artifact_filter,
         sample_name=admix_sample,
+        robust=robust,
+        robust_k=robust_k,
     )
 
     if not use_sex_chroms and analysis.genotypes.n_sex_chrom_excluded:
@@ -230,6 +251,8 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 run_host_presence=not args.no_host_presence,
                 use_sex_chroms=args.use_sex_chroms,
                 artifact_filter=not args.no_artifact_filter,
+                robust=args.robust,
+                robust_k=args.robust_k,
             )
 
             if args.format == "json":
@@ -276,6 +299,8 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             run_host_presence=not args.no_host_presence,
             use_sex_chroms=args.use_sex_chroms,
             artifact_filter=not args.no_artifact_filter,
+            robust=args.robust,
+            robust_k=args.robust_k,
         )
         results.append((genotypes.sample_name, result, qc))
 

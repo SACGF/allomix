@@ -14,6 +14,7 @@ from allomix.chimerism import (
     _precompute_marker_arrays,
     _total_ll_vec,
     detection_limit,
+    estimate_multi_donor,
     estimate_single_donor_bb,
     expected_weight,
     fraction_se,
@@ -525,3 +526,71 @@ def test_vectorized_ll_no_biases_path() -> None:
         )
         < 1e-9
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests: robust refit (host CNV / LoH mitigation)
+# ---------------------------------------------------------------------------
+
+
+def _make_contaminated(f_donor, n_clean, n_bad, dp=1000, seed=0):
+    """Clean type-0 markers at VAF=f_donor plus n_bad gross outliers (VAF~0.9)."""
+    rng = random.Random(seed)
+    markers = []
+    for i in range(n_clean):
+        alt = sum(1 for _ in range(dp) if rng.random() < f_donor)
+        markers.append(_make_marker((0, 0), (1, 1), dp - alt, alt, 0, f"chr{i+1}", 1000))
+    for j in range(n_bad):
+        alt = sum(1 for _ in range(dp) if rng.random() < 0.9)  # CNV/LoH-like outlier
+        markers.append(_make_marker((0, 0), (1, 1), dp - alt, alt, 0, f"chr{j+1}", 9000))
+    return markers
+
+
+class TestRobustRefit:
+    def test_invalid_mode_raises(self) -> None:
+        markers = _make_markers_for_fraction(0.3, 30, 1000)
+        with pytest.raises(ValueError, match="robust must be one of"):
+            estimate_single_donor_bb(markers, robust="bogus")
+
+    def test_off_is_default(self) -> None:
+        markers = _make_markers_for_fraction(0.3, 30, 1000)
+        res = estimate_single_donor_bb(markers)
+        assert res.n_robust_excluded == 0
+        assert res.robust_drop_fraction == 0.0
+
+    def test_clean_data_unchanged(self) -> None:
+        """On clean data, robust auto returns the same estimate (no exclusions)."""
+        markers = _make_markers_for_fraction(0.3, 60, 1000, seed=7)
+        std = estimate_single_donor_bb(markers, robust="off")
+        rob = estimate_single_donor_bb(markers, robust="auto")
+        assert rob.n_robust_excluded == 0
+        assert rob.donor_fraction == pytest.approx(std.donor_fraction, abs=1e-9)
+
+    def test_recovers_from_contamination(self) -> None:
+        markers = _make_contaminated(0.3, 52, 8, seed=1)
+        std = estimate_single_donor_bb(markers, robust="off")
+        rob = estimate_single_donor_bb(markers, robust="auto")
+        # Standard is pulled off; robust recovers close to truth and drops the bad ones.
+        assert abs(rob.donor_fraction - 0.3) < abs(std.donor_fraction - 0.3)
+        assert rob.donor_fraction == pytest.approx(0.3, abs=0.02)
+        assert rob.n_robust_excluded == 8
+        assert rob.robust_drop_fraction == pytest.approx(8 / 60, abs=1e-6)
+        # All original markers are still reported; the 8 outliers are excluded.
+        assert rob.n_informative == 60
+        assert rob.n_markers_used == 52
+        excluded = [m for m in rob.per_marker if not m.included]
+        assert len(excluded) == 8
+        assert all(m.pos == 9000 for m in excluded)
+
+    def test_min_marker_floor(self) -> None:
+        """'auto' will not trim a tiny panel below the floor."""
+        markers = _make_contaminated(0.3, 6, 4, seed=2)  # 10 markers, < floor
+        rob = estimate_single_donor_bb(markers, robust="auto")
+        assert rob.n_robust_excluded == 0  # floor protects the small panel
+
+    def test_multi_donor_robust_runs(self) -> None:
+        markers = _make_markers_for_fraction(0.3, 30, 1000)
+        res = estimate_multi_donor(markers, n_donors=2, robust="auto")
+        assert res.n_robust_excluded == 0
+        with pytest.raises(ValueError, match="robust must be one of"):
+            estimate_multi_donor(markers, n_donors=2, robust="bogus")

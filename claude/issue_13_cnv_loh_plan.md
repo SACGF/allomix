@@ -118,49 +118,63 @@ donor-% LoD axis; std solid / robust dashed). Wired into `paper/Snakefile`
 
 ## Results
 
-40 replicates, 100 markers, 1000x, pure clone. Baseline donor LoD (no
-aberration): **0.30%** (unrelated) / **0.75%** (sibling). Donor LoD with host
-aberration, standard → robust refit (">20%" = above the probed ceiling, donor
-undetectable):
+30 replicates, 100 markers, 1000x, pure clone. The two detection directions
+behave **very differently**, which is why both are reported. `>20%` = LoD above
+the probed ceiling (component undetectable). std → robust refit.
 
-| Rel | Kind | Burden | LoD std → robust | markers affected / dropped |
-|-----|------|-------:|------------------|----------------------------|
-| unrelated | cnloh    | 0.10 | 18.1% → 9.8% | 4.3 / 3.6 |
-| unrelated | cnloh    | 0.25 | >20% → >20% | 11.7 / 6.0 |
-| unrelated | deletion | 0.10 | >20% → 6.9% | 9.6 / 3.8 |
-| unrelated | deletion | 0.25 | >20% → >20% | 25.2 / 6.0 |
-| unrelated | gain     | 0.10 | 1.0% → 0.40% | 9.7 / 5.9 |
-| unrelated | gain     | 0.25 | 2.3% → 0.52% | 24.5 / 9.7 |
-| unrelated | gain     | 0.50 | 4.5% → 0.53% | 48.4 / 15.3 |
-| sibling | cnloh    | 0.10 | 16.6% → 16.9% | 3.8 / 1.5 |
-| sibling | deletion | 0.10 | 19.7% → 17.8% | 9.8 / 1.9 |
-| sibling | gain     | 0.25 | 4.2% → 1.1% | 23.8 / 5.5 |
+### Relapse detection (host minor; the early-warning use)
 
-Figure: `output/facts/fig_cnv_loh.png`. Five things to note:
+Baseline relapse LoD **0.49%** (unrelated) / **0.78%** (sibling). Across every
+kind and burden it stays put (LoD ~0.2-1.6%); robust refit makes no material
+difference. Recipient CN-LoH/CNV does **not** degrade relapse detection.
 
-1. **Host CNV/LoH wrecks the donor LoD.** Baseline ~0.3%; even a 10% CN-LoH or
-   deletion burden pushes it to ~16-20%, and ≥25% renders the donor
-   **undetectable within the 20% probed range**. A few aberrant markers on a
-   sparse genome-wide panel (the realistic arm-level case) are enough.
-2. **Deletion is worst, gain mildest.** Deletion skews allele balance *and*
-   halves locus DNA mass *and* hits every genotype, so it blows the LoD out at
-   the lowest burden. Gain only inflates LoD to a few percent (smaller ×1.5
-   DNA-mass change, gentler skew).
-3. **Robust refit recovers the gain case strongly** (4.5% → 0.5%, back near
-   baseline) and rescues low-burden deletion/CN-LoH in unrelated donors
-   (deletion 10%: >20% → 6.9%). It cannot rescue CN-LoH/deletion once burden
-   ≥25% (no clean marker majority) — those stay undetectable and are flagged
-   REVIEW rather than trusted.
-4. **Neutral on clean data:** baseline LoD is unchanged by robust (0.30% →
-   0.27% unrelated; gate is a no-op).
-5. **Siblings are hit at least as hard** (fewer informative markers, so each
-   rogue marker has more leverage and the robust floor binds sooner).
+| Rel | Kind | Burden | relapse LoD std → robust |
+|-----|------|-------:|--------------------------|
+| unrelated | deletion | 0.50 | 0.68% → 0.80% |
+| sibling | cnloh | 0.50 | 1.25% → 1.59% |
+| sibling | deletion | 0.50 | 1.45% → 1.51% |
 
-Earlier point-estimate (MAE) analysis in the donor-dominant regime gave the
-complementary clinical read: deletion/CN-LoH bias the donor fraction *upward*
-(residual host **under-called**, the dangerous relapse direction), gain biases
-it *downward* (false-alarm direction). The LoD framing above is the
-detection-limit view of the same effect and is what the figure now reports.
+Why: the aberration rides the *minor* component, the blank (true host = 0) is
+pure donor so the LoB is clean, and the strongest detector markers are
+host-homozygous (host 1/1 vs donor 0/0), which CN-LoH (a het-only effect) does
+not touch. A germline-referenced relapse stays detectable despite the clone's
+aberrations. (Deletion in siblings is the only hint of degradation, ~2x.)
+
+### Donor detection (host major + CN-LoH; mixed chimerism)
+
+Baseline donor LoD **0.52%** (unrelated) / **1.14%** (sibling). The recipient's
+CN-LoH/CNV background badly inflates it:
+
+| Rel | Kind | Burden | donor LoD std → robust |
+|-----|------|-------:|------------------------|
+| unrelated | cnloh    | 0.10 | 18.4% → 9.5% |
+| unrelated | cnloh    | 0.25 | >20% → >20% |
+| unrelated | deletion | 0.10 | >20% → 6.6% |
+| unrelated | deletion | 0.25 | >20% → >20% |
+| unrelated | gain     | 0.25 | 1.8% → 0.54% |
+| unrelated | gain     | 0.50 | 4.4% → 0.69% |
+| sibling | cnloh    | 0.10 | 17.3% → >20% |
+| sibling | deletion | 0.10 | 17.3% → 16.3% |
+| sibling | gain     | 0.50 | 4.2% → 1.4% |
+
+1. **CN-LoH/deletion wreck the donor LoD**: 0.5% baseline → ~17-18% at 10%
+   burden, undetectable (>20%) by 25%. Deletion is worst (allele skew + DNA mass
+   + hits every genotype); gain is mildest (LoD only to a few %).
+2. **Robust refit recovers the gain case strongly** (4.4% → 0.7%) and rescues
+   low-burden deletion in unrelated donors (>20% → 6.6%); it cannot rescue
+   CN-LoH/deletion once burden ≥25% (no clean marker majority) — those stay
+   undetectable and are flagged REVIEW, not trusted.
+3. **Neutral on clean data**: baseline LoD essentially unchanged by robust.
+
+Figure: `output/facts/fig_cnv_loh.png` (top row relapse LoD, bottom row donor
+LoD, 3 kinds, log donor-% axis, std solid / robust dashed).
+
+**Clinical read:** routine relapse early-warning is robust to recipient
+CN-LoH/CNV, but measuring the *donor* fraction in a sample with a substantial
+CN-LoH-bearing recipient (mixed chimerism) can be badly biased — there the
+robust refit and the REVIEW flag matter. A complementary point-estimate (MAE)
+analysis in the donor-dominant regime is consistent: deletion/CN-LoH push the
+donor fraction up (residual host under-called), gain pushes it down.
 
 ## Key finding: rogue markers are not rejected
 
@@ -187,22 +201,22 @@ set the scale the way it defeats the current 3-SD flag), refit on the survivors
 `estimate_single_donor_bb` / `estimate_multi_donor` `robust=` and CLI
 `--robust {off,auto,force}` / `--robust-k` (`_robust_refit`; k=3.5, ≤5 iters).
 
-The validation sweep records standard *and* robust per cell in one pass (no
-separate runs); `cnv_loh_summary.csv` carries `lod_std`/`lod_robust` and
-`plot_cnv_loh.py` overlays them. The donor-LoD recovery is in the Results table
-above; the short version:
+This matters only in the **donor-detection (mixed chimerism)** regime; relapse
+detection needs no help. The sweep records standard *and* robust per cell in one
+pass; `cnv_loh_summary.csv` carries `lod_std`/`lod_robust` and `plot_cnv_loh.py`
+overlays them. The donor-LoD recovery (Results table above), short version:
 
-- **Gain:** strong recovery, LoD back near baseline (e.g. unrelated 25% burden
-  2.3% → 0.52%, 50% burden 4.5% → 0.53%).
+- **Gain:** strong recovery, LoD back near baseline (unrelated 25% burden
+  1.8% → 0.54%, 50% burden 4.4% → 0.69%).
 - **Deletion / CN-LoH at low burden, unrelated:** partial recovery (deletion 10%
-  >20% → 6.9%; CN-LoH 10% 18% → 9.8%).
+  >20% → 6.6%; CN-LoH 10% 18.4% → 9.5%).
 - **CN-LoH / deletion at ≥25% burden, and siblings:** little or no recovery
   (no clean marker majority; the marker floor binds for siblings).
 
 **Neutral on clean data (why it is safe as the default).** At burden 0 the gate
-never engages, so the LoD is unchanged: 0.30% → 0.27% (unrelated), 0.75% → 0.83%
-(sibling, within replicate noise). Turning it on costs nothing when there is
-nothing to fix, which keeps the already-validated cohort stable.
+never engages, so the LoD is unchanged within replicate noise (baseline donor
+LoD ~0.5% unrelated / ~1.1% sibling, std ≈ robust). Turning it on costs nothing
+when there is nothing to fix, which keeps the already-validated cohort stable.
 
 **Limit at high burden.** Once burden ≥25% for CN-LoH/deletion the donor is
 undetectable (LoD >20%) with or without the refit, because the aberrant markers

@@ -7,25 +7,28 @@ LoH (CN-LoH, acquired uniparental disomy; het -> hom in the clone), deletions
 (CN1) and gains (CN3). The diploid VAF model does not account for these, so the
 affected markers carry a biased ALT VAF.
 
-This sweep puts the aberration in the *host* (the major component) and asks how
-much it degrades the donor **limit of detection** (LoD), the metric used
-elsewhere in the paper (run_lod_validation.py, CLSI EP17-A2). The donor is the
-minor component, swept at low log-spaced true fractions including 0:
+The host (major, background component) carries the aberration and the donor is
+the minor component swept for the **limit of detection** (LoD), the metric the
+rest of the paper reports (run_lod_validation.py, CLSI EP17-A2). This is the
+mixed-chimerism / substantial-recipient regime, where the recipient's CN-LoH/CNV
+background degrades the donor LoD. The donor fraction is swept at low log-spaced
+values including 0:
 
-  - LoB = mean + 1.645 * SD of the estimated donor fraction over blank (true=0)
-          replicates of a pure host carrying the aberration.
+  - LoB = mean + 1.645 * SD of the estimated donor fraction over blank
+          replicates (true donor = 0, i.e. a pure host carrying the aberration).
   - LoD = lowest true donor fraction at which >=95% of replicates have
           est_frac > LoB, from a logistic fit of P(detected) vs log10(f).
 
-Both are computed for the standard estimator and the robust refit
-(``--robust auto``), so the figure shows the LoD inflation from host CNV/LoH and
-how much the robust refit recovers. Genotypes and per-marker capture biases are
-fixed per (relatedness, replicate) and reused across every aberration cell.
+The LoD is plotted on a log donor-% axis (0.3, 0.5, 1, 2, 5, 10, 20 %), matching
+the depth x markers LoD curves (plot_lod_curves.py). Both standard and robust
+(``--robust auto``) are computed per cell, so the figure shows the LoD inflation
+from host CNV/LoH and the robust recovery. Genotypes and biases are fixed per
+(relatedness, replicate).
 
 Outputs:
   output/facts/cnv_loh_raw.csv       # one row per replicate per cell
-  output/facts/cnv_loh_summary.csv   # LoB/LoD per (rel, kind, burden, clonal)
-  output/facts/cnv_loh_headline.csv  # headline LoD snapshot
+  output/facts/cnv_loh_summary.csv   # donor LoB/LoD per (rel, kind, burden, clonal)
+  output/facts/cnv_loh_headline.csv  # headline donor-LoD snapshot
 
 Usage:
     python paper/scripts/run_cnv_loh_validation.py
@@ -63,6 +66,11 @@ from allomix.simulate import (  # noqa: E402
 # --- Sweep grid --------------------------------------------------------------
 
 RELATEDNESS_LEVELS = ["unrelated", "sibling"]
+# Detection direction (which low-fraction component the LoD is for; the recipient
+# always carries the aberration). "donor": detect donor against a CN-LoH host
+# background (mixed-chimerism). "host": detect the recipient relapse clone (it
+# carries the aberration) against a clean donor background (early warning).
+MODES = ["donor", "host"]
 # Copy-number aberration kinds applied to the host clone. CN-LoH is copy-neutral
 # (allele-balance effect at het markers); deletion (CN1) and gain (CN3) also
 # change the locus DNA mass, so they shift the local mixing fraction even at
@@ -75,9 +83,9 @@ BURDEN_LEVELS = [0.0, 0.1, 0.25, 0.5]
 # Pure clone (whole host is the aberrant clone), the worst case for the host
 # component carrying the aberration.
 CLONAL_FRACTIONS = [1.0]
-# Low, log-spaced true donor fractions (incl. 0 for LoB). Extends above the
-# usual 5% LoD ceiling because host CNV/LoH inflates the donor LoD well past it;
-# a LoD beyond MAX_PROBED is reported as "above range" (undetectable here).
+# Low, log-spaced true donor fractions (incl. 0 for LoB). Extends above the usual
+# 5% ceiling because host CNV/LoH inflates the donor LoD well past it; a LoD
+# beyond MAX_PROBED is reported as "above range" (donor undetectable here).
 TRUE_FRACTIONS = [0.0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
 MAX_PROBED = 0.2
 
@@ -167,21 +175,36 @@ def fit_lod(fractions: list[float], detection_rates: list[float]) -> float | Non
 
 
 def _eval_cell(
+    mode: str,
     host_vcf: Path,
     donor_vcf: Path,
     host_md: list,
     donor_md: list,
     biases: list[float],
     aberrations: list | None,
-    true_frac: float,
+    minor_frac: float,
     blend_seed: int,
     admix_path: Path,
 ) -> dict:
-    """Blend one admix sample and estimate chimerism; return result fields."""
+    """Blend one sample and estimate the minor component for the LoD.
+
+    ``minor_frac`` is the true fraction of the minor (detected) component. The
+    recipient/host always carries the aberration; ``mode`` sets which role it
+    plays:
+
+      - ``"donor"``: detect the donor (minor); host is the major background
+        carrying the aberration. Mixed-chimerism / substantial-recipient regime.
+      - ``"host"``: detect the recipient relapse (minor) carrying the aberration;
+        donor is the clean major background. Early-warning relapse regime.
+
+    The returned ``est`` is the estimated minor-component fraction (donor f, or
+    1 - f for host mode), the detection statistic for the LoD.
+    """
+    donor_frac = minor_frac if mode == "donor" else 1.0 - minor_frac
     blend = blend_vcfs(
         host_path=str(host_vcf),
         donor_path=str(donor_vcf),
-        donor_fraction=true_frac,
+        donor_fraction=donor_frac,
         target_depth=DEPTH,
         sample_name="admix",
         seed=blend_seed,
@@ -201,12 +224,8 @@ def _eval_cell(
 
     genos = classify_markers(host_md, [donor_md], admix_md, min_dp=0, min_gq=0, pass_only=False)
     if len(genos.informative) < 1:
-        return dict(
-            est_frac=float("nan"), ci_lo=float("nan"), ci_hi=float("nan"),
-            n_informative=0, n_flagged=0,
-            est_frac_robust=float("nan"), ci_lo_robust=float("nan"),
-            ci_hi_robust=float("nan"), n_robust_excluded=0,
-        )
+        return dict(est=float("nan"), est_robust=float("nan"),
+                    n_informative=0, n_robust_excluded=0)
 
     result = estimate_single_donor_bb(
         genos.informative, error_rate=ERROR_RATE,
@@ -217,29 +236,27 @@ def _eval_cell(
         genos.informative, error_rate=ERROR_RATE,
         grid_steps=ESTIMATOR_GRID_STEPS, marker_biases=bias_dict, robust="auto",
     )
-    n_flagged = sum(1 for mr in result.per_marker if not mr.included)
+
+    def minor(f: float) -> float:
+        return f if mode == "donor" else 1.0 - f
+
     return dict(
-        est_frac=result.donor_fraction,
-        ci_lo=result.donor_fraction_ci[0],
-        ci_hi=result.donor_fraction_ci[1],
+        est=minor(result.donor_fraction),
+        est_robust=minor(robust.donor_fraction),
         n_informative=result.n_informative,
-        n_flagged=n_flagged,
-        est_frac_robust=robust.donor_fraction,
-        ci_lo_robust=robust.donor_fraction_ci[0],
-        ci_hi_robust=robust.donor_fraction_ci[1],
         n_robust_excluded=robust.n_robust_excluded,
     )
 
 
-def run_pair(relatedness: str, rep: int, base_seed: int) -> list[dict]:
-    """Evaluate every aberration cell for one fixed genotype pair.
+def run_pair(mode: str, relatedness: str, rep: int, base_seed: int) -> list[dict]:
+    """Evaluate every aberration cell for one fixed genotype pair, one mode.
 
     Genotypes and capture biases are fixed for this (relatedness, rep). Within
-    the pair we vary the aberration kind, burden, clonal fraction, and donor
-    fraction. The no-aberration baseline (burden 0) is run once and shared
-    across kinds.
+    the pair we vary the aberration kind, burden, and minor-component fraction.
+    The no-aberration baseline (burden 0) is run once and shared across kinds.
+    ``mode`` is "donor" or "host" (see ``_eval_cell``).
     """
-    pair_dir = WORK_DIR / f"{relatedness}_rep{rep}"
+    pair_dir = WORK_DIR / f"{mode}_{relatedness}_rep{rep}"
     pair_dir.mkdir(parents=True, exist_ok=True)
 
     gt_rng = random.Random(derive_seed("gt", relatedness, rep, base_seed))
@@ -260,13 +277,13 @@ def run_pair(relatedness: str, rep: int, base_seed: int) -> list[dict]:
 
     # Baseline (no aberration), shared by every kind.
     for true_frac in TRUE_FRACTIONS:
-        blend_seed = derive_seed("blend", relatedness, rep, "baseline", true_frac)
+        blend_seed = derive_seed("blend", mode, relatedness, rep, "baseline", true_frac)
         row = {
-            "relatedness": relatedness, "rep": rep, "kind": "baseline",
+            "mode": mode, "relatedness": relatedness, "rep": rep, "kind": "baseline",
             "burden": 0.0, "clonal_fraction": 0.0, "true_frac": true_frac,
             "n_affected": 0, "seed": blend_seed,
         }
-        row.update(_eval_cell(host_vcf, donor_vcf, host_md, donor_md, biases,
+        row.update(_eval_cell(mode, host_vcf, donor_vcf, host_md, donor_md, biases,
                               None, true_frac, blend_seed, admix_path))
         rows.append(row)
 
@@ -285,14 +302,14 @@ def run_pair(relatedness: str, rep: int, base_seed: int) -> list[dict]:
 
                 for true_frac in TRUE_FRACTIONS:
                     blend_seed = derive_seed(
-                        "blend", relatedness, rep, kind, burden, clonal, true_frac
+                        "blend", mode, relatedness, rep, kind, burden, clonal, true_frac
                     )
                     row = {
-                        "relatedness": relatedness, "rep": rep, "kind": kind,
+                        "mode": mode, "relatedness": relatedness, "rep": rep, "kind": kind,
                         "burden": burden, "clonal_fraction": clonal, "true_frac": true_frac,
                         "n_affected": n_affected, "seed": blend_seed,
                     }
-                    row.update(_eval_cell(host_vcf, donor_vcf, host_md, donor_md, biases,
+                    row.update(_eval_cell(mode, host_vcf, donor_vcf, host_md, donor_md, biases,
                                           aberrations, true_frac, blend_seed, admix_path))
                     rows.append(row)
 
@@ -302,8 +319,9 @@ def run_pair(relatedness: str, rep: int, base_seed: int) -> list[dict]:
 def _cell_lod(rows: list[dict], est_key: str) -> tuple[float, float]:
     """Compute (LoB, LoD) for one (rel, kind, burden, clonal) cell.
 
-    Groups the cell's replicate estimates by true donor fraction, forms the LoB
-    from the blanks (true=0), then fits the >=95% detection point.
+    Groups the cell's replicate donor-fraction estimates by true donor fraction,
+    forms the LoB from the blanks (true donor = 0, i.e. pure host carrying the
+    aberration), then fits the >=95% detection point. LoD is a donor fraction.
     """
     by_frac: dict[float, list[float]] = defaultdict(list)
     for r in rows:
@@ -325,18 +343,19 @@ def _cell_lod(rows: list[dict], est_key: str) -> tuple[float, float]:
 
 
 def summarise(raw: list[dict]) -> list[dict]:
-    """Aggregate raw rows into per-cell LoB/LoD (standard and robust)."""
+    """Aggregate raw rows into per-cell minor-component LoB/LoD (std and robust)."""
     cells: dict[tuple, list[dict]] = defaultdict(list)
     for r in raw:
-        cells[(r["relatedness"], r["kind"], r["clonal_fraction"], r["burden"])].append(r)
+        cells[(r["mode"], r["relatedness"], r["kind"], r["clonal_fraction"], r["burden"])].append(r)
 
     out: list[dict] = []
-    for (relatedness, kind, clonal, burden), rs in sorted(cells.items()):
-        lob_std, lod_std = _cell_lod(rs, "est_frac")
-        lob_rob, lod_rob = _cell_lod(rs, "est_frac_robust")
+    for (mode, relatedness, kind, clonal, burden), rs in sorted(cells.items()):
+        lob_std, lod_std = _cell_lod(rs, "est")
+        lob_rob, lod_rob = _cell_lod(rs, "est_robust")
         n_reps = max((sum(1 for r in rs if r["true_frac"] == f) for f in TRUE_FRACTIONS), default=0)
         out.append(
             {
+                "mode": mode,
                 "relatedness": relatedness,
                 "kind": kind,
                 "clonal_fraction": clonal,
@@ -368,32 +387,36 @@ def main() -> None:
     parser.add_argument("--n-reps", type=int, default=DEFAULT_N_REPS)
     parser.add_argument("--n-workers", type=int, default=4)
     parser.add_argument("--base-seed", type=int, default=2026)
+    parser.add_argument("--modes", nargs="+", default=list(MODES), choices=MODES)
     args = parser.parse_args()
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
 
-    jobs = [(rel, rep) for rel in RELATEDNESS_LEVELS for rep in range(args.n_reps)]
+    jobs = [
+        (mode, rel, rep)
+        for mode in args.modes
+        for rel in RELATEDNESS_LEVELS
+        for rep in range(args.n_reps)
+    ]
     raw: list[dict] = []
-
     if args.n_workers <= 1:
-        for rel, rep in jobs:
-            raw.extend(run_pair(rel, rep, args.base_seed))
+        for mode, rel, rep in jobs:
+            raw.extend(run_pair(mode, rel, rep, args.base_seed))
     else:
         with ProcessPoolExecutor(max_workers=args.n_workers) as ex:
-            futures = {ex.submit(run_pair, rel, rep, args.base_seed): (rel, rep) for rel, rep in jobs}
+            futures = [ex.submit(run_pair, mode, rel, rep, args.base_seed) for mode, rel, rep in jobs]
             for fut in as_completed(futures):
                 raw.extend(fut.result())
 
     raw_fields = [
-        "relatedness", "rep", "kind", "burden", "clonal_fraction", "true_frac", "n_affected",
-        "seed", "est_frac", "ci_lo", "ci_hi", "n_informative", "n_flagged",
-        "est_frac_robust", "ci_lo_robust", "ci_hi_robust", "n_robust_excluded",
+        "mode", "relatedness", "rep", "kind", "burden", "clonal_fraction", "true_frac",
+        "n_affected", "seed", "est", "est_robust", "n_informative", "n_robust_excluded",
     ]
     write_csv(FACTS_DIR / "cnv_loh_raw.csv", raw, raw_fields)
 
     summary = summarise(raw)
     summary_fields = [
-        "relatedness", "kind", "clonal_fraction", "burden", "n_reps_per_frac",
+        "mode", "relatedness", "kind", "clonal_fraction", "burden", "n_reps_per_frac",
         "lob_std", "lod_std", "lob_robust", "lod_robust",
         "mean_n_affected", "mean_n_robust_excluded", "mean_n_informative",
     ]
@@ -408,45 +431,50 @@ def main() -> None:
 
 
 def build_headline(summary: list[dict]) -> list[dict]:
-    """Pull interpretable headline LoD numbers per aberration kind."""
+    """Pull interpretable headline LoD numbers per mode / aberration kind."""
     max_burden = max(BURDEN_LEVELS)
 
-    def cell(rel, kind, burden):
+    def cell(mode, rel, kind, burden):
         for s in summary:
-            if (s["relatedness"] == rel and s["kind"] == kind
+            if (s["mode"] == mode and s["relatedness"] == rel and s["kind"] == kind
                     and abs(s["burden"] - burden) < 1e-9):
                 return s
         return None
 
-    def pct(x):
-        if x != x:  # NaN
+    def lod_pct(lod):
+        """Minor-component LoD as a %; '>ceiling' when above the probed range."""
+        if lod != lod:  # NaN
             return float("nan")
-        if not math.isfinite(x):
-            return f">{MAX_PROBED * 100:g}"  # above probed range = undetectable
-        return round(x * 100, 4)  # LoD as donor %
+        if not math.isfinite(lod):  # above probed ceiling = undetectable
+            return f">{MAX_PROBED * 100:g}"
+        return round(lod * 100, 4)
 
     headline: list[dict] = []
-    for rel in RELATEDNESS_LEVELS:
-        base = cell(rel, "baseline", 0.0)
-        if base:
-            headline.append({"metric": f"lod_pct_baseline_{rel}", "value": pct(base["lod_std"])})
-        for kind in KINDS:
-            worst = cell(rel, kind, max_burden)
-            if not worst:
-                continue
-            headline.append(
-                {"metric": f"lod_pct_{kind}_b{max_burden}_std_{rel}", "value": pct(worst["lod_std"])}
-            )
-            headline.append(
-                {"metric": f"lod_pct_{kind}_b{max_burden}_robust_{rel}",
-                 "value": pct(worst["lod_robust"])}
-            )
-            if base and math.isfinite(base["lod_std"]) and base["lod_std"] > 0:
-                w = worst["lod_std"]
-                infl = round(w / base["lod_std"], 2) if math.isfinite(w) else "above_range"
+    for mode in MODES:
+        for rel in RELATEDNESS_LEVELS:
+            base = cell(mode, rel, "baseline", 0.0)
+            if base:
                 headline.append(
-                    {"metric": f"lod_inflation_x_{kind}_b{max_burden}_{rel}", "value": infl}
+                    {"metric": f"{mode}_lod_pct_baseline_{rel}", "value": lod_pct(base["lod_std"])}
                 )
+            for kind in KINDS:
+                worst = cell(mode, rel, kind, max_burden)
+                if not worst:
+                    continue
+                headline.append(
+                    {"metric": f"{mode}_lod_pct_{kind}_b{max_burden}_std_{rel}",
+                     "value": lod_pct(worst["lod_std"])}
+                )
+                headline.append(
+                    {"metric": f"{mode}_lod_pct_{kind}_b{max_burden}_robust_{rel}",
+                     "value": lod_pct(worst["lod_robust"])}
+                )
+                if base and math.isfinite(base["lod_std"]) and base["lod_std"] > 0:
+                    w = worst["lod_std"]
+                    infl = round(w / base["lod_std"], 2) if math.isfinite(w) else "above_range"
+                    headline.append(
+                        {"metric": f"{mode}_lod_inflation_x_{kind}_b{max_burden}_{rel}", "value": infl}
+                    )
     return headline
 
 

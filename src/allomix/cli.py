@@ -10,6 +10,12 @@ from allomix import __version__
 from allomix.analysis import analyse_sample
 from allomix.bias import estimate_biases, load_bias_table, save_bias_table
 from allomix.chimerism import PanelCalibration
+from allomix.constants import (
+    DEFAULT_ERROR_RATE,
+    DEFAULT_MIN_DP,
+    DEFAULT_MIN_GQ,
+    ROBUST_K_DEFAULT,
+)
 from allomix.error_rates import (
     estimate_error_rates,
     load_error_table,
@@ -95,8 +101,18 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Admixture sample name in VCF (repeat for multiple timepoints)",
     )
     parser.add_argument("--output", "-o", default="-", help="Output file (default: stdout)")
-    parser.add_argument("--min-dp", type=int, default=100, help="Minimum depth (default: 100)")
-    parser.add_argument("--min-gq", type=int, default=20, help="Minimum GQ (default: 20)")
+    parser.add_argument(
+        "--min-dp",
+        type=int,
+        default=DEFAULT_MIN_DP,
+        help=f"Minimum depth (default: {DEFAULT_MIN_DP})",
+    )
+    parser.add_argument(
+        "--min-gq",
+        type=int,
+        default=DEFAULT_MIN_GQ,
+        help=f"Minimum GQ (default: {DEFAULT_MIN_GQ})",
+    )
     parser.add_argument(
         "--use-sex-chroms",
         action="store_true",
@@ -108,8 +124,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--error-rate",
         type=float,
-        default=0.01,
-        help="Sequencing error rate (default: 0.01)",
+        default=DEFAULT_ERROR_RATE,
+        help=f"Sequencing error rate (default: {DEFAULT_ERROR_RATE})",
     )
     parser.add_argument(
         "--robust",
@@ -124,9 +140,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--robust-k",
         type=float,
-        default=3.5,
+        default=ROBUST_K_DEFAULT,
         help="Robust residual cut in robust SDs (median/MAD) for --robust "
-             "(default: 3.5)",
+             f"(default: {ROBUST_K_DEFAULT})",
     )
     parser.add_argument("--verbose", action="store_true", help="Include per-marker detail")
     parser.add_argument(
@@ -210,7 +226,7 @@ def _run_single_sample(
     use_sex_chroms: bool = False,
     artifact_filter: bool = True,
     robust: str = "off",
-    robust_k: float = 3.5,
+    robust_k: float = ROBUST_K_DEFAULT,
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
 ) -> tuple:
@@ -567,8 +583,8 @@ def main(argv: list[str] | None = None) -> int:
     err_parser.add_argument(
         "--min-gq",
         type=int,
-        default=20,
-        help="Minimum GQ for training calls (default: 20)",
+        default=DEFAULT_MIN_GQ,
+        help=f"Minimum GQ for training calls (default: {DEFAULT_MIN_GQ})",
     )
 
     args = parser.parse_args(argv)

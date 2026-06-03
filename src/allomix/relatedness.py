@@ -27,6 +27,7 @@ from dataclasses import dataclass
 
 from scipy.stats import binom, norm
 
+from allomix.constants import CI_LEVEL, DEFAULT_ERROR_RATE
 from allomix.genotype import MarkerData, is_sex_chrom, marker_key
 
 # ---------------------------------------------------------------------------
@@ -98,8 +99,9 @@ SITE_ALPHA = 1e-3
 # meaningful; below this the check is reported but not acted on.
 MIN_CONSENSUS = 20
 
-# Two-sided 95% normal critical value (z_0.975 ~= 1.9600) for the Wald CI.
-_Z_95 = float(norm.ppf(0.975))
+# Two-sided normal critical value at CI_LEVEL (z_0.975 ~= 1.9600 for 95%) for
+# the Wald CI. The 0.975 is the two-sided upper tail: 1 - (1 - CI_LEVEL) / 2.
+_Z_TWO_SIDED = float(norm.ppf(1.0 - (1.0 - CI_LEVEL) / 2.0))
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +240,7 @@ def _coef_ci(coef: float, n_eff: int) -> tuple[float, float]:
     """
     p = min(max(coef, 0.0), 1.0)
     se = math.sqrt(max(p * (1.0 - p), 1e-6) / n_eff)
-    return coef - _Z_95 * se, coef + _Z_95 * se
+    return coef - _Z_TWO_SIDED * se, coef + _Z_TWO_SIDED * se
 
 
 def relatedness_coefficient(
@@ -341,7 +343,7 @@ def admix_consistency(
     host: list[MarkerData],
     donors: list[list[MarkerData]],
     admix: list[MarkerData],
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     min_dp: int = 1,
 ) -> AdmixConsistencyResult:
     """Check the admixture against host+donor at consensus-homozygous markers.

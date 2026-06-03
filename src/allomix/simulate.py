@@ -14,7 +14,12 @@ from pathlib import Path
 
 import numpy as np
 
-from allomix.constants import N_OTHER_BASES
+from allomix.constants import (
+    DEFAULT_ERROR_RATE,
+    HOM_ALT_MIN_VAF,
+    HOM_REF_MAX_VAF,
+    N_OTHER_BASES,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -566,9 +571,9 @@ def gt_from_counts(ref_count: int, alt_count: int) -> str:
     if total == 0:
         return "./."
     af = alt_count / total
-    if af < 0.05:
+    if af < HOM_REF_MAX_VAF:
         return "0/0"
-    if af > 0.95:
+    if af > HOM_ALT_MIN_VAF:
         return "1/1"
     return "0/1"
 
@@ -902,20 +907,23 @@ def write_genotype_vcf(
 
     chroms = sorted(set(m["chrom"] for m in markers), key=_chrom_sort_key)
 
+    info_format_header = """\
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total alleles">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele depths">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+"""
+    columns = ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", sample_name]
+
     with open(path, "w", encoding="utf-8") as f:
         f.write("##fileformat=VCFv4.2\n")
         for chrom in chroms:
             f.write(f"##contig=<ID={chrom}>\n")
-        f.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">\n')
-        f.write('##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count">\n')
-        f.write('##INFO=<ID=AN,Number=1,Type=Integer,Description="Total alleles">\n')
-        f.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
-        f.write('##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele depths">\n')
-        f.write('##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">\n')
-        f.write('##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">\n')
-        f.write('##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred-scaled likelihoods">\n')
-        f.write('##FORMAT=<ID=AF,Number=A,Type=Float,Description="Allele frequency">\n')
-        f.write(f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample_name}\n")
+        f.write(info_format_header)
+        f.write("\t".join(columns) + "\n")
 
         for m in markers:
             gt = m[key]
@@ -924,10 +932,9 @@ def write_genotype_vcf(
             ad_alt = round(depth * n_alt / 2)
             ad_ref = depth - ad_alt
             sample_field = f"{gt_str}:{ad_ref},{ad_alt}:{depth}:99"
-            f.write(
-                f"{m['chrom']}\t{m['pos']}\t.\t{m['ref']}\t{m['alt']}\t"
-                f".\tPASS\t.\tGT:AD:DP:GQ\t{sample_field}\n"
-            )
+            row = [m["chrom"], str(m["pos"]), ".", m["ref"], m["alt"], ".", "PASS", ".",
+                   "GT:AD:DP:GQ", sample_field]
+            f.write("\t".join(row) + "\n")
 
 
 def blend_vcfs(
@@ -939,7 +946,7 @@ def blend_vcfs(
     seed: int | None = None,
     marker_bias_sd: float = 0.0,
     fixed_biases: list[float] | None = None,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     allele_dropout_rate: float = 0.0,
     locus_dropout_rate: float = 0.0,
     depth_cv: float = 0.0,
@@ -1186,7 +1193,7 @@ def blend_from_genotype_dicts(
     donor_fractions: list[float],
     target_depth: int = 1000,
     seed: int | None = None,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     depth_cv: float = 0.0,
     sample_name: str = "simulated",
     rho: float = float("inf"),
@@ -1318,7 +1325,7 @@ def build_joint_vcf(
     donor_sample_names: list[str] | None = None,
     target_depth: int | None = None,
     seed: int | None = None,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     depth_cv: float = 0.0,
     marker_bias_sd: float = 0.0,
 ) -> JointVcfResult:

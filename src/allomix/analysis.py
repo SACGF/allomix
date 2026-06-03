@@ -21,6 +21,7 @@ from allomix.chimerism import (
     estimate_multi_donor,
     estimate_single_donor_bb,
 )
+from allomix.constants import ROBUST_K_DEFAULT
 from allomix.detect import DonorHomMarker, donor_hom_markers, host_presence_test
 from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
 from allomix.qc import QCReport, assess_quality
@@ -66,7 +67,7 @@ def analyse_sample(
     artifact_filter: bool = True,
     sample_name: str | None = None,
     robust: str = "off",
-    robust_k: float = 3.5,
+    robust_k: float = ROBUST_K_DEFAULT,
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
 ) -> SampleAnalysis:

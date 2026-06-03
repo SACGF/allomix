@@ -34,6 +34,7 @@ from scipy.optimize import brentq, minimize, minimize_scalar
 from scipy.special import gammaln
 from scipy.stats import chi2, norm
 
+from allomix.constants import N_OTHER_BASES
 from allomix.detect import HostPresenceResult
 from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey
@@ -217,12 +218,6 @@ def expected_weight(
     return w
 
 
-# DNA has 4 bases, so a sequencing error changes the true base into one of the
-# 3 other bases. Assuming errors are spread evenly, a miscall to one specific
-# base (e.g. REF read as the ALT allele) has probability error_rate / 3.
-_N_OTHER_BASES = 3
-
-
 def alt_read_probability(w: float, error_rate: float = 0.01) -> float:
     """Probability an observed read is ALT, given expected REF weight ``w``.
 
@@ -240,7 +235,7 @@ def alt_read_probability(w: float, error_rate: float = 0.01) -> float:
         P(observe ALT | w), between 0 and 1.
     """
     e = error_rate
-    e_specific = e / _N_OTHER_BASES
+    e_specific = e / N_OTHER_BASES
     p_alt = (1.0 - w) * (1.0 - e) + w * e_specific
     p_ref = w * (1.0 - e) + (1.0 - w) * e_specific
     return p_alt / (p_ref + p_alt)
@@ -457,7 +452,7 @@ def _total_ll_vec(
     # global ``error_rate``; per-marker asymmetric rates (where supplied) use
     # the REF/ALT-only form ``p_alt = w * e_refalt + (1 - w) * (1 - e_altref)``.
     e = error_rate
-    e_specific = e / _N_OTHER_BASES
+    e_specific = e / N_OTHER_BASES
     p_alt_raw = (1.0 - w) * (1.0 - e) + w * e_specific
     p_ref_raw = w * (1.0 - e) + (1.0 - w) * e_specific
     p_alt = p_alt_raw / (p_ref_raw + p_alt_raw)

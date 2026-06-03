@@ -31,6 +31,7 @@ import numpy as np
 from scipy.optimize import brentq, minimize_scalar
 from scipy.stats import chi2, poisson
 
+from allomix.constants import N_OTHER_BASES
 from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey  # MarkerKey re-exported below
 
@@ -453,7 +454,7 @@ def host_presence_test(
         rates.
     """
     markers = donor_hom_markers(informative_markers, artifact_thresholds)
-    fallback_e = error_rate / 3.0
+    fallback_e = error_rate / N_OTHER_BASES
 
     if artifact_filter:
         rows = [m for m in markers if not m.artifact]

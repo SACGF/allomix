@@ -14,6 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
+from allomix.constants import N_OTHER_BASES
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -532,8 +534,8 @@ def sample_allele_counts(
     # produces an unbiased MLE under the estimator's likelihood.
     if error_rate > 0:
         e = error_rate
-        p_alt = p * (1.0 - e) + (1.0 - p) * e / 3.0
-        p = p_alt / (1.0 - 2.0 * e / 3.0)
+        p_alt = p * (1.0 - e) + (1.0 - p) * e / N_OTHER_BASES
+        p = p_alt / (1.0 - 2.0 * e / N_OTHER_BASES)
 
     # Beta-binomial overdispersion: draw the per-marker ALT probability from a
     # Beta with mean p and concentration rho, then sample reads binomially. At

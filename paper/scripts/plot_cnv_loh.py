@@ -78,6 +78,9 @@ def load_summary(path: Path) -> list[dict]:
                     "relatedness": r["relatedness"],
                     "kind": r["kind"],
                     "burden": float(r["burden"]),
+                    # depth / n_markers present once the depth x markers grid is swept.
+                    "depth": int(r["depth"]) if r.get("depth") not in (None, "") else None,
+                    "n_markers": int(r["n_markers"]) if r.get("n_markers") not in (None, "") else None,
                     "lod_std": _pct(r["lod_std"]),
                     "lod_robust": _pct(r["lod_robust"]),
                 }
@@ -105,9 +108,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary", type=Path, default=FACTS_DIR / "cnv_loh_summary.csv")
     parser.add_argument("--out", type=Path, default=FACTS_DIR / "fig_cnv_loh.png")
+    parser.add_argument("--depth", type=int, default=None,
+                        help="Depth slice for the burden figure (default: largest present)")
+    parser.add_argument("--markers", type=int, default=None,
+                        help="Panel-size slice for the burden figure (default: largest present)")
     args = parser.parse_args()
 
     rows = load_summary(args.summary)
+    # The burden figure is a slice at one operating point; pick the largest swept
+    # depth / panel unless overridden (single-point sweeps have just one).
+    depths = [r["depth"] for r in rows if r["depth"] is not None]
+    markers = [r["n_markers"] for r in rows if r["n_markers"] is not None]
+    sel_depth = args.depth if args.depth is not None else (max(depths) if depths else None)
+    sel_markers = args.markers if args.markers is not None else (max(markers) if markers else None)
+    if sel_depth is not None:
+        rows = [r for r in rows if r["depth"] in (None, sel_depth)
+                and r["n_markers"] in (None, sel_markers)]
     modes = [m for m in MODES if any(r["mode"] == m for r in rows)]
 
     fig, axes = plt.subplots(
@@ -147,7 +163,17 @@ def main() -> None:
         "robust; donor detection in mixed chimerism (bottom) is degraded but "
         "recovered by robust refit"
     )
-    fig.tight_layout()
+    panel_desc = (
+        f"{sel_markers or '?'} markers, {sel_depth or '?'}x depth, pure clone (clonal fraction 1.0)"
+    )
+    fig.text(
+        0.5, 0.005,
+        f"{panel_desc}. Depth/markers set the baseline (burden 0) LoD per the depth x markers "
+        "curves; the CN-LoH/deletion LoD floor is a systematic-bias limit (largely "
+        "depth-independent). More markers also improve the robust recovery.",
+        ha="center", va="bottom", fontsize=7, color="0.35", wrap=True,
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=150)
     print(f"Wrote {args.out}")

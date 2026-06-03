@@ -111,6 +111,20 @@ is, so they affect ~2x as many markers at matched burden.) Fixed noise model
 matches the other scripts (error 0.01, locus dropout 0.016, depth CV 0.43,
 realistic heavy-tailed biases).
 
+**Why depth and markers are fixed here** (100 markers, 1000x). The clean
+depth x markers LoD surface is already characterised by fig5 / lod_saturation;
+this figure isolates the new variable (CN-aberration burden) at a representative
+operating point near our 76-SNP panel at >1000x. Depth and markers still matter,
+but in known ways: depth sets the *baseline* (burden 0) LoD (the usual ~1/sqrt
+curve), while the CN-LoH/deletion donor-LoD inflation is a **systematic-bias
+floor** — the aberrant markers push the VAF to a deterministic wrong value, so
+the spurious-signal LoB converges to a nonzero constant as depth grows and the
+inflated LoD does **not** improve with depth (the same saturation mechanism as
+overdispersion in `plot_lod_saturation.py`). Marker count lowers the baseline LoD
+and gives the robust refit more clean markers to anchor on (so recovery improves
+with more markers; at 100 markers the floor binds for siblings). These fixed
+conditions and the depth-independence note are stated in the figure caption.
+
 Outputs: `output/facts/cnv_loh_{raw,summary,headline}.csv` (with a `mode` column)
 and `output/facts/fig_cnv_loh.png` (2 rows = directions, 3 cols = kinds; log
 donor-% LoD axis; std solid / robust dashed). Wired into `paper/Snakefile`

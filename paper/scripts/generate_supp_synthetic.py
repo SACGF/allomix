@@ -31,7 +31,7 @@ from scipy.stats import gaussian_kde, norm  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.chimerism import PanelCalibration, estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
@@ -141,8 +141,8 @@ def load_empirical_per_marker() -> list[dict]:
 def _build_bias_table(
     blend_result,
 ) -> dict[tuple[str, int, str, str], float] | None:
-    """Convert BlendResult.marker_biases into the dict format expected by
-    estimate_single_donor_bb(marker_biases=...).
+    """Convert BlendResult.marker_biases into the bias dict expected by
+    PanelCalibration(biases=...).
     """
     if not blend_result.marker_biases:
         return None
@@ -357,7 +357,9 @@ def run_ablation(host_vcf: str, donor_vcf: str, tmpdir: Path) -> dict[str, list[
                     host, [donor], admix, min_dp=0, min_gq=0, pass_only=False
                 )
                 est = estimate_single_donor_bb(
-                    markers.informative, error_rate=0.01, marker_biases=bias_table
+                    markers.informative,
+                    error_rate=0.01,
+                    calibration=PanelCalibration(biases=bias_table or {}),
                 )
 
                 cond_results.append(
@@ -477,7 +479,9 @@ def run_calibration_batch(
                     host, [donor], admix, min_dp=0, min_gq=0, pass_only=False
                 )
                 est = estimate_single_donor_bb(
-                    markers.informative, error_rate=0.01, marker_biases=bias_table
+                    markers.informative,
+                    error_rate=0.01,
+                    calibration=PanelCalibration(biases=bias_table or {}),
                 )
 
                 ci_lo, ci_hi = est.donor_fraction_ci

@@ -9,6 +9,7 @@ from cyvcf2 import VCF
 from allomix import __version__
 from allomix.analysis import analyse_sample
 from allomix.bias import estimate_biases, load_bias_table, save_bias_table
+from allomix.chimerism import PanelCalibration
 from allomix.error_rates import (
     estimate_error_rates,
     load_error_table,
@@ -204,10 +205,7 @@ def _run_single_sample(
     min_dp: int,
     min_gq: int,
     error_rate: float,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration | None = None,
     run_host_presence: bool = True,
     use_sex_chroms: bool = False,
     artifact_filter: bool = True,
@@ -234,8 +232,7 @@ def _run_single_sample(
         min_dp=min_dp,
         min_gq=min_gq,
         error_rate=error_rate,
-        marker_biases=marker_biases,
-        marker_errors=marker_errors,
+        calibration=calibration,
         run_host_presence=run_host_presence,
         use_sex_chroms=use_sex_chroms,
         artifact_filter=artifact_filter,
@@ -263,18 +260,23 @@ def _open_output(path: str):
     return open(path, "w", encoding="utf-8")
 
 
-def _load_biases(args: argparse.Namespace) -> dict | None:
-    """Load bias table if specified and not disabled."""
-    if args.bias_table and not args.no_bias_correction:
-        return load_bias_table(args.bias_table)
-    return None
+def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
+    """Build the per-marker calibration from the CLI table options.
 
-
-def _load_errors(args: argparse.Namespace) -> dict | None:
-    """Load per-site error table if specified and not disabled."""
-    if args.error_table and not args.no_error_correction:
-        return load_error_table(args.error_table)
-    return None
+    Loads the bias and per-site error tables when specified and not disabled;
+    omitted or disabled tables become empty (no correction).
+    """
+    biases = (
+        load_bias_table(args.bias_table)
+        if args.bias_table and not args.no_bias_correction
+        else {}
+    )
+    errors = (
+        load_error_table(args.error_table)
+        if args.error_table and not args.no_error_correction
+        else {}
+    )
+    return PanelCalibration(biases=biases, errors=errors)
 
 
 def cmd_monitor(args: argparse.Namespace) -> int:
@@ -283,8 +285,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
 
-    marker_biases = _load_biases(args)
-    marker_errors = _load_errors(args)
+    calibration = _load_calibration(args)
 
     # Parse host and donors once — they're the same for every timepoint.
     # gt_ad_consistency=True is the panel-side miscall guard: drops
@@ -311,8 +312,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 args.min_dp,
                 args.min_gq,
                 args.error_rate,
-                marker_biases=marker_biases,
-                marker_errors=marker_errors,
+                calibration=calibration,
                 run_host_presence=not args.no_host_presence,
                 use_sex_chroms=args.use_sex_chroms,
                 artifact_filter=not args.no_artifact_filter,
@@ -340,8 +340,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
 
-    marker_biases = _load_biases(args)
-    marker_errors = _load_errors(args)
+    calibration = _load_calibration(args)
 
     # Parse host and donors once. See cmd_monitor for gt_ad_consistency.
     host = parse_vcf(
@@ -362,8 +361,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             args.min_dp,
             args.min_gq,
             args.error_rate,
-            marker_biases=marker_biases,
-            marker_errors=marker_errors,
+            calibration=calibration,
             run_host_presence=not args.no_host_presence,
             use_sex_chroms=args.use_sex_chroms,
             artifact_filter=not args.no_artifact_filter,

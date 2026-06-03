@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from allomix.chimerism import (
     ChimerismResult,
     MultiDonorResult,
+    PanelCalibration,
     estimate_multi_donor,
     estimate_single_donor_bb,
 )
@@ -59,10 +60,7 @@ def analyse_sample(
     min_dp: int,
     min_gq: int,
     error_rate: float,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration | None = None,
     run_host_presence: bool = True,
     use_sex_chroms: bool = False,
     artifact_filter: bool = True,
@@ -86,8 +84,8 @@ def analyse_sample(
         min_dp: Minimum admix depth for a marker to be used.
         min_gq: Minimum host/donor genotype quality.
         error_rate: Global symmetric sequencing error rate.
-        marker_biases: Optional per-marker bias table.
-        marker_errors: Optional per-site, per-direction error table.
+        calibration: Optional per-marker bias and error tables (see
+            ``allomix.chimerism.PanelCalibration``).
         run_host_presence: Run the host-presence detector and select the
             donor-homozygous markers. When False, ``result.host_presence`` is
             left unset and ``donor_hom_markers`` is empty.
@@ -112,6 +110,7 @@ def analyse_sample(
         A ``SampleAnalysis`` bundling the genotypes, estimate, QC and the
         flagged donor-homozygous markers.
     """
+    cal = calibration or PanelCalibration()
     genotypes = classify_markers(
         host, donors, admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=use_sex_chroms
     )
@@ -122,8 +121,7 @@ def analyse_sample(
         result: ChimerismResult | MultiDonorResult = estimate_single_donor_bb(
             genotypes.informative,
             error_rate=error_rate,
-            marker_biases=marker_biases,
-            marker_errors=marker_errors,
+            calibration=cal,
             robust=robust,
             robust_k=robust_k,
         )
@@ -132,8 +130,7 @@ def analyse_sample(
             genotypes.informative,
             n_donors=len(donors),
             error_rate=error_rate,
-            marker_biases=marker_biases,
-            marker_errors=marker_errors,
+            calibration=cal,
             robust=robust,
             robust_k=robust_k,
         )
@@ -143,7 +140,7 @@ def analyse_sample(
         # Attached to the result before QC so the QC step can read it.
         result.host_presence = host_presence_test(
             genotypes.informative,
-            marker_errors=marker_errors,
+            marker_errors=cal.errors,
             error_rate=error_rate,
             artifact_filter=artifact_filter,
         )

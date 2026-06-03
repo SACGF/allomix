@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from allomix.chimerism import (
+    PanelCalibration,
     estimate_single_donor_bb,
     log_likelihood_marker_bb,
     total_log_likelihood_bb,
@@ -14,7 +15,8 @@ from allomix.chimerism import (
 from allomix.error_rates import (
     DEFAULT_ERROR_FLOOR,
     MarkerError,
-    errors_to_simple_dict,
+    MarkerErrorRates,
+    errors_to_rates,
     estimate_error_rates,
     load_error_table,
     save_error_table,
@@ -185,11 +187,11 @@ class TestSaveLoadRoundtrip:
             save_error_table(errors, path)
             loaded = load_error_table(path)
 
-        assert loaded[("chr1", 100, "A", "T")] == (1e-3, None)
+        assert loaded[("chr1", 100, "A", "T")] == MarkerErrorRates(1e-3, None)
         # Floor applied to the 0.0 entry.
-        e_ra, e_ar = loaded[("chr1", 200, "C", "G")]
-        assert e_ra == DEFAULT_ERROR_FLOOR
-        assert e_ar == 2e-4
+        rates = loaded[("chr1", 200, "C", "G")]
+        assert rates.e_refalt == DEFAULT_ERROR_FLOOR
+        assert rates.e_altref == 2e-4
 
     def test_loader_disable_floor(self) -> None:
         """Setting error_floor=0 disables the floor."""
@@ -204,15 +206,15 @@ class TestSaveLoadRoundtrip:
             path = Path(tmp) / "errors.tsv"
             save_error_table(errors, path)
             loaded = load_error_table(path, error_floor=0.0)
-        assert loaded[("chr1", 100, "A", "T")] == (0.0, 0.0)
+        assert loaded[("chr1", 100, "A", "T")] == MarkerErrorRates(0.0, 0.0)
 
 
 # ---------------------------------------------------------------------------
-# errors_to_simple_dict
+# errors_to_rates
 # ---------------------------------------------------------------------------
 
 
-class TestSimpleDict:
+class TestErrorsToRates:
     def test_floor_applied_in_helper(self) -> None:
         errors = {
             ("chr1", 100, "A", "T"): MarkerError(
@@ -222,8 +224,8 @@ class TestSimpleDict:
                 n_reads_homref=5000, n_reads_homalt=5000,
             ),
         }
-        simple = errors_to_simple_dict(errors)
-        assert simple[("chr1", 100, "A", "T")] == (DEFAULT_ERROR_FLOOR, 1e-3)
+        rates = errors_to_rates(errors)
+        assert rates[("chr1", 100, "A", "T")] == MarkerErrorRates(DEFAULT_ERROR_FLOOR, 1e-3)
 
 
 # ---------------------------------------------------------------------------
@@ -267,13 +269,13 @@ class TestLikelihoodIntegration:
         assert ll_high > ll_low
 
     def test_marker_errors_missing_falls_back(self) -> None:
-        """A marker absent from marker_errors uses the global 4-state path
-        (i.e. matches the same call with marker_errors=None).
+        """A marker absent from the error table uses the global 4-state path
+        (i.e. matches the same call with no calibration).
         """
         m = _informative(100, host_gt=(0, 1), donor_gt=(1, 1),
                          ad_ref=400, ad_alt=600)
         ll_with_empty = total_log_likelihood_bb(
-            [m], f_donor=0.5, error_rate=0.01, rho=100.0, marker_errors={},
+            [m], f_donor=0.5, error_rate=0.01, rho=100.0, calibration=PanelCalibration(),
         )
         ll_no_table = total_log_likelihood_bb(
             [m], f_donor=0.5, error_rate=0.01, rho=100.0,
@@ -287,10 +289,10 @@ class TestLikelihoodIntegration:
         """
         m = _informative(100, host_gt=(0, 1), donor_gt=(1, 1),
                          ad_ref=400, ad_alt=600)
-        partial = {("chr1", 100, "A", "T"): (1e-3, None)}
+        partial = {("chr1", 100, "A", "T"): MarkerErrorRates(1e-3, None)}
         ll_partial = total_log_likelihood_bb(
             [m], f_donor=0.5, error_rate=0.01, rho=100.0,
-            marker_errors=partial,
+            calibration=PanelCalibration(errors=partial),
         )
         ll_baseline = total_log_likelihood_bb(
             [m], f_donor=0.5, error_rate=0.01, rho=100.0,
@@ -298,7 +300,7 @@ class TestLikelihoodIntegration:
         assert ll_partial == pytest.approx(ll_baseline)
 
     def test_estimator_default_unchanged(self) -> None:
-        """estimate_single_donor_bb with default marker_errors=None matches
+        """estimate_single_donor_bb with no calibration matches
         the pre-Step-14 behaviour (regression guard).
         """
         rng = random.Random(7)
@@ -316,7 +318,7 @@ class TestLikelihoodIntegration:
             )
         res_default = estimate_single_donor_bb(markers, error_rate=0.01)
         res_with_empty = estimate_single_donor_bb(
-            markers, error_rate=0.01, marker_errors={},
+            markers, error_rate=0.01, calibration=PanelCalibration(),
         )
         # Empty error-table dict = no asymmetric markers = identical fit.
         assert res_default.donor_fraction == pytest.approx(

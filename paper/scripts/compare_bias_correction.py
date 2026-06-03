@@ -26,7 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from allomix.bias import load_bias_table  # noqa: E402
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.chimerism import PanelCalibration, estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
@@ -147,7 +147,9 @@ def run_validation(
 
         genotypes = classify_markers(host, [donor], admix, min_dp=0, min_gq=0, pass_only=False)
         result = estimate_single_donor_bb(
-            genotypes.informative, error_rate=0.01, marker_biases=marker_biases,
+            genotypes.informative,
+            error_rate=0.01,
+            calibration=PanelCalibration(biases=marker_biases or {}),
         )
 
         error = result.donor_fraction - true_frac

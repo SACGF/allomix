@@ -299,7 +299,7 @@ def _run_replicate(
             genos.informative,
             error_rate=error_rate,
             grid_steps=MLE_GRID_STEPS,
-            calibration=PanelCalibration(biases=bias_dict or {}),
+            calibration=PanelCalibration(biases=bias_dict),
         )
         donor_fraction = mle.donor_fraction
         mle_host_est = 1.0 - mle.donor_fraction

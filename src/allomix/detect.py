@@ -31,6 +31,7 @@ import numpy as np
 from scipy.optimize import brentq, minimize_scalar
 from scipy.stats import chi2, poisson
 
+from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey  # MarkerKey re-exported below
 
 # Direction of the per-site error rate we use at a donor-homozygous marker:
@@ -325,9 +326,7 @@ def donor_hom_markers(
 
 def _resolve_e_per_marker(
     rows: list[DonorHomMarker],
-    marker_errors: (
-        dict[MarkerKey, tuple[float | None, float | None]] | None
-    ),
+    marker_errors: dict[MarkerKey, MarkerErrorRates] | None,
     fallback_e: float,
     error_floor: float,
 ) -> tuple[list[float], int, int]:
@@ -349,11 +348,10 @@ def _resolve_e_per_marker(
         if marker_errors is not None:
             entry = marker_errors.get(r.key)
             if entry is not None:
-                e_refalt, e_altref = entry
-                if r.direction == "ref->alt" and e_refalt is not None:
-                    e_i = max(e_refalt, error_floor)
-                elif r.direction == "alt->ref" and e_altref is not None:
-                    e_i = max(e_altref, error_floor)
+                if r.direction == "ref->alt" and entry.e_refalt is not None:
+                    e_i = max(entry.e_refalt, error_floor)
+                elif r.direction == "alt->ref" and entry.e_altref is not None:
+                    e_i = max(entry.e_altref, error_floor)
         if e_i is None:
             e_i = fb
             n_fallback += 1
@@ -418,9 +416,7 @@ def _profile_ci_for_f(
 
 def host_presence_test(
     informative_markers: list[InformativeMarker],
-    marker_errors: (
-        dict[MarkerKey, tuple[float | None, float | None]] | None
-    ) = None,
+    marker_errors: dict[MarkerKey, MarkerErrorRates] | None = None,
     error_rate: float = 0.01,
     error_floor: float = 1e-5,
     artifact_filter: bool = True,

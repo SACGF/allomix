@@ -34,7 +34,12 @@ from collections import defaultdict
 from pathlib import Path
 
 from allomix.bias import load_bias_table
-from allomix.chimerism import detection_limit, estimate_single_donor_bb, fraction_se
+from allomix.chimerism import (
+    PanelCalibration,
+    detection_limit,
+    estimate_single_donor_bb,
+    fraction_se,
+)
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.qc import _error_adjusted_p_alt, assess_quality
 
@@ -115,7 +120,9 @@ def main() -> None:
         parser.error("This diagnostic handles single-donor samples only.")
 
     result = estimate_single_donor_bb(
-        genotypes.informative, error_rate=args.error_rate, marker_biases=biases
+        genotypes.informative,
+        error_rate=args.error_rate,
+        calibration=PanelCalibration(biases=biases or {}),
     )
     qc = assess_quality(result, genotypes)
     rho = result.rho

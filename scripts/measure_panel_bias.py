@@ -21,8 +21,6 @@ Usage:
     python scripts/measure_panel_bias.py vcf_list.txt --output output/panel_stats
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import logging

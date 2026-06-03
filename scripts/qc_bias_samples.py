@@ -21,8 +21,6 @@ Usage:
         --output-metrics qc_metrics.tsv
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import math

@@ -23,8 +23,6 @@ Usage:
         [--extra-arg --min-dp=200 --extra-arg --min-gq=30]
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import glob

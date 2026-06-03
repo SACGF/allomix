@@ -1,7 +1,5 @@
 """Tests for allomix.simulate — synthetic chimeric VCF generation."""
 
-from __future__ import annotations
-
 import math
 import os
 import random

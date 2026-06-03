@@ -9,8 +9,6 @@ Usage:
     python scripts/run_relatedness_validation.py
 """
 
-from __future__ import annotations
-
 import csv
 import math
 import random

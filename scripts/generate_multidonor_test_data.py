@@ -10,8 +10,6 @@ Usage:
     python scripts/generate_multidonor_test_data.py --outdir tests/test_data/multidonor
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import random

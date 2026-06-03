@@ -10,8 +10,6 @@ Usage:
     python scripts/compare_bias_correction.py --bias-sd 0.03 --depth 1000
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import math

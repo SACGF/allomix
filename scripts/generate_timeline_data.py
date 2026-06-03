@@ -21,8 +21,6 @@ Output:
     tests/test_data/timeline/truth_table.tsv
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import sys

@@ -22,8 +22,6 @@ The robust coefficient is adapted from somalier (Pedersen & Quinlan, MIT
 licensed). The math is standard kinship estimation.
 """
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 

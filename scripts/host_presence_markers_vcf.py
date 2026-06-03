@@ -31,8 +31,6 @@ Usage:
         --out-dir output/host_presence_markers
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import glob

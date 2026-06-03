@@ -1,7 +1,5 @@
 """Tests for allomix.chimerism — MLE chimerism estimation."""
 
-from __future__ import annotations
-
 import math
 import random
 

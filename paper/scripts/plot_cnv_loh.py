@@ -22,8 +22,6 @@ Output:
     output/facts/fig_cnv_loh.png
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import statistics

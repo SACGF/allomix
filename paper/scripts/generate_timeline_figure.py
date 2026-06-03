@@ -9,8 +9,6 @@ Usage:
     python paper/scripts/generate_timeline_figure.py
 """
 
-from __future__ import annotations
-
 import csv
 import math
 import random

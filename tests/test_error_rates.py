@@ -1,7 +1,5 @@
 """Tests for allomix.error_rates — per-site empirical error rate estimation."""
 
-from __future__ import annotations
-
 import random
 import tempfile
 from pathlib import Path

@@ -42,8 +42,6 @@ Usage:
         --output output/host_presence_per_marker_run10.png
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import glob

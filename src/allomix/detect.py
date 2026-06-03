@@ -24,8 +24,6 @@ The two statistics computed here are:
 The LRT also returns ``f_host_mle`` and a profile-likelihood 95% CI.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Literal
 

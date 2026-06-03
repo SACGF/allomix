@@ -35,8 +35,6 @@ Usage:
         --output output/run1_vs_run2_vs_run3.png
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import re

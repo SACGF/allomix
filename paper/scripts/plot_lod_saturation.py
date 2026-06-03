@@ -35,8 +35,6 @@ Output:
     output/facts/lod_saturation.csv   (fitted A, rho, floor per relatedness/overlay)
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import math

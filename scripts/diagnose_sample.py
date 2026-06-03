@@ -27,8 +27,6 @@ Pass the same --bias-table / --min-dp / --min-gq / --error-rate you used for the
 run you are diagnosing, or the numbers will not match that run.
 """
 
-from __future__ import annotations
-
 import argparse
 import math
 import statistics

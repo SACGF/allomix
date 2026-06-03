@@ -1,7 +1,5 @@
 """Tests for the LoB / logistic-fit helpers in paper/scripts/run_lod_validation.py."""
 
-from __future__ import annotations
-
 import math
 import sys
 from pathlib import Path

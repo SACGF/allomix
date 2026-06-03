@@ -12,8 +12,6 @@ Output:
     tests/test_data/donor.vcf
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import random

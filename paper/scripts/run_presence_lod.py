@@ -53,8 +53,6 @@ A uniform ``--rho 100 --rho-marker-type all`` would miscalibrate the presence
 null (overdispersing the clean background); do not use it for the gate check.
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import hashlib

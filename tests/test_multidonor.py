@@ -8,8 +8,6 @@ Covers:
 - Multi-donor QC, report, and CLI integration
 """
 
-from __future__ import annotations
-
 import json
 import math
 import random

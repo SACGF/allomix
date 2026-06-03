@@ -4,8 +4,6 @@ Provides TSV and JSON output for single-sample results and
 multi-timepoint timelines. Supports both single-donor and multi-donor results.
 """
 
-from __future__ import annotations
-
 import math
 from pathlib import Path
 from typing import TextIO

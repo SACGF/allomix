@@ -1,34 +1,35 @@
 #!/usr/bin/env python3
-"""Measure how host-genome CN-LoH degrades chimerism estimates (issue #13).
+"""Measure how host-genome CNV / CN-LoH degrades the donor limit of detection (issue #13).
 
 The HSCT recipient is usually a haematological malignancy patient, so the
-residual or relapsing host clone routinely carries somatic copy-number
-changes. Copy-neutral loss of heterozygosity (CN-LoH, acquired uniparental
-disomy) is common in AML/MDS: the clone retains two copies of one germline
-homolog, turning a host heterozygous marker into an effective homozygote
-without any copy-number change. The host genotype VCF is taken from a clean
-germline reference, so classification is unaffected, but the affected markers
-in the admixture sample carry a biased ALT VAF, which can pull the donor
-fraction estimate.
+residual host clone routinely carries somatic copy-number changes: copy-neutral
+LoH (CN-LoH, acquired uniparental disomy; het -> hom in the clone), deletions
+(CN1) and gains (CN3). The diploid VAF model does not account for these, so the
+affected markers carry a biased ALT VAF.
 
-This sweep blends synthetic chimeric samples with a controllable burden of
-host CN-LoH and reports the effect on point-estimate accuracy (MAE, signed
-bias), CI coverage, and how many rogue markers the estimator's 3-SD outlier
-flag catches. The fraction_affected=0 cells are the no-aberration baseline.
+This sweep puts the aberration in the *host* (the major component) and asks how
+much it degrades the donor **limit of detection** (LoD), the metric used
+elsewhere in the paper (run_lod_validation.py, CLSI EP17-A2). The donor is the
+minor component, swept at low log-spaced true fractions including 0:
 
-Design follows run_lod_validation.py: genotypes and per-marker capture biases
-are fixed per (relatedness, replicate) "pair" and reused across every
-aberration/fraction cell, so the only thing changing within a pair is the
-CN-LoH burden and the sequencing draw.
+  - LoB = mean + 1.645 * SD of the estimated donor fraction over blank (true=0)
+          replicates of a pure host carrying the aberration.
+  - LoD = lowest true donor fraction at which >=95% of replicates have
+          est_frac > LoB, from a logistic fit of P(detected) vs log10(f).
+
+Both are computed for the standard estimator and the robust refit
+(``--robust auto``), so the figure shows the LoD inflation from host CNV/LoH and
+how much the robust refit recovers. Genotypes and per-marker capture biases are
+fixed per (relatedness, replicate) and reused across every aberration cell.
 
 Outputs:
   output/facts/cnv_loh_raw.csv       # one row per replicate per cell
-  output/facts/cnv_loh_summary.csv   # one row per (rel, clonal, burden, true_frac)
-  output/facts/cnv_loh_headline.csv  # single-row headline snapshot
+  output/facts/cnv_loh_summary.csv   # LoB/LoD per (rel, kind, burden, clonal)
+  output/facts/cnv_loh_headline.csv  # headline LoD snapshot
 
 Usage:
     python paper/scripts/run_cnv_loh_validation.py
-    python paper/scripts/run_cnv_loh_validation.py --n-reps 10 --n-workers 8
+    python paper/scripts/run_cnv_loh_validation.py --n-reps 40 --n-workers 8
 """
 
 from __future__ import annotations
@@ -36,11 +37,15 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import math
 import random
-import statistics
 import sys
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+
+import numpy as np
+from scipy.optimize import curve_fit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
@@ -65,13 +70,16 @@ RELATEDNESS_LEVELS = ["unrelated", "sibling"]
 KINDS = ["cnloh", "deletion", "gain"]
 # Fraction of eligible host markers carrying the aberration. For cnloh, only het
 # markers are eligible; for deletion/gain every marker is. 0.0 is the baseline,
-# run once per pair and shared across kinds.
+# run once per replicate and shared across kinds.
 BURDEN_LEVELS = [0.0, 0.1, 0.25, 0.5]
-# Fraction of host cells that are the aberrant clone (1.0 = pure clone, e.g.
-# diagnosis/relapse; 0.5 = clone is half the residual host).
-CLONAL_FRACTIONS = [0.5, 1.0]
-# True donor fractions spanning host-dominant to donor-dominant chimerism.
-TRUE_FRACTIONS = [0.2, 0.5, 0.8, 0.9, 0.95, 0.99]
+# Pure clone (whole host is the aberrant clone), the worst case for the host
+# component carrying the aberration.
+CLONAL_FRACTIONS = [1.0]
+# Low, log-spaced true donor fractions (incl. 0 for LoB). Extends above the
+# usual 5% LoD ceiling because host CNV/LoH inflates the donor LoD well past it;
+# a LoD beyond MAX_PROBED is reported as "above range" (undetectable here).
+TRUE_FRACTIONS = [0.0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
+MAX_PROBED = 0.2
 
 N_MARKERS = 100
 DEPTH = 1000
@@ -81,7 +89,10 @@ LOCUS_DROPOUT_RATE = 0.016
 DEPTH_CV = 0.43
 ESTIMATOR_GRID_STEPS = 201
 
-DEFAULT_N_REPS = 20
+DEFAULT_N_REPS = 40
+
+# CLSI EP17-A2 LoD helpers (mirrors run_lod_validation.py).
+LOGIT_95 = math.log(0.95 / 0.05)
 
 FACTS_DIR = Path("output/facts")
 WORK_DIR = Path("output/cnv_loh_validation")
@@ -91,6 +102,68 @@ def derive_seed(*parts: object) -> int:
     """Deterministic seed from arbitrary parts (stable across processes)."""
     digest = hashlib.sha256(repr(parts).encode("utf-8")).digest()[:4]
     return int.from_bytes(digest, "big")
+
+
+# --- CLSI EP17-A2 LoB / LoD (copied from run_lod_validation.py for independence) ---
+
+
+def compute_lob(est_fracs_at_zero: list[float]) -> float:
+    """LoB = mean + 1.645 * SD across blank (true=0) replicates."""
+    if len(est_fracs_at_zero) < 2:
+        return float("nan")
+    arr = np.asarray(est_fracs_at_zero, dtype=float)
+    return float(arr.mean() + 1.645 * arr.std(ddof=1))
+
+
+def detection_rate(est_fracs: list[float], lob: float) -> float:
+    """Fraction of replicates whose estimate exceeds LoB."""
+    if not est_fracs:
+        return 0.0
+    return sum(1 for e in est_fracs if e > lob) / len(est_fracs)
+
+
+def _logistic(log10_f: np.ndarray, a: float, b: float) -> np.ndarray:
+    z = np.clip(a + b * log10_f, -500.0, 500.0)
+    return 1.0 / (1.0 + np.exp(-z))
+
+
+def _interp_lod(fractions: list[float], rates: list[float], target: float = 0.95) -> float | None:
+    pairs = sorted([(f, r) for f, r in zip(fractions, rates) if f > 0])
+    for (f_lo, r_lo), (f_hi, r_hi) in zip(pairs, pairs[1:]):
+        if r_lo <= target <= r_hi:
+            if r_hi == r_lo:
+                return f_lo
+            log_lo, log_hi = math.log10(f_lo), math.log10(f_hi)
+            frac = (target - r_lo) / (r_hi - r_lo)
+            return 10.0 ** (log_lo + frac * (log_hi - log_lo))
+    return None
+
+
+def fit_lod(fractions: list[float], detection_rates: list[float]) -> float | None:
+    """Logistic fit in log10(f); solve for f at P=0.95, with interp fallback."""
+    pos = [(f, r) for f, r in zip(fractions, detection_rates) if f > 0]
+    if len(pos) < 2:
+        return None
+    log10_f = np.array([math.log10(f) for f, _ in pos], dtype=float)
+    rates = np.array([r for _, r in pos], dtype=float)
+    a = b = float("nan")
+    try:
+        popt, _ = curve_fit(_logistic, log10_f, rates, p0=[2.0, 2.0], maxfev=10000)
+        a, b = float(popt[0]), float(popt[1])
+    except (RuntimeError, ValueError):
+        pass
+
+    f95: float | None = None
+    if math.isfinite(a) and math.isfinite(b) and b > 1e-9:
+        try:
+            cand = 10.0 ** ((LOGIT_95 - a) / b)
+        except OverflowError:
+            cand = float("inf")
+        if math.isfinite(cand) and cand > 0:
+            f95 = cand
+    if f95 is None:
+        f95 = _interp_lod([f for f, _ in pos], [r for _, r in pos])
+    return f95
 
 
 def _eval_cell(
@@ -226,45 +299,56 @@ def run_pair(relatedness: str, rep: int, base_seed: int) -> list[dict]:
     return rows
 
 
+def _cell_lod(rows: list[dict], est_key: str) -> tuple[float, float]:
+    """Compute (LoB, LoD) for one (rel, kind, burden, clonal) cell.
+
+    Groups the cell's replicate estimates by true donor fraction, forms the LoB
+    from the blanks (true=0), then fits the >=95% detection point.
+    """
+    by_frac: dict[float, list[float]] = defaultdict(list)
+    for r in rows:
+        v = r[est_key]
+        if v == v:  # not NaN
+            by_frac[r["true_frac"]].append(v)
+    blanks = by_frac.get(0.0, [])
+    lob = compute_lob(blanks)
+    if not math.isfinite(lob):
+        return float("nan"), float("nan")
+    fracs = sorted(f for f in by_frac if f > 0)
+    rates = [detection_rate(by_frac[f], lob) for f in fracs]
+    lod = fit_lod(fracs, rates)
+    # A LoD past the probed ceiling means the donor is not detectable here;
+    # report it as above-range (inf) rather than an extrapolated number.
+    if lod is None or not math.isfinite(lod) or lod > MAX_PROBED:
+        lod = float("inf")
+    return lob, lod
+
+
 def summarise(raw: list[dict]) -> list[dict]:
-    """Aggregate raw rows into per-cell summary statistics."""
-    cells: dict[tuple, list[dict]] = {}
+    """Aggregate raw rows into per-cell LoB/LoD (standard and robust)."""
+    cells: dict[tuple, list[dict]] = defaultdict(list)
     for r in raw:
-        key = (r["relatedness"], r["kind"], r["clonal_fraction"], r["burden"], r["true_frac"])
-        cells.setdefault(key, []).append(r)
+        cells[(r["relatedness"], r["kind"], r["clonal_fraction"], r["burden"])].append(r)
 
     out: list[dict] = []
-    for (relatedness, kind, clonal, burden, true_frac), rs in sorted(cells.items()):
-        valid = [r for r in rs if r["est_frac"] == r["est_frac"]]  # drop NaN
-        if not valid:
-            continue
-        errs = [r["est_frac"] - true_frac for r in valid]
-        covered = [1 if r["ci_lo"] <= true_frac <= r["ci_hi"] else 0 for r in valid]
-        rob_valid = [r for r in valid if r["est_frac_robust"] == r["est_frac_robust"]]
-        rob_errs = [r["est_frac_robust"] - true_frac for r in rob_valid]
-        rob_covered = [
-            1 if r["ci_lo_robust"] <= true_frac <= r["ci_hi_robust"] else 0 for r in rob_valid
-        ]
+    for (relatedness, kind, clonal, burden), rs in sorted(cells.items()):
+        lob_std, lod_std = _cell_lod(rs, "est_frac")
+        lob_rob, lod_rob = _cell_lod(rs, "est_frac_robust")
+        n_reps = max((sum(1 for r in rs if r["true_frac"] == f) for f in TRUE_FRACTIONS), default=0)
         out.append(
             {
                 "relatedness": relatedness,
                 "kind": kind,
                 "clonal_fraction": clonal,
                 "burden": burden,
-                "true_frac": true_frac,
-                "n_reps": len(valid),
-                "mean_est": statistics.fmean(r["est_frac"] for r in valid),
-                "bias": statistics.fmean(errs),
-                "mae": statistics.fmean(abs(e) for e in errs),
-                "rmse": (statistics.fmean(e * e for e in errs)) ** 0.5,
-                "ci_coverage": statistics.fmean(covered),
-                "mae_robust": statistics.fmean(abs(e) for e in rob_errs) if rob_errs else float("nan"),
-                "bias_robust": statistics.fmean(rob_errs) if rob_errs else float("nan"),
-                "ci_coverage_robust": statistics.fmean(rob_covered) if rob_covered else float("nan"),
-                "mean_n_affected": statistics.fmean(r["n_affected"] for r in valid),
-                "mean_n_flagged": statistics.fmean(r["n_flagged"] for r in valid),
-                "mean_n_robust_excluded": statistics.fmean(r["n_robust_excluded"] for r in valid),
-                "mean_n_informative": statistics.fmean(r["n_informative"] for r in valid),
+                "n_reps_per_frac": n_reps,
+                "lob_std": lob_std,
+                "lod_std": lod_std,
+                "lob_robust": lob_rob,
+                "lod_robust": lod_rob,
+                "mean_n_affected": sum(r["n_affected"] for r in rs) / len(rs),
+                "mean_n_robust_excluded": sum(r["n_robust_excluded"] for r in rs) / len(rs),
+                "mean_n_informative": sum(r["n_informative"] for r in rs) / len(rs),
             }
         )
     return out
@@ -309,10 +393,9 @@ def main() -> None:
 
     summary = summarise(raw)
     summary_fields = [
-        "relatedness", "kind", "clonal_fraction", "burden", "true_frac", "n_reps",
-        "mean_est", "bias", "mae", "rmse", "ci_coverage",
-        "mae_robust", "bias_robust", "ci_coverage_robust",
-        "mean_n_affected", "mean_n_flagged", "mean_n_robust_excluded", "mean_n_informative",
+        "relatedness", "kind", "clonal_fraction", "burden", "n_reps_per_frac",
+        "lob_std", "lod_std", "lob_robust", "lod_robust",
+        "mean_n_affected", "mean_n_robust_excluded", "mean_n_informative",
     ]
     write_csv(FACTS_DIR / "cnv_loh_summary.csv", summary, summary_fields)
 
@@ -325,52 +408,45 @@ def main() -> None:
 
 
 def build_headline(summary: list[dict]) -> list[dict]:
-    """Pull interpretable headline numbers per aberration kind."""
+    """Pull interpretable headline LoD numbers per aberration kind."""
     max_burden = max(BURDEN_LEVELS)
 
-    low_burden = min(b for b in BURDEN_LEVELS if b > 0)
+    def cell(rel, kind, burden):
+        for s in summary:
+            if (s["relatedness"] == rel and s["kind"] == kind
+                    and abs(s["burden"] - burden) < 1e-9):
+                return s
+        return None
 
-    def mae_mean(rows, field="mae"):
-        vals = [s[field] for s in rows if s[field] == s[field]]
-        return statistics.fmean(vals) if vals else float("nan")
+    def pct(x):
+        if x != x:  # NaN
+            return float("nan")
+        if not math.isfinite(x):
+            return f">{MAX_PROBED * 100:g}"  # above probed range = undetectable
+        return round(x * 100, 4)  # LoD as donor %
 
     headline: list[dict] = []
     for rel in RELATEDNESS_LEVELS:
-        base = mae_mean([s for s in summary if s["relatedness"] == rel and s["kind"] == "baseline"])
-        headline.append({"metric": f"mae_baseline_{rel}", "value": round(base, 5)})
+        base = cell(rel, "baseline", 0.0)
+        if base:
+            headline.append({"metric": f"lod_pct_baseline_{rel}", "value": pct(base["lod_std"])})
         for kind in KINDS:
-            worst_rows = [
-                s for s in summary
-                if s["relatedness"] == rel and s["kind"] == kind
-                and abs(s["burden"] - max_burden) < 1e-9
-                and abs(s["clonal_fraction"] - 1.0) < 1e-9
-            ]
-            worst = mae_mean(worst_rows)
-            headline.append({"metric": f"mae_{kind}_b{max_burden}_pureclone_{rel}", "value": round(worst, 5)})
+            worst = cell(rel, kind, max_burden)
+            if not worst:
+                continue
             headline.append(
-                {"metric": f"mae_inflation_x_{kind}_{rel}",
-                 "value": round(worst / base, 2) if base > 0 else float("nan")}
+                {"metric": f"lod_pct_{kind}_b{max_burden}_std_{rel}", "value": pct(worst["lod_std"])}
             )
-            # Robust mitigation at a realistic low burden, pure clone.
-            low_rows = [
-                s for s in summary
-                if s["relatedness"] == rel and s["kind"] == kind
-                and abs(s["burden"] - low_burden) < 1e-9
-                and abs(s["clonal_fraction"] - 1.0) < 1e-9
-            ]
-            headline.append({"metric": f"mae_{kind}_b{low_burden}_std_{rel}",
-                             "value": round(mae_mean(low_rows), 5)})
-            headline.append({"metric": f"mae_{kind}_b{low_burden}_robust_{rel}",
-                             "value": round(mae_mean(low_rows, "mae_robust"), 5)})
-    # Outlier flagging at the highest burden, pure clone (across kinds/relatedness).
-    flagged_rows = [s for s in summary if s["kind"] != "baseline"
-                    and abs(s["burden"] - max_burden) < 1e-9
-                    and abs(s["clonal_fraction"] - 1.0) < 1e-9]
-    if flagged_rows:
-        headline.append({"metric": "mean_markers_affected_highburden",
-                         "value": round(statistics.fmean(s["mean_n_affected"] for s in flagged_rows), 2)})
-        headline.append({"metric": "mean_markers_flagged_highburden",
-                         "value": round(statistics.fmean(s["mean_n_flagged"] for s in flagged_rows), 2)})
+            headline.append(
+                {"metric": f"lod_pct_{kind}_b{max_burden}_robust_{rel}",
+                 "value": pct(worst["lod_robust"])}
+            )
+            if base and math.isfinite(base["lod_std"]) and base["lod_std"] > 0:
+                w = worst["lod_std"]
+                infl = round(w / base["lod_std"], 2) if math.isfinite(w) else "above_range"
+                headline.append(
+                    {"metric": f"lod_inflation_x_{kind}_b{max_burden}_{rel}", "value": infl}
+                )
     return headline
 
 

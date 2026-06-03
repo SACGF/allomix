@@ -255,6 +255,11 @@ rule overdispersion_lod:
 
 
 rule cnv_loh_validation:
+    # Default is the single operating point (100 markers, 1000x, both detection
+    # directions). The full depth x markers curve is a much heavier run; produce
+    # it on a dedicated machine with e.g.
+    #   python paper/scripts/run_cnv_loh_validation.py \
+    #       --depths 100 250 500 1000 2000 --n-markers 25 50 75 100 200 400
     output:
         CNV_LOH_FACTS,
     shell:

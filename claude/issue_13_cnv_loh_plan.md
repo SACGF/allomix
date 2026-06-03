@@ -104,7 +104,7 @@ cell in one pass.
 | Clonal fraction | 1.0 (pure clone) |
 | True minor fraction | 0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2 |
 | Replicates | 30 |
-| Markers / depth | 100 / 1000x |
+| Markers / depth | 100 / 1000x by default; sweepable via `--n-markers` / `--depths` (nested markers, like `run_lod_validation`) for a full depth x markers curve |
 
 (For `cnloh` only het markers are eligible; for `deletion`/`gain` every marker
 is, so they affect ~2x as many markers at matched burden.) Fixed noise model
@@ -125,10 +125,13 @@ and gives the robust refit more clean markers to anchor on (so recovery improves
 with more markers; at 100 markers the floor binds for siblings). These fixed
 conditions and the depth-independence note are stated in the figure caption.
 
-Outputs: `output/facts/cnv_loh_{raw,summary,headline}.csv` (with a `mode` column)
-and `output/facts/fig_cnv_loh.png` (2 rows = directions, 3 cols = kinds; log
-donor-% LoD axis; std solid / robust dashed). Wired into `paper/Snakefile`
-(`cnv_loh_validation`, `cnv_loh_plot`).
+Outputs: `output/facts/cnv_loh_{raw,summary,headline}.csv` (summary has `mode`,
+`depth`, `n_markers` columns; headline is a single wide row for paper
+templating) and `output/facts/fig_cnv_loh.png` (2 rows = directions, 3 cols =
+kinds; log donor-% LoD axis; std solid / robust dashed). Wired into
+`paper/Snakefile` (`cnv_loh_validation`, `cnv_loh_plot`) and into the paper:
+Results subsection "Recipient Copy-Number Aberrations" (Figure 8) plus a Methods
+subsection, templating `{{ cnv_loh_headline.* }}`.
 
 ## Results
 

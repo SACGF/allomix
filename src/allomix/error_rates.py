@@ -18,8 +18,6 @@ applies a configurable floor so a zero observed rate cannot make a single stray
 read produce infinite log-likelihood penalties.
 """
 
-from __future__ import annotations
-
 import csv
 from dataclasses import dataclass
 from pathlib import Path

@@ -13,8 +13,6 @@ Usage:
     python scripts/run_depth_validation.py --depths 50 100 200 500 1000 --n-replicates 5
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import math

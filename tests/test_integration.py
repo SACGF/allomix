@@ -4,8 +4,6 @@ Uses the joint-called test VCFs (produced by build_joint_vcf) and runs
 genotype -> chimerism -> qc -> report, verifying the output.
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

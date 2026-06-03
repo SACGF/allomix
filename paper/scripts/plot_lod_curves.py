@@ -10,8 +10,6 @@ panels).
 Output: output/facts/fig5_lod_curves.png
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import math

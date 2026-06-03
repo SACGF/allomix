@@ -7,8 +7,6 @@ Usage:
     python scripts/generate_paper_facts.py
 """
 
-from __future__ import annotations
-
 import csv
 import math
 import random

@@ -14,8 +14,6 @@ Usage:
     python paper/scripts/generate_supp_synthetic.py --calibration-batch 0 10
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import math

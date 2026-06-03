@@ -24,8 +24,6 @@ Usage:
         output/idt_rhampseq_sid_panel.vcf.gz
 """
 
-from __future__ import annotations
-
 import argparse
 import subprocess
 import sys

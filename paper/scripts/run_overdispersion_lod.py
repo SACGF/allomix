@@ -22,8 +22,6 @@ Output:
     output/facts/overdispersion_lod.csv
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import math

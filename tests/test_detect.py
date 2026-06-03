@@ -7,8 +7,6 @@ binomially-sampled donor-absent counts. The realistic-bias / overdispersion
 path is exercised by the prototype in ``paper/scripts/run_presence_lod.py``.
 """
 
-from __future__ import annotations
-
 import math
 import random
 

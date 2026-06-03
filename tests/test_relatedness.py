@@ -1,7 +1,5 @@
 """Tests for allomix.relatedness — relatedness estimation and swap detection."""
 
-from __future__ import annotations
-
 import random
 
 import pytest

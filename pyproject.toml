@@ -34,8 +34,13 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
 ]
-paper = [
+# User-facing helper scripts (joint-calling prep, QC, diagnosis) run on the
+# base runtime deps. Only the plotting/visualisation scripts need matplotlib.
+scripts = [
     "matplotlib>=3.7",
+]
+paper = [
+    "allomix[scripts]",
     "snakemake>=8.0",
     "vibepaper",
 ]

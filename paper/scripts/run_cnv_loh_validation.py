@@ -87,8 +87,18 @@ CLONAL_FRACTIONS = [1.0]
 TRUE_FRACTIONS = [0.0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
 MAX_PROBED = 0.2
 
-N_MARKERS = 100
-DEPTH = 1000
+# Depth and panel-size grids, swept like run_lod_validation.py / plot_lod_curves.py.
+# Defaults are a single operating point (100 markers, 1000x) so the Snakefile / CI
+# build stays cheap and reproducible. To produce the full depth x markers curve
+# (the heavy run; do it on a dedicated machine), pass e.g.
+#   --depths 100 250 500 1000 2000 --n-markers 25 50 75 100 200 400
+# Markers are nested: each cell blends the largest panel once per depth and
+# evaluates every smaller panel as a strict prefix (as in run_lod_validation).
+DEPTHS = [1000]
+N_MARKERS_GRID = [100]
+FULL_DEPTHS = [100, 250, 500, 1000, 2000]
+FULL_N_MARKERS_GRID = [25, 50, 75, 100, 200, 400]
+
 MAF_RANGE = (0.2, 0.5)
 ERROR_RATE = 0.01
 LOCUS_DROPOUT_RATE = 0.016
@@ -172,19 +182,21 @@ def fit_lod(fractions: list[float], detection_rates: list[float]) -> float | Non
     return f95
 
 
-def _eval_cell(
+def _blend_and_estimate(
     mode: str,
     host_vcf: Path,
     donor_vcf: Path,
-    host_md: list,
-    donor_md: list,
+    host_md_full: list,
+    donor_md_full: list,
     biases: list[float],
     aberrations: list | None,
     minor_frac: float,
+    depth: int,
     blend_seed: int,
     admix_path: Path,
-) -> dict:
-    """Blend one sample and estimate the minor component for the LoD.
+    n_markers_grid: list[int],
+) -> dict[int, dict]:
+    """Blend one sample at ``depth`` and estimate the minor component per panel.
 
     ``minor_frac`` is the true fraction of the minor (detected) component. The
     recipient/host always carries the aberration; ``mode`` sets which role it
@@ -195,15 +207,16 @@ def _eval_cell(
       - ``"host"``: detect the recipient relapse (minor) carrying the aberration;
         donor is the clean major background. Early-warning relapse regime.
 
-    The returned ``est`` is the estimated minor-component fraction (donor f, or
-    1 - f for host mode), the detection statistic for the LoD.
+    The full panel is blended once; each panel size in ``n_markers_grid`` is then
+    evaluated as a strict prefix (nested, as in run_lod_validation). Returns a
+    dict keyed by panel size; ``est`` is the estimated minor-component fraction.
     """
     donor_frac = minor_frac if mode == "donor" else 1.0 - minor_frac
     blend = blend_vcfs(
         host_path=str(host_vcf),
         donor_path=str(donor_vcf),
         donor_fraction=donor_frac,
-        target_depth=DEPTH,
+        target_depth=depth,
         sample_name="admix",
         seed=blend_seed,
         fixed_biases=biases,
@@ -218,48 +231,60 @@ def _eval_cell(
         else None
     )
     write_vcf(blend, admix_path)
-    admix_md = parse_vcf(str(admix_path), min_dp=0, min_gq=0)
-
-    genos = classify_markers(host_md, [donor_md], admix_md, min_dp=0, min_gq=0, pass_only=False)
-    if len(genos.informative) < 1:
-        return dict(est=float("nan"), est_robust=float("nan"),
-                    n_informative=0, n_robust_excluded=0)
-
-    calibration = PanelCalibration(biases=bias_dict or {})
-    result = estimate_single_donor_bb(
-        genos.informative, error_rate=ERROR_RATE,
-        grid_steps=ESTIMATOR_GRID_STEPS, calibration=calibration,
-    )
-    # Robust refit (default policy) to show the mitigation effect in the paper.
-    robust = estimate_single_donor_bb(
-        genos.informative, error_rate=ERROR_RATE,
-        grid_steps=ESTIMATOR_GRID_STEPS, calibration=calibration, robust="auto",
-    )
+    admix_md_full = parse_vcf(str(admix_path), min_dp=0, min_gq=0)
 
     def minor(f: float) -> float:
         return f if mode == "donor" else 1.0 - f
 
-    return dict(
-        est=minor(result.donor_fraction),
-        est_robust=minor(robust.donor_fraction),
-        n_informative=result.n_informative,
-        n_robust_excluded=robust.n_robust_excluded,
-    )
+    out: dict[int, dict] = {}
+    for n_markers in n_markers_grid:
+        genos = classify_markers(
+            host_md_full[:n_markers], [donor_md_full[:n_markers]], admix_md_full[:n_markers],
+            min_dp=0, min_gq=0, pass_only=False,
+        )
+        if len(genos.informative) < 1:
+            out[n_markers] = dict(est=float("nan"), est_robust=float("nan"),
+                                  n_informative=0, n_robust_excluded=0)
+            continue
+        calibration = PanelCalibration(biases=bias_dict)
+        result = estimate_single_donor_bb(
+            genos.informative, error_rate=ERROR_RATE,
+            grid_steps=ESTIMATOR_GRID_STEPS, calibration=calibration,
+        )
+        robust = estimate_single_donor_bb(
+            genos.informative, error_rate=ERROR_RATE,
+            grid_steps=ESTIMATOR_GRID_STEPS, calibration=calibration, robust="auto",
+        )
+        out[n_markers] = dict(
+            est=minor(result.donor_fraction),
+            est_robust=minor(robust.donor_fraction),
+            n_informative=result.n_informative,
+            n_robust_excluded=robust.n_robust_excluded,
+        )
+    return out
 
 
-def run_pair(mode: str, relatedness: str, rep: int, base_seed: int) -> list[dict]:
-    """Evaluate every aberration cell for one fixed genotype pair, one mode.
+def run_pair(
+    mode: str,
+    relatedness: str,
+    rep: int,
+    base_seed: int,
+    depths: list[int],
+    n_markers_grid: list[int],
+) -> list[dict]:
+    """Evaluate every aberration / depth / panel cell for one genotype pair, one mode.
 
     Genotypes and capture biases are fixed for this (relatedness, rep). Within
-    the pair we vary the aberration kind, burden, and minor-component fraction.
-    The no-aberration baseline (burden 0) is run once and shared across kinds.
-    ``mode`` is "donor" or "host" (see ``_eval_cell``).
+    the pair we vary the aberration kind, burden, minor-component fraction,
+    depth, and panel size (markers nested as prefixes). The no-aberration
+    baseline (burden 0) is run once and shared across kinds.
     """
+    max_markers = max(n_markers_grid)
     pair_dir = WORK_DIR / f"{mode}_{relatedness}_rep{rep}"
     pair_dir.mkdir(parents=True, exist_ok=True)
 
     gt_rng = random.Random(derive_seed("gt", relatedness, rep, base_seed))
-    markers = generate_related_genotypes(N_MARKERS, relatedness, gt_rng, maf_range=MAF_RANGE)
+    markers = generate_related_genotypes(max_markers, relatedness, gt_rng, maf_range=MAF_RANGE)
 
     host_vcf = pair_dir / "host.vcf"
     donor_vcf = pair_dir / "donor.vcf"
@@ -269,22 +294,31 @@ def run_pair(mode: str, relatedness: str, rep: int, base_seed: int) -> list[dict
     donor_md = parse_vcf(str(donor_vcf), min_dp=0, min_gq=0)
 
     bias_rng = random.Random(derive_seed("bias", relatedness, rep, base_seed))
-    biases = generate_marker_biases_realistic(N_MARKERS, bias_rng)
+    biases = generate_marker_biases_realistic(max_markers, bias_rng)
 
     admix_path = pair_dir / "admix.vcf"
     rows: list[dict] = []
 
+    def emit(kind, burden, clonal, aberrations, true_frac, depth):
+        blend_seed = derive_seed("blend", mode, relatedness, rep, kind, burden, clonal,
+                                 true_frac, depth)
+        per_panel = _blend_and_estimate(
+            mode, host_vcf, donor_vcf, host_md, donor_md, biases, aberrations,
+            true_frac, depth, blend_seed, admix_path, n_markers_grid,
+        )
+        for n_markers, res in per_panel.items():
+            n_aff = 0 if aberrations is None else sum(1 for a in aberrations[:n_markers] if a)
+            rows.append({
+                "mode": mode, "relatedness": relatedness, "rep": rep, "kind": kind,
+                "burden": burden, "clonal_fraction": clonal, "true_frac": true_frac,
+                "depth": depth, "n_markers": n_markers, "n_affected": n_aff, "seed": blend_seed,
+                **res,
+            })
+
     # Baseline (no aberration), shared by every kind.
     for true_frac in TRUE_FRACTIONS:
-        blend_seed = derive_seed("blend", mode, relatedness, rep, "baseline", true_frac)
-        row = {
-            "mode": mode, "relatedness": relatedness, "rep": rep, "kind": "baseline",
-            "burden": 0.0, "clonal_fraction": 0.0, "true_frac": true_frac,
-            "n_affected": 0, "seed": blend_seed,
-        }
-        row.update(_eval_cell(mode, host_vcf, donor_vcf, host_md, donor_md, biases,
-                              None, true_frac, blend_seed, admix_path))
-        rows.append(row)
+        for depth in depths:
+            emit("baseline", 0.0, 0.0, None, true_frac, depth)
 
     for kind in KINDS:
         for burden in BURDEN_LEVELS:
@@ -297,20 +331,9 @@ def run_pair(mode: str, relatedness: str, rep: int, base_seed: int) -> list[dict
                 aberrations = assign_cnv_aberrations(
                     markers, burden, clonal, aberr_rng, kind=kind
                 )
-                n_affected = sum(1 for a in aberrations if a is not None)
-
                 for true_frac in TRUE_FRACTIONS:
-                    blend_seed = derive_seed(
-                        "blend", mode, relatedness, rep, kind, burden, clonal, true_frac
-                    )
-                    row = {
-                        "mode": mode, "relatedness": relatedness, "rep": rep, "kind": kind,
-                        "burden": burden, "clonal_fraction": clonal, "true_frac": true_frac,
-                        "n_affected": n_affected, "seed": blend_seed,
-                    }
-                    row.update(_eval_cell(mode, host_vcf, donor_vcf, host_md, donor_md, biases,
-                                          aberrations, true_frac, blend_seed, admix_path))
-                    rows.append(row)
+                    for depth in depths:
+                        emit(kind, burden, clonal, aberrations, true_frac, depth)
 
     return rows
 
@@ -345,10 +368,11 @@ def summarise(raw: list[dict]) -> list[dict]:
     """Aggregate raw rows into per-cell minor-component LoB/LoD (std and robust)."""
     cells: dict[tuple, list[dict]] = defaultdict(list)
     for r in raw:
-        cells[(r["mode"], r["relatedness"], r["kind"], r["clonal_fraction"], r["burden"])].append(r)
+        cells[(r["mode"], r["relatedness"], r["kind"], r["clonal_fraction"],
+               r["burden"], r["depth"], r["n_markers"])].append(r)
 
     out: list[dict] = []
-    for (mode, relatedness, kind, clonal, burden), rs in sorted(cells.items()):
+    for (mode, relatedness, kind, clonal, burden, depth, n_markers), rs in sorted(cells.items()):
         lob_std, lod_std = _cell_lod(rs, "est")
         lob_rob, lod_rob = _cell_lod(rs, "est_robust")
         n_reps = max((sum(1 for r in rs if r["true_frac"] == f) for f in TRUE_FRACTIONS), default=0)
@@ -359,6 +383,8 @@ def summarise(raw: list[dict]) -> list[dict]:
                 "kind": kind,
                 "clonal_fraction": clonal,
                 "burden": burden,
+                "depth": depth,
+                "n_markers": n_markers,
                 "n_reps_per_frac": n_reps,
                 "lob_std": lob_std,
                 "lod_std": lod_std,
@@ -387,6 +413,12 @@ def main() -> None:
     parser.add_argument("--n-workers", type=int, default=4)
     parser.add_argument("--base-seed", type=int, default=2026)
     parser.add_argument("--modes", nargs="+", default=list(MODES), choices=MODES)
+    parser.add_argument("--depths", nargs="+", type=int, default=DEPTHS,
+                        help=f"Mean depths to sweep (default {DEPTHS}; full curve: {FULL_DEPTHS})")
+    parser.add_argument("--n-markers", nargs="+", type=int, default=N_MARKERS_GRID,
+                        dest="n_markers_grid",
+                        help=f"Panel sizes to sweep, nested (default {N_MARKERS_GRID}; "
+                             f"full curve: {FULL_N_MARKERS_GRID})")
     args = parser.parse_args()
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -400,81 +432,103 @@ def main() -> None:
     raw: list[dict] = []
     if args.n_workers <= 1:
         for mode, rel, rep in jobs:
-            raw.extend(run_pair(mode, rel, rep, args.base_seed))
+            raw.extend(run_pair(mode, rel, rep, args.base_seed, args.depths, args.n_markers_grid))
     else:
         with ProcessPoolExecutor(max_workers=args.n_workers) as ex:
-            futures = [ex.submit(run_pair, mode, rel, rep, args.base_seed) for mode, rel, rep in jobs]
+            futures = [
+                ex.submit(run_pair, mode, rel, rep, args.base_seed, args.depths, args.n_markers_grid)
+                for mode, rel, rep in jobs
+            ]
             for fut in as_completed(futures):
                 raw.extend(fut.result())
 
     raw_fields = [
         "mode", "relatedness", "rep", "kind", "burden", "clonal_fraction", "true_frac",
-        "n_affected", "seed", "est", "est_robust", "n_informative", "n_robust_excluded",
+        "depth", "n_markers", "n_affected", "seed", "est", "est_robust",
+        "n_informative", "n_robust_excluded",
     ]
     write_csv(FACTS_DIR / "cnv_loh_raw.csv", raw, raw_fields)
 
     summary = summarise(raw)
     summary_fields = [
-        "mode", "relatedness", "kind", "clonal_fraction", "burden", "n_reps_per_frac",
-        "lob_std", "lod_std", "lob_robust", "lod_robust",
+        "mode", "relatedness", "kind", "clonal_fraction", "burden", "depth", "n_markers",
+        "n_reps_per_frac", "lob_std", "lod_std", "lob_robust", "lod_robust",
         "mean_n_affected", "mean_n_robust_excluded", "mean_n_informative",
     ]
     write_csv(FACTS_DIR / "cnv_loh_summary.csv", summary, summary_fields)
 
     headline = build_headline(summary)
-    write_csv(FACTS_DIR / "cnv_loh_headline.csv", headline, ["metric", "value"])
+    # Single wide row, like lod_headline.csv, so the paper can template
+    # `{{ cnv_loh_headline.<field> }}`.
+    write_csv(FACTS_DIR / "cnv_loh_headline.csv", [headline], list(headline.keys()))
 
     print(f"Wrote {len(raw)} raw rows, {len(summary)} summary cells to {FACTS_DIR}")
-    for h in headline:
-        print(f"  {h['metric']}: {h['value']}")
+    for k, v in headline.items():
+        print(f"  {k}: {v}")
 
 
 def build_headline(summary: list[dict]) -> list[dict]:
-    """Pull interpretable headline LoD numbers per mode / aberration kind."""
+    """Pull interpretable headline LoD numbers per mode / aberration kind.
+
+    Headline numbers are reported at a reference operating point (the largest
+    swept depth and panel size present), so they are well-defined whether the
+    sweep ran a single cell or the full depth x markers grid.
+    """
     max_burden = max(BURDEN_LEVELS)
+    ref_depth = max(s["depth"] for s in summary) if summary else None
+    ref_markers = max(s["n_markers"] for s in summary) if summary else None
 
     def cell(mode, rel, kind, burden):
         for s in summary:
             if (s["mode"] == mode and s["relatedness"] == rel and s["kind"] == kind
-                    and abs(s["burden"] - burden) < 1e-9):
+                    and abs(s["burden"] - burden) < 1e-9
+                    and s["depth"] == ref_depth and s["n_markers"] == ref_markers):
                 return s
         return None
 
+    low_burden = min(b for b in BURDEN_LEVELS if b > 0)
+
     def lod_pct(lod):
-        """Minor-component LoD as a %; '>ceiling' when above the probed range."""
-        if lod != lod:  # NaN
+        """Minor-component LoD as a %; '>ceiling' string when above probed range."""
+        if lod != lod:
             return float("nan")
-        if not math.isfinite(lod):  # above probed ceiling = undetectable
+        if not math.isfinite(lod):
             return f">{MAX_PROBED * 100:g}"
         return round(lod * 100, 4)
 
-    headline: list[dict] = []
-    for mode in MODES:
-        for rel in RELATEDNESS_LEVELS:
-            base = cell(mode, rel, "baseline", 0.0)
-            if base:
-                headline.append(
-                    {"metric": f"{mode}_lod_pct_baseline_{rel}", "value": lod_pct(base["lod_std"])}
-                )
-            for kind in KINDS:
-                worst = cell(mode, rel, kind, max_burden)
-                if not worst:
-                    continue
-                headline.append(
-                    {"metric": f"{mode}_lod_pct_{kind}_b{max_burden}_std_{rel}",
-                     "value": lod_pct(worst["lod_std"])}
-                )
-                headline.append(
-                    {"metric": f"{mode}_lod_pct_{kind}_b{max_burden}_robust_{rel}",
-                     "value": lod_pct(worst["lod_robust"])}
-                )
-                if base and math.isfinite(base["lod_std"]) and base["lod_std"] > 0:
-                    w = worst["lod_std"]
-                    infl = round(w / base["lod_std"], 2) if math.isfinite(w) else "above_range"
-                    headline.append(
-                        {"metric": f"{mode}_lod_inflation_x_{kind}_b{max_burden}_{rel}", "value": infl}
-                    )
-    return headline
+    def lp(mode, rel, kind, burden, field):
+        c = cell(mode, rel, kind, burden)
+        return lod_pct(c[field]) if c else float("nan")
+
+    # Single wide row of named facts (paper templating consumes
+    # `{{ cnv_loh_headline.<field> }}`); reference operating point = largest
+    # swept depth and panel size.
+    h: dict = {
+        "n_reps_per_frac": summary[0]["n_reps_per_frac"] if summary else 0,
+        "ref_depth": ref_depth,
+        "ref_markers": ref_markers,
+        # Relapse (host) detection: baseline and the worst aberration cell.
+        "relapse_lod_baseline_unrel_pct": lp("host", "unrelated", "baseline", 0.0, "lod_std"),
+        "relapse_lod_baseline_sib_pct": lp("host", "sibling", "baseline", 0.0, "lod_std"),
+        # Donor detection (mixed chimerism): baselines and key cells.
+        "donor_lod_baseline_unrel_pct": lp("donor", "unrelated", "baseline", 0.0, "lod_std"),
+        "donor_lod_baseline_sib_pct": lp("donor", "sibling", "baseline", 0.0, "lod_std"),
+        "donor_lod_cnloh_low_unrel_std_pct": lp("donor", "unrelated", "cnloh", low_burden, "lod_std"),
+        "donor_lod_deletion_low_unrel_std_pct": lp("donor", "unrelated", "deletion", low_burden, "lod_std"),
+        "donor_lod_deletion_low_unrel_robust_pct": lp("donor", "unrelated", "deletion", low_burden, "lod_robust"),
+        "donor_lod_gain_high_unrel_std_pct": lp("donor", "unrelated", "gain", max_burden, "lod_std"),
+        "donor_lod_gain_high_unrel_robust_pct": lp("donor", "unrelated", "gain", max_burden, "lod_robust"),
+    }
+    # Worst (largest) relapse LoD across all aberration cells at the reference
+    # point, to bound the "relapse detection unaffected" claim.
+    relapse_cells = [
+        s for s in summary
+        if s["mode"] == "host" and s["kind"] != "baseline"
+        and s["depth"] == ref_depth and s["n_markers"] == ref_markers
+        and math.isfinite(s["lod_std"])
+    ]
+    h["relapse_lod_max_pct"] = round(max(s["lod_std"] for s in relapse_cells) * 100, 4) if relapse_cells else float("nan")
+    return h
 
 
 if __name__ == "__main__":

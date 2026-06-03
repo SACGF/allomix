@@ -13,6 +13,7 @@ from typing import TextIO
 from allomix.chimerism import ChimerismResult, MultiDonorResult
 from allomix.detect import HostPresenceResult
 from allomix.qc import QCReport
+from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
 
 # Sentinel for the host-presence cells when the detector did not run (e.g.
 # --no-host-presence) or produced no usable markers. Keeps the TSV
@@ -83,6 +84,76 @@ _HOST_PRESENCE_TSV_COLS = [
     "host_err_source",
     "host_artifact_filtered",
 ]
+
+# Relatedness columns, appended after the host-presence block. For multi-donor
+# samples the host-vs-donor pairs are joined with ";" within each cell, keeping
+# the row rectangular. The pass/fail verdict itself lives in qc_status /
+# qc_warnings, not a separate column.
+_RELATEDNESS_TSV_COLS = [
+    "relatedness",
+    "relatedness_ci",
+    "relatedness_confidence",
+    "relationship",
+]
+
+
+def _relatedness_tsv_cells(relatedness: list[RelatednessResult] | None) -> list[str]:
+    """Format the four relatedness columns from the host-vs-donor pairs.
+
+    Order matches ``_RELATEDNESS_TSV_COLS``. Reports the host-vs-donor pairs (in
+    donor order); multiple donors are joined with ";". Returns ``NA`` cells when
+    no relatedness was computed.
+    """
+    if not relatedness:
+        return [_NA] * len(_RELATEDNESS_TSV_COLS)
+    host_pairs = [r for r in relatedness if r.a_name == "host"]
+    if not host_pairs:
+        return [_NA] * len(_RELATEDNESS_TSV_COLS)
+
+    coefs, cis, confs, rels = [], [], [], []
+    for r in host_pairs:
+        if r.coefficient is None:
+            coefs.append(_NA)
+            cis.append(_NA)
+        else:
+            coefs.append(f"{r.coefficient:.4f}")
+            cis.append(f"{r.ci_low:.4f},{r.ci_high:.4f}")
+        confs.append(r.confidence)
+        rels.append(r.relationship)
+    return [";".join(coefs), ";".join(cis), ";".join(confs), ";".join(rels)]
+
+
+def _relatedness_json(relatedness: list[RelatednessResult] | None) -> list[dict] | None:
+    """JSON view of all relatedness pairs; mirrors the TSV columns."""
+    if not relatedness:
+        return None
+    out = []
+    for r in relatedness:
+        out.append(
+            {
+                "pair": r.pair,
+                "coefficient": round(r.coefficient, 6) if r.coefficient is not None else None,
+                "ci": [round(r.ci_low, 6), round(r.ci_high, 6)]
+                if r.ci_low is not None
+                else None,
+                "confidence": r.confidence,
+                "relationship": r.relationship,
+                "n_sites": r.n_sites,
+            }
+        )
+    return out
+
+
+def _admix_consistency_json(ac: AdmixConsistencyResult | None) -> dict | None:
+    """JSON view of the consensus-homozygote swap check."""
+    if ac is None:
+        return None
+    return {
+        "n_consensus_hom": ac.n_consensus_hom,
+        "n_discordant": ac.n_discordant,
+        "discordant_fraction": round(ac.discordant_fraction, 6),
+        "swap_pval": ac.swap_pval,
+    }
 
 
 def _is_multi_donor(result: object) -> bool:
@@ -158,6 +229,7 @@ def _write_tsv(
         "qc_status",
         "qc_warnings",
         *_HOST_PRESENCE_TSV_COLS,
+        *_RELATEDNESS_TSV_COLS,
     ]
     fh.write("\t".join(summary_cols) + "\n")
 
@@ -181,6 +253,7 @@ def _write_tsv(
         qc_status_str,
         _warnings_cell(qc),
         *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
+        *_relatedness_tsv_cells(getattr(result, "relatedness", None)),
     ]
     fh.write("\t".join(summary_vals) + "\n")
 
@@ -247,6 +320,7 @@ def _write_tsv_multi(
             "qc_status",
             "qc_warnings",
             *_HOST_PRESENCE_TSV_COLS,
+            *_RELATEDNESS_TSV_COLS,
         ]
     )
     fh.write("\t".join(cols) + "\n")
@@ -275,6 +349,7 @@ def _write_tsv_multi(
             qc_status_str,
             _warnings_cell(qc),
             *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
+            *_relatedness_tsv_cells(getattr(result, "relatedness", None)),
         ]
     )
     fh.write("\t".join(vals) + "\n")
@@ -377,6 +452,10 @@ def to_json(
             "qc_status": qc.status,
             "warnings": list(qc.warnings),
             "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
+            "relatedness": _relatedness_json(getattr(result, "relatedness", None)),
+            "admix_consistency": _admix_consistency_json(
+                getattr(result, "admix_consistency", None)
+            ),
             "markers": markers_list,
         }
     else:
@@ -403,6 +482,10 @@ def to_json(
             "qc_status": qc.status,
             "warnings": list(qc.warnings),
             "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
+            "relatedness": _relatedness_json(getattr(result, "relatedness", None)),
+            "admix_consistency": _admix_consistency_json(
+                getattr(result, "admix_consistency", None)
+            ),
             "markers": markers_list,
         }
     return out

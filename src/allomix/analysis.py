@@ -25,6 +25,11 @@ from allomix.chimerism import (
 from allomix.detect import DonorHomMarker, donor_hom_markers, host_presence_test
 from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
 from allomix.qc import QCReport, assess_quality
+from allomix.relatedness import (
+    RelatednessResult,
+    admix_consistency,
+    relatedness_coefficient,
+)
 
 
 @dataclass
@@ -66,6 +71,8 @@ def analyse_sample(
     sample_name: str | None = None,
     robust: str = "off",
     robust_k: float = 3.5,
+    expected_relatedness: list[str] | None = None,
+    relatedness_tolerance: int = 1,
 ) -> SampleAnalysis:
     """Run the chimerism pipeline for one pre-parsed admixture sample.
 
@@ -96,6 +103,12 @@ def analyse_sample(
             see ``estimate_single_donor_bb``). Drops host copy-number/LoH-
             inconsistent markers and refits; "auto" is the recommended policy.
         robust_k: Robust residual cut (robust SDs) for the refit.
+        expected_relatedness: Optional declared relationship per donor (one entry
+            per ``donors`` list, value in ``allomix.relatedness.VALID_DECLARATIONS``
+            or "NA"/None for no expectation). Compared against the estimated
+            host-vs-donor relatedness in QC.
+        relatedness_tolerance: Allowed degree distance before a declared-vs-detected
+            relatedness mismatch is flagged (default 1; see ``evaluate_expected``).
 
     Returns:
         A ``SampleAnalysis`` bundling the genotypes, estimate, QC and the
@@ -138,7 +151,31 @@ def analyse_sample(
         )
         dh_markers = donor_hom_markers(genotypes.informative)
 
-    qc = assess_quality(result, genotypes)
+    # Identity QC over the raw reference/admix markers (not the informative set,
+    # which excludes the shared and consensus-homozygous sites these checks need).
+    # Ordering invariant: host-vs-donor pairs first, in donor order, so QC can
+    # align them with ``expected_relatedness``; donor-vs-donor pairs follow.
+    donor_labels = ["donor"] if len(donors) == 1 else [f"donor{i + 1}" for i in range(len(donors))]
+    relatedness: list[RelatednessResult] = [
+        relatedness_coefficient(host, donors[i], "host", donor_labels[i])
+        for i in range(len(donors))
+    ]
+    for i in range(len(donors)):
+        for j in range(i + 1, len(donors)):
+            relatedness.append(
+                relatedness_coefficient(donors[i], donors[j], donor_labels[i], donor_labels[j])
+            )
+    result.relatedness = relatedness
+    result.admix_consistency = admix_consistency(
+        host, donors, admix, error_rate=error_rate, min_dp=min_dp
+    )
+
+    qc = assess_quality(
+        result,
+        genotypes,
+        expected_relatedness=expected_relatedness,
+        relatedness_tolerance=relatedness_tolerance,
+    )
 
     return SampleAnalysis(
         genotypes=genotypes,

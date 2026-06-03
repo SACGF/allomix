@@ -15,6 +15,13 @@ from scipy.stats import chi2
 from allomix.chimerism import ChimerismResult, MarkerResult
 from allomix.detect import HostPresenceResult
 from allomix.genotype import MarkerGenotypes
+from allomix.relatedness import (
+    DEGREE_IDENTICAL,
+    MIN_CONSENSUS,
+    AdmixConsistencyResult,
+    RelatednessResult,
+    evaluate_expected,
+)
 
 # Thresholds for the optional REVIEW warning when the host-presence detector
 # fires significantly but the global MLE does not echo the signal. Tunable
@@ -30,6 +37,10 @@ HOST_PRESENCE_RATIO_GAP = 3.0
 # LoH (or a genotyping problem), and the robust refit itself is unreliable once
 # the aberrant markers are no longer a clear minority.
 ROBUST_REVIEW_FRACTION = 0.15
+# The admixture carries alleles in neither host nor donor: when the
+# consensus-homozygote swap test is significant at this level (and rests on at
+# least MIN_CONSENSUS markers) the sample is promoted to REVIEW.
+SWAP_REVIEW_P = 1e-3
 
 
 @dataclass
@@ -55,6 +66,8 @@ class QCReport:
             model fit or wide CI), so it needs manual interpretation rather than
             being trusted or discarded automatically.
         per_donor_n_informative: Per-donor informative marker counts (multi-donor).
+        relatedness: Estimated relatedness per reference-sample pair, or None.
+        admix_consistency: Consensus-homozygote swap check result, or None.
     """
 
     n_total_markers: int
@@ -71,6 +84,8 @@ class QCReport:
     warnings: list[str] = field(default_factory=list)
     status: str = "PASS"
     per_donor_n_informative: list[int] | None = None
+    relatedness: list[RelatednessResult] | None = None
+    admix_consistency: AdmixConsistencyResult | None = None
 
     @property
     def pass_(self) -> bool:
@@ -242,19 +257,33 @@ def assess_quality(
     result: ChimerismResult,
     genotypes: MarkerGenotypes,
     min_informative: int = 3,
+    expected_relatedness: list[str] | None = None,
+    relatedness_tolerance: int = 1,
 ) -> QCReport:
     """Assess quality of a chimerism result and produce a QC report.
 
     Checks marker counts, sequencing depth, confidence interval width,
-    and goodness-of-fit. Sets a three-state status (PASS / REVIEW / FAIL) and
-    collects warnings. Too few informative markers is a FAIL (unusable); a poor
-    model fit or a wide CI is a REVIEW (computed, but flagged for manual
-    interpretation). Handles both ChimerismResult and MultiDonorResult.
+    goodness-of-fit, and sample identity (relatedness against a declared
+    expectation, and an admixture-vs-(host+donor) swap test). Sets a three-state
+    status (PASS / REVIEW / FAIL) and collects warnings. Too few informative
+    markers is a FAIL (unusable); a relatedness declaration that crosses the
+    related/unrelated boundary is a FAIL (sample swap or mislabel); a poor model
+    fit, a wide CI, a 2-level relatedness mismatch, or a significant admix swap
+    test is a REVIEW (computed, but flagged for manual interpretation). Handles
+    both ChimerismResult and MultiDonorResult.
+
+    Identity inputs are read off ``result`` (``result.relatedness`` and
+    ``result.admix_consistency``, attached by ``analyse_sample``) via getattr,
+    so callers that skip them still get a valid report.
 
     Args:
         result: The chimerism estimation result to evaluate.
         genotypes: Marker genotype classification data.
         min_informative: Minimum number of informative markers required.
+        expected_relatedness: Declared host-vs-donor relationships, aligned with
+            the leading host-vs-donor entries of ``result.relatedness`` (one per
+            donor, in donor order). "NA"/None entries are skipped.
+        relatedness_tolerance: Allowed degree distance for a relatedness PASS.
 
     Returns:
         QCReport with metrics, warnings, and pass/fail status.
@@ -372,9 +401,63 @@ def assess_quality(
         if drop_frac > ROBUST_REVIEW_FRACTION:
             high_robust_drop = True
 
-    # A computed-but-questionable result (poor fit, imprecise, or heavily
-    # trimmed) is flagged for review rather than passed silently or failed.
-    if status != "FAIL" and (poor_gof or wide_ci or high_robust_drop):
+    # Sample-identity QC. Two checks on the reference samples plus the
+    # admixture-vs-(host+donor) swap test.
+    identity_review = False
+    relatedness: list[RelatednessResult] | None = getattr(result, "relatedness", None)
+    duplicate_pairs: set[str] = set()
+    if relatedness:
+        # Duplicate / sample reuse: two reference samples that should be distinct
+        # individuals reading as the same genome. Checked unconditionally (no
+        # declaration needed) since it is intrinsically an error, and it makes
+        # host-vs-donor chimerism meaningless. Hard FAIL with a clear message.
+        for rel in relatedness:
+            if rel.degree == DEGREE_IDENTICAL:
+                status = "FAIL"
+                duplicate_pairs.add(rel.pair)
+                coef = "" if rel.coefficient is None else f"r={rel.coefficient:.2f}, "
+                warnings.append(
+                    f"Identical reference samples: {rel.pair} estimate as the "
+                    f"same genome ({coef}{rel.n_sites} markers) — sample "
+                    "reuse/mislabel, or an identical-twin (syngeneic) donor; "
+                    "either way genotype-based chimerism cannot be measured"
+                )
+
+    # Relatedness vs a declared expectation. A close relationship declared but
+    # detected unrelated (a likely random swap) is a hard FAIL; a milder
+    # mismatch folds into the REVIEW block below. Identical pairs already
+    # reported as duplicates above are skipped to avoid a redundant message.
+    if relatedness and expected_relatedness:
+        # Declarations are per donor; align them to the host-vs-donor pairs,
+        # which lead `relatedness` in donor order. strict=True turns a
+        # count mismatch (one declaration too few/many) into an error rather
+        # than silently leaving a donor unchecked.
+        host_pairs = [r for r in relatedness if r.a_name == "host"]
+        for rel, declared in zip(host_pairs, expected_relatedness, strict=True):
+            if rel.pair in duplicate_pairs:
+                continue
+            verdict = evaluate_expected(rel, declared, tolerance=relatedness_tolerance)
+            if verdict is None:
+                continue
+            warnings.append(verdict.message)
+            if verdict.status == "FAIL":
+                status = "FAIL"
+            elif verdict.status == "REVIEW":
+                identity_review = True
+
+    ac: AdmixConsistencyResult | None = getattr(result, "admix_consistency", None)
+    if ac is not None and ac.n_consensus_hom >= MIN_CONSENSUS and ac.swap_pval < SWAP_REVIEW_P:
+        identity_review = True
+        warnings.append(
+            f"Possible sample swap: admixture carries alleles in neither host "
+            f"nor donor at {ac.n_discordant}/{ac.n_consensus_hom} "
+            f"consensus-homozygous markers (swap p={ac.swap_pval:.2e})"
+        )
+
+    # A computed-but-questionable result (poor fit, imprecise, heavily trimmed,
+    # or a softer identity flag) is flagged for review rather than passed
+    # silently or failed.
+    if status != "FAIL" and (poor_gof or wide_ci or high_robust_drop or identity_review):
         status = "REVIEW"
 
     return QCReport(
@@ -392,4 +475,6 @@ def assess_quality(
         warnings=warnings,
         status=status,
         per_donor_n_informative=per_donor_n_inf,
+        relatedness=relatedness,
+        admix_consistency=ac,
     )

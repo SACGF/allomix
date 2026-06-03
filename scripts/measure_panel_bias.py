@@ -306,19 +306,75 @@ def main(argv: list[str] | None = None) -> int:
             all_het_ratios.append(het_ratio)
 
     # =====================================================================
-    # Print summary
+    # Aggregate statistics
+    #
+    # Every panel-level number is computed once here and then consumed by
+    # both the printed summary and the facts CSV below. Keeping a single
+    # source means the human-readable report and the machine-readable CSV
+    # cannot drift apart if one is edited later.
     # =====================================================================
+    nocall_sorted = sorted(all_nocall_rates)
+    mean_nocall = sum(all_nocall_rates) / len(all_nocall_rates) if all_nocall_rates else 0.0
+    median_nocall = _percentile(nocall_sorted, 50) if all_nocall_rates else 0.0
+    p95_nocall = _percentile(nocall_sorted, 95) if all_nocall_rates else 0.0
+    max_nocall = max(all_nocall_rates) if all_nocall_rates else 0.0
+    markers_high_nocall = sum(1 for r in all_nocall_rates if r > HIGH_NOCALL_RATE)
+
+    n_nocall_samples = len(sample_nocall_rates)
+    sample_nc_sorted = sorted(sample_nocall_rates)
+    mean_sample_nocall = sum(sample_nocall_rates) / n_nocall_samples if sample_nocall_rates else 0.0
+    median_sample_nocall = _percentile(sample_nc_sorted, 50) if sample_nocall_rates else 0.0
+    p95_sample_nocall = _percentile(sample_nc_sorted, 95) if sample_nocall_rates else 0.0
+    max_sample_nocall = max(sample_nocall_rates) if sample_nocall_rates else 0.0
+
+    depths_sorted = sorted(all_mean_depths)
+    mean_depth = sum(all_mean_depths) / len(all_mean_depths) if all_mean_depths else 0.0
+    median_depth = _percentile(depths_sorted, 50) if all_mean_depths else 0.0
+    p5_depth = _percentile(depths_sorted, 5) if all_mean_depths else 0.0
+    min_depth = min(all_mean_depths) if all_mean_depths else 0.0
+    max_depth = max(all_mean_depths) if all_mean_depths else 0.0
+    if all_depth_cvs_marker:
+        mean_depth_cv_marker = sum(all_depth_cvs_marker) / len(all_depth_cvs_marker)
+    else:
+        mean_depth_cv_marker = float("nan")
+
+    scv_sorted = sorted(sample_depth_cvs)
+    mean_sample_cv = sum(sample_depth_cvs) / len(sample_depth_cvs) if sample_depth_cvs else 0.0
+    median_sample_cv = _percentile(scv_sorted, 50) if sample_depth_cvs else 0.0
+    p95_sample_cv = _percentile(scv_sorted, 95) if sample_depth_cvs else 0.0
+
     n_bias_markers = len(all_biases)
     biases_sorted = sorted(all_biases)
     abs_biases_sorted = sorted(all_abs_biases)
-
     if n_bias_markers > 0:
         overall_mean_bias = sum(all_biases) / n_bias_markers
         overall_median_bias = biases_sorted[n_bias_markers // 2]
         overall_sd_bias = _sd(all_biases)
+        mean_abs_bias = sum(all_abs_biases) / n_bias_markers
+        median_abs_bias = _percentile(abs_biases_sorted, 50)
+        p95_abs_bias = _percentile(abs_biases_sorted, 95)
+        max_abs_bias = max(all_abs_biases)
     else:
         overall_mean_bias = overall_median_bias = overall_sd_bias = float("nan")
+        mean_abs_bias = median_abs_bias = p95_abs_bias = max_abs_bias = float("nan")
 
+    n_het_ratio_markers = len(all_het_ratios)
+    hr_sorted = sorted(all_het_ratios)
+    if all_het_ratios:
+        mean_hr = sum(all_het_ratios) / n_het_ratio_markers
+        median_hr = _percentile(hr_sorted, 50)
+        p5_hr = _percentile(hr_sorted, 5)
+        min_hr = min(all_het_ratios)
+        markers_low_het = sum(1 for r in all_het_ratios if r < LOW_HET_RATIO_THRESHOLD)
+        ado_estimate = max(0.0, 1.0 - mean_hr)
+    else:
+        mean_hr = median_hr = p5_hr = min_hr = float("nan")
+        markers_low_het = 0
+        ado_estimate = 0.0
+
+    # =====================================================================
+    # Print summary (formatting only; all values come from the block above)
+    # =====================================================================
     print()
     print("=" * 65)
     print("PANEL CHARACTERISATION SUMMARY")
@@ -330,39 +386,33 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Total markers (biallelic):    {n_markers}")
 
     print("\n--- LOCUS DROPOUT ---")
-    nocall_sorted = sorted(all_nocall_rates)
-    mean_nocall = sum(all_nocall_rates) / len(all_nocall_rates) if all_nocall_rates else 0
     print(f"  Mean no-call rate/marker:  {mean_nocall:.4f} ({mean_nocall*100:.2f}%)")
-    print(f"  Median no-call rate:       {_percentile(nocall_sorted, 50):.4f}")
-    print(f"  95th pct no-call rate:     {_percentile(nocall_sorted, 95):.4f}")
-    print(f"  Max no-call rate:          {max(all_nocall_rates):.4f}")
-    markers_high_nocall = sum(1 for r in all_nocall_rates if r > HIGH_NOCALL_RATE)
+    print(f"  Median no-call rate:       {median_nocall:.4f}")
+    print(f"  95th pct no-call rate:     {p95_nocall:.4f}")
+    print(f"  Max no-call rate:          {max_nocall:.4f}")
     print(f"  Markers with >{HIGH_NOCALL_RATE:.0%} no-call:  {markers_high_nocall}/{n_markers}")
 
     if sample_nocall_rates:
-        sample_nc_sorted = sorted(sample_nocall_rates)
         print("\n  Per-sample no-call rate:")
-        print(f"    Mean:                    {sum(sample_nocall_rates)/len(sample_nocall_rates):.4f}")
-        print(f"    Median:                  {_percentile(sample_nc_sorted, 50):.4f}")
-        print(f"    95th pct:                {_percentile(sample_nc_sorted, 95):.4f}")
-        print(f"    Max:                     {max(sample_nocall_rates):.4f}")
+        print(f"    Mean:                    {mean_sample_nocall:.4f}")
+        print(f"    Median:                  {median_sample_nocall:.4f}")
+        print(f"    95th pct:                {p95_sample_nocall:.4f}")
+        print(f"    Max:                     {max_sample_nocall:.4f}")
 
     print("\n--- DEPTH ---")
     if all_mean_depths:
-        depths_sorted = sorted(all_mean_depths)
-        print(f"  Mean depth/marker:         {sum(all_mean_depths)/len(all_mean_depths):.0f}x")
-        print(f"  Median depth/marker:       {_percentile(depths_sorted, 50):.0f}x")
-        print(f"  5th pct depth:             {_percentile(depths_sorted, 5):.0f}x")
-        print(f"  Min mean depth:            {min(all_mean_depths):.0f}x")
-        print(f"  Max mean depth:            {max(all_mean_depths):.0f}x")
+        print(f"  Mean depth/marker:         {mean_depth:.0f}x")
+        print(f"  Median depth/marker:       {median_depth:.0f}x")
+        print(f"  5th pct depth:             {p5_depth:.0f}x")
+        print(f"  Min mean depth:            {min_depth:.0f}x")
+        print(f"  Max mean depth:            {max_depth:.0f}x")
     if all_depth_cvs_marker:
-        print(f"  Mean depth CV/marker:      {sum(all_depth_cvs_marker)/len(all_depth_cvs_marker):.3f}")
+        print(f"  Mean depth CV/marker:      {mean_depth_cv_marker:.3f}")
     if sample_depth_cvs:
-        scv_sorted = sorted(sample_depth_cvs)
         print("\n  Depth uniformity (per-sample CV across markers):")
-        print(f"    Mean CV:                 {sum(sample_depth_cvs)/len(sample_depth_cvs):.3f}")
-        print(f"    Median CV:               {_percentile(scv_sorted, 50):.3f}")
-        print(f"    95th pct CV:             {_percentile(scv_sorted, 95):.3f}")
+        print(f"    Mean CV:                 {mean_sample_cv:.3f}")
+        print(f"    Median CV:               {median_sample_cv:.3f}")
+        print(f"    95th pct CV:             {p95_sample_cv:.3f}")
 
     print("\n--- AMPLIFICATION BIAS ---")
     print(f"  Markers with het obs:      {n_bias_markers}")
@@ -373,27 +423,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Mean bias:                 {overall_mean_bias:+.4f}")
         print(f"  Median bias:               {overall_median_bias:+.4f}")
         print(f"  SD of per-marker biases:   {overall_sd_bias:.4f}")
-        print(f"  Mean |bias|:               {sum(all_abs_biases)/n_bias_markers:.4f}")
-        print(f"  Median |bias|:             {_percentile(abs_biases_sorted, 50):.4f}")
-        print(f"  95th pct |bias|:           {_percentile(abs_biases_sorted, 95):.4f}")
-        print(f"  Max |bias|:                {max(all_abs_biases):.4f}")
+        print(f"  Mean |bias|:               {mean_abs_bias:.4f}")
+        print(f"  Median |bias|:             {median_abs_bias:.4f}")
+        print(f"  95th pct |bias|:           {p95_abs_bias:.4f}")
+        print(f"  Max |bias|:                {max_abs_bias:.4f}")
 
     print("\n--- ALLELE DROPOUT SIGNAL (het/hom ratio vs HWE) ---")
     if all_het_ratios:
-        hr_sorted = sorted(all_het_ratios)
-        mean_hr = sum(all_het_ratios) / len(all_het_ratios)
         print(f"  Mean het ratio:            {mean_hr:.3f}  (1.0 = HWE, <1 = possible ADO)")
-        print(f"  Median het ratio:          {_percentile(hr_sorted, 50):.3f}")
-        print(f"  5th pct het ratio:         {_percentile(hr_sorted, 5):.3f}")
-        print(f"  Min het ratio:             {min(all_het_ratios):.3f}")
-        markers_low_het = sum(1 for r in all_het_ratios if r < LOW_HET_RATIO_THRESHOLD)
-        print(f"  Markers with ratio < {LOW_HET_RATIO_THRESHOLD}:  {markers_low_het}/{len(all_het_ratios)}")
+        print(f"  Median het ratio:          {median_hr:.3f}")
+        print(f"  5th pct het ratio:         {p5_hr:.3f}")
+        print(f"  Min het ratio:             {min_hr:.3f}")
+        print(f"  Markers with ratio < {LOW_HET_RATIO_THRESHOLD}:  {markers_low_het}/{n_het_ratio_markers}")
 
     print("\n--- SIMULATION PARAMETERS ---")
     if n_bias_markers > 0:
         print(f"  >>> --bias-sd {overall_sd_bias:.3f}")
     print(f"  >>> --locus-dropout-rate {mean_nocall:.4f}")
-    ado_estimate = max(0.0, 1.0 - (sum(all_het_ratios) / len(all_het_ratios))) if all_het_ratios else 0.0
     if ado_estimate > NEGLIGIBLE_ADO_THRESHOLD:
         print(f"  >>> --allele-dropout-rate ~{ado_estimate:.3f}  (estimated from het deficit)")
     else:
@@ -437,11 +483,10 @@ def main(argv: list[str] | None = None) -> int:
         log.info("Per-marker detail: %s", per_marker_path)
 
         # --- vibepaper facts CSV (single-row, horizontal format) ---
+        # All values come from the aggregate block above; this just rounds
+        # them and blanks the fields that are undefined when a marker set is
+        # empty (so the CSV stays consistent with the printed summary).
         facts_path = f"{args.output}_facts.csv"
-        mean_depth_val = sum(all_mean_depths) / len(all_mean_depths) if all_mean_depths else 0
-        mean_sample_cv = sum(sample_depth_cvs) / len(sample_depth_cvs) if sample_depth_cvs else 0
-        mean_hr_val = sum(all_het_ratios) / len(all_het_ratios) if all_het_ratios else float("nan")
-
         facts = {
             "n_vcfs": n_vcfs,
             "n_samples": n_total_samples,
@@ -451,22 +496,45 @@ def main(argv: list[str] | None = None) -> int:
             "mean_nocall_rate": round(mean_nocall, 4),
             "mean_nocall_pct": round(mean_nocall * 100, 2),
             "markers_gt5pct_nocall": markers_high_nocall,
-            "mean_depth": round(mean_depth_val),
-            "median_depth": round(_percentile(sorted(all_mean_depths), 50)) if all_mean_depths else 0,
-            "min_depth": round(min(all_mean_depths)) if all_mean_depths else 0,
-            "max_depth": round(max(all_mean_depths)) if all_mean_depths else 0,
+            "mean_depth": round(mean_depth),
             "mean_sample_depth_cv": round(mean_sample_cv, 3),
-            "sd_bias": round(overall_sd_bias, 4) if not math.isnan(overall_sd_bias) else "",
-            "mean_abs_bias": round(sum(all_abs_biases) / n_bias_markers, 4) if n_bias_markers else "",
-            "median_abs_bias": round(_percentile(abs_biases_sorted, 50), 4) if abs_biases_sorted else "",
-            "p95_abs_bias": round(_percentile(abs_biases_sorted, 95), 4) if abs_biases_sorted else "",
-            "max_abs_bias": round(max(all_abs_biases), 4) if all_abs_biases else "",
-            "mean_het_ratio": round(mean_hr_val, 3) if not math.isnan(mean_hr_val) else "",
-            "markers_low_het": sum(1 for r in all_het_ratios if r < LOW_HET_RATIO_THRESHOLD) if all_het_ratios else 0,
             "ado_estimate": round(ado_estimate, 4),
         }
+
+        if all_mean_depths:
+            facts["median_depth"] = round(median_depth)
+            facts["min_depth"] = round(min_depth)
+            facts["max_depth"] = round(max_depth)
+        else:
+            facts["median_depth"] = facts["min_depth"] = facts["max_depth"] = 0
+
+        if n_bias_markers:
+            facts["sd_bias"] = round(overall_sd_bias, 4)
+            facts["mean_abs_bias"] = round(mean_abs_bias, 4)
+            facts["median_abs_bias"] = round(median_abs_bias, 4)
+            facts["p95_abs_bias"] = round(p95_abs_bias, 4)
+            facts["max_abs_bias"] = round(max_abs_bias, 4)
+        else:
+            facts["sd_bias"] = facts["mean_abs_bias"] = facts["median_abs_bias"] = ""
+            facts["p95_abs_bias"] = facts["max_abs_bias"] = ""
+
+        if all_het_ratios:
+            facts["mean_het_ratio"] = round(mean_hr, 3)
+            facts["markers_low_het"] = markers_low_het
+        else:
+            facts["mean_het_ratio"] = ""
+            facts["markers_low_het"] = 0
+        # Explicit column order, kept stable for downstream consumers
+        # regardless of the order the conditional fields are added above.
+        fieldnames = [
+            "n_vcfs", "n_samples", "n_markers", "n_bias_markers", "n_het_total",
+            "mean_nocall_rate", "mean_nocall_pct", "markers_gt5pct_nocall",
+            "mean_depth", "median_depth", "min_depth", "max_depth", "mean_sample_depth_cv",
+            "sd_bias", "mean_abs_bias", "median_abs_bias", "p95_abs_bias", "max_abs_bias",
+            "mean_het_ratio", "markers_low_het", "ado_estimate",
+        ]
         with open(facts_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerow(facts)
         log.info("Facts CSV: %s", facts_path)

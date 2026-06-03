@@ -70,7 +70,7 @@ from scipy.stats import chi2, poisson
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.chimerism import PanelCalibration, estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
@@ -299,7 +299,7 @@ def _run_replicate(
             genos.informative,
             error_rate=error_rate,
             grid_steps=MLE_GRID_STEPS,
-            marker_biases=bias_dict,
+            calibration=PanelCalibration(biases=bias_dict or {}),
         )
         donor_fraction = mle.donor_fraction
         mle_host_est = 1.0 - mle.donor_fraction

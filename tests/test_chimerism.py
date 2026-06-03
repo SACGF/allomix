@@ -9,6 +9,7 @@ import pytest
 from allomix.chimerism import (
     ChimerismResult,
     MarkerResult,
+    PanelCalibration,
     _precompute_marker_arrays,
     _total_ll_vec,
     detection_limit,
@@ -503,7 +504,7 @@ def test_vectorized_ll_matches_scalar() -> None:
     ]
     biases = {("chr1", 200, "A", "G"): 0.03}  # one biased marker
     err = 0.01
-    arr = _precompute_marker_arrays(markers, biases)
+    arr = _precompute_marker_arrays(markers, PanelCalibration(biases=biases))
     max_diff = 0.0
     for f in np.linspace(0.0, 1.0, 51):
         for rho in (1.0, 10.0, 50.0, 200.0, 1000.0, 50000.0):
@@ -516,7 +517,7 @@ def test_vectorized_ll_matches_scalar() -> None:
 def test_vectorized_ll_no_biases_path() -> None:
     """Vectorized LL matches scalar on the no-bias code path."""
     markers = [_mk("chr1", 100, (0, 0), (0, 1), 480, 20)]
-    arr = _precompute_marker_arrays(markers, None)
+    arr = _precompute_marker_arrays(markers, PanelCalibration())
     assert (
         abs(
             _total_ll_vec(arr, 0.05, 0.01, 200.0)

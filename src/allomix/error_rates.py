@@ -8,9 +8,9 @@ observed REF-read rate estimates ``P(observe REF | true ALT)`` (``e_altref``).
 The two are not generally equal: oxidation damage, strand bias and flanking
 context all produce direction-specific error rates. The output table is
 consumed by ``chimerism.estimate_single_donor_bb`` and
-``chimerism.estimate_multi_donor`` via the ``marker_errors`` parameter, and by
-the host-presence detector (planned `src/allomix/detect.py`) as the per-site
-background.
+``chimerism.estimate_multi_donor`` via the ``errors`` field of a
+``chimerism.PanelCalibration``, and by the host-presence detector
+(``allomix.detect.host_presence_test``) as the per-site background.
 
 This module mirrors ``allomix.bias``: estimator pooled across reads, save/load
 TSV with NA for missing per-direction entries, and a runtime loader that
@@ -33,6 +33,21 @@ from allomix.genotype import MarkerData, MarkerKey, marker_key
 DEFAULT_ERROR_FLOOR = 1e-5
 
 
+@dataclass(frozen=True)
+class MarkerErrorRates:
+    """Per-marker, per-direction substitution rates consumed at runtime.
+
+    The lightweight counterpart to ``MarkerError``: just the two rates the
+    estimators and the host-presence detector need, without the estimation
+    provenance (``n_reads_*``). Either rate may be ``None`` when that direction
+    had too few observations; the consumers then fall through to the symmetric
+    global ``error_rate`` for that direction.
+    """
+
+    e_refalt: float | None  # P(observe ALT | true REF)
+    e_altref: float | None  # P(observe REF | true ALT)
+
+
 @dataclass
 class MarkerError:
     """Per-marker, per-direction empirical error rates.
@@ -51,6 +66,14 @@ class MarkerError:
     e_altref: float | None  # REF-read rate at hom-alt calls
     n_reads_homref: int
     n_reads_homalt: int
+
+    def to_rates(self, error_floor: float = DEFAULT_ERROR_FLOOR) -> "MarkerErrorRates":
+        """Strip provenance to the runtime ``MarkerErrorRates``, applying the
+        floor to each non-``None`` per-direction rate."""
+        return MarkerErrorRates(
+            e_refalt=None if self.e_refalt is None else max(self.e_refalt, error_floor),
+            e_altref=None if self.e_altref is None else max(self.e_altref, error_floor),
+        )
 
 
 def estimate_error_rates(
@@ -175,7 +198,7 @@ def save_error_table(
 def load_error_table(
     path: Path | str,
     error_floor: float = DEFAULT_ERROR_FLOOR,
-) -> dict[MarkerKey, tuple[float | None, float | None]]:
+) -> dict[MarkerKey, MarkerErrorRates]:
     """Load an error-rate table.
 
     Args:
@@ -187,11 +210,10 @@ def load_error_table(
             per-site rates. Set to 0 to disable.
 
     Returns:
-        Dict mapping (chrom, pos, ref, alt) to ``(e_refalt, e_altref)``. Each
-        entry of the tuple is ``None`` if the table stored ``NA`` in that
-        column.
+        Dict mapping (chrom, pos, ref, alt) to ``MarkerErrorRates``. Each rate
+        is ``None`` if the table stored ``NA`` in that column.
     """
-    out: dict[MarkerKey, tuple[float | None, float | None]] = {}
+    out: dict[MarkerKey, MarkerErrorRates] = {}
     with open(path, encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
         for row in reader:
@@ -206,20 +228,15 @@ def load_error_table(
                 None if row["e_altref"] == "NA"
                 else max(float(row["e_altref"]), error_floor)
             )
-            out[key] = (e_ra, e_ar)
+            out[key] = MarkerErrorRates(e_refalt=e_ra, e_altref=e_ar)
     return out
 
 
-def errors_to_simple_dict(
+def errors_to_rates(
     errors: dict[MarkerKey, MarkerError],
     error_floor: float = DEFAULT_ERROR_FLOOR,
-) -> dict[MarkerKey, tuple[float | None, float | None]]:
-    """Convert ``MarkerError`` dict to the ``(e_refalt, e_altref)`` form
+) -> dict[MarkerKey, MarkerErrorRates]:
+    """Convert a ``MarkerError`` dict to the runtime ``MarkerErrorRates`` form
     expected by the estimators, applying the same floor as the loader.
     """
-    out: dict[MarkerKey, tuple[float | None, float | None]] = {}
-    for key, me in errors.items():
-        e_ra = None if me.e_refalt is None else max(me.e_refalt, error_floor)
-        e_ar = None if me.e_altref is None else max(me.e_altref, error_floor)
-        out[key] = (e_ra, e_ar)
-    return out
+    return {key: me.to_rates(error_floor) for key, me in errors.items()}

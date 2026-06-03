@@ -55,7 +55,7 @@ from scipy.optimize import curve_fit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.chimerism import PanelCalibration, estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
@@ -351,7 +351,7 @@ def run_pair(
                     result = estimate_single_donor_bb(
                         genos.informative, error_rate=ERROR_RATE,
                         grid_steps=ESTIMATOR_GRID_STEPS,
-                        marker_biases=bias_dict,
+                        calibration=PanelCalibration(biases=bias_dict or {}),
                     )
                     rows.append({
                         "relatedness": relatedness,
@@ -598,6 +598,7 @@ def _worker(args: tuple) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global DEPTHS, ERROR_RATE
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--n-pairs", type=int, default=None,
@@ -631,7 +632,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    global DEPTHS, ERROR_RATE
     if args.depths is not None:
         DEPTHS = sorted(args.depths)
     ERROR_RATE = args.error_rate

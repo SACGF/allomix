@@ -19,6 +19,7 @@ from allomix.detect import (
     host_presence_test,
     select_donor_hom_markers,
 )
+from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, marker_type
 
 # ---------------------------------------------------------------------------
@@ -310,7 +311,7 @@ class TestErrorTable:
         # Same set of keys covered in both directions, defensively.
         big = 1e-2
         table_high = {
-            (m.chrom, m.pos, m.ref, m.alt): (big, big) for m in markers
+            (m.chrom, m.pos, m.ref, m.alt): MarkerErrorRates(big, big) for m in markers
         }
         inflated = host_presence_test(markers, marker_errors=table_high, error_rate=1e-3)
         assert inflated.lrt_pval >= baseline.lrt_pval
@@ -321,7 +322,7 @@ class TestErrorTable:
         # downward (the same count looks more anomalous).
         small = 1e-4
         table_low = {
-            (m.chrom, m.pos, m.ref, m.alt): (small, small) for m in markers
+            (m.chrom, m.pos, m.ref, m.alt): MarkerErrorRates(small, small) for m in markers
         }
         deflated = host_presence_test(markers, marker_errors=table_low, error_rate=1e-3)
         assert deflated.lrt_pval <= baseline.lrt_pval
@@ -336,7 +337,7 @@ class TestErrorTable:
         # Cover only half of the donor-hom markers in the table.
         rows = select_donor_hom_markers(markers)
         half = rows[: len(rows) // 2]
-        table = {r.key: (1e-3, 1e-3) for r in half}
+        table = {r.key: MarkerErrorRates(1e-3, 1e-3) for r in half}
         res = host_presence_test(markers, marker_errors=table, error_rate=1e-3)
         assert res.used_per_site_error
         assert res.error_rate_source == "mixed"
@@ -358,12 +359,12 @@ class TestErrorTable:
         rows = select_donor_hom_markers(markers)
         # Only fill the *wrong* direction per row; the detector should still
         # fall back to the global rate.
-        table: dict[tuple[str, int, str, str], tuple[float | None, float | None]] = {}
+        table: dict[tuple[str, int, str, str], MarkerErrorRates] = {}
         for r in rows:
             if r.direction == "ref->alt":
-                table[r.key] = (None, 1e-3)  # only alt->ref filled
+                table[r.key] = MarkerErrorRates(None, 1e-3)  # only alt->ref filled
             else:
-                table[r.key] = (1e-3, None)
+                table[r.key] = MarkerErrorRates(1e-3, None)
         res = host_presence_test(markers, marker_errors=table, error_rate=1e-3)
         assert res.error_rate_source == "global-fallback"
         assert not res.used_per_site_error

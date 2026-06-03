@@ -26,7 +26,7 @@ matter most clinically.
 """
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from math import lgamma
 
 import numpy as np
@@ -35,8 +35,39 @@ from scipy.special import gammaln
 from scipy.stats import chi2, norm
 
 from allomix.detect import HostPresenceResult
-from allomix.genotype import InformativeMarker
+from allomix.error_rates import MarkerErrorRates
+from allomix.genotype import InformativeMarker, MarkerKey
 from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
+
+
+@dataclass(frozen=True)
+class PanelCalibration:
+    """Per-marker calibration applied during chimerism estimation.
+
+    Bundles the two optional per-marker tables the estimators consume:
+
+    - ``biases``: amplification bias per marker (see ``allomix.bias``). A
+      positive value means the ALT allele is preferentially captured.
+    - ``errors``: per-direction empirical substitution rates per marker (see
+      ``allomix.error_rates``). Used for the asymmetric REF/ALT-only likelihood
+      where both directions are known.
+
+    Both default to empty, so an uncalibrated run is ``PanelCalibration()``.
+    Markers absent from a table fall through to the uncorrected weight (bias 0)
+    or the symmetric global ``error_rate`` (errors).
+    """
+
+    biases: dict[MarkerKey, float] = field(default_factory=dict)
+    errors: dict[MarkerKey, MarkerErrorRates] = field(default_factory=dict)
+
+    def bias_for(self, m: InformativeMarker) -> float:
+        """Amplification bias for a marker, or 0.0 if it is not in the table."""
+        return self.biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+
+    def error_for(self, m: InformativeMarker) -> MarkerErrorRates | None:
+        """Per-direction rates for a marker, or ``None`` if not in the table."""
+        return self.errors.get((m.chrom, m.pos, m.ref, m.alt))
+
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -273,10 +304,7 @@ def total_log_likelihood_bb(
     f_donor: float,
     error_rate: float = 0.01,
     rho: float = 100.0,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration | None = None,
 ) -> float:
     """Sum of per-marker beta-binomial log-likelihoods.
 
@@ -284,20 +312,19 @@ def total_log_likelihood_bb(
         markers: List of informative markers with admixture allele counts.
         f_donor: Donor fraction to evaluate.
         error_rate: Sequencing error rate (used as the fallback when a marker
-            is missing from ``marker_errors`` or only one direction is known).
+            is missing from ``calibration.errors`` or only one direction is
+            known).
         rho: Beta-binomial concentration parameter.
-        marker_biases: Optional per-marker amplification bias dict.
-        marker_errors: Optional per-marker, per-direction empirical error
-            rates. Maps ``(chrom, pos, ref, alt)`` to
-            ``(e_refalt, e_altref)``. ``None`` in either slot falls through
-            to the symmetric ``error_rate`` model for that marker.
+        calibration: Optional per-marker bias and error tables. A marker's
+            per-direction rates are used (asymmetric model) only when both are
+            known; otherwise the symmetric ``error_rate`` model applies.
 
     Returns:
         Total log-likelihood.
     """
     if not markers:
         return 0.0
-    arr = _precompute_marker_arrays(markers, marker_biases, marker_errors)
+    arr = _precompute_marker_arrays(markers, calibration or PanelCalibration())
     return _total_ll_vec(arr, f_donor, error_rate, rho)
 
 
@@ -325,10 +352,7 @@ class _MarkerArrays:
 
 def _precompute_marker_arrays(
     markers: list[InformativeMarker],
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration,
 ) -> _MarkerArrays:
     """Build the (f, rho)-independent per-marker arrays for the vectorized LL.
 
@@ -337,9 +361,8 @@ def _precompute_marker_arrays(
 
     Args:
         markers: List of informative markers with admixture allele counts.
-        marker_biases: Optional per-marker amplification bias dict.
-        marker_errors: Optional per-marker, per-direction error-rate dict
-            (``(e_refalt, e_altref)`` per key, either entry may be ``None``).
+        calibration: Per-marker bias and error tables (empty tables = no
+            correction).
 
     Returns:
         Precomputed per-marker arrays for ``_total_ll_vec``.
@@ -357,9 +380,9 @@ def _precompute_marker_arrays(
     )
     ad_ref = np.fromiter((m.admix_ad_ref for m in markers), dtype=float, count=n_markers)
     ad_alt = np.fromiter((m.admix_ad_alt for m in markers), dtype=float, count=n_markers)
-    if marker_biases is not None:
+    if calibration.biases:
         bias = np.fromiter(
-            (marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0) for m in markers),
+            (calibration.bias_for(m) for m in markers),
             dtype=float,
             count=n_markers,
         )
@@ -368,19 +391,18 @@ def _precompute_marker_arrays(
 
     e_refalt = np.full(n_markers, np.nan, dtype=float)
     e_altref = np.full(n_markers, np.nan, dtype=float)
-    if marker_errors is not None:
+    if calibration.errors:
         for i, m in enumerate(markers):
-            entry = marker_errors.get((m.chrom, m.pos, m.ref, m.alt))
+            entry = calibration.error_for(m)
             if entry is None:
                 continue
-            e_ra, e_ar = entry
             # Both directions required for the asymmetric path. Storing one
             # only would leave the other side of the likelihood underspecified
             # at hets and at the opposite-homozygous endpoint.
-            if e_ra is None or e_ar is None:
+            if entry.e_refalt is None or entry.e_altref is None:
                 continue
-            e_refalt[i] = e_ra
-            e_altref[i] = e_ar
+            e_refalt[i] = entry.e_refalt
+            e_altref[i] = entry.e_altref
     error_mask = ~np.isnan(e_refalt)
 
     return _MarkerArrays(
@@ -456,10 +478,7 @@ def total_log_likelihood_multi_bb(
     donor_fractions: list[float],
     error_rate: float = 0.01,
     rho: float = 100.0,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration | None = None,
 ) -> float:
     """Sum of per-marker beta-binomial log-likelihoods for multi-donor model.
 
@@ -469,23 +488,19 @@ def total_log_likelihood_multi_bb(
         error_rate: Sequencing error rate (fallback when a marker's
             per-direction rate is missing).
         rho: Beta-binomial concentration parameter.
-        marker_biases: Optional per-marker bias dict.
-        marker_errors: Optional per-marker, per-direction error-rate dict
+        calibration: Optional per-marker bias and error tables
             (see ``total_log_likelihood_bb``).
 
     Returns:
         Total log-likelihood.
     """
+    cal = calibration or PanelCalibration()
     ll = 0.0
     for m in markers:
-        key = (m.chrom, m.pos, m.ref, m.alt)
-        bias = marker_biases.get(key, 0.0) if marker_biases is not None else 0.0
-        e_ra: float | None = None
-        e_ar: float | None = None
-        if marker_errors is not None:
-            entry = marker_errors.get(key)
-            if entry is not None:
-                e_ra, e_ar = entry
+        bias = cal.bias_for(m)
+        entry = cal.error_for(m)
+        e_ra = entry.e_refalt if entry is not None else None
+        e_ar = entry.e_altref if entry is not None else None
         w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
         ll += log_likelihood_marker_bb(
             m.admix_ad_ref, m.admix_ad_alt, w,
@@ -535,7 +550,7 @@ def expected_weight_multi(
 def _compute_per_marker_results(
     markers: list[InformativeMarker],
     f_mle: float,
-    marker_biases: dict[tuple[str, int, str, str], float] | None,
+    calibration: PanelCalibration,
 ) -> list[MarkerResult]:
     """Compute per-marker residuals and flag outliers.
 
@@ -545,9 +560,7 @@ def _compute_per_marker_results(
     residuals: list[float] = []
 
     for m in markers:
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        bias = calibration.bias_for(m)
         w = expected_weight(m.host_gt, m.donor_gts[0], f_mle, bias=bias)
         exp_vaf = 1.0 - w  # ALT VAF = 1 - ref_weight
         obs_vaf = m.admix_ad_alt / m.admix_dp if m.admix_dp > 0 else 0.0
@@ -608,7 +621,7 @@ def fraction_se(
     f_donor: float,
     error_rate: float = 0.01,
     rho: float = float("inf"),
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    calibration: PanelCalibration | None = None,
 ) -> float:
     """Standard error of the donor-fraction estimate at a given fraction.
 
@@ -625,20 +638,20 @@ def fraction_se(
         f_donor: Donor fraction at which to evaluate the SE.
         error_rate: Sequencing error rate.
         rho: Beta-binomial concentration (inf = pure binomial).
-        marker_biases: Optional per-marker amplification bias dict.
+        calibration: Optional per-marker bias and error tables (only biases
+            are used here).
 
     Returns:
         Standard error of the donor fraction. inf if no marker is informative.
     """
+    cal = calibration or PanelCalibration()
     # P(observe ALT) is linear in the REF weight w, so its slope dp_alt/dw is
     # constant and equals the change across the full weight range w: 0 -> 1.
     dpalt_dw = alt_read_probability(1.0, error_rate) - alt_read_probability(0.0, error_rate)
 
     info = 0.0
     for m in markers:
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        bias = cal.bias_for(m)
 
         host_ref_dose = 2 - (m.host_gt[0] + m.host_gt[1])
         donor_ref_dose = 2 - (m.donor_gts[0][0] + m.donor_gts[0][1])
@@ -671,7 +684,7 @@ def detection_limit(
     markers: list[InformativeMarker],
     error_rate: float = 0.01,
     rho: float = float("inf"),
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    calibration: PanelCalibration | None = None,
 ) -> tuple[float, float]:
     """Per-sample limit of blank and limit of detection (donor fractions).
 
@@ -695,17 +708,18 @@ def detection_limit(
         markers: Informative markers with admixture allele counts.
         error_rate: Sequencing error rate.
         rho: Beta-binomial concentration from the fit (inf = pure binomial).
-        marker_biases: Optional per-marker amplification bias dict.
+        calibration: Optional per-marker bias and error tables (only biases
+            are used here).
 
     Returns:
         ``(lob, lod)`` as donor fractions (0.0-1.0). ``(inf, inf)`` if no
         marker is informative.
     """
-    se0 = fraction_se(markers, 0.0, error_rate, rho, marker_biases)
+    se0 = fraction_se(markers, 0.0, error_rate, rho, calibration)
     if math.isinf(se0):
         return float("inf"), float("inf")
     lob = _Z95 * se0
-    se_lob = fraction_se(markers, lob, error_rate, rho, marker_biases)
+    se_lob = fraction_se(markers, lob, error_rate, rho, calibration)
     if math.isinf(se_lob):
         se_lob = se0
     lod = lob + _Z95 * se_lob
@@ -716,16 +730,14 @@ def _estimate_single_donor_bb_core(
     markers: list[InformativeMarker],
     error_rate: float = 0.01,
     grid_steps: int = 1001,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration | None = None,
 ) -> ChimerismResult:
     """Single-donor beta-binomial MLE over the given marker set (no robust trim).
 
     This is the unguarded estimator; ``estimate_single_donor_bb`` wraps it with
     the optional robust refit. Args/returns as in that wrapper.
     """
+    cal = calibration or PanelCalibration()
     n_informative = len(markers)
 
     if n_informative == 0:
@@ -742,7 +754,7 @@ def _estimate_single_donor_bb_core(
 
     # Precompute the (f, rho)-independent per-marker arrays once and reuse them
     # across the grid search, Nelder-Mead refinement, and profile-likelihood CI.
-    arr = _precompute_marker_arrays(markers, marker_biases, marker_errors)
+    arr = _precompute_marker_arrays(markers, cal)
 
     # Step 1: Grid search over f with rho profiled out at each grid point
     grid = np.linspace(0.0, 1.0, grid_steps)
@@ -819,11 +831,11 @@ def _estimate_single_donor_bb_core(
         f_hi = brentq(ci_func, f_mle, 1.0, xtol=1e-5)
 
     # Step 4: Per-marker residuals
-    per_marker = _compute_per_marker_results(markers, f_mle, marker_biases)
+    per_marker = _compute_per_marker_results(markers, f_mle, cal)
     n_markers_used = sum(1 for mr in per_marker if mr.included)
 
     # Step 5: Per-sample analytical detection limits from the fitted noise model.
-    lob, lod = detection_limit(markers, error_rate, rho_mle, marker_biases)
+    lob, lod = detection_limit(markers, error_rate, rho_mle, cal)
 
     return ChimerismResult(
         donor_fraction=f_mle,
@@ -928,10 +940,7 @@ def estimate_single_donor_bb(
     markers: list[InformativeMarker],
     error_rate: float = 0.01,
     grid_steps: int = 1001,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration | None = None,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
 ) -> ChimerismResult:
@@ -946,12 +955,10 @@ def estimate_single_donor_bb(
         error_rate: Sequencing error rate (fallback when a marker is missing
             per-direction rates).
         grid_steps: Number of grid points for initial f search.
-        marker_biases: Optional per-marker bias dict.
-        marker_errors: Optional per-marker, per-direction empirical error
-            rates (``(e_refalt, e_altref)`` per key, either may be ``None``).
-            When present and both directions are known, the asymmetric
-            REF/ALT-only likelihood is used at that marker; otherwise the
-            symmetric 4-state model with ``error_rate`` is used.
+        calibration: Optional per-marker bias and error tables. For a marker
+            with both per-direction error rates known, the asymmetric
+            REF/ALT-only likelihood is used; otherwise the symmetric 4-state
+            model with ``error_rate`` is used.
         robust: Robust-refit mode. ``"off"`` (default) is the plain MLE.
             ``"auto"`` iteratively drops median/MAD residual outliers and refits,
             never below ``ROBUST_MIN_MARKERS`` survivors; this protects against
@@ -966,10 +973,10 @@ def estimate_single_donor_bb(
     if robust not in ROBUST_MODES:
         raise ValueError(f"robust must be one of {ROBUST_MODES}, got {robust!r}")
 
+    cal = calibration or PanelCalibration()
+
     def core(mk: list[InformativeMarker]) -> ChimerismResult:
-        return _estimate_single_donor_bb_core(
-            mk, error_rate, grid_steps, marker_biases, marker_errors
-        )
+        return _estimate_single_donor_bb_core(mk, error_rate, grid_steps, cal)
 
     if robust == "off" or len(markers) == 0:
         return core(markers)
@@ -979,7 +986,7 @@ def estimate_single_donor_bb(
     return _robust_refit(
         markers,
         core,
-        lambda mk, res: _compute_per_marker_results(mk, res.donor_fraction, marker_biases),
+        lambda mk, res: _compute_per_marker_results(mk, res.donor_fraction, cal),
         robust_k,
         min_markers,
         min_trigger,
@@ -996,10 +1003,7 @@ def _estimate_multi_donor_core(
     n_donors: int = 2,
     error_rate: float = 0.01,
     grid_steps: int = 101,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration | None = None,
 ) -> MultiDonorResult:
     """Estimate multi-donor chimerism fractions via maximum likelihood.
 
@@ -1017,13 +1021,13 @@ def _estimate_multi_donor_core(
         n_donors: Number of donors (currently supports 2).
         error_rate: Sequencing error rate (fallback).
         grid_steps: Grid resolution per dimension.
-        marker_biases: Optional per-marker bias dict.
-        marker_errors: Optional per-marker, per-direction empirical error
-            rates (see ``estimate_single_donor_bb``).
+        calibration: Optional per-marker bias and error tables
+            (see ``estimate_single_donor_bb``).
 
     Returns:
         MultiDonorResult with per-donor fractions and CIs.
     """
+    cal = calibration or PanelCalibration()
     if n_donors > 2:
         raise ValueError(
             f"n_donors={n_donors} not supported; "
@@ -1062,8 +1066,7 @@ def _estimate_multi_donor_core(
             if f1 + f2 > 1.0 + 1e-9:
                 break
             ll = total_log_likelihood_multi_bb(
-                markers, [f1, f2], error_rate, rho_init, marker_biases,
-                marker_errors,
+                markers, [f1, f2], error_rate, rho_init, cal,
             )
             if ll > best_ll:
                 best_ll = ll
@@ -1078,7 +1081,7 @@ def _estimate_multi_donor_core(
         if rho < 0.5 or rho > 50000:
             return 1e30
         return -total_log_likelihood_multi_bb(
-            markers, [f1, f2], error_rate, rho, marker_biases, marker_errors,
+            markers, [f1, f2], error_rate, rho, cal,
         )
 
     opt = minimize(
@@ -1097,11 +1100,11 @@ def _estimate_multi_donor_core(
 
     # Step 3: Profile likelihood CIs per donor (profiling out other f and rho)
     cis = _profile_likelihood_cis_multi(
-        markers, f_mle, n_donors, error_rate, marker_biases, marker_errors,
+        markers, f_mle, n_donors, error_rate, cal,
     )
 
     # Step 4: Per-marker residuals
-    per_marker = _per_marker_results_multi(markers, f_mle, marker_biases)
+    per_marker = _per_marker_results_multi(markers, f_mle, cal)
 
     # Per-donor informative counts
     per_donor_n_inf = [0] * n_donors
@@ -1135,10 +1138,7 @@ def estimate_multi_donor(
     n_donors: int = 2,
     error_rate: float = 0.01,
     grid_steps: int = 101,
-    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration | None = None,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
 ) -> MultiDonorResult:
@@ -1155,10 +1155,10 @@ def estimate_multi_donor(
     if robust not in ROBUST_MODES:
         raise ValueError(f"robust must be one of {ROBUST_MODES}, got {robust!r}")
 
+    cal = calibration or PanelCalibration()
+
     def core(mk: list[InformativeMarker]) -> MultiDonorResult:
-        return _estimate_multi_donor_core(
-            mk, n_donors, error_rate, grid_steps, marker_biases, marker_errors
-        )
+        return _estimate_multi_donor_core(mk, n_donors, error_rate, grid_steps, cal)
 
     if robust == "off" or len(markers) == 0:
         return core(markers)
@@ -1168,7 +1168,7 @@ def estimate_multi_donor(
     return _robust_refit(
         markers,
         core,
-        lambda mk, res: _per_marker_results_multi(mk, res.donor_fractions, marker_biases),
+        lambda mk, res: _per_marker_results_multi(mk, res.donor_fractions, cal),
         robust_k,
         min_markers,
         min_trigger,
@@ -1180,10 +1180,7 @@ def _profile_likelihood_cis_multi(
     f_mle: list[float],
     n_donors: int,
     error_rate: float,
-    marker_biases: dict[tuple[str, int, str, str], float] | None,
-    marker_errors: (
-        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
-    ) = None,
+    calibration: PanelCalibration,
 ) -> list[tuple[float, float]]:
     """Profile likelihood CIs for each donor fraction.
 
@@ -1210,7 +1207,7 @@ def _profile_likelihood_cis_multi(
                     lambda log_r: (
                         -total_log_likelihood_multi_bb(
                             markers, fracs, error_rate, math.exp(log_r),
-                            marker_biases, marker_errors,
+                            calibration,
                         )
                     ),
                     bounds=(math.log(1.0), math.log(50000.0)),
@@ -1228,8 +1225,7 @@ def _profile_likelihood_cis_multi(
                     return 1e30
                 fracs = [fi, fj] if _di == 0 else [fj, fi]
                 return -total_log_likelihood_multi_bb(
-                    markers, fracs, error_rate, rho, marker_biases,
-                    marker_errors,
+                    markers, fracs, error_rate, rho, calibration,
                 )
 
             opt = minimize(
@@ -1268,16 +1264,14 @@ def _profile_likelihood_cis_multi(
 def _per_marker_results_multi(
     markers: list[InformativeMarker],
     f_mle: list[float],
-    marker_biases: dict[tuple[str, int, str, str], float] | None,
+    calibration: PanelCalibration,
 ) -> list[MarkerResult]:
     """Compute per-marker residuals for multi-donor model."""
     per_marker: list[MarkerResult] = []
     residuals: list[float] = []
 
     for m in markers:
-        bias = 0.0
-        if marker_biases is not None:
-            bias = marker_biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
+        bias = calibration.bias_for(m)
         w = expected_weight_multi(m.host_gt, m.donor_gts, f_mle, bias=bias)
         exp_vaf = 1.0 - w
         obs_vaf = m.admix_ad_alt / m.admix_dp if m.admix_dp > 0 else 0.0

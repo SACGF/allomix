@@ -12,6 +12,7 @@ from allomix.bias import (
     save_bias_table,
 )
 from allomix.chimerism import (
+    PanelCalibration,
     estimate_single_donor_bb,
     expected_weight,
     total_log_likelihood_bb,
@@ -249,7 +250,9 @@ class TestTotalLogLikelihoodWithBias:
         ]
         ll_no_bias = total_log_likelihood_bb(markers, 0.3, 0.01)
         biases = {("chr1", 100, "A", "T"): 0.02}
-        ll_biased = total_log_likelihood_bb(markers, 0.3, 0.01, marker_biases=biases)
+        ll_biased = total_log_likelihood_bb(
+            markers, 0.3, 0.01, calibration=PanelCalibration(biases=biases)
+        )
         assert ll_no_bias != ll_biased
 
     def test_correct_bias_improves_likelihood(self):
@@ -263,7 +266,9 @@ class TestTotalLogLikelihoodWithBias:
         ll_uncorrected = total_log_likelihood_bb(markers, 0.30, 0.01)
         # With bias correction (0.02), the model expects VAF 0.32 at f=0.30
         biases = {("chr1", 100, "A", "T"): 0.02}
-        ll_corrected = total_log_likelihood_bb(markers, 0.30, 0.01, marker_biases=biases)
+        ll_corrected = total_log_likelihood_bb(
+            markers, 0.30, 0.01, calibration=PanelCalibration(biases=biases)
+        )
         assert ll_corrected > ll_uncorrected
 
 
@@ -314,7 +319,7 @@ class TestEstimateSingleDonorWithBias:
         result_biased = estimate_single_donor_bb(
             markers,
             error_rate=0.01,
-            marker_biases=marker_biases,
+            calibration=PanelCalibration(biases=marker_biases),
         )
 
         # Bias-corrected estimate should be closer to truth
@@ -331,7 +336,7 @@ class TestEstimateSingleDonorWithBias:
         result_empty = estimate_single_donor_bb(
             markers,
             error_rate=0.01,
-            marker_biases={},
+            calibration=PanelCalibration(biases={}),
         )
         assert result_none.donor_fraction == pytest.approx(
             result_empty.donor_fraction,
@@ -350,7 +355,7 @@ class TestEstimateSingleDonorWithBias:
         result_corrected = estimate_single_donor_bb(
             markers,
             error_rate=0.01,
-            marker_biases=marker_biases,
+            calibration=PanelCalibration(biases=marker_biases),
         )
 
         # Without correction, estimate should be biased high
@@ -380,7 +385,7 @@ class TestEstimateSingleDonorWithBias:
             result_yes = estimate_single_donor_bb(
                 markers,
                 error_rate=0.01,
-                marker_biases=mb,
+                calibration=PanelCalibration(biases=mb),
             )
             if result_yes.donor_fraction_ci[0] <= true_f <= result_yes.donor_fraction_ci[1]:
                 covers_corrected += 1

@@ -74,86 +74,93 @@ affected markers is the bias the estimator has to absorb.
 
 ## Sweep design
 
-`paper/scripts/run_cnv_loh_validation.py`. Genotypes and per-marker capture
-biases are fixed per (relatedness, replicate) and reused across every cell, so
-within a replicate only the aberration and the sequencing draw change. The
-no-aberration baseline is run once per replicate and shared across kinds.
+`paper/scripts/run_cnv_loh_validation.py`. The metric is the **limit of
+detection (LoD)** of the minor component, the quantity the rest of the paper
+reports (CLSI EP17-A2, as in `run_lod_validation.py`), plotted on a log donor-%
+axis (0.3, 0.5, 1, 2, 5, 10, 20 %) like `plot_lod_curves.py`. The recipient
+clone always carries the aberration. Both low-fraction detection directions are
+swept (one sweep, `--modes`):
+
+- **`host` (relapse early-warning, the primary use):** detect the recipient
+  relapse clone (the minor component, carrying the aberration) against a clean
+  donor background. The blank (true host = 0) is pure donor.
+- **`donor` (mixed chimerism / substantial recipient):** detect the donor (the
+  minor component) against a recipient CN-LoH background. The blank (true donor
+  = 0) is a pure host carrying the aberration.
+
+For each direction: LoB = mean + 1.645·SD of the estimated minor fraction over
+blanks; LoD = lowest true minor fraction at which ≥95% of replicates exceed LoB
+(logistic fit of P(detected) vs log10(f)); a LoD past the 20% probed ceiling is
+"above range" (undetectable). Genotypes and capture biases are fixed per
+(relatedness, replicate); standard and robust (`--robust auto`) are computed per
+cell in one pass.
 
 | Axis | Values |
 |------|--------|
+| Detection direction | host (relapse), donor (mixed chimerism) |
 | Relatedness | unrelated, sibling |
 | Aberration kind | cnloh, deletion, gain |
 | Burden (fraction of eligible markers) | 0.0 (baseline), 0.1, 0.25, 0.5 |
-| Clonal fraction | 0.5, 1.0 |
-| True donor fraction | 0.2, 0.5, 0.8, 0.9, 0.95, 0.99 |
-| Replicates | 20 |
+| Clonal fraction | 1.0 (pure clone) |
+| True minor fraction | 0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2 |
+| Replicates | 30 |
 | Markers / depth | 100 / 1000x |
 
 (For `cnloh` only het markers are eligible; for `deletion`/`gain` every marker
-is, which is why they affect roughly twice as many markers at matched burden.)
+is, so they affect ~2x as many markers at matched burden.) Fixed noise model
+matches the other scripts (error 0.01, locus dropout 0.016, depth CV 0.43,
+realistic heavy-tailed biases).
 
-Fixed noise model matches the other validation scripts (error 0.01, locus
-dropout 0.016, depth CV 0.43, realistic heavy-tailed biases).
-
-Metrics per cell: MAE, signed bias, RMSE, 95% CI coverage, mean markers
-affected, and **mean markers flagged by the estimator's 3-SD outlier rule**.
-
-Outputs: `output/facts/cnv_loh_{raw,summary,headline}.csv` and
-`output/facts/fig_cnv_loh.png`. Wired into `paper/Snakefile`
+Outputs: `output/facts/cnv_loh_{raw,summary,headline}.csv` (with a `mode` column)
+and `output/facts/fig_cnv_loh.png` (2 rows = directions, 3 cols = kinds; log
+donor-% LoD axis; std solid / robust dashed). Wired into `paper/Snakefile`
 (`cnv_loh_validation`, `cnv_loh_plot`).
 
 ## Results
 
-20 replicates, 100 markers, 1000x, averaged over the six true donor fractions.
-Pure clone (clonal_fraction = 1.0). Baseline (no aberration): MAE 0.0016
-(unrelated) / 0.0023 (sibling), coverage 0.97 / 0.96.
+40 replicates, 100 markers, 1000x, pure clone. Baseline donor LoD (no
+aberration): **0.30%** (unrelated) / **0.75%** (sibling). Donor LoD with host
+aberration, standard → robust refit (">20%" = above the probed ceiling, donor
+undetectable):
 
-| Relatedness | Kind | Burden | MAE | Signed bias | 95% CI cov | Affected | Flagged |
-|-------------|------|-------:|----:|------------:|-----------:|---------:|--------:|
-| unrelated | cnloh    | 0.10 | 0.0114 | +0.010 | 0.89 | 3.7 | 1.4 |
-| unrelated | cnloh    | 0.25 | 0.0225 | +0.020 | 0.79 | 11.4 | 1.3 |
-| unrelated | cnloh    | 0.50 | 0.0409 | +0.039 | 0.62 | 19.9 | 0.4 |
-| unrelated | deletion | 0.10 | 0.0113 | +0.011 | 0.77 | 8.7 | 1.2 |
-| unrelated | deletion | 0.25 | 0.0391 | +0.039 | 0.22 | 25.4 | 0.7 |
-| unrelated | deletion | 0.50 | 0.0640 | +0.064 | 0.11 | 50.8 | 0.3 |
-| unrelated | gain     | 0.10 | 0.0047 | -0.004 | 0.82 | 9.7 | 1.3 |
-| unrelated | gain     | 0.25 | 0.0109 | -0.011 | 0.47 | 23.8 | 1.0 |
-| unrelated | gain     | 0.50 | 0.0210 | -0.021 | 0.20 | 46.7 | 0.4 |
-| sibling | cnloh    | 0.10 | 0.0143 | +0.007 | 0.87 | 4.0 | 0.8 |
-| sibling | cnloh    | 0.25 | 0.0276 | +0.023 | 0.80 | 11.8 | 0.5 |
-| sibling | cnloh    | 0.50 | 0.0401 | +0.036 | 0.78 | 20.8 | 0.2 |
-| sibling | deletion | 0.10 | 0.0127 | +0.012 | 0.88 | 9.2 | 0.7 |
-| sibling | deletion | 0.25 | 0.0410 | +0.041 | 0.50 | 24.7 | 0.4 |
-| sibling | deletion | 0.50 | 0.0697 | +0.070 | 0.22 | 48.5 | 0.1 |
-| sibling | gain     | 0.10 | 0.0048 | -0.004 | 0.93 | 9.1 | 0.6 |
-| sibling | gain     | 0.25 | 0.0087 | -0.008 | 0.78 | 23.6 | 0.6 |
-| sibling | gain     | 0.50 | 0.0239 | -0.024 | 0.37 | 51.0 | 0.2 |
+| Rel | Kind | Burden | LoD std → robust | markers affected / dropped |
+|-----|------|-------:|------------------|----------------------------|
+| unrelated | cnloh    | 0.10 | 18.1% → 9.8% | 4.3 / 3.6 |
+| unrelated | cnloh    | 0.25 | >20% → >20% | 11.7 / 6.0 |
+| unrelated | deletion | 0.10 | >20% → 6.9% | 9.6 / 3.8 |
+| unrelated | deletion | 0.25 | >20% → >20% | 25.2 / 6.0 |
+| unrelated | gain     | 0.10 | 1.0% → 0.40% | 9.7 / 5.9 |
+| unrelated | gain     | 0.25 | 2.3% → 0.52% | 24.5 / 9.7 |
+| unrelated | gain     | 0.50 | 4.5% → 0.53% | 48.4 / 15.3 |
+| sibling | cnloh    | 0.10 | 16.6% → 16.9% | 3.8 / 1.5 |
+| sibling | deletion | 0.10 | 19.7% → 17.8% | 9.8 / 1.9 |
+| sibling | gain     | 0.25 | 4.2% → 1.1% | 23.8 / 5.5 |
 
-MAE inflation at the highest burden vs baseline: deletion **30-40x**, CN-LoH
-**18-26x**, gain **10-13x**. Figure: `output/facts/fig_cnv_loh.png`.
+Figure: `output/facts/fig_cnv_loh.png`. Five things to note:
 
-Five things to note:
+1. **Host CNV/LoH wrecks the donor LoD.** Baseline ~0.3%; even a 10% CN-LoH or
+   deletion burden pushes it to ~16-20%, and ≥25% renders the donor
+   **undetectable within the 20% probed range**. A few aberrant markers on a
+   sparse genome-wide panel (the realistic arm-level case) are enough.
+2. **Deletion is worst, gain mildest.** Deletion skews allele balance *and*
+   halves locus DNA mass *and* hits every genotype, so it blows the LoD out at
+   the lowest burden. Gain only inflates LoD to a few percent (smaller ×1.5
+   DNA-mass change, gentler skew).
+3. **Robust refit recovers the gain case strongly** (4.5% → 0.5%, back near
+   baseline) and rescues low-burden deletion/CN-LoH in unrelated donors
+   (deletion 10%: >20% → 6.9%). It cannot rescue CN-LoH/deletion once burden
+   ≥25% (no clean marker majority) — those stay undetectable and are flagged
+   REVIEW rather than trusted.
+4. **Neutral on clean data:** baseline LoD is unchanged by robust (0.30% →
+   0.27% unrelated; gate is a no-op).
+5. **Siblings are hit at least as hard** (fewer informative markers, so each
+   rogue marker has more leverage and the robust floor binds sooner).
 
-1. **Even a modest burden matters.** 10% burden (a handful of markers on a
-   100-marker panel) already raises MAE 3-7x and drops coverage. Real arm-level
-   events on a sparse genome-wide panel land in exactly this few-markers regime.
-2. **Deletion is the worst kind.** It both skews allele balance and halves the
-   locus DNA mass, and it hits every genotype (not just hets), so it affects
-   ~2x as many markers and collapses coverage hardest (0.11-0.22 at burden 0.5).
-3. **The bias direction depends on the kind.** Deletion and CN-LoH bias *upward*
-   (donor overestimated -> residual host **underestimated**, the dangerous
-   under-call direction for relapse). Gain biases *downward* (donor
-   underestimated -> host **overestimated**, a false-alarm direction). A deletion
-   removes host DNA so the locus looks more donor; a gain adds host DNA so it
-   looks less donor.
-4. **Gain is the mildest** because tripling host copies is a smaller relative
-   DNA-mass change (x1.5) than halving it (x0.5), and the allele skew is gentler.
-5. **Siblings are generally hit at least as hard** as unrelated donors, because
-   they have fewer informative markers so each rogue marker carries more
-   leverage.
-
-Partial clone (clonal_fraction = 0.5) shows the same pattern at roughly half the
-magnitude, as expected from the mixture model.
+Earlier point-estimate (MAE) analysis in the donor-dominant regime gave the
+complementary clinical read: deletion/CN-LoH bias the donor fraction *upward*
+(residual host **under-called**, the dangerous relapse direction), gain biases
+it *downward* (false-alarm direction). The LoD framing above is the
+detection-limit view of the same effect and is what the figure now reports.
 
 ## Key finding: rogue markers are not rejected
 
@@ -181,35 +188,27 @@ set the scale the way it defeats the current 3-SD flag), refit on the survivors
 `--robust {off,auto,force}` / `--robust-k` (`_robust_refit`; k=3.5, ≤5 iters).
 
 The validation sweep records standard *and* robust per cell in one pass (no
-separate runs), so `cnv_loh_summary.csv` carries `mae`/`mae_robust`/
-`ci_coverage`/`ci_coverage_robust`, and `plot_cnv_loh.py` overlays them (solid =
-standard, dashed = robust). Pure clone, avg over true fractions, 20 reps:
+separate runs); `cnv_loh_summary.csv` carries `lod_std`/`lod_robust` and
+`plot_cnv_loh.py` overlays them. The donor-LoD recovery is in the Results table
+above; the short version:
 
-| Rel | Kind | Burden | MAE std → robust | CI cov std → robust | dropped |
-|-----|------|-------:|------------------|---------------------|--------:|
-| unrelated | cnloh    | 0.10 | 0.0114 → 0.0048 | 0.89 → 0.95 | 2.4 |
-| unrelated | cnloh    | 0.25 | 0.0225 → 0.0122 | 0.79 → 0.84 | 4.1 |
-| unrelated | deletion | 0.10 | 0.0113 → 0.0064 | 0.77 → 0.85 | 2.2 |
-| unrelated | deletion | 0.25 | 0.0391 → 0.0297 | 0.22 → 0.31 | 2.4 |
-| unrelated | gain     | 0.25 | 0.0109 → 0.0085 | 0.47 → 0.50 | 4.0 |
-| sibling | cnloh    | 0.25 | 0.0276 → 0.0180 | 0.80 → 0.81 | 2.2 |
-| sibling | deletion | 0.25 | 0.0410 → 0.0344 | 0.50 → 0.52 | 0.7 |
-
-At low-to-moderate burden the refit cuts MAE roughly 1.5-2.4x and recovers
-coverage, most strongly for CN-LoH and deletion in unrelated donors. It helps
-less for siblings (fewer informative markers, so the marker floor binds and the
-engage-gate trips less often).
+- **Gain:** strong recovery, LoD back near baseline (e.g. unrelated 25% burden
+  2.3% → 0.52%, 50% burden 4.5% → 0.53%).
+- **Deletion / CN-LoH at low burden, unrelated:** partial recovery (deletion 10%
+  >20% → 6.9%; CN-LoH 10% 18% → 9.8%).
+- **CN-LoH / deletion at ≥25% burden, and siblings:** little or no recovery
+  (no clean marker majority; the marker floor binds for siblings).
 
 **Neutral on clean data (why it is safe as the default).** At burden 0 the gate
-never engages, so the estimate is byte-identical: MAE 0.0016 → 0.0016 (unrelated),
-0.0023 → 0.0023 (sibling). Turning it on costs nothing when there is nothing to
-fix, which is what keeps the already-validated cohort stable.
+never engages, so the LoD is unchanged: 0.30% → 0.27% (unrelated), 0.75% → 0.83%
+(sibling, within replicate noise). Turning it on costs nothing when there is
+nothing to fix, which keeps the already-validated cohort stable.
 
-**Limit at extreme burden.** At 50% burden it barely helps (deletion 0.064 →
-0.063) and gain can even tick worse, because the aberrant markers are no longer a
-minority so median/MAD has no clean reference set. This is exactly why the high
-drop fraction is flagged REVIEW rather than trusted: the regime needs orthogonal
-CNV information (section 3), not more trimming.
+**Limit at high burden.** Once burden ≥25% for CN-LoH/deletion the donor is
+undetectable (LoD >20%) with or without the refit, because the aberrant markers
+are no longer a minority and median/MAD has no clean reference set. This is
+exactly why a high drop fraction is flagged REVIEW rather than trusted: the
+regime needs orthogonal CNV information (section 3), not more trimming.
 
 ### Packaging: default-on, gated, and flagged (IMPLEMENTED)
 

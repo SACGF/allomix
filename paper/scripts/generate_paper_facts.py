@@ -52,7 +52,7 @@ def run_sample(host_path, donor_path, sample_path, error_rate=0.01, marker_biase
     result = estimate_single_donor_bb(
         genotypes.informative,
         error_rate=error_rate,
-        calibration=PanelCalibration(biases=marker_biases or {}),
+        calibration=PanelCalibration(biases=marker_biases),
     )
     return result, genotypes
 

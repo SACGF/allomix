@@ -17,7 +17,35 @@ from allomix.error_rates import (
     save_error_table,
 )
 from allomix.genotype import parse_vcf
+from allomix.relatedness import VALID_DECLARATIONS
 from allomix.report import timeline_json, to_json, to_tsv
+
+
+def _expected_relatedness_value(value: str) -> str:
+    """Validate one ``--expected-relatedness`` value (argparse ``type``).
+
+    Accepts the relationship declarations plus NA (case-insensitive), returning
+    the lowercased form. Rejects "identical" with an explanation: host and donor
+    are only identical for a monozygotic-twin (syngeneic) donor, which has no
+    host/donor genetic differences to measure, so genotype-based chimerism does
+    not apply and there is nothing to declare.
+    """
+    v = value.strip().lower()
+    if v == "identical":
+        raise argparse.ArgumentTypeError(
+            "'identical' is not a valid expected relatedness. Host and donor are "
+            "only identical for a monozygotic-twin (syngeneic) donor, which has "
+            "no host/donor genetic differences to measure, so genotype-based "
+            "chimerism does not apply. (If samples do come back identical, "
+            "allomix fails QC and says so.)"
+        )
+    allowed = {*VALID_DECLARATIONS, "na"}
+    if v not in allowed:
+        valid = ", ".join([*VALID_DECLARATIONS, "NA"])
+        raise argparse.ArgumentTypeError(
+            f"invalid expected relatedness {value!r}; choose from {valid}"
+        )
+    return v
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -40,6 +68,25 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         action="append",
         metavar="SAMPLE_NAME",
         help="Donor sample name in VCF (repeat for multi-donor)",
+    )
+    parser.add_argument(
+        "--expected-relatedness",
+        action="append",
+        metavar="RELATIONSHIP",
+        type=_expected_relatedness_value,
+        help="Declared host-vs-donor relationship for the QC relatedness check, "
+             "one per --donor-sample in the same order (repeat to match). One of "
+             f"{', '.join(VALID_DECLARATIONS)} or NA (no expectation). A declared "
+             "relationship that crosses the related/unrelated boundary fails QC. "
+             "'identical' is rejected: an identical-twin (syngeneic) donor cannot "
+             "be monitored by genotype.",
+    )
+    parser.add_argument(
+        "--relatedness-tolerance",
+        type=int,
+        default=1,
+        help="Allowed degree distance before a declared-vs-detected relatedness "
+             "mismatch is flagged for review (default: 1)",
     )
     parser.add_argument(
         "--sample",
@@ -122,6 +169,21 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _validate_expected_relatedness(args: argparse.Namespace) -> None:
+    """Check --expected-relatedness count matches the number of donors.
+
+    Raises SystemExit with a clear message rather than letting a count mismatch
+    surface later as a strict-zip error in the QC step.
+    """
+    er = args.expected_relatedness
+    if er is not None and len(er) != len(args.donor_sample):
+        raise SystemExit(
+            f"--expected-relatedness given {len(er)} value(s) but there are "
+            f"{len(args.donor_sample)} donor(s); provide exactly one per "
+            "--donor-sample, in the same order (use NA for no expectation)"
+        )
+
+
 def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
     """Check that all required sample names exist in the VCF header.
 
@@ -153,6 +215,8 @@ def _run_single_sample(
     artifact_filter: bool = True,
     robust: str = "off",
     robust_k: float = 3.5,
+    expected_relatedness: list[str] | None = None,
+    relatedness_tolerance: int = 1,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -180,6 +244,8 @@ def _run_single_sample(
         sample_name=admix_sample,
         robust=robust,
         robust_k=robust_k,
+        expected_relatedness=expected_relatedness,
+        relatedness_tolerance=relatedness_tolerance,
     )
 
     if not use_sex_chroms and analysis.genotypes.n_sex_chrom_excluded:
@@ -215,6 +281,7 @@ def _load_errors(args: argparse.Namespace) -> dict | None:
 
 def cmd_monitor(args: argparse.Namespace) -> int:
     """Run the monitor subcommand."""
+    _validate_expected_relatedness(args)
     _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
 
@@ -253,6 +320,8 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 artifact_filter=not args.no_artifact_filter,
                 robust=args.robust,
                 robust_k=args.robust_k,
+                expected_relatedness=args.expected_relatedness,
+                relatedness_tolerance=args.relatedness_tolerance,
             )
 
             if args.format == "json":
@@ -269,6 +338,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
 def cmd_timeline(args: argparse.Namespace) -> int:
     """Run the timeline subcommand."""
+    _validate_expected_relatedness(args)
     _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
 
@@ -301,6 +371,8 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             artifact_filter=not args.no_artifact_filter,
             robust=args.robust,
             robust_k=args.robust_k,
+            expected_relatedness=args.expected_relatedness,
+            relatedness_tolerance=args.relatedness_tolerance,
         )
         results.append((genotypes.sample_name, result, qc))
 

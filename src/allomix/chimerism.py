@@ -38,6 +38,7 @@ from scipy.stats import chi2, norm
 
 from allomix.detect import HostPresenceResult
 from allomix.genotype import InformativeMarker
+from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -87,6 +88,12 @@ class ChimerismResult:
     # n_informative. Both are 0 when robust mode is off or nothing was dropped.
     n_robust_excluded: int = 0
     robust_drop_fraction: float = 0.0
+    # Identity QC (see ``allomix.relatedness``), attached by ``analyse_sample``.
+    # relatedness holds one entry per reference-sample pair (host vs each donor);
+    # admix_consistency is the consensus-homozygote swap check. None when the
+    # caller did not compute them.
+    relatedness: list[RelatednessResult] | None = None
+    admix_consistency: AdmixConsistencyResult | None = None
 
 
 @dataclass
@@ -106,6 +113,10 @@ class MultiDonorResult:
     host_presence: HostPresenceResult | None = None
     n_robust_excluded: int = 0
     robust_drop_fraction: float = 0.0
+    # Identity QC; see ChimerismResult above. For multi-donor, relatedness also
+    # includes donor-vs-donor pairs.
+    relatedness: list[RelatednessResult] | None = None
+    admix_consistency: AdmixConsistencyResult | None = None
 
 
 # Robust-refit tuning. ROBUST_K is the median/MAD residual cut (robust SDs);

@@ -6,6 +6,8 @@ import math
 import random
 import re
 
+import pytest
+
 import allomix
 from allomix.chimerism import estimate_single_donor_bb
 from allomix.genotype import InformativeMarker, MarkerCounts, MarkerGenotypes
@@ -15,6 +17,13 @@ from allomix.qc import (
     _compute_gof_pval,
     _marker_loss_diagnosis,
     assess_quality,
+)
+from allomix.relatedness import (
+    DEGREE_FIRST,
+    DEGREE_IDENTICAL,
+    DEGREE_UNRELATED,
+    AdmixConsistencyResult,
+    RelatednessResult,
 )
 
 # ---------------------------------------------------------------------------
@@ -562,3 +571,127 @@ class TestRobustExclusionReview:
         result = _make_chimerism_result(n_informative=30)
         qc = assess_quality(result, _make_genotypes())
         assert not any("Robust refit" in w for w in qc.warnings)
+
+
+def _rel(degree: int, coefficient: float) -> RelatednessResult:
+    """A RelatednessResult with a fixed degree, for QC-integration tests."""
+    from allomix.relatedness import DEGREE_LABELS
+
+    return RelatednessResult(
+        a_name="host",
+        b_name="donor",
+        coefficient=coefficient,
+        ci_low=coefficient - 0.05,
+        ci_high=coefficient + 0.05,
+        confidence="high",
+        relationship=DEGREE_LABELS[degree],
+        degree=degree,
+        n_sites=80,
+        het_a=60,
+        het_b=60,
+        shared_hets=40,
+        ibs0=2,
+    )
+
+
+class TestRelatednessQC:
+    """Declared-vs-detected relatedness drives the QC status."""
+
+    def test_boundary_mismatch_fails(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.relatedness = [_rel(DEGREE_UNRELATED, 0.03)]
+        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["first-degree"])
+        assert qc.status == "FAIL"
+        assert any("relatedness check FAIL" in w for w in qc.warnings)
+
+    def test_within_tolerance_passes(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]
+        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["first-degree"])
+        assert qc.status == "PASS"
+
+    def test_no_expectation_no_verdict(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]
+        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["NA"])
+        assert qc.status == "PASS"
+        assert not any("relatedness check" in w for w in qc.warnings)
+        # The estimate is still carried on the report even without a verdict.
+        assert qc.relatedness is not None
+
+    def test_relatedness_attached_to_report(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.relatedness == result.relatedness
+
+    def test_count_mismatch_raises(self):
+        # More declarations than host-vs-donor pairs: strict zip errors rather
+        # than silently leaving a donor unchecked.
+        result = _make_chimerism_result(n_informative=30)
+        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]  # one host-vs-donor pair
+        with pytest.raises(ValueError):
+            assess_quality(
+                result,
+                _make_genotypes(),
+                expected_relatedness=["first-degree", "unrelated"],
+            )
+
+    def test_gaining_relatedness_reviews_not_fails(self):
+        # Declared unrelated but a non-identical relationship detected: REVIEW,
+        # not FAIL (not a random-swap signature).
+        result = _make_chimerism_result(n_informative=30)
+        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]
+        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["unrelated"])
+        assert qc.status == "REVIEW"
+        assert not any("FAIL" in w for w in qc.warnings)
+
+    def test_duplicate_fails_without_declaration(self):
+        # An identical reference pair is an unconditional FAIL with a clear
+        # message, even when no expected relationship is declared.
+        result = _make_chimerism_result(n_informative=30)
+        result.relatedness = [_rel(DEGREE_IDENTICAL, 1.0)]
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "FAIL"
+        assert any("Identical reference samples" in w for w in qc.warnings)
+
+    def test_duplicate_reported_once_with_declaration(self):
+        # When identical and a declaration is given, only the duplicate message
+        # is emitted (the declared-verdict message is skipped).
+        result = _make_chimerism_result(n_informative=30)
+        result.relatedness = [_rel(DEGREE_IDENTICAL, 1.0)]
+        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["unrelated"])
+        assert qc.status == "FAIL"
+        assert any("Identical reference samples" in w for w in qc.warnings)
+        assert not any("relatedness check" in w for w in qc.warnings)
+
+
+class TestAdmixSwapQC:
+    """A significant consensus-homozygote swap test promotes REVIEW."""
+
+    def test_swap_promotes_review(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.admix_consistency = AdmixConsistencyResult(
+            n_consensus_hom=40, n_discordant=40, discordant_fraction=1.0, swap_pval=1e-30
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "REVIEW"
+        assert any("Possible sample swap" in w for w in qc.warnings)
+
+    def test_clean_admix_no_warning(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.admix_consistency = AdmixConsistencyResult(
+            n_consensus_hom=40, n_discordant=0, discordant_fraction=0.0, swap_pval=1.0
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "PASS"
+        assert not any("sample swap" in w for w in qc.warnings)
+
+    def test_too_few_consensus_sites_no_action(self):
+        result = _make_chimerism_result(n_informative=30)
+        # Significant but below MIN_CONSENSUS -> not acted on.
+        result.admix_consistency = AdmixConsistencyResult(
+            n_consensus_hom=5, n_discordant=5, discordant_fraction=1.0, swap_pval=1e-10
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "PASS"

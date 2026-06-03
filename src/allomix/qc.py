@@ -25,6 +25,11 @@ HOST_PRESENCE_REVIEW_P = 0.01
 # A factor of 3 absorbs sampling noise; tighter ratios produce a lot of
 # noise warnings at borderline cells.
 HOST_PRESENCE_RATIO_GAP = 3.0
+# When the robust refit excludes more than this fraction of informative markers,
+# promote the result to REVIEW: a large exclusion points at host copy-number /
+# LoH (or a genotyping problem), and the robust refit itself is unreliable once
+# the aberrant markers are no longer a clear minority.
+ROBUST_REVIEW_FRACTION = 0.15
 
 
 @dataclass
@@ -353,9 +358,23 @@ def assess_quality(
                 f"f_host_est={hp.f_host_mle:.4%}, mle_host={mle_host:.4%})"
             )
 
-    # A computed-but-questionable result (poor fit or imprecise) is flagged for
-    # review rather than passed silently or failed outright.
-    if status != "FAIL" and (poor_gof or wide_ci):
+    # Robust refit exclusions: a few dropped markers is routine, but a large
+    # fraction signals host copy-number / LoH (or genotyping error) and means the
+    # trimmed fit should not be trusted blindly.
+    high_robust_drop = False
+    n_robust = getattr(result, "n_robust_excluded", 0)
+    drop_frac = getattr(result, "robust_drop_fraction", 0.0)
+    if n_robust > 0:
+        warnings.append(
+            f"Robust refit excluded {n_robust} marker(s) ({drop_frac:.0%}) as "
+            "residual outliers (possible host copy-number/LoH or genotyping error)"
+        )
+        if drop_frac > ROBUST_REVIEW_FRACTION:
+            high_robust_drop = True
+
+    # A computed-but-questionable result (poor fit, imprecise, or heavily
+    # trimmed) is flagged for review rather than passed silently or failed.
+    if status != "FAIL" and (poor_gof or wide_ci or high_robust_drop):
         status = "REVIEW"
 
     return QCReport(

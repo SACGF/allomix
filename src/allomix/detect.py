@@ -31,7 +31,7 @@ import numpy as np
 from scipy.optimize import brentq, minimize_scalar
 from scipy.stats import chi2, poisson
 
-from allomix.constants import N_OTHER_BASES
+from allomix.constants import CI_LEVEL, DEFAULT_ERROR_RATE, N_OTHER_BASES
 from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey  # MarkerKey re-exported below
 
@@ -394,7 +394,7 @@ def _profile_ci_for_f(
     chi-sq df=1). Lower bound is clipped at 0 since f_h >= 0 is the parameter
     constraint; upper bound is bracketed in (f_hat, 1].
     """
-    drop = chi2.ppf(0.95, df=1) / 2.0
+    drop = chi2.ppf(CI_LEVEL, df=1) / 2.0
 
     def gap(f_val: float) -> float:
         return ll_hat - _loglik(ys, ns, coef, e, f_val) - drop
@@ -418,7 +418,7 @@ def _profile_ci_for_f(
 def host_presence_test(
     informative_markers: list[InformativeMarker],
     marker_errors: dict[MarkerKey, MarkerErrorRates] | None = None,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     error_floor: float = 1e-5,
     artifact_filter: bool = True,
     artifact_thresholds: ArtifactThresholds | None = None,

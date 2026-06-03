@@ -10,6 +10,13 @@ from pathlib import Path
 
 from cyvcf2 import VCF
 
+from allomix.constants import (
+    DEFAULT_MIN_DP,
+    DEFAULT_MIN_GQ,
+    HOM_ALT_MIN_VAF,
+    HOM_REF_MAX_VAF,
+)
+
 
 @dataclass
 class MarkerData:
@@ -97,13 +104,12 @@ _SEX_CHROM_NAMES = {"X", "Y", "M", "MT"}
 
 # Reference-sample GT/AD consistency thresholds (see parse_vcf, gt_ad_consistency).
 # A called genotype is dropped when its AD-derived VAF contradicts the call.
-# Bounds are deliberately loose to tolerate genuine capture bias. The het and
-# hom bounds are symmetric about 0.5, so each pair is defined from one number.
+# Bounds are deliberately loose to tolerate genuine capture bias. The het bounds
+# are symmetric about 0.5; the hom cutoffs (shared with the simulator's caller)
+# live in allomix.constants.
 VAF_CHECK_MIN_DEPTH = 20  # need this many total reads before judging the VAF
 HET_MIN_VAF = 0.35
 HET_MAX_VAF = 1.0 - HET_MIN_VAF  # 0.65
-HOM_REF_MAX_VAF = 0.05
-HOM_ALT_MIN_VAF = 1.0 - HOM_REF_MAX_VAF  # 0.95
 
 
 def is_sex_chrom(chrom: str) -> bool:
@@ -323,8 +329,8 @@ def classify_markers(
     host: list[MarkerData],
     donors: list[list[MarkerData]],
     admixture: list[MarkerData],
-    min_dp: int = 100,
-    min_gq: int = 20,
+    min_dp: int = DEFAULT_MIN_DP,
+    min_gq: int = DEFAULT_MIN_GQ,
     pass_only: bool = True,
     sample_name: str = "",
     use_sex_chroms: bool = False,

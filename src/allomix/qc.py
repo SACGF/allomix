@@ -41,6 +41,15 @@ ROBUST_REVIEW_FRACTION = 0.15
 # least MIN_CONSENSUS markers) the sample is promoted to REVIEW.
 SWAP_REVIEW_P = 1e-3
 
+# Sample-level QC warning thresholds (soft warnings, not the per-marker filters).
+LOW_MEAN_DEPTH_WARN = 100  # warn when mean admixture depth is below this
+WIDE_CI_WARN_PCT = 20  # warn when a donor-fraction CI spans more than this (%)
+GOF_REVIEW_P = 0.01  # goodness-of-fit p below this promotes the result to REVIEW
+
+# Clamp keeping the expected VAF strictly inside (0, 1) so the GoF variance never
+# collapses to zero at homozygous markers (see _error_adjusted_p_alt rationale).
+_VAF_EPS = 1e-6
+
 
 @dataclass
 class QCReport:
@@ -162,7 +171,7 @@ def _compute_gof_pval(
             ev_raw = _error_adjusted_p_alt(m.expected_vaf, error_rate)
         else:
             ev_raw = m.expected_vaf
-        ev = max(1e-6, min(1.0 - 1e-6, ev_raw))
+        ev = max(_VAF_EPS, min(1.0 - _VAF_EPS, ev_raw))
         if math.isinf(rho):
             var_vaf = ev * (1.0 - ev) / n
         else:
@@ -333,7 +342,7 @@ def assess_quality(
             warnings.append(diagnosis)
 
     # Low mean depth
-    if mean_depth < 100:
+    if mean_depth < LOW_MEAN_DEPTH_WARN:
         warnings.append(f"Low mean depth: {mean_depth:.0f}x < 100x")
 
     # CI width check — handle single-donor and multi-donor
@@ -342,7 +351,7 @@ def assess_quality(
         # Multi-donor result
         for i, (ci_lo, ci_hi) in enumerate(result.donor_fraction_cis):
             ci_width = (ci_hi - ci_lo) * 100
-            if ci_width > 20:
+            if ci_width > WIDE_CI_WARN_PCT:
                 wide_ci = True
                 warnings.append(f"Wide CI for donor {i + 1}: {ci_width:.1f}% > 20%")
         per_donor_n_inf = getattr(result, "per_donor_n_informative", None)
@@ -356,12 +365,12 @@ def assess_quality(
         # Single-donor result
         ci_lo, ci_hi = result.donor_fraction_ci
         ci_width = (ci_hi - ci_lo) * 100
-        if ci_width > 20:
+        if ci_width > WIDE_CI_WARN_PCT:
             wide_ci = True
             warnings.append(f"Wide confidence interval: {ci_width:.1f}% > 20%")
 
     # Poor goodness of fit
-    if gof_pval is not None and gof_pval < 0.01:
+    if gof_pval is not None and gof_pval < GOF_REVIEW_P:
         poor_gof = True
         warnings.append(
             "Poor model fit (goodness-of-fit p < 0.01) — "

@@ -34,7 +34,12 @@ from scipy.optimize import brentq, minimize, minimize_scalar
 from scipy.special import gammaln
 from scipy.stats import chi2, norm
 
-from allomix.constants import N_OTHER_BASES
+from allomix.constants import (
+    CI_LEVEL,
+    DEFAULT_ERROR_RATE,
+    N_OTHER_BASES,
+    ROBUST_K_DEFAULT,
+)
 from allomix.detect import HostPresenceResult
 from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey
@@ -158,16 +163,20 @@ class MultiDonorResult:
     admix_consistency: AdmixConsistencyResult | None = None
 
 
-# Robust-refit tuning. ROBUST_K is the median/MAD residual cut (robust SDs);
-# 3.5 leaves clean data essentially untouched (drops <1% of markers by chance)
-# while removing copy-number/LoH-inconsistent markers. The refit floors keep
-# trimming from gutting sparse panels: "auto" never drops below
+# Robust-refit tuning. The residual cut itself (ROBUST_K_DEFAULT) lives in
+# allomix.constants since it is also the CLI/analysis default. The refit floors
+# below keep trimming from gutting sparse panels: "auto" never drops below
 # ROBUST_MIN_MARKERS, "force" never below ROBUST_HARD_MIN.
-ROBUST_K_DEFAULT = 3.5
 ROBUST_MAX_ITER = 5
 ROBUST_MIN_MARKERS = 15
 ROBUST_HARD_MIN = 4
 ROBUST_MODES = ("off", "auto", "force")
+
+# Residual outlier cut for the non-robust per-marker flag, in standard
+# deviations: a marker whose residual is more than this many SDs from the mean
+# residual is marked excluded (flagged, not refit). Used by both the single-
+# and multi-donor estimators below.
+OUTLIER_SD_THRESHOLD = 3.0
 # "auto" engages the refit only when the first pass finds more residual outliers
 # than this trigger: max(ROBUST_TRIGGER_MIN, ceil(ROBUST_TRIGGER_FRAC * n)). At
 # k=3.5 a clean panel produces <1 chance outlier on average, so a trigger of ~3
@@ -218,7 +227,7 @@ def expected_weight(
     return w
 
 
-def alt_read_probability(w: float, error_rate: float = 0.01) -> float:
+def alt_read_probability(w: float, error_rate: float = DEFAULT_ERROR_RATE) -> float:
     """Probability an observed read is ALT, given expected REF weight ``w``.
 
     Under the 4-state error model a read is observed as ALT if it comes from a
@@ -245,7 +254,7 @@ def log_likelihood_marker_bb(
     ad_ref: int,
     ad_alt: int,
     w: float,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     rho: float = 100.0,
     e_refalt: float | None = None,
     e_altref: float | None = None,
@@ -306,7 +315,7 @@ def log_likelihood_marker_bb(
 def total_log_likelihood_bb(
     markers: list[InformativeMarker],
     f_donor: float,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     rho: float = 100.0,
     calibration: PanelCalibration | None = None,
 ) -> float:
@@ -425,7 +434,7 @@ def _precompute_marker_arrays(
 def _total_ll_vec(
     arr: _MarkerArrays,
     f_donor: float,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     rho: float = 100.0,
 ) -> float:
     """Vectorized single-donor beta-binomial total log-likelihood.
@@ -480,7 +489,7 @@ def _total_ll_vec(
 def total_log_likelihood_multi_bb(
     markers: list[InformativeMarker],
     donor_fractions: list[float],
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     rho: float = 100.0,
     calibration: PanelCalibration | None = None,
 ) -> float:
@@ -586,7 +595,7 @@ def _compute_per_marker_results(
             )
         )
 
-    # Flag outliers (residual > 3 SD)
+    # Flag outliers (residual > OUTLIER_SD_THRESHOLD SDs)
     if len(residuals) >= 2:
         r_arr = np.array(residuals)
         mean_r = float(np.mean(r_arr))
@@ -594,7 +603,7 @@ def _compute_per_marker_results(
 
         if sd_r > 0:
             for i, mr in enumerate(per_marker):
-                if abs(residuals[i] - mean_r) > 3.0 * sd_r:
+                if abs(residuals[i] - mean_r) > OUTLIER_SD_THRESHOLD * sd_r:
                     per_marker[i] = MarkerResult(
                         chrom=mr.chrom,
                         pos=mr.pos,
@@ -611,19 +620,32 @@ def _compute_per_marker_results(
     return per_marker
 
 
-# One-sided 95% normal quantile (z_0.95 ~= 1.6449), used for EP17-style LoB/LoD.
-_Z95 = float(norm.ppf(0.95))
+# One-sided normal quantile at CI_LEVEL (z_0.95 ~= 1.6449), used for EP17-style
+# LoB/LoD.
+_Z95 = float(norm.ppf(CI_LEVEL))
 
 # Margin used to keep a probability strictly inside the open interval (0, 1),
 # so that p * (1 - p) stays positive and the marker variance never collapses to
 # zero. This is a safety clamp, not machine epsilon (np.finfo(float).eps).
 _PROB_EPS = 1e-9
 
+# Consistency factor converting a median absolute deviation to a standard
+# deviation for normally distributed data (1 / norm.ppf(0.75)). Used by the
+# robust refit to put the MAD-based residual scale on an SD footing.
+_MAD_TO_SD = 1.4826
+
+# Feasible range for the beta-binomial concentration rho during optimisation.
+# Values outside this are rejected with a large finite penalty (_INFEASIBLE_PENALTY)
+# so Nelder-Mead stays in-bounds without a hard constraint.
+_RHO_MIN = 0.5
+_RHO_MAX = 50000.0
+_INFEASIBLE_PENALTY = 1e30
+
 
 def fraction_se(
     markers: list[InformativeMarker],
     f_donor: float,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     rho: float = float("inf"),
     calibration: PanelCalibration | None = None,
 ) -> float:
@@ -686,7 +708,7 @@ def fraction_se(
 
 def detection_limit(
     markers: list[InformativeMarker],
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     rho: float = float("inf"),
     calibration: PanelCalibration | None = None,
 ) -> tuple[float, float]:
@@ -732,7 +754,7 @@ def detection_limit(
 
 def _estimate_single_donor_bb_core(
     markers: list[InformativeMarker],
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     grid_steps: int = 1001,
     calibration: PanelCalibration | None = None,
 ) -> ChimerismResult:
@@ -784,10 +806,10 @@ def _estimate_single_donor_bb_core(
     def neg_ll_joint(x):
         f_val, log_rho_val = x
         if f_val < 0.0 or f_val > 1.0:
-            return 1e30
+            return _INFEASIBLE_PENALTY
         rho_val = math.exp(log_rho_val)
-        if rho_val < 0.5 or rho_val > 50000:
-            return 1e30
+        if rho_val < _RHO_MIN or rho_val > _RHO_MAX:
+            return _INFEASIBLE_PENALTY
         return -_total_ll_vec(arr, f_val, error_rate, rho_val)
 
     opt = minimize(
@@ -803,14 +825,14 @@ def _estimate_single_donor_bb_core(
     # Step 3: Profile likelihood CIs for f, profiling out rho at each f.
     # rho upper bound matches the Nelder-Mead constraint (50000) to avoid
     # profile_ll_f(f_mle) < ll_max_joint, which causes brentq sign errors.
-    threshold = chi2.ppf(0.95, df=1)
+    threshold = chi2.ppf(CI_LEVEL, df=1)
     half_threshold = threshold / 2.0
 
     def profile_ll_f(f_val: float) -> float:
         """Max LL over rho at a given f."""
         opt_rho = minimize_scalar(
             lambda log_r: -_total_ll_vec(arr, f_val, error_rate, math.exp(log_r)),
-            bounds=(math.log(1.0), math.log(50000.0)),
+            bounds=(math.log(1.0), math.log(_RHO_MAX)),
             method="bounded",
         )
         return -float(opt_rho.fun)
@@ -906,7 +928,7 @@ def _robust_refit(
             break
         resids = np.array([mr.residual for mr in result.per_marker], dtype=float)
         med = float(np.median(resids))
-        mad = float(np.median(np.abs(resids - med))) * 1.4826
+        mad = float(np.median(np.abs(resids - med))) * _MAD_TO_SD
         if mad <= 0.0:
             break
         keep_mask = np.abs(resids - med) <= robust_k * mad
@@ -942,7 +964,7 @@ def _robust_refit(
 
 def estimate_single_donor_bb(
     markers: list[InformativeMarker],
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     grid_steps: int = 1001,
     calibration: PanelCalibration | None = None,
     robust: str = "off",
@@ -1005,7 +1027,7 @@ def estimate_single_donor_bb(
 def _estimate_multi_donor_core(
     markers: list[InformativeMarker],
     n_donors: int = 2,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     grid_steps: int = 101,
     calibration: PanelCalibration | None = None,
 ) -> MultiDonorResult:
@@ -1080,10 +1102,10 @@ def _estimate_multi_donor_core(
     def neg_ll(x):
         f1, f2, log_rho = x
         if f1 < 0 or f2 < 0 or f1 + f2 > 1.0:
-            return 1e30
+            return _INFEASIBLE_PENALTY
         rho = math.exp(log_rho)
-        if rho < 0.5 or rho > 50000:
-            return 1e30
+        if rho < _RHO_MIN or rho > _RHO_MAX:
+            return _INFEASIBLE_PENALTY
         return -total_log_likelihood_multi_bb(
             markers, [f1, f2], error_rate, rho, cal,
         )
@@ -1140,7 +1162,7 @@ def _estimate_multi_donor_core(
 def estimate_multi_donor(
     markers: list[InformativeMarker],
     n_donors: int = 2,
-    error_rate: float = 0.01,
+    error_rate: float = DEFAULT_ERROR_RATE,
     grid_steps: int = 101,
     calibration: PanelCalibration | None = None,
     robust: str = "off",
@@ -1193,7 +1215,7 @@ def _profile_likelihood_cis_multi(
     a time. Overdispersion is handled by the beta-binomial likelihood
     (via rho profiling) rather than by inflating the threshold.
     """
-    threshold = float(chi2.ppf(0.95, df=1))
+    threshold = float(chi2.ppf(CI_LEVEL, df=1))
     half_threshold = threshold / 2.0
     cis: list[tuple[float, float]] = []
 
@@ -1214,7 +1236,7 @@ def _profile_likelihood_cis_multi(
                             calibration,
                         )
                     ),
-                    bounds=(math.log(1.0), math.log(50000.0)),
+                    bounds=(math.log(1.0), math.log(_RHO_MAX)),
                     method="bounded",
                 )
                 return -float(opt_rho.fun)
@@ -1223,10 +1245,10 @@ def _profile_likelihood_cis_multi(
             def neg_ll_inner(x, _di=_didx):
                 fj, log_r = x
                 if fj < 0 or fj > max_fj:
-                    return 1e30
+                    return _INFEASIBLE_PENALTY
                 rho = math.exp(log_r)
-                if rho < 0.5 or rho > 50000:
-                    return 1e30
+                if rho < _RHO_MIN or rho > _RHO_MAX:
+                    return _INFEASIBLE_PENALTY
                 fracs = [fi, fj] if _di == 0 else [fj, fi]
                 return -total_log_likelihood_multi_bb(
                     markers, fracs, error_rate, rho, calibration,
@@ -1297,7 +1319,7 @@ def _per_marker_results_multi(
             )
         )
 
-    # Flag outliers (residual > 3 SD)
+    # Flag outliers (residual > OUTLIER_SD_THRESHOLD SDs)
     if len(residuals) >= 2:
         r_arr = np.array(residuals)
         mean_r = float(np.mean(r_arr))
@@ -1305,7 +1327,7 @@ def _per_marker_results_multi(
 
         if sd_r > 0:
             for i, mr in enumerate(per_marker):
-                if abs(residuals[i] - mean_r) > 3.0 * sd_r:
+                if abs(residuals[i] - mean_r) > OUTLIER_SD_THRESHOLD * sd_r:
                     per_marker[i] = MarkerResult(
                         chrom=mr.chrom,
                         pos=mr.pos,

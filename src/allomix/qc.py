@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from scipy.stats import chi2
 
 from allomix.chimerism import ChimerismResult, MarkerResult
+from allomix.constants import N_OTHER_BASES
 from allomix.detect import HostPresenceResult
 from allomix.genotype import MarkerGenotypes
 from allomix.relatedness import (
@@ -104,8 +105,9 @@ def _error_adjusted_p_alt(expected_vaf: float, error_rate: float) -> float:
     """
     e = error_rate
     w = 1.0 - expected_vaf  # reference weight
-    p_alt = (1.0 - w) * (1.0 - e) + w * e / 3.0
-    p_ref = w * (1.0 - e) + (1.0 - w) * e / 3.0
+    e_specific = e / N_OTHER_BASES  # miscall to one specific base
+    p_alt = (1.0 - w) * (1.0 - e) + w * e_specific
+    p_ref = w * (1.0 - e) + (1.0 - w) * e_specific
     return p_alt / (p_ref + p_alt)
 
 

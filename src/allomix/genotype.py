@@ -95,6 +95,16 @@ class MarkerGenotypes:
 
 _SEX_CHROM_NAMES = {"X", "Y", "M", "MT"}
 
+# Reference-sample GT/AD consistency thresholds (see parse_vcf, gt_ad_consistency).
+# A called genotype is dropped when its AD-derived VAF contradicts the call.
+# Bounds are deliberately loose to tolerate genuine capture bias. The het and
+# hom bounds are symmetric about 0.5, so each pair is defined from one number.
+VAF_CHECK_MIN_DEPTH = 20  # need this many total reads before judging the VAF
+HET_MIN_VAF = 0.35
+HET_MAX_VAF = 1.0 - HET_MIN_VAF  # 0.65
+HOM_REF_MAX_VAF = 0.05
+HOM_ALT_MIN_VAF = 1.0 - HOM_REF_MAX_VAF  # 0.95
+
 
 def is_sex_chrom(chrom: str) -> bool:
     """True if ``chrom`` is a sex or mitochondrial contig (chr-prefix optional)."""
@@ -202,16 +212,16 @@ def parse_vcf(
         # systematic bias into the chimerism estimator at the recovered
         # marker. The thresholds are loose to tolerate genuine capture
         # bias (median |bias| ~0.5%, 95th pct ~4%).
-        if gt_ad_consistency and (ad_ref + ad_alt) >= 20 and alt != ".":
+        if gt_ad_consistency and (ad_ref + ad_alt) >= VAF_CHECK_MIN_DEPTH and alt != ".":
             vaf = ad_alt / (ad_ref + ad_alt)
             if gt == (0, 1):
-                if vaf < 0.35 or vaf > 0.65:
+                if vaf < HET_MIN_VAF or vaf > HET_MAX_VAF:
                     continue
             elif gt == (0, 0):
-                if vaf > 0.05:
+                if vaf > HOM_REF_MAX_VAF:
                     continue
             elif gt == (1, 1):
-                if vaf < 0.95:
+                if vaf < HOM_ALT_MIN_VAF:
                     continue
 
         # Filter status

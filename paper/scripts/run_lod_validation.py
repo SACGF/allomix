@@ -351,7 +351,7 @@ def run_pair(
                     result = estimate_single_donor_bb(
                         genos.informative, error_rate=ERROR_RATE,
                         grid_steps=ESTIMATOR_GRID_STEPS,
-                        calibration=PanelCalibration(biases=bias_dict or {}),
+                        calibration=PanelCalibration(biases=bias_dict),
                     )
                     rows.append({
                         "relatedness": relatedness,

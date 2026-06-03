@@ -122,7 +122,7 @@ def main() -> None:
     result = estimate_single_donor_bb(
         genotypes.informative,
         error_rate=args.error_rate,
-        calibration=PanelCalibration(biases=biases or {}),
+        calibration=PanelCalibration(biases=biases),
     )
     qc = assess_quality(result, genotypes)
     rho = result.rho

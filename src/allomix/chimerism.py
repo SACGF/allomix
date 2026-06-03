@@ -60,6 +60,15 @@ class PanelCalibration:
     biases: dict[MarkerKey, float] = field(default_factory=dict)
     errors: dict[MarkerKey, MarkerErrorRates] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Treat an explicit ``None`` (a caller's "no table" sentinel) the same as
+        # an omitted argument, so callers can pass an optional dict straight
+        # through without a local ``or {}`` guard.
+        if self.biases is None:
+            object.__setattr__(self, "biases", {})
+        if self.errors is None:
+            object.__setattr__(self, "errors", {})
+
     def bias_for(self, m: InformativeMarker) -> float:
         """Amplification bias for a marker, or 0.0 if it is not in the table."""
         return self.biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)

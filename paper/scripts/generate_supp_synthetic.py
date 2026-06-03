@@ -359,7 +359,7 @@ def run_ablation(host_vcf: str, donor_vcf: str, tmpdir: Path) -> dict[str, list[
                 est = estimate_single_donor_bb(
                     markers.informative,
                     error_rate=0.01,
-                    calibration=PanelCalibration(biases=bias_table or {}),
+                    calibration=PanelCalibration(biases=bias_table),
                 )
 
                 cond_results.append(
@@ -481,7 +481,7 @@ def run_calibration_batch(
                 est = estimate_single_donor_bb(
                     markers.informative,
                     error_rate=0.01,
-                    calibration=PanelCalibration(biases=bias_table or {}),
+                    calibration=PanelCalibration(biases=bias_table),
                 )
 
                 ci_lo, ci_hi = est.donor_fraction_ci

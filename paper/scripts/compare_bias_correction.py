@@ -149,7 +149,7 @@ def run_validation(
         result = estimate_single_donor_bb(
             genotypes.informative,
             error_rate=0.01,
-            calibration=PanelCalibration(biases=marker_biases or {}),
+            calibration=PanelCalibration(biases=marker_biases),
         )
 
         error = result.donor_fraction - true_frac

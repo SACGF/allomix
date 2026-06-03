@@ -68,7 +68,11 @@ Python >=3.10. Use modern syntax (match statements, `X | Y` unions, etc.) where 
 
 Runtime: `cyvcf2`, `numpy`, `scipy`
 
-Dev: `pytest`, `pytest-cov`, `ruff`
+Optional-dependency extras:
+
+- `dev`: `pytest`, `pytest-cov`, `ruff` (test and lint tooling)
+- `scripts`: `matplotlib` for the plotting/visualisation helpers in `scripts/`. The joint-calling prep, QC, and diagnosis scripts run on the base runtime deps alone, so this is only needed for the plotting scripts.
+- `paper`: `snakemake`, `vibepaper` (pulls in `scripts` for matplotlib) to build the paper.
 
 Install for development:
 
@@ -76,6 +80,8 @@ Install for development:
 uv pip install -e ".[dev]"  # preferred if uv is available
 pip install -e ".[dev]"     # fallback
 ```
+
+Add `scripts` and/or `paper` when running those: `pip install -e ".[dev,scripts]"`.
 
 ### Testing
 

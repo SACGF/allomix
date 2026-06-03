@@ -8,8 +8,6 @@ Usage:
     python paper/scripts/run_multidonor_validation.py
 """
 
-from __future__ import annotations
-
 import csv
 import math
 import sys

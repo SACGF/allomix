@@ -40,8 +40,6 @@ Usage:
     python paper/scripts/run_lod_validation.py --n-pairs 5 --n-seq-reps 10 --n-workers 8
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import hashlib

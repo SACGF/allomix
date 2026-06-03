@@ -25,8 +25,6 @@ coverage; f=2%: 100% vs 84%; f=5%: 88% vs 80%) where accurate CIs
 matter most clinically.
 """
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass, replace
 from math import lgamma

@@ -1,7 +1,5 @@
 """Tests for allomix.qc — quality control assessment."""
 
-from __future__ import annotations
-
 import math
 import random
 import re

@@ -4,8 +4,6 @@ Evaluates marker counts, sequencing depth, confidence intervals,
 and goodness-of-fit to flag potential issues in chimerism estimates.
 """
 
-from __future__ import annotations
-
 import math
 import statistics
 from dataclasses import dataclass, field

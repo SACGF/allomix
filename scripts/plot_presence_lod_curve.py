@@ -24,8 +24,6 @@ Usage:
         --output output/presence_lod_curve.png
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 from pathlib import Path

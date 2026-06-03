@@ -1,7 +1,5 @@
 """Tests for allomix.report — TSV and JSON output formatting."""
 
-from __future__ import annotations
-
 import inspect
 import io
 import json

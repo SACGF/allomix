@@ -27,8 +27,6 @@ Usage:
         --outdir validation_output_timeline
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import logging

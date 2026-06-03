@@ -1,7 +1,5 @@
 """Tests for allomix.bias — per-marker amplification bias estimation and correction."""
 
-from __future__ import annotations
-
 import random
 
 import pytest

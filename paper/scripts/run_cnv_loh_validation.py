@@ -35,8 +35,6 @@ Usage:
     python paper/scripts/run_cnv_loh_validation.py --n-reps 40 --n-workers 8
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import hashlib

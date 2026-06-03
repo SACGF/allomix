@@ -11,8 +11,6 @@ directly into the MLE likelihood by adjusting the expected reference allele
 weight for each marker.
 """
 
-from __future__ import annotations
-
 import csv
 import statistics
 from dataclasses import dataclass

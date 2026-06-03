@@ -12,8 +12,6 @@ This is library code: it does not read VCFs (callers parse first, since the
 input conventions differ) and it does not print. Callers own I/O and messaging.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from allomix.chimerism import (

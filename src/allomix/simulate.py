@@ -7,8 +7,6 @@ Uses plain-text VCF parsing only (no cyvcf2 dependency) so this module can be
 used in test environments without compiled libraries.
 """
 
-from __future__ import annotations
-
 import math
 import random
 from dataclasses import dataclass

@@ -25,8 +25,6 @@ Usage:
         --out output/host_presence_manhattan_run9.png
 """
 
-from __future__ import annotations
-
 import argparse
 import csv
 import glob

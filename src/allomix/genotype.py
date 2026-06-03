@@ -5,8 +5,6 @@ information at each marker, and classifies markers as informative or
 non-informative based on host vs donor genotype comparison.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from pathlib import Path
 

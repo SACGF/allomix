@@ -33,15 +33,22 @@ import subprocess
 import sys
 
 
-def _load_patient_csv(path: str) -> tuple[list[str], list[str], list[str]]:
-    """Return (hosts, donors, admix) lists of sample IDs from one CSV."""
+def _load_patient_csv(path: str) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Return (hosts, donors, admix, donor_relatedness) from one CSV.
+
+    ``donor_relatedness`` is aligned with ``donors``: the optional
+    ``expected_relatedness`` value on each DONOR row, or "NA" when the column is
+    absent or blank. It feeds ``allomix monitor --expected-relatedness``.
+    """
     hosts: list[str] = []
     donors: list[str] = []
     admix: list[str] = []
+    donor_relatedness: list[str] = []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
         if "sample_type" not in (reader.fieldnames or []):
             sys.exit(f"{path}: missing required 'sample_type' column")
+        has_rel = "expected_relatedness" in (reader.fieldnames or [])
         for row in reader:
             stype = row["sample_type"].strip().upper()
             sid = row["sample_id"].strip()
@@ -49,11 +56,13 @@ def _load_patient_csv(path: str) -> tuple[list[str], list[str], list[str]]:
                 hosts.append(sid)
             elif stype == "DONOR":
                 donors.append(sid)
+                rel = (row.get("expected_relatedness") or "").strip() if has_rel else ""
+                donor_relatedness.append(rel or "NA")
             elif stype == "ADMIX":
                 admix.append(sid)
             else:
                 sys.exit(f"{path}: unknown sample_type {stype!r} for {sid}")
-    return hosts, donors, admix
+    return hosts, donors, admix, donor_relatedness
 
 
 def main() -> None:
@@ -137,7 +146,7 @@ def main() -> None:
 
     for csv_path in csv_paths:
         patient = os.path.splitext(os.path.basename(csv_path))[0]
-        hosts, donors, admix = _load_patient_csv(csv_path)
+        hosts, donors, admix, donor_relatedness = _load_patient_csv(csv_path)
 
         if not admix:
             print(f"[{patient}] no ADMIX rows — skipping")
@@ -173,6 +182,11 @@ def main() -> None:
             ]
             for d in donors:
                 cmd += ["--donor-sample", d]
+            # Emit one --expected-relatedness per donor, in donor order, only
+            # when at least one was declared (all-NA means no expectation set).
+            if any(r != "NA" for r in donor_relatedness):
+                for r in donor_relatedness:
+                    cmd += ["--expected-relatedness", r]
             for s in admix:
                 cmd += ["--sample", s]
             if args.bias_table:

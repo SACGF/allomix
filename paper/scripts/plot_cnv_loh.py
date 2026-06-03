@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Plot the effect of host copy-number aberrations on chimerism (issue #13).
+"""Plot the donor LoD inflation from host copy-number aberrations (issue #13).
 
-Reads output/facts/cnv_loh_summary.csv and draws a grid: one column per
-aberration kind (CN-LoH, deletion, gain), top row MAE vs burden, bottom row
-95% CI coverage vs burden. Each kind's curve starts from the shared
-no-aberration baseline at burden 0. Pure-clone cells (clonal_fraction = 1.0).
+Reads output/facts/cnv_loh_summary.csv and draws, per aberration kind, the donor
+limit of detection (LoD, a donor fraction on a log axis, consistent with the
+other LoD figures) versus the host CN-aberration burden. Standard estimator
+(solid) vs robust refit (dashed), one colour per relatedness, with the
+no-aberration baseline at burden 0.
 
 Output:
     output/facts/fig_cnv_loh.png
@@ -27,6 +28,17 @@ FACTS_DIR = Path("output/facts")
 KINDS = ["cnloh", "deletion", "gain"]
 KIND_LABELS = {"cnloh": "CN-LoH (copy-neutral)", "deletion": "Deletion (CN1)", "gain": "Gain (CN3)"}
 COLORS = {"unrelated": "#1f77b4", "sibling": "#d62728"}
+# Donor fractions are probed up to 20%; a LoD above that is "undetectable here"
+# and drawn at a ceiling marker above the plotted range.
+MAX_PROBED_PCT = 20.0
+CEILING_PCT = 35.0
+
+
+def _f(x: str) -> float:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def load_summary(path: Path) -> list[dict]:
@@ -37,29 +49,30 @@ def load_summary(path: Path) -> list[dict]:
                 {
                     "relatedness": r["relatedness"],
                     "kind": r["kind"],
-                    "clonal_fraction": float(r["clonal_fraction"]),
                     "burden": float(r["burden"]),
-                    "true_frac": float(r["true_frac"]),
-                    "mae": float(r["mae"]),
-                    "ci_coverage": float(r["ci_coverage"]),
-                    "mae_robust": float(r["mae_robust"]),
-                    "ci_coverage_robust": float(r["ci_coverage_robust"]),
+                    "lod_std": _f(r["lod_std"]),
+                    "lod_robust": _f(r["lod_robust"]),
                 }
             )
     return rows
 
 
-def series(rows: list[dict], kind: str, field: str, clonal: float) -> dict[str, dict[float, float]]:
-    """Per-relatedness {burden: mean(field) over true_frac} for one kind.
+def series(rows: list[dict], kind: str, field: str) -> dict[str, dict[float, float]]:
+    """Per-relatedness {burden: LoD in %}. Burden 0 comes from the shared baseline.
 
-    Burden 0 is taken from the shared baseline rows (kind == 'baseline').
+    Above-range LoD (inf) is mapped to a ceiling so it still plots; NaN (failed
+    fit) is skipped.
     """
     acc: dict[str, dict[float, list[float]]] = defaultdict(lambda: defaultdict(list))
     for r in rows:
+        v = r[field]
+        if v != v:  # NaN: fit failed, skip
+            continue
+        pct = CEILING_PCT / 100.0 if v == float("inf") else v
         if r["kind"] == "baseline":
-            acc[r["relatedness"]][0.0].append(r[field])
-        elif r["kind"] == kind and r["clonal_fraction"] == clonal:
-            acc[r["relatedness"]][r["burden"]].append(r[field])
+            acc[r["relatedness"]][0.0].append(pct)
+        elif r["kind"] == kind:
+            acc[r["relatedness"]][r["burden"]].append(pct)
     return {rel: {b: statistics.fmean(v) for b, v in bur.items()} for rel, bur in acc.items()}
 
 
@@ -67,47 +80,37 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary", type=Path, default=FACTS_DIR / "cnv_loh_summary.csv")
     parser.add_argument("--out", type=Path, default=FACTS_DIR / "fig_cnv_loh.png")
-    parser.add_argument("--clonal", type=float, default=1.0)
     args = parser.parse_args()
 
     rows = load_summary(args.summary)
 
-    fig, axes = plt.subplots(2, len(KINDS), figsize=(4.2 * len(KINDS), 8.0), sharex=True)
-    mae_max = 0.0
+    fig, axes = plt.subplots(1, len(KINDS), figsize=(4.4 * len(KINDS), 4.6), sharey=True)
     for j, kind in enumerate(KINDS):
-        mae = series(rows, kind, "mae", args.clonal)
-        cov = series(rows, kind, "ci_coverage", args.clonal)
-        mae_r = series(rows, kind, "mae_robust", args.clonal)
-        cov_r = series(rows, kind, "ci_coverage_robust", args.clonal)
-        ax_mae, ax_cov = axes[0][j], axes[1][j]
-        for rel in sorted(mae):
-            bs = sorted(mae[rel])
+        std = series(rows, kind, "lod_std")
+        rob = series(rows, kind, "lod_robust")
+        ax = axes[j]
+        for rel in sorted(std):
             c = COLORS.get(rel)
-            ax_mae.plot(bs, [mae[rel][b] for b in bs], marker="o", color=c, label=f"{rel} (std)")
-            ax_mae.plot(bs, [mae_r[rel][b] for b in bs], marker="s", ls="--", color=c,
+            bs = sorted(std[rel])
+            ax.plot(bs, [std[rel][b] * 100 for b in bs], marker="o", color=c, label=f"{rel} (std)")
+            if rel in rob:
+                br = sorted(rob[rel])
+                ax.plot(br, [rob[rel][b] * 100 for b in br], marker="s", ls="--", color=c,
                         label=f"{rel} (robust)")
-            ax_cov.plot(bs, [cov[rel][b] for b in bs], marker="o", color=c, label=f"{rel} (std)")
-            ax_cov.plot(bs, [cov_r[rel][b] for b in bs], marker="s", ls="--", color=c,
-                        label=f"{rel} (robust)")
-            mae_max = max(mae_max, max(mae[rel].values()))
-        ax_mae.set_title(KIND_LABELS[kind])
-        ax_mae.grid(True, alpha=0.3)
-        ax_cov.axhline(0.95, color="gray", linestyle="--", linewidth=1)
-        ax_cov.set_ylim(0, 1.02)
-        ax_cov.set_xlabel("burden (fraction of eligible markers)")
-        ax_cov.grid(True, alpha=0.3)
+        ax.set_yscale("log")
+        ax.axhline(MAX_PROBED_PCT, color="gray", ls=":", lw=1)
+        ax.set_ylim(top=CEILING_PCT * 1.4)
+        ax.set_title(KIND_LABELS[kind])
+        ax.set_xlabel("CN-aberration burden (fraction of eligible markers)")
+        ax.grid(True, which="both", alpha=0.3)
         if j == 0:
-            ax_mae.set_ylabel("MAE of donor fraction")
-            ax_cov.set_ylabel("95% CI coverage")
-            ax_mae.legend(fontsize=8)
+            ax.set_ylabel("Donor limit of detection (%)")
+            ax.legend(fontsize=8)
+        if j == len(KINDS) - 1:
+            ax.text(0.5, MAX_PROBED_PCT * 1.05, "above probed range (undetectable)",
+                    fontsize=7, color="gray", ha="right", va="bottom")
 
-    for j in range(len(KINDS)):
-        axes[0][j].set_ylim(0, mae_max * 1.08)
-
-    fig.suptitle(
-        f"Host copy-number aberration impact, std vs robust refit "
-        f"(pure clone, clonal={args.clonal:g})"
-    )
+    fig.suptitle("Host CNV/LoH inflates the donor LoD; robust refit recovers it (pure clone)")
     fig.tight_layout()
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=150)

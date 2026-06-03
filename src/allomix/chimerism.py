@@ -28,7 +28,7 @@ matter most clinically.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import lgamma
 
 import numpy as np
@@ -81,6 +81,12 @@ class ChimerismResult:
     # caller disabled the detector or when there were no donor-homozygous
     # markers to run it on.
     host_presence: HostPresenceResult | None = None
+    # Robust-refit accounting (see ``estimate_single_donor_bb`` robust mode).
+    # n_robust_excluded is the count of markers dropped as residual outliers and
+    # excluded from the final fit; robust_drop_fraction is that count over
+    # n_informative. Both are 0 when robust mode is off or nothing was dropped.
+    n_robust_excluded: int = 0
+    robust_drop_fraction: float = 0.0
 
 
 @dataclass
@@ -98,6 +104,27 @@ class MultiDonorResult:
     per_donor_n_informative: list[int] | None = None  # informative markers per donor
     rho: float = float("inf")  # beta-binomial concentration; inf = no overdispersion
     host_presence: HostPresenceResult | None = None
+    n_robust_excluded: int = 0
+    robust_drop_fraction: float = 0.0
+
+
+# Robust-refit tuning. ROBUST_K is the median/MAD residual cut (robust SDs);
+# 3.5 leaves clean data essentially untouched (drops <1% of markers by chance)
+# while removing copy-number/LoH-inconsistent markers. The refit floors keep
+# trimming from gutting sparse panels: "auto" never drops below
+# ROBUST_MIN_MARKERS, "force" never below ROBUST_HARD_MIN.
+ROBUST_K_DEFAULT = 3.5
+ROBUST_MAX_ITER = 5
+ROBUST_MIN_MARKERS = 15
+ROBUST_HARD_MIN = 4
+ROBUST_MODES = ("off", "auto", "force")
+# "auto" engages the refit only when the first pass finds more residual outliers
+# than this trigger: max(ROBUST_TRIGGER_MIN, ceil(ROBUST_TRIGGER_FRAC * n)). At
+# k=3.5 a clean panel produces <1 chance outlier on average, so a trigger of ~3
+# leaves clean (and the already-validated) samples byte-identical, while
+# genuine copy-number / LoH clusters clear the bar. "force" uses a trigger of 1.
+ROBUST_TRIGGER_FRAC = 0.03
+ROBUST_TRIGGER_MIN = 3
 
 
 # ---------------------------------------------------------------------------
@@ -676,7 +703,7 @@ def detection_limit(
     return lob, lod
 
 
-def estimate_single_donor_bb(
+def _estimate_single_donor_bb_core(
     markers: list[InformativeMarker],
     error_rate: float = 0.01,
     grid_steps: int = 1001,
@@ -685,26 +712,10 @@ def estimate_single_donor_bb(
         dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
     ) = None,
 ) -> ChimerismResult:
-    """Estimate single-donor chimerism with beta-binomial likelihood.
+    """Single-donor beta-binomial MLE over the given marker set (no robust trim).
 
-    Estimates single-donor chimerism fraction using beta-binomial
-    per-marker likelihoods to handle overdispersion. Jointly estimates
-    the donor fraction f and concentration parameter rho.
-
-    Args:
-        markers: List of informative markers with admixture allele counts.
-        error_rate: Sequencing error rate (fallback when a marker is missing
-            per-direction rates).
-        grid_steps: Number of grid points for initial f search.
-        marker_biases: Optional per-marker bias dict.
-        marker_errors: Optional per-marker, per-direction empirical error
-            rates (``(e_refalt, e_altref)`` per key, either may be ``None``).
-            When present and both directions are known, the asymmetric
-            REF/ALT-only likelihood is used at that marker; otherwise the
-            symmetric 4-state model with ``error_rate`` is used.
-
-    Returns:
-        ChimerismResult with MLE estimate and beta-binomial CIs.
+    This is the unguarded estimator; ``estimate_single_donor_bb`` wraps it with
+    the optional robust refit. Args/returns as in that wrapper.
     """
     n_informative = len(markers)
 
@@ -820,12 +831,158 @@ def estimate_single_donor_bb(
     )
 
 
+def _marker_key(m: InformativeMarker) -> tuple[str, int, str, str]:
+    """Position-based key used to track which markers survive a robust trim."""
+    return (m.chrom, m.pos, m.ref, m.alt)
+
+
+def _robust_trigger(n_markers: int) -> int:
+    """Minimum first-pass outliers for "auto" to engage the robust refit."""
+    return max(ROBUST_TRIGGER_MIN, math.ceil(ROBUST_TRIGGER_FRAC * n_markers))
+
+
+def _robust_refit(
+    all_markers: list[InformativeMarker],
+    core_fn,
+    recompute_per_marker_fn,
+    robust_k: float,
+    min_markers: int,
+    min_trigger: int,
+):
+    """Iteratively drop residual-outlier markers (median/MAD) and refit.
+
+    The built-in 3-SD flag never refits, so a cluster of host copy-number /
+    LoH-inconsistent markers biases the estimate and escapes the flag (it sets
+    the very SD the flag uses). This trims on a robust median/MAD scale, which a
+    minority of contaminating markers cannot inflate, and refits on the
+    survivors until the set stabilises.
+
+    Args:
+        all_markers: Full informative-marker set.
+        core_fn: Callable taking a marker subset and returning a fitted result.
+        recompute_per_marker_fn: Callable (markers, result) -> per-marker results
+            evaluated at ``result``'s estimate, used to re-flag every original
+            marker against the final (survivor) fit.
+        robust_k: Residual cut in robust SDs.
+        min_markers: Trimming never reduces the surviving set below this.
+        min_trigger: Engage the refit only if the first pass finds at least this
+            many residual outliers (the gate that keeps clean samples unchanged).
+
+    Returns:
+        A result equal to ``core_fn`` on the survivors, but with ``per_marker``
+        spanning all original markers (``included`` False for dropped ones),
+        ``n_informative`` over all markers, and the robust-accounting fields set.
+        When nothing is dropped, returns ``core_fn(all_markers)`` unchanged.
+    """
+    current = list(all_markers)
+    result = core_fn(current)
+    for it in range(ROBUST_MAX_ITER):
+        if len(current) <= min_markers:
+            break
+        resids = np.array([mr.residual for mr in result.per_marker], dtype=float)
+        med = float(np.median(resids))
+        mad = float(np.median(np.abs(resids - med))) * 1.4826
+        if mad <= 0.0:
+            break
+        keep_mask = np.abs(resids - med) <= robust_k * mad
+        n_keep = int(keep_mask.sum())
+        # Gate: on the first pass, only engage if outliers exceed the trigger,
+        # so clean samples (a chance outlier or two) are left untouched.
+        if it == 0 and (len(current) - n_keep) < min_trigger:
+            break
+        if n_keep == len(current) or n_keep < min_markers:
+            break
+        current = [m for m, k in zip(current, keep_mask) if k]
+        result = core_fn(current)
+
+    n_excluded = len(all_markers) - len(current)
+    if n_excluded == 0:
+        return result  # untouched: identical to the non-robust path
+
+    surviving = {_marker_key(m) for m in current}
+    pm_all = recompute_per_marker_fn(all_markers, result)
+    pm_final = [
+        replace(mr, included=_marker_key(m) in surviving)
+        for m, mr in zip(all_markers, pm_all)
+    ]
+    return replace(
+        result,
+        per_marker=pm_final,
+        n_informative=len(all_markers),
+        n_markers_used=len(current),
+        n_robust_excluded=n_excluded,
+        robust_drop_fraction=n_excluded / len(all_markers),
+    )
+
+
+def estimate_single_donor_bb(
+    markers: list[InformativeMarker],
+    error_rate: float = 0.01,
+    grid_steps: int = 1001,
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
+    robust: str = "off",
+    robust_k: float = ROBUST_K_DEFAULT,
+) -> ChimerismResult:
+    """Estimate single-donor chimerism with beta-binomial likelihood.
+
+    Estimates single-donor chimerism fraction using beta-binomial
+    per-marker likelihoods to handle overdispersion. Jointly estimates
+    the donor fraction f and concentration parameter rho.
+
+    Args:
+        markers: List of informative markers with admixture allele counts.
+        error_rate: Sequencing error rate (fallback when a marker is missing
+            per-direction rates).
+        grid_steps: Number of grid points for initial f search.
+        marker_biases: Optional per-marker bias dict.
+        marker_errors: Optional per-marker, per-direction empirical error
+            rates (``(e_refalt, e_altref)`` per key, either may be ``None``).
+            When present and both directions are known, the asymmetric
+            REF/ALT-only likelihood is used at that marker; otherwise the
+            symmetric 4-state model with ``error_rate`` is used.
+        robust: Robust-refit mode. ``"off"`` (default) is the plain MLE.
+            ``"auto"`` iteratively drops median/MAD residual outliers and refits,
+            never below ``ROBUST_MIN_MARKERS`` survivors; this protects against
+            host copy-number / LoH markers (see ``_robust_refit``). ``"force"``
+            is the same but trims down to ``ROBUST_HARD_MIN`` (for experiments).
+            On clean data the trim is a no-op and the result is unchanged.
+        robust_k: Residual cut in robust SDs for the refit.
+
+    Returns:
+        ChimerismResult with MLE estimate and beta-binomial CIs.
+    """
+    if robust not in ROBUST_MODES:
+        raise ValueError(f"robust must be one of {ROBUST_MODES}, got {robust!r}")
+
+    def core(mk: list[InformativeMarker]) -> ChimerismResult:
+        return _estimate_single_donor_bb_core(
+            mk, error_rate, grid_steps, marker_biases, marker_errors
+        )
+
+    if robust == "off" or len(markers) == 0:
+        return core(markers)
+
+    min_markers = ROBUST_MIN_MARKERS if robust == "auto" else ROBUST_HARD_MIN
+    min_trigger = _robust_trigger(len(markers)) if robust == "auto" else 1
+    return _robust_refit(
+        markers,
+        core,
+        lambda mk, res: _compute_per_marker_results(mk, res.donor_fraction, marker_biases),
+        robust_k,
+        min_markers,
+        min_trigger,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Multi-donor MLE estimation
 # ---------------------------------------------------------------------------
 
 
-def estimate_multi_donor(
+def _estimate_multi_donor_core(
     markers: list[InformativeMarker],
     n_donors: int = 2,
     error_rate: float = 0.01,
@@ -961,6 +1118,51 @@ def estimate_multi_donor(
         error_rate=error_rate,
         per_donor_n_informative=per_donor_n_inf,
         rho=rho_mle,
+    )
+
+
+def estimate_multi_donor(
+    markers: list[InformativeMarker],
+    n_donors: int = 2,
+    error_rate: float = 0.01,
+    grid_steps: int = 101,
+    marker_biases: dict[tuple[str, int, str, str], float] | None = None,
+    marker_errors: (
+        dict[tuple[str, int, str, str], tuple[float | None, float | None]] | None
+    ) = None,
+    robust: str = "off",
+    robust_k: float = ROBUST_K_DEFAULT,
+) -> MultiDonorResult:
+    """Estimate multi-donor chimerism with an optional robust refit.
+
+    Wraps the multi-donor beta-binomial MLE with the same median/MAD
+    robust-refit logic as ``estimate_single_donor_bb`` (see its ``robust`` and
+    ``robust_k`` arguments and ``_robust_refit``). With ``robust="off"`` this is
+    the plain estimator.
+
+    Returns:
+        MultiDonorResult with per-donor fractions and CIs.
+    """
+    if robust not in ROBUST_MODES:
+        raise ValueError(f"robust must be one of {ROBUST_MODES}, got {robust!r}")
+
+    def core(mk: list[InformativeMarker]) -> MultiDonorResult:
+        return _estimate_multi_donor_core(
+            mk, n_donors, error_rate, grid_steps, marker_biases, marker_errors
+        )
+
+    if robust == "off" or len(markers) == 0:
+        return core(markers)
+
+    min_markers = ROBUST_MIN_MARKERS if robust == "auto" else ROBUST_HARD_MIN
+    min_trigger = _robust_trigger(len(markers)) if robust == "auto" else 1
+    return _robust_refit(
+        markers,
+        core,
+        lambda mk, res: _per_marker_results_multi(mk, res.donor_fractions, marker_biases),
+        robust_k,
+        min_markers,
+        min_trigger,
     )
 
 

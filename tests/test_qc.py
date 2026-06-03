@@ -535,3 +535,30 @@ class TestVersionConsistency:
         match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
         assert match is not None, "Could not find version in pyproject.toml"
         assert match.group(1) == allomix.__version__
+
+
+class TestRobustExclusionReview:
+    """A large robust-refit exclusion fraction should warn and flag REVIEW."""
+
+    def test_high_drop_promotes_review(self):
+        per_marker = [_make_marker_result(pos=i * 100) for i in range(20)]
+        result = _make_chimerism_result(n_informative=20, per_marker=per_marker)
+        result.n_robust_excluded = 5
+        result.robust_drop_fraction = 0.25  # > ROBUST_REVIEW_FRACTION (0.15)
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "REVIEW"
+        assert any("Robust refit excluded" in w for w in qc.warnings)
+
+    def test_small_drop_warns_but_passes(self):
+        per_marker = [_make_marker_result(pos=i * 100) for i in range(40)]
+        result = _make_chimerism_result(n_informative=40, per_marker=per_marker)
+        result.n_robust_excluded = 1
+        result.robust_drop_fraction = 0.025  # below review threshold
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "PASS"
+        assert any("Robust refit excluded" in w for w in qc.warnings)
+
+    def test_no_robust_no_warning(self):
+        result = _make_chimerism_result(n_informative=30)
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Robust refit" in w for w in qc.warnings)

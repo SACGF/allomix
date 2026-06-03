@@ -13,9 +13,13 @@ from pathlib import Path
 import pytest
 
 from allomix.simulate import (
+    HostAberration,
     alt_dose,
+    assign_cnloh_aberrations,
+    assign_cnv_aberrations,
     blend_vcfs,
     build_joint_vcf,
+    cn_weighted_vaf,
     expected_vaf,
     extract_depth,
     extract_gt,
@@ -856,3 +860,181 @@ class TestBuildJointVcf:
         )
         assert result.num_markers > 0
         assert result.num_informative > 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: host CN-LoH aberrations
+# ---------------------------------------------------------------------------
+
+
+class TestCnWeightedVaf:
+    def test_no_aberration_matches_diploid(self) -> None:
+        """With no aberration the CN-weighted VAF equals the diploid model."""
+        for host_gt in [(0, 0), (0, 1), (1, 1)]:
+            for donor_gt in [(0, 0), (0, 1), (1, 1)]:
+                for f in [0.0, 0.1, 0.5, 0.9]:
+                    assert cn_weighted_vaf(host_gt, [donor_gt], [f], None) == pytest.approx(
+                        expected_vaf(host_gt, donor_gt, f)
+                    )
+
+    def test_cnloh_pure_host_retains_alt(self) -> None:
+        """Pure-host CN-LoH retaining ALT drives a germline het to VAF 1.0."""
+        aberr = HostAberration(cn=2, alt_copies=2, clonal_fraction=1.0)
+        assert cn_weighted_vaf((0, 1), [(0, 0)], [0.0], aberr) == pytest.approx(1.0)
+
+    def test_cnloh_pure_host_retains_ref(self) -> None:
+        """Pure-host CN-LoH retaining REF drives a germline het to VAF 0.0."""
+        aberr = HostAberration(cn=2, alt_copies=0, clonal_fraction=1.0)
+        assert cn_weighted_vaf((0, 1), [(0, 0)], [0.0], aberr) == pytest.approx(0.0)
+
+    def test_cnloh_shifts_vaf_vs_diploid(self) -> None:
+        """A CN-LoH het with a hom-ref donor shifts VAF above the diploid value."""
+        host_gt, donor_gt, f = (0, 1), (0, 0), 0.2
+        aberr = HostAberration(cn=2, alt_copies=2, clonal_fraction=1.0)
+        diploid = expected_vaf(host_gt, donor_gt, f)  # 0.5 * (1 - f) = 0.4
+        cnloh = cn_weighted_vaf(host_gt, [donor_gt], [f], aberr)  # (1 - f) = 0.8
+        assert diploid == pytest.approx(0.4)
+        assert cnloh == pytest.approx(0.8)
+
+    def test_cnloh_partial_clone(self) -> None:
+        """A 50% clone sits halfway between germline and full-clone VAF."""
+        host_gt, donor_gt, f = (0, 1), (0, 0), 0.0
+        aberr = HostAberration(cn=2, alt_copies=2, clonal_fraction=0.5)
+        # half normal het (0.5) + half clone hom-alt (1.0) = 0.75
+        assert cn_weighted_vaf(host_gt, [donor_gt], [f], aberr) == pytest.approx(0.75)
+
+    def test_deletion_changes_denominator(self) -> None:
+        """A host deletion (CN1) raises the apparent donor VAF at that locus."""
+        # Host het loses the ALT homolog (CN1, 0 ALT copies), donor is hom-alt.
+        host_gt, donor_gt, f = (0, 1), (1, 1), 0.1
+        aberr = HostAberration(cn=1, alt_copies=0, clonal_fraction=1.0)
+        # num = f*2 = 0.2 ; den = (1-f)*1 + f*2 = 0.9 + 0.2 = 1.1
+        assert cn_weighted_vaf(host_gt, [donor_gt], [f], aberr) == pytest.approx(0.2 / 1.1)
+
+
+class TestAssignCnlohAberrations:
+    def test_only_hets_affected(self) -> None:
+        """Homozygous markers never receive an aberration."""
+        markers = [
+            {"host_gt": (0, 0)},
+            {"host_gt": (1, 1)},
+            {"host_gt": (0, 1)},
+        ]
+        rng = random.Random(0)
+        aberrs = assign_cnloh_aberrations(markers, fraction_affected=1.0, clonal_fraction=1.0, rng=rng)
+        assert aberrs[0] is None
+        assert aberrs[1] is None
+        assert aberrs[2] is not None
+        assert aberrs[2].cn == 2
+        assert aberrs[2].alt_copies in (0, 2)
+
+    def test_fraction_zero_assigns_none(self) -> None:
+        markers = [{"host_gt": (0, 1)} for _ in range(20)]
+        rng = random.Random(0)
+        aberrs = assign_cnloh_aberrations(markers, 0.0, 1.0, rng)
+        assert all(a is None for a in aberrs)
+
+    def test_fraction_roughly_matches(self) -> None:
+        markers = [{"host_gt": (0, 1)} for _ in range(2000)]
+        rng = random.Random(1)
+        aberrs = assign_cnloh_aberrations(markers, 0.3, 1.0, rng)
+        frac = sum(1 for a in aberrs if a is not None) / len(aberrs)
+        assert 0.25 < frac < 0.35
+
+
+class TestBlendVcfsWithAberrations:
+    def test_aberration_length_validated(self, tmp_path: Path) -> None:
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000")],
+            [("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000")],
+        )
+        with pytest.raises(ValueError, match="host_aberrations length"):
+            blend_vcfs(
+                host_path, donor_path, 0.1, target_depth=2000, seed=1,
+                host_aberrations=[None, None],
+            )
+
+    def test_cnloh_raises_observed_vaf(self, tmp_path: Path) -> None:
+        """CN-LoH at a host het (hom-ref donor) lifts the observed ALT VAF."""
+        # Host het, donor hom-ref, small donor fraction. Diploid expects ~0.45;
+        # CN-LoH retaining ALT in a pure clone expects ~0.9.
+        host_path, donor_path = _make_pair_vcfs(
+            tmp_path,
+            [("chr1", 200, "A", "T", "GT:AD:DP", "0/1:500,500:1000")],
+            [("chr1", 200, "A", "T", "GT:AD:DP", "0/0:1000,0:1000")],
+        )
+        aberr = [HostAberration(cn=2, alt_copies=2, clonal_fraction=1.0)]
+        result = blend_vcfs(
+            host_path, donor_path, 0.1, target_depth=20000, seed=7,
+            error_rate=0.0, host_aberrations=aberr,
+        )
+        sample = result.records[0].split("\t")[9]
+        ad_ref, ad_alt = (int(x) for x in sample.split(":")[1].split(","))
+        observed = ad_alt / (ad_ref + ad_alt)
+        assert observed > 0.85
+
+
+class TestAssignCnvAberrations:
+    def test_invalid_kind(self) -> None:
+        rng = random.Random(0)
+        with pytest.raises(ValueError, match="kind must be"):
+            assign_cnv_aberrations([{"host_gt": (0, 1)}], 1.0, 1.0, rng, kind="bogus")
+
+    def test_deletion_cn1_all_genotypes(self) -> None:
+        """Deletions affect hom markers too (DNA-mass effect), unlike CN-LoH."""
+        markers = [{"host_gt": (0, 0)}, {"host_gt": (1, 1)}, {"host_gt": (0, 1)}]
+        rng = random.Random(0)
+        aberrs = assign_cnv_aberrations(markers, 1.0, 1.0, rng, kind="deletion")
+        assert all(a is not None for a in aberrs)
+        assert all(a.cn == 1 for a in aberrs)
+        assert aberrs[0].alt_copies == 0  # hom-ref -> retains REF
+        assert aberrs[1].alt_copies == 1  # hom-alt -> retains ALT
+        assert aberrs[2].alt_copies in (0, 1)  # het -> retains one homolog
+
+    def test_gain_cn3_all_genotypes(self) -> None:
+        markers = [{"host_gt": (0, 0)}, {"host_gt": (1, 1)}, {"host_gt": (0, 1)}]
+        rng = random.Random(0)
+        aberrs = assign_cnv_aberrations(markers, 1.0, 1.0, rng, kind="gain")
+        assert all(a is not None and a.cn == 3 for a in aberrs)
+        assert aberrs[0].alt_copies == 0  # 0,0 + dup 0
+        assert aberrs[1].alt_copies == 3  # 1,1 + dup 1
+        assert aberrs[2].alt_copies in (1, 2)  # 0,1 + dup of one homolog
+
+    def test_cnloh_only_hets(self) -> None:
+        markers = [{"host_gt": (0, 0)}, {"host_gt": (0, 1)}]
+        rng = random.Random(0)
+        aberrs = assign_cnv_aberrations(markers, 1.0, 1.0, rng, kind="cnloh")
+        assert aberrs[0] is None
+        assert aberrs[1] is not None and aberrs[1].cn == 2
+
+    def test_cnloh_wrapper_matches(self) -> None:
+        markers = [{"host_gt": (0, 1)} for _ in range(50)]
+        a = assign_cnv_aberrations(markers, 0.5, 0.8, random.Random(3), kind="cnloh")
+        b = assign_cnloh_aberrations(markers, 0.5, 0.8, random.Random(3))
+        assert [None if x is None else (x.cn, x.alt_copies) for x in a] == [
+            None if y is None else (y.cn, y.alt_copies) for y in b
+        ]
+
+    def test_deletion_raises_donor_vaf(self) -> None:
+        """A host deletion losing the host allele raises apparent donor VAF."""
+        # Host hom-ref, donor hom-alt, small donor fraction. Diploid VAF = f.
+        # Host deletion (CN1) halves host DNA, so donor VAF rises above f.
+        host_gt, donor_gt, f = (0, 0), (1, 1), 0.1
+        aberr = HostAberration(cn=1, alt_copies=0, clonal_fraction=1.0)
+        diploid = expected_vaf(host_gt, donor_gt, f)
+        deleted = cn_weighted_vaf(host_gt, [donor_gt], [f], aberr)
+        assert diploid == pytest.approx(0.1)
+        # num = f*2 = 0.2 ; den = (1-f)*1 + f*2 = 1.1 -> 0.1818
+        assert deleted == pytest.approx(0.2 / 1.1)
+        assert deleted > diploid
+
+    def test_gain_lowers_donor_vaf(self) -> None:
+        """A host gain adds host DNA, diluting apparent donor VAF."""
+        host_gt, donor_gt, f = (0, 0), (1, 1), 0.1
+        aberr = HostAberration(cn=3, alt_copies=0, clonal_fraction=1.0)
+        diploid = expected_vaf(host_gt, donor_gt, f)
+        gained = cn_weighted_vaf(host_gt, [donor_gt], [f], aberr)
+        # num = f*2 = 0.2 ; den = (1-f)*3 + f*2 = 2.9 -> 0.069
+        assert gained == pytest.approx(0.2 / 2.9)
+        assert gained < diploid

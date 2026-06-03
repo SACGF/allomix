@@ -61,6 +61,14 @@ OVERDISP_FACTS = [
 ]
 OVERDISP_FIGS = [f"{FACTS_DIR}/fig_overdispersion_lod.png"]
 
+# Host CN-LoH impact sweep (issue #13; self-contained, runs its own simulation).
+CNV_LOH_FACTS = [
+    f"{FACTS_DIR}/cnv_loh_raw.csv",
+    f"{FACTS_DIR}/cnv_loh_summary.csv",
+    f"{FACTS_DIR}/cnv_loh_headline.csv",
+]
+CNV_LOH_FIGS = [f"{FACTS_DIR}/fig_cnv_loh.png"]
+
 SUPP_SYNTHETIC_FIGS = [
     f"{FACTS_DIR}/figS1_bias_distributions.png",
     f"{FACTS_DIR}/figS2_depth_distributions.png",
@@ -96,6 +104,7 @@ ALL_FACTS = (
     + LOD_FACTS
     + LOD_SATURATION_FACTS
     + OVERDISP_FACTS
+    + CNV_LOH_FACTS
 )
 
 ALL_FIGS = (
@@ -108,6 +117,7 @@ ALL_FIGS = (
     + LOD_FIGS
     + LOD_SATURATION_FIGS
     + OVERDISP_FIGS
+    + CNV_LOH_FIGS
 )
 
 
@@ -244,6 +254,22 @@ rule overdispersion_lod:
         "python paper/scripts/run_overdispersion_lod.py"
 
 
+rule cnv_loh_validation:
+    output:
+        CNV_LOH_FACTS,
+    shell:
+        "python paper/scripts/run_cnv_loh_validation.py"
+
+
+rule cnv_loh_plot:
+    input:
+        f"{FACTS_DIR}/cnv_loh_summary.csv",
+    output:
+        CNV_LOH_FIGS,
+    shell:
+        "python paper/scripts/plot_cnv_loh.py"
+
+
 rule supp_synthetic:
     input:
         "tests/test_data/host.vcf",
@@ -289,5 +315,6 @@ rule clean:
         """
         rm -rf output/facts/ output/depth_validation/ output/relatedness_validation/
         rm -rf output/bias_comparison/ output/timeline/ output/lod_validation/ output/.paper_built
+        rm -rf output/cnv_loh_validation/
         rm -rf build/
         """

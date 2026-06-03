@@ -229,6 +229,198 @@ def expected_vaf_multi(
     return vaf / 2.0
 
 
+@dataclass
+class HostAberration:
+    """A somatic copy-number aberration carried by the host (recipient) clone.
+
+    In HSCT chimerism monitoring the recipient is usually a haematological
+    malignancy patient, and the residual or relapsing host clone routinely
+    carries copy-number changes. This describes the clone's state at a single
+    marker, as a mixture: a fraction ``clonal_fraction`` of the host cells
+    carry the aberration (copy number ``cn`` with ``alt_copies`` ALT alleles),
+    the remaining host cells are normal diploid germline.
+
+    Copy-neutral loss of heterozygosity (CN-LoH, acquired uniparental disomy)
+    is ``cn=2`` with ``alt_copies`` forced to 0 or 2 (the clone retains two
+    copies of one germline homolog). The same dataclass also expresses
+    deletions (``cn=1``) and gains (``cn=3``) for future use.
+
+    Attributes:
+        cn: Total copy number of the marker locus in the clone.
+        alt_copies: Number of ALT alleles among those ``cn`` copies (0..cn).
+        clonal_fraction: Fraction of host cells carrying the aberration
+            (0.0-1.0). The rest are normal diploid host.
+    """
+
+    cn: int
+    alt_copies: int
+    clonal_fraction: float
+
+
+def cn_weighted_vaf(
+    host_gt: tuple[int, int],
+    donor_gts: list[tuple[int, int]],
+    donor_fractions: list[float],
+    host_aberration: HostAberration | None = None,
+) -> float:
+    """Expected ALT VAF in a chimeric mixture, weighted by copy number.
+
+    The plain mixture model (``expected_vaf_multi``) divides by 2 because it
+    assumes every contributing genome is diploid. A host copy-number
+    aberration breaks that assumption two ways: it changes the clone's allele
+    balance, and (for non-copy-neutral changes) it changes how much host DNA
+    the locus contributes, so the local mixing fraction differs from the
+    genome-wide fractions. This computes the copy-number-weighted average:
+
+        VAF = sum_i (frac_i * cn_i * alt_frac_i) / sum_i (frac_i * cn_i)
+
+    where each contributor i is the normal-diploid host, the host clone, and
+    each donor. With no aberration this reduces exactly to
+    ``expected_vaf_multi``.
+
+    Args:
+        host_gt: Host germline diploid genotype.
+        donor_gts: List of donor diploid genotypes.
+        donor_fractions: Per-donor fractions (must sum to <= 1.0).
+        host_aberration: Optional host clone aberration. None means the host
+            is fully diploid germline.
+
+    Returns:
+        Expected ALT allele frequency (0.0 to 1.0).
+    """
+    f_host = 1.0 - sum(donor_fractions)
+    if host_aberration is None:
+        return expected_vaf_multi(host_gt, donor_gts, donor_fractions)
+
+    c = host_aberration.clonal_fraction
+    # Host splits into a normal diploid sub-population and the aberrant clone.
+    num = f_host * (1.0 - c) * alt_dose(host_gt) + f_host * c * host_aberration.alt_copies
+    den = f_host * (1.0 - c) * 2.0 + f_host * c * host_aberration.cn
+    for dgt, fr in zip(donor_gts, donor_fractions):
+        num += fr * alt_dose(dgt)
+        den += fr * 2.0
+    return num / den if den > 0 else 0.0
+
+
+CNV_KINDS = ("cnloh", "deletion", "gain")
+
+
+def _clone_state(
+    host_gt: tuple[int, int],
+    kind: str,
+    clonal_fraction: float,
+    rng: random.Random,
+) -> HostAberration | None:
+    """Derive the clone's copy-number state at one marker from the germline GT.
+
+    The clone is built by mutating one randomly chosen germline homolog:
+
+      - ``cnloh``: copy-neutral LoH. The retained homolog is duplicated, so the
+        clone is homozygous (cn=2). Invisible at a homozygous germline genotype
+        (no heterozygosity to lose), so this returns None there.
+      - ``deletion``: one homolog is lost (cn=1).
+      - ``gain``: one homolog is duplicated (cn=3).
+
+    Deletions and gains change the locus DNA mass, so they shift the local
+    mixing fraction even at homozygous markers; they are therefore applied to
+    any germline genotype.
+
+    Args:
+        host_gt: Host germline diploid genotype.
+        kind: One of ``CNV_KINDS``.
+        clonal_fraction: Fraction of host cells carrying the aberration.
+        rng: Random instance.
+
+    Returns:
+        A HostAberration, or None if the aberration is invisible at this marker.
+    """
+    a = list(host_gt)
+    if kind == "cnloh":
+        if a[0] == a[1]:
+            return None
+        retained = a[rng.randint(0, 1)]
+        return HostAberration(cn=2, alt_copies=2 * retained, clonal_fraction=clonal_fraction)
+    if kind == "deletion":
+        kept = a[rng.randint(0, 1)]
+        return HostAberration(cn=1, alt_copies=kept, clonal_fraction=clonal_fraction)
+    if kind == "gain":
+        dup = a[rng.randint(0, 1)]
+        return HostAberration(
+            cn=3, alt_copies=alt_dose(host_gt) + dup, clonal_fraction=clonal_fraction
+        )
+    raise ValueError(f"kind must be one of {CNV_KINDS}, got {kind!r}")
+
+
+def assign_cnv_aberrations(
+    markers: list[dict],
+    fraction_affected: float,
+    clonal_fraction: float,
+    rng: random.Random,
+    kind: str = "cnloh",
+    host_key: str = "host_gt",
+) -> list[HostAberration | None]:
+    """Assign host copy-number aberrations of one kind to a fraction of markers.
+
+    Each marker is independently eligible to be affected with probability
+    ``fraction_affected``. For ``cnloh`` only heterozygous germline markers
+    show an effect (see ``_clone_state``), so an eligible homozygous marker
+    stays None. For ``deletion`` and ``gain`` every eligible marker is affected.
+
+    Args:
+        markers: Marker dicts (each carrying a diploid genotype under
+            ``host_key``), in the same order the blender iterates them.
+        fraction_affected: Per-marker probability of carrying the aberration.
+        clonal_fraction: Fraction of host cells carrying the aberration.
+        rng: Random instance for reproducibility.
+        kind: One of ``CNV_KINDS`` (``"cnloh"``, ``"deletion"``, ``"gain"``).
+        host_key: Dict key holding the host diploid genotype.
+
+    Returns:
+        List aligned to ``markers``; each entry is a HostAberration or None.
+    """
+    if kind not in CNV_KINDS:
+        raise ValueError(f"kind must be one of {CNV_KINDS}, got {kind!r}")
+    out: list[HostAberration | None] = []
+    for m in markers:
+        if rng.random() < fraction_affected:
+            out.append(_clone_state(m[host_key], kind, clonal_fraction, rng))
+        else:
+            out.append(None)
+    return out
+
+
+def assign_cnloh_aberrations(
+    markers: list[dict],
+    fraction_affected: float,
+    clonal_fraction: float,
+    rng: random.Random,
+    host_key: str = "host_gt",
+) -> list[HostAberration | None]:
+    """Assign copy-neutral LoH aberrations to a fraction of host het markers.
+
+    Thin wrapper over ``assign_cnv_aberrations`` with ``kind="cnloh"``. CN-LoH
+    is only observable at host heterozygous markers (a homozygous genotype is
+    unchanged by losing heterozygosity); an affected het marker retains one
+    germline homolog at random, so the clone becomes homozygous REF
+    (``alt_copies=0``) or homozygous ALT (``alt_copies=2``).
+
+    Args:
+        markers: Marker dicts (each carrying a diploid genotype under
+            ``host_key``), in the same order the blender iterates them.
+        fraction_affected: Probability that a given host het marker carries
+            CN-LoH (0.0-1.0).
+        clonal_fraction: Fraction of host cells carrying the aberration.
+        rng: Random instance for reproducibility.
+        host_key: Dict key holding the host diploid genotype.
+
+    Returns:
+        List aligned to ``markers``; each entry is a HostAberration or None.
+    """
+    return assign_cnv_aberrations(
+        markers, fraction_affected, clonal_fraction, rng, kind="cnloh", host_key=host_key
+    )
+
+
 def is_informative(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> bool:
     """Determine whether a marker is informative for chimerism detection.
 
@@ -754,6 +946,7 @@ def blend_vcfs(
     realistic_biases: bool = False,
     rho: float = float("inf"),
     rho_marker_type: str = "all",
+    host_aberrations: list[HostAberration | None] | None = None,
 ) -> BlendResult:
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
 
@@ -793,6 +986,12 @@ def blend_vcfs(
         rho_marker_type: Where to apply ``rho``. One of ``"all"`` (default,
             existing behaviour) or ``"het_only"`` (apply only at intermediate
             VAF, keep boundary VAF binomial). See ``sample_allele_counts``.
+        host_aberrations: Optional per-shared-marker host copy-number
+            aberrations (see ``HostAberration`` / ``assign_cnloh_aberrations``).
+            When provided, the expected VAF at an affected marker uses the
+            copy-number-weighted mixture instead of the diploid model. The list
+            must align with the shared markers in iteration order, exactly like
+            ``fixed_biases``; ``None`` entries leave a marker fully diploid.
 
     Returns:
         BlendResult containing the header, VCF record lines, and statistics.
@@ -834,6 +1033,11 @@ def blend_vcfs(
         marker_biases = generate_marker_biases_realistic(n_shared, rng)
     else:
         marker_biases = generate_marker_biases(n_shared, rng, marker_bias_sd)
+
+    if host_aberrations is not None and len(host_aberrations) != n_shared:
+        raise ValueError(
+            f"host_aberrations length ({len(host_aberrations)}) != shared markers ({n_shared})"
+        )
 
     # Pre-generate per-marker depths
     if depth_cv > 0 and target_depth is not None:
@@ -878,8 +1082,13 @@ def blend_vcfs(
         if is_informative(host_gt, donor_gt):
             num_informative += 1
 
-        # Calculate expected VAF, apply per-marker capture bias, then sample
-        vaf = expected_vaf(host_gt, donor_gt, donor_fraction)
+        # Calculate expected VAF, apply per-marker capture bias, then sample.
+        # A host copy-number aberration replaces the diploid model at this marker.
+        aberr = host_aberrations[bias_idx] if host_aberrations is not None else None
+        if aberr is not None:
+            vaf = cn_weighted_vaf(host_gt, [donor_gt], [donor_fraction], aberr)
+        else:
+            vaf = expected_vaf(host_gt, donor_gt, donor_fraction)
         this_bias = marker_biases[bias_idx]
         vaf_biased = max(0.0, min(1.0, vaf + this_bias))
         alt_allele_bias = host_rec.alt if host_rec.alt != "." else donor_rec.alt

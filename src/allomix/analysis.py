@@ -64,6 +64,8 @@ def analyse_sample(
     use_sex_chroms: bool = False,
     artifact_filter: bool = True,
     sample_name: str | None = None,
+    robust: str = "off",
+    robust_k: float = 3.5,
 ) -> SampleAnalysis:
     """Run the chimerism pipeline for one pre-parsed admixture sample.
 
@@ -90,6 +92,10 @@ def analyse_sample(
             host-presence test (the returned ``donor_hom_markers`` still lists
             them, flagged).
         sample_name: Optional name stamped onto ``genotypes.sample_name``.
+        robust: Robust-refit mode passed to the estimator ("off"/"auto"/"force";
+            see ``estimate_single_donor_bb``). Drops host copy-number/LoH-
+            inconsistent markers and refits; "auto" is the recommended policy.
+        robust_k: Robust residual cut (robust SDs) for the refit.
 
     Returns:
         A ``SampleAnalysis`` bundling the genotypes, estimate, QC and the
@@ -107,6 +113,8 @@ def analyse_sample(
             error_rate=error_rate,
             marker_biases=marker_biases,
             marker_errors=marker_errors,
+            robust=robust,
+            robust_k=robust_k,
         )
     else:
         result = estimate_multi_donor(
@@ -115,6 +123,8 @@ def analyse_sample(
             error_rate=error_rate,
             marker_biases=marker_biases,
             marker_errors=marker_errors,
+            robust=robust,
+            robust_k=robust_k,
         )
 
     dh_markers: list[DonorHomMarker] = []

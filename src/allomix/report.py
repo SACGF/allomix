@@ -368,6 +368,7 @@ def to_json(
             "total_donor_pct": round(sum(result.donor_fractions) * 100, 4),
             "n_informative": result.n_informative,
             "n_used": qc.n_used,
+            "n_robust_excluded": getattr(result, "n_robust_excluded", 0),
             "mean_depth": round(qc.mean_depth, 1),
             "gof_pval": (
                 round(qc.goodness_of_fit_pval, 4) if qc.goodness_of_fit_pval is not None else None
@@ -393,6 +394,7 @@ def to_json(
             else None,
             "n_informative": result.n_informative,
             "n_used": qc.n_used,
+            "n_robust_excluded": getattr(result, "n_robust_excluded", 0),
             "mean_depth": round(qc.mean_depth, 1),
             "gof_pval": (
                 round(qc.goodness_of_fit_pval, 4) if qc.goodness_of_fit_pval is not None else None

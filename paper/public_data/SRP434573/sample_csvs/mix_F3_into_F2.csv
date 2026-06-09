@@ -1,6 +1,6 @@
 sample_id,bam_filename,sample_type
-F2,/tau/data/chimerism/SRP434573/bam/SRR24309258.hg38.bam,HOST
-F3,/tau/data/chimerism/SRP434573/bam/SRR24309256.hg38.bam,DONOR
+F3,/tau/data/chimerism/SRP434573/bam/SRR24309256.hg38.bam,HOST
+F2,/tau/data/chimerism/SRP434573/bam/SRR24309258.hg38.bam,DONOR
 1_99_F3-F2_v2,/tau/data/chimerism/SRP434573/bam/SRR24309262.hg38.bam,ADMIX
 1_79_F3-F2_v2,/tau/data/chimerism/SRP434573/bam/SRR24309163.hg38.bam,ADMIX
 1_39_F3-F2_v2,/tau/data/chimerism/SRP434573/bam/SRR24309171.hg38.bam,ADMIX

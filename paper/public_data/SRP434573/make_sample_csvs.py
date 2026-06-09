@@ -16,10 +16,16 @@ minor contributor's fraction is ``1/(1+N)``. The thesis confirms the 1:N
 convention; which of ``X-Y`` is the minor is NOT stated in the thesis text, so
 we take the FIRST-listed individual as the minor. The data structure supports
 this (each first-position individual is the one titrated across several ratios
-and backgrounds), but it is an inference, not author-confirmed. It does not
-affect the joint-calling genotypes (HOST and DONOR are genotyped identically);
-it only sets which contributor allomix later treats as the "donor" whose
-fraction is reported. Flip ``MINOR_IS_FIRST`` if the authors confirm otherwise.
+and backgrounds), but it is an inference, not author-confirmed.
+
+Role mapping: the minor (titrated) contributor is labelled HOST and the major
+(background) contributor DONOR. This mirrors our common clinical case, where the
+residual / recurring patient (host) is the small fraction detected against a
+donor-dominated graft, so the titration series exercises allomix exactly as a
+relapse / declining-chimerism series would. The labels do not affect the
+joint-calling genotypes (HOST and DONOR are genotyped identically); they only
+set which contributor allomix treats as host vs donor downstream. Flip
+``MINOR_IS_FIRST`` if the authors confirm the minor is the second-listed name.
 
 The ENA files are pear-merged single-end FASTQs. The pipeline consumes aligned
 BAMs, so these CSVs reference ``<bam_dir>/<run>.<bam_suffix>`` which an upstream
@@ -125,10 +131,13 @@ def main() -> None:
 
     n_patients = 0
     for (minor, major), mixes in sorted(two_person.items()):
+        # Stable composition label "mix_<minor>_into_<major>" (spike-in into
+        # background), independent of the HOST/DONOR role mapping below.
         patient = f"mix_{minor}_into_{major}"
-        rows_out = ref_rows(major, [minor])
-        manifest.append((patient, major, pure_run[major], "HOST", major, ""))
-        manifest.append((patient, minor, pure_run[minor], "DONOR", minor, ""))
+        # Clinical mapping: minor (titrated) = HOST, major (background) = DONOR.
+        rows_out = ref_rows(minor, [major])
+        manifest.append((patient, minor, pure_run[minor], "HOST", minor, ""))
+        manifest.append((patient, major, pure_run[major], "DONOR", major, ""))
         for sid, run, pct in sorted(mixes, key=lambda x: x[2]):
             rows_out.append((sid, bam_path(args.bam_dir, run, args.bam_suffix), "ADMIX"))
             manifest.append((patient, sid, run, "ADMIX", minor, f"{pct:g}"))
@@ -136,25 +145,26 @@ def main() -> None:
         n_patients += 1
 
     # Three-person mixture: alias 1_3_5_F2-M1-M2 = ratio 1:3:5 of F2:M1:M2.
-    # Major (5/9) = host; the two smaller fractions = donors. allomix's
-    # "up to 2 donors + host = 3 genomes" case.
+    # Clinical "host + up to 2 donors = 3 genomes" case: the smallest fraction
+    # (the monitored minority = patient) = HOST, the two larger = DONORs. The
+    # patient label keeps the stable composition form (smaller contributors
+    # "into" the largest background) so it does not change with the role mapping.
     for name, run, (a, b), (c1, c2, c3) in three_person:
         parts = [(c1, 1), (c2, a), (c3, b)]  # tokens "1_3_5" -> 1:3:5 across c1,c2,c3
         total = sum(p for _, p in parts)
-        parts_sorted = sorted(parts, key=lambda x: x[1])
-        host = parts_sorted[-1][0]
-        donors = [p[0] for p in parts_sorted[:-1]]
-        patient = f"mix_{'_'.join(donors)}_into_{host}"
+        parts_sorted = sorted(parts, key=lambda x: x[1])  # ascending fraction
+        label = "_".join(p[0] for p in parts_sorted[:-1])
+        patient = f"mix_{label}_into_{parts_sorted[-1][0]}"
+        host = parts_sorted[0][0]  # smallest fraction = monitored host
+        donors = [p[0] for p in parts_sorted[1:]]
         rows_out = ref_rows(host, donors)
-        manifest.append((patient, host, pure_run[host], "HOST", host, ""))
+        host_frac = next(p for ind, p in parts if ind == host) / total * 100.0
+        manifest.append((patient, host, pure_run[host], "HOST", host, f"{host_frac:g}"))
         for d in donors:
-            frac = next(p for ind, p in parts if ind == d) / total * 100.0
             manifest.append((patient, d, pure_run[d], "DONOR", d, ""))
         rows_out.append((name, bam_path(args.bam_dir, run, args.bam_suffix), "ADMIX"))
-        donor_pcts = ", ".join(
-            f"{d}={next(p for ind, p in parts if ind == d) / total * 100:g}%" for d in donors
-        )
-        manifest.append((patient, name, run, "ADMIX", "/".join(donors), donor_pcts))
+        breakdown = ", ".join(f"{ind}={p / total * 100:g}%" for ind, p in parts_sorted)
+        manifest.append((patient, name, run, "ADMIX", host, breakdown))
         write_csv(patient, rows_out)
         n_patients += 1
 

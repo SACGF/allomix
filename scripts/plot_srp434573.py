@@ -135,23 +135,26 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
             if known is not None:
                 ax.plot(x_known, known, marker="D", markersize=6, color="0.45",
                         zorder=2)
-            # MLE: filled circle + CI (down-triangle on the floor if est 0).
-            if est is None or est <= 0:
-                ax.plot(x_mle, YFLOOR, marker="v", markersize=9, markerfacecolor="none",
-                        markeredgecolor=colors[m], markeredgewidth=1.6, zorder=3)
-                any_nd = True
-            else:
+            # MLE: filled circle + CI. Not detected (est 0) -> the same circle at
+            # the log-axis floor (a stand-in 0), so the shape still reads as MLE.
+            if est is not None and est > 0:
                 ax.errorbar(x_mle, est,
                             yerr=[[est - lo if lo is not None else 0.0],
                                   [hi - est if hi is not None else 0.0]],
                             marker="o", markersize=7.5, color=colors[m], capsize=2.5,
                             linewidth=0, elinewidth=1.3, markeredgecolor="white",
                             markeredgewidth=0.6, zorder=3)
-                if r.get("qc") == "REVIEW":
-                    ax.plot(x_mle, est, marker="o", markersize=12, markerfacecolor="none",
-                            markeredgecolor="red", markeredgewidth=1.2, zorder=4)
-                    any_review = True
-            # Presence: open square + CI (floor triangle if not detected / 0).
+                y_mle = est
+            else:
+                ax.plot(x_mle, YFLOOR, marker="o", markersize=7.5, color=colors[m],
+                        markeredgecolor="white", markeredgewidth=0.6, zorder=3)
+                y_mle = YFLOOR
+                any_nd = True
+            if r.get("qc") == "REVIEW":
+                ax.plot(x_mle, y_mle, marker="o", markersize=12, markerfacecolor="none",
+                        markeredgecolor="red", markeredgewidth=1.2, zorder=4)
+                any_review = True
+            # Presence: open square + CI. Not detected -> the same square at the floor.
             if pest is not None and pest > 0:
                 ax.errorbar(x_pres, pest,
                             yerr=[[pest - plo if plo is not None else 0.0],
@@ -161,8 +164,8 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
                             ecolor=colors[m], capsize=2.5, linewidth=0,
                             elinewidth=1.1, zorder=3)
             else:
-                ax.plot(x_pres, YFLOOR, marker="v", markersize=9, markerfacecolor="none",
-                        markeredgecolor=colors[m], markeredgewidth=1.6, zorder=3)
+                ax.plot(x_pres, YFLOOR, marker="s", markersize=7, markerfacecolor="none",
+                        markeredgecolor=colors[m], markeredgewidth=1.5, zorder=3)
                 any_nd = True
             x += 1.4
         group_span[m] = (start, x - 1.4)
@@ -181,9 +184,13 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
     ax.set_ylim(0.008, 13)
     ax.set_xlim(-1.0, x - 0.5)
     ax.set_xticks([])
-    ax.yaxis.set_major_locator(FixedLocator([0.01, 0.1, 0.5, 1, 2.5, 5, 10]))
+    # The floor row is a stand-in for 0 (true 0 has no place on a log axis).
+    ax.axhline(YFLOOR, color="0.6", linewidth=0.8, linestyle=":", zorder=0)
+    ax.yaxis.set_major_locator(FixedLocator([YFLOOR, 0.1, 0.5, 1, 2.5, 5, 10]))
     ax.yaxis.set_minor_locator(NullLocator())
-    ax.yaxis.set_major_formatter(FuncFormatter(_fmt_pct))
+    ax.yaxis.set_major_formatter(
+        FuncFormatter(lambda v, p: "0" if abs(v - YFLOOR) < 1e-6 else _fmt_pct(v, p))
+    )
     ax.grid(True, axis="y", which="major", alpha=0.25)
     ax.set_ylabel("host % (log scale)", fontsize=12)
     ax.set_title(
@@ -205,12 +212,11 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
         handles.append(Line2D([0], [0], marker="o", color="none", markersize=11,
                               markerfacecolor="none", markeredgecolor="red",
                               markeredgewidth=1.3, label="QC = REVIEW"))
-    if any_nd:
-        handles.append(Line2D([0], [0], marker="v", color="none", markersize=10,
-                              markerfacecolor="none", markeredgecolor="0.4",
-                              markeredgewidth=1.8, label="not detected (est 0%)"))
     ax.legend(handles=handles, fontsize=9, loc="upper left",
               bbox_to_anchor=(1.005, 1.0), framealpha=0.95)
+    if any_nd:
+        ax.text(1.005, 0.0, 'a marker on the "0" row\n= not detected', fontsize=8,
+                transform=ax.transAxes, va="bottom", ha="left", color="0.35")
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")

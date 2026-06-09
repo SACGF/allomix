@@ -14,6 +14,21 @@ output_dir: "output/genotypes"
 tabix: "tabix"
 bgzip: "bgzip"
 
+# Phase 0 (optional) — align FASTQ -> BAM with bwa mem.
+# Off by default: leave fastq_dir unset to use pre-aligned BAMs (the CSV
+# bam_filename paths are then treated as existing inputs). To enable, set
+# fastq_dir + bam_dir; the pipeline aligns <fastq_dir>/<run>.<fastq_suffix> ->
+# <bam_dir>/<run>.<bam_suffix>, which must equal the CSV bam_filename paths.
+# The reference must be bwa-indexed (`bwa index <ref>`). The read group's SM is
+# set to each sample's sample_id from the CSV. BAMs are NOT duplicate-marked.
+bwa: "bwa"
+samtools: "samtools"
+# fastq_dir: "/path/to/fastqs"
+# fastq_suffix: "fastq.gz"
+# bam_dir: "/path/to/bams"
+# bam_suffix: "hg38.bam"
+# align_threads: 8
+
 # Phase 1 — GATK
 gatk: "gatk"  # full path if not on PATH, e.g. /tau/tools/gatk-4.1.3.0/gatk
 java_mem: "8g"  # Java heap per GATK job

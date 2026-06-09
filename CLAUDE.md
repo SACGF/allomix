@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working Rules
+
+- **Never hallucinate.** Do not state inferences, guesses, or recalled facts as if they were verified. If you are not certain, say so and verify first. This applies to dataset identities, file contents, study citations, anything.
+- **Stop at permission/paywall walls.** If you hit a 401/403/404, a private repo, a login prompt, or any access wall, stop and ask the user to provide auth, fix access, or retrieve the content. Do not work around the wall with guesses or assumptions.
+
 ## Purpose
 
 **allomix** is a general-purpose, panel-agnostic tool for NGS-based donor chimerism monitoring after hematopoietic stem cell transplantation (HSCT). It works with any set of bi-allelic markers (SNPs or indels) present in the input VCFs.

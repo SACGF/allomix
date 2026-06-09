@@ -1,0 +1,61 @@
+# allomix joint-calling config for the public SRP434573 mixture dataset.
+#
+# SRP434573 / PRJNA960854 — Chu Xufeng PhD thesis (HUST, 2024,
+# DOI 10.27157/d.cnki.ghzku.2024.000769). 1062-autosomal-SNP MIP capture panel,
+# two-person (and one three-person) DNA mixtures of 7 unrelated individuals
+# (F1-F3, M1-M4) at known minor fractions 0.5%-10%. See README.md and
+# SACGF/allomix issue #16 for provenance and the ground-truth decoding.
+#
+# Run from repo root:
+#   snakemake -s pipeline/Snakefile \
+#       --configfile paper/public_data/SRP434573/config.yaml --cores 16
+#
+# PREREQUISITE: the ENA deposit is pear-merged single-end FASTQ, but this
+# pipeline consumes aligned BAMs. Align each run to the chosen reference first
+# (bwa-mem / minimap2 -> sort -> index, NO duplicate marking for this amplicon
+# panel) into the `bam_dir` the CSVs point at. See README.md "Alignment".
+
+ref: "/path/to/hg38.fa"   # build must match the panel BED below (see README)
+samples_csv_dir: "paper/public_data/SRP434573/sample_csvs"
+output_dir: "output/genotypes/SRP434573"
+
+tabix: "tabix"
+bgzip: "bgzip"
+
+# Phase 0 — align the ENA FASTQs to BAMs with bwa mem.
+# Aligns <fastq_dir>/<run>.<fastq_suffix> -> <bam_dir>/<run>.<bam_suffix>, which
+# must match the bam_filename paths the CSVs reference (the make_sample_csvs.py
+# defaults). The reference must be bwa-indexed first (`bwa index <ref>`). Reads
+# are single-end (pear-merged ~96 bp). BAMs are NOT duplicate-marked.
+bwa: "bwa"
+samtools: "samtools"
+fastq_dir: "/tau/data/chimerism/SRP434573"
+fastq_suffix: "fastq.gz"
+bam_dir: "/tau/data/chimerism/SRP434573/bam"
+bam_suffix: "hg38.bam"
+align_threads: 8
+
+# Phase 1 — GATK
+gatk: "gatk"
+java_mem: "8g"
+# REQUIRED capture-panel BED restricting GATK to the targeted loci. The thesis
+# publishes the 1045 panel rs IDs (Appendix 2-3) but no coordinates/BED, so this
+# BED must be built first — either by mapping the rs IDs to the chosen genome
+# build via dbSNP, or by deriving covered intervals from the panel pileups (the
+# issue #16 laptop probe recovered ~1053 high-depth clusters straight from
+# coverage). See README.md "Panel BED".
+intervals: "paper/public_data/SRP434573/panel.hg38.bed"
+# panel_alleles_vcf:  # optional — only needed if you want a fixed REF/ALT panel
+                      # forced at every site (see doc/joint_calling.md). Not
+                      # required here; host+donor joint calling discovers the
+                      # informative sites within `intervals`.
+
+# Phase 2 — bcftools mpileup
+bcftools: "bcftools"
+max_depth: 100000      # raw panel depth ~1000-1900x (p90 ~3000), well under cap
+min_mapq: 20
+min_baseq: 20
+# DUP intentionally dropped from the defaults: this is an amplicon/MIP panel and
+# the BAMs must NOT be duplicate-marked (every amplicon read shares start/end, so
+# dup-marking would discard nearly all coverage). Keep BAMs un-marked.
+read_filters: "UNMAP,SECONDARY,QCFAIL"

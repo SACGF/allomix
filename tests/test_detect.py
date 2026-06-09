@@ -408,6 +408,69 @@ class TestDegenerate:
 
 
 # ---------------------------------------------------------------------------
+# Single-strand library auto-skip of the strand-bias artifact filter (issue #18)
+# ---------------------------------------------------------------------------
+
+_DA_TYPES = (((0, 0), (1, 1), 2), ((1, 1), (0, 0), 2),
+             ((0, 1), (0, 0), 1), ((0, 1), (1, 1), 1))
+
+
+def _dp4_marker(host_gt, donor_gt, h, f_h, depth, e, one_strand, pos):
+    """A spiked donor-hom marker with explicit DP4 strand counts.
+
+    ``one_strand=True`` puts the whole donor-absent allele on one strand
+    (amplicon / single-end), which the strand-bias rule flags; ``False`` splits
+    it ~evenly. Other-allele strands are irrelevant to the filter.
+    """
+    q = e / 3.0 + (h / 2.0) * f_h
+    y = round(depth * q)
+    da_fwd, da_rev = (y, 0) if one_strand else (y // 2, y - y // 2)
+    other = depth - y
+    of, orv = other // 2, other - other // 2
+    if donor_gt == (0, 0):  # donor-absent allele = ALT
+        ad_ref, ad_alt, dp4 = other, y, (of, orv, da_fwd, da_rev)
+    else:  # donor-absent allele = REF
+        ad_ref, ad_alt, dp4 = y, other, (da_fwd, da_rev, of, orv)
+    mt = marker_type(host_gt, donor_gt)
+    return InformativeMarker(
+        chrom="chr1", pos=pos, ref="A", alt="G", host_gt=host_gt,
+        donor_gts=[donor_gt], marker_type=mt, admix_ad_ref=ad_ref,
+        admix_ad_alt=ad_alt, admix_dp=depth, marker_types=[mt],
+        informative_for=[True], admix_dp4=dp4,
+    )
+
+
+def _dp4_panel(n, one_strand, pos_start=100, f_h=0.1, depth=2000, e=1e-3):
+    out = []
+    for i in range(n):
+        host_gt, donor_gt, h = _DA_TYPES[i % 4]
+        out.append(_dp4_marker(host_gt, donor_gt, h, f_h, depth, e,
+                               one_strand, pos_start + i * 100))
+    return out
+
+
+def test_single_strand_library_skips_strand_filter():
+    """A wholly one-strand panel keeps its markers and still detects (issue #18)."""
+    markers = _dp4_panel(32, one_strand=True)
+    res = host_presence_test(markers, error_rate=1e-3, artifact_filter=True)
+    # Strand test auto-skipped: nothing else flags, so no markers dropped.
+    assert res.n_artifact_filtered == 0
+    assert res.n_markers == 32
+    assert res.f_host_mle == pytest.approx(0.1, abs=0.03)
+    assert res.lrt_pval < 1e-6
+
+
+def test_two_strand_library_still_filters_one_strand_artifacts():
+    """With genuine two-strand coverage the strand rule still drops one-strand sites."""
+    balanced = _dp4_panel(32, one_strand=False, pos_start=100)
+    artifacts = _dp4_panel(4, one_strand=True, pos_start=100_000)
+    res = host_presence_test(balanced + artifacts, error_rate=1e-3,
+                             artifact_filter=True)
+    assert res.n_artifact_filtered == 4
+    assert res.n_markers == 32
+
+
+# ---------------------------------------------------------------------------
 # Sanity: numpy / math availability under the dataclass machinery
 # ---------------------------------------------------------------------------
 

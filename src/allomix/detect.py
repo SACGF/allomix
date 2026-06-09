@@ -224,7 +224,45 @@ class ArtifactThresholds:
     max_abs_rpbz: float = 6.0
 
 
-def _is_artifact_marker(r: _DonorAbsentMarker, thr: ArtifactThresholds) -> bool:
+# Single-strand library auto-detection (issue #18). On amplicon / MIP panels or
+# pear-merged single-end reads there is no two-strand sampling: the donor-absent
+# allele sits on one strand at essentially every marker, so the strand-bias rule
+# flags nearly all of them and the presence test is left with none. When the
+# strand split is one-sided across (almost) every strand-readable marker, the
+# test is non-discriminating, so it is skipped (SCBZ/RPBZ still apply).
+_SINGLE_STRAND_MIN_MARKERS = 20  # need this many strand-readable markers to judge
+_SINGLE_STRAND_FRACTION = 0.9  # >= this fraction one-strand => single-strand library
+
+
+def _strand_test_uninformative(
+    records: list[_DonorAbsentMarker], thr: ArtifactThresholds
+) -> bool:
+    """True if the strand-bias rule should be skipped for a single-strand library.
+
+    Counts, over every marker with strand data and enough donor-absent reads to
+    judge, how many are one-strand (lesser strand below ``max_strand_minor_frac``).
+    If nearly all are, the library has no two-strand sampling (amplicon / MIP /
+    pear-merged single-end), the strand test would flag almost everything and
+    tells us nothing, so it is disabled. See issue #18.
+    """
+    flagged = qualifying = 0
+    for r in records:
+        if r.da_fwd is None or r.da_rev is None:
+            continue
+        total = r.da_fwd + r.da_rev
+        if total < thr.min_strand_reads:
+            continue
+        qualifying += 1
+        if min(r.da_fwd, r.da_rev) / total < thr.max_strand_minor_frac:
+            flagged += 1
+    if qualifying < _SINGLE_STRAND_MIN_MARKERS:
+        return False
+    return flagged / qualifying >= _SINGLE_STRAND_FRACTION
+
+
+def _is_artifact_marker(
+    r: _DonorAbsentMarker, thr: ArtifactThresholds, apply_strand_test: bool = True
+) -> bool:
     """True if a donor-homozygous marker's donor-absent reads look artifactual.
 
     Three independent signatures, any of which flags the marker:
@@ -233,7 +271,9 @@ def _is_artifact_marker(r: _DonorAbsentMarker, thr: ArtifactThresholds) -> bool:
       2. Read-position bias (|RPBZ| large): donor-absent reads cluster at read
          ends rather than spanning the site like a real allele.
       3. Strand bias: the donor-absent allele reads come almost entirely from
-         one strand, which a genuine amplified/sequenced allele does not.
+         one strand, which a genuine amplified/sequenced allele does not. Only
+         applied when ``apply_strand_test`` is True; the caller disables it for
+         single-strand libraries where it is non-discriminating (issue #18).
 
     Markers with no admix bias annotations (all fields None) never flag, so a
     panel processed without these tags is simply left unfiltered.
@@ -242,7 +282,7 @@ def _is_artifact_marker(r: _DonorAbsentMarker, thr: ArtifactThresholds) -> bool:
         return True
     if r.rpbz is not None and abs(r.rpbz) > thr.max_abs_rpbz:
         return True
-    if r.da_fwd is not None and r.da_rev is not None:
+    if apply_strand_test and r.da_fwd is not None and r.da_rev is not None:
         total = r.da_fwd + r.da_rev
         if total >= thr.min_strand_reads:
             minor_frac = min(r.da_fwd, r.da_rev) / total
@@ -306,8 +346,12 @@ def donor_hom_markers(
         One ``DonorHomMarker`` per donor-homozygous marker, in selection order.
     """
     thr = artifact_thresholds or ArtifactThresholds()
+    records = select_donor_hom_markers(informative_markers)
+    # Skip the strand-bias rule on single-strand libraries where it would flag
+    # almost everything and tell us nothing (issue #18); SCBZ/RPBZ still apply.
+    apply_strand = not _strand_test_uninformative(records, thr)
     out: list[DonorHomMarker] = []
-    for r in select_donor_hom_markers(informative_markers):
+    for r in records:
         chrom, pos, ref, alt = r.key
         out.append(
             DonorHomMarker(
@@ -319,7 +363,7 @@ def donor_hom_markers(
                 n=r.n,
                 h=r.h,
                 direction=r.direction,
-                artifact=_is_artifact_marker(r, thr),
+                artifact=_is_artifact_marker(r, thr, apply_strand_test=apply_strand),
             )
         )
     return out

@@ -8,7 +8,12 @@ from cyvcf2 import VCF
 
 from allomix import __version__
 from allomix.analysis import analyse_sample
-from allomix.bias import estimate_biases, load_bias_table, save_bias_table
+from allomix.bias import (
+    biases_to_simple_dict,
+    estimate_biases,
+    load_bias_table,
+    save_bias_table,
+)
 from allomix.chimerism import PanelCalibration
 from allomix.constants import (
     DEFAULT_ERROR_RATE,
@@ -156,6 +161,22 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Disable bias correction even when a bias table is provided",
     )
     parser.add_argument(
+        "--estimate-bias",
+        action="store_true",
+        help="Estimate per-marker bias inline from all samples in --panel-vcf, "
+             "held in memory (no separate `estimate-bias` step or table file). "
+             "Mutually exclusive with --bias-table. Estimate from data called "
+             "the same way as the admix; works best when the panel VCF holds "
+             "many samples.",
+    )
+    parser.add_argument(
+        "--estimate-bias-min-het",
+        type=int,
+        default=1,
+        help="Minimum het observations per marker for inline --estimate-bias "
+             "(default: 1).",
+    )
+    parser.add_argument(
         "--error-table",
         default=None,
         help="Per-site empirical error-rate table TSV (from "
@@ -279,14 +300,29 @@ def _open_output(path: str):
 def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     """Build the per-marker calibration from the CLI table options.
 
-    Loads the bias and per-site error tables when specified and not disabled;
-    omitted or disabled tables become empty (no correction).
+    Bias comes from --bias-table, or is estimated inline from the panel VCF
+    samples when --estimate-bias is set (issue #11), or is empty. Per-site error
+    comes from --error-table or is empty. The --no-*-correction flags force the
+    respective correction off.
     """
-    biases = (
-        load_bias_table(args.bias_table)
-        if args.bias_table and not args.no_bias_correction
-        else {}
-    )
+    if getattr(args, "estimate_bias", False) and not args.no_bias_correction:
+        if args.bias_table:
+            raise SystemExit("Use either --bias-table or --estimate-bias, not both")
+        samples = list(VCF(args.panel_vcf).samples)
+        marker_lists = [
+            parse_vcf(args.panel_vcf, sample=s, min_dp=0, min_gq=0) for s in samples
+        ]
+        biases = biases_to_simple_dict(
+            estimate_biases(marker_lists, min_het=args.estimate_bias_min_het)
+        )
+        sys.stderr.write(
+            f"Estimated per-marker bias for {len(biases)} marker(s) from "
+            f"{len(samples)} panel sample(s)\n"
+        )
+    elif args.bias_table and not args.no_bias_correction:
+        biases = load_bias_table(args.bias_table)
+    else:
+        biases = {}
     errors = (
         load_error_table(args.error_table)
         if args.error_table and not args.no_error_correction

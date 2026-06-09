@@ -186,6 +186,46 @@ class TestCLIIntegration:
         content = out.read_text()
         assert "donor_pct" in content
 
+    def test_monitor_estimate_bias_inline(self, tmp_path):
+        """--estimate-bias runs bias estimation inline (issue #11), no table file."""
+        out = tmp_path / "cli_bias.tsv"
+        rc = main(
+            [
+                "monitor",
+                "--panel-vcf", str(JOINT_VCF),
+                "--admix-vcf", str(JOINT_VCF),
+                "--host-sample", "HOST",
+                "--donor-sample", "DONOR",
+                "--sample", "ADMIX_F0.10",
+                "--estimate-bias",
+                "--output", str(out),
+                "--min-dp", "0",
+                "--min-gq", "0",
+            ]
+        )
+        assert rc == 0
+        assert "donor_pct" in out.read_text()
+
+    def test_monitor_estimate_bias_conflicts_with_table(self, tmp_path):
+        """--estimate-bias and --bias-table together is an error."""
+        table = tmp_path / "bias.tsv"
+        table.write_text("chrom\tpos\tref\talt\tbias\tn_het\n")
+        with pytest.raises(SystemExit):
+            main(
+                [
+                    "monitor",
+                    "--panel-vcf", str(JOINT_VCF),
+                    "--admix-vcf", str(JOINT_VCF),
+                    "--host-sample", "HOST",
+                    "--donor-sample", "DONOR",
+                    "--sample", "ADMIX_F0.10",
+                    "--estimate-bias",
+                    "--bias-table", str(table),
+                    "--min-dp", "0",
+                    "--min-gq", "0",
+                ]
+            )
+
     def test_monitor_json(self, tmp_path):
         out = tmp_path / "cli_out.json"
         rc = main(

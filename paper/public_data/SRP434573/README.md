@@ -29,25 +29,40 @@ the **minor contributor fraction = 1/(1+N)**:
 |---|---|---|---|---|---|---|
 | minor % | 10 | 5 | 2.5 | 1.25 | 1 | 0.5 |
 
+### Role mapping (minor = HOST)
+
+The **minor (titrated) contributor is labelled HOST** and the **major
+(background) contributor DONOR**. This mirrors our common clinical case: the
+residual / recurring patient (host) is the small fraction detected against a
+donor-dominated graft, so the titration series (minor from 10% down to 0.5%)
+exercises allomix exactly as a relapse / declining-chimerism series would. The
+monitored fraction (the `known_minor_pct` column of `manifest.tsv`) is therefore
+the **host** fraction.
+
+File names are stable composition labels `mix_<minor>_into_<major>` (spike-in
+into background), independent of the role mapping, so they do not change if the
+mapping is flipped.
+
 - `single1..45` and bare `F1 F2 F3 M1 M2 M3 M4` are pure single-source runs.
   Only the seven bare individuals appear in mixtures, so only those are used as
   host/donor genotype references. The 45 `single*` runs are **not used** here.
 - `-degraded` variants are degraded-DNA versions of the `M1-M2` mixtures.
 - `1_3_5_F2-M1-M2` is the one **three-person** mixture (1:3:5 of F2:M1:M2), i.e.
-  the "host + 2 donors = 3 genomes" case. Host = M2 (5/9 ≈ 56%), donors = M1
-  (3/9 ≈ 33%) and F2 (1/9 ≈ 11%).
+  the "host + up to 2 donors = 3 genomes" case. Following the minor = HOST rule,
+  the monitored minority is **host = F2 (1/9 ≈ 11%)** and the two donors are
+  **M1 (3/9 ≈ 33%)** and **M2 (5/9 ≈ 56%)**.
 
 ### One open assumption (does not affect joint calling)
 
 The thesis confirms the **1:N** convention but does **not** state which of the
-two names in `X-Y` is the minor. We take the **first** as the minor (= DONOR),
+two names in `X-Y` is the minor. We take the **first** as the minor (= HOST),
 because the data is structured as one contributor titrated across ratios and
-backgrounds (e.g. `M3` is first against F1/F2/F3/M4 — one spike-in into four
-hosts). This is an inference, flagged as issue #16 question 1.
+backgrounds (e.g. `M3` is first against F1/F2/F3/M4 — one spike-in titrated into
+four backgrounds). This is an inference, flagged as issue #16 question 1.
 
 It does **not** change the joint-calling genotypes: HOST and DONOR are genotyped
-identically in phase 1. It only sets which contributor allomix later reports as
-the "donor" fraction. If the authors confirm the opposite ordering, flip
+identically in phase 1. It only sets which contributor allomix later treats as
+host vs donor. If the authors confirm the opposite ordering, flip
 `MINOR_IS_FIRST` in `make_sample_csvs.py` and regenerate.
 
 ## Files here
@@ -152,6 +167,7 @@ snakemake -s pipeline/Snakefile \
 
 Outputs land in `output/genotypes/SRP434573/`: per-patient `*.vcf.gz`
 (host/donor genotypes) and `*.admix.vcf.gz` (raw AD at panel sites). Feed those
-to allomix and compare its donor-fraction estimates against `manifest.tsv`.
+to allomix and compare its estimate of the monitored minority (the **host**
+fraction, `known_minor_pct` in `manifest.tsv`) against the known values.
 
 See `doc/joint_calling.md` for the two-phase rationale.

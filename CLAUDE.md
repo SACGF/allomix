@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Never hallucinate.** Do not state inferences, guesses, or recalled facts as if they were verified. If you are not certain, say so and verify first. This applies to dataset identities, file contents, study citations, anything.
 - **Stop at permission/paywall walls.** If you hit a 401/403/404, a private repo, a login prompt, or any access wall, stop and ask the user to provide auth, fix access, or retrieve the content. Do not work around the wall with guesses or assumptions.
+- **Never close GitHub issues.** Do not close issues yourself, and do not use auto-closing keywords (`Closes`, `Fixes`, `Resolves`, etc. followed by `#N`) in commit messages or PR descriptions. Reference issues with a plain `#N` only. Closing is the user's decision; a feature being merged does not mean the issue is done.
 
 ## Purpose
 

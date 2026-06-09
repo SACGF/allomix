@@ -6,7 +6,14 @@ One CSV per patient with columns ``sample_id,bam_filename,sample_type``
 one DAG so HaplotypeCaller / pileup jobs across patients run in parallel
 under a single ``snakemake --cores N`` invocation.
 
-Two phases share the DAG (per patient):
+Two phases share the DAG (per patient), with an optional alignment phase in
+front of them:
+
+    Phase 0 (optional) — bwa mem align FASTQ -> sorted, indexed BAM
+        Active only when `fastq_dir` is set in config. Aligns
+        <fastq_dir>/<run>.<fastq_suffix> -> <bam_dir>/<run>.<bam_suffix> (the
+        CSV bam_filename paths), stamping read-group SM with the sample_id.
+        Deployments that already have BAMs leave fastq_dir unset and skip this.
 
     Phase 1 — GATK joint-call HOST + DONOR BAMs
         HaplotypeCaller (GVCF) -> CombineGVCFs -> GenotypeGVCFs
@@ -97,6 +104,19 @@ READ_FILTERS = config.get("read_filters", "UNMAP,SECONDARY,QCFAIL,DUP")
 TABIX = config.get("tabix", "tabix")
 BGZIP = config.get("bgzip", "bgzip")
 
+# Optional alignment (FASTQ -> BAM) with bwa mem. Active only when `fastq_dir`
+# is set; otherwise the bam_filename paths in the CSVs are treated as
+# pre-aligned inputs (the default for deployments that already have BAMs).
+# When active, each <fastq_dir>/<run>.<fastq_suffix> is aligned to
+# <bam_dir>/<run>.<bam_suffix>, which must equal the CSV bam_filename paths.
+FASTQ_DIR = config.get("fastq_dir") or None
+BWA = config.get("bwa", "bwa")
+SAMTOOLS = config.get("samtools", "samtools")
+BAM_DIR = config.get("bam_dir") or None
+BAM_SUFFIX = config.get("bam_suffix", "hg38.bam")
+FASTQ_SUFFIX = config.get("fastq_suffix", "fastq.gz")
+ALIGN_THREADS = config.get("align_threads", 8)
+
 
 def _discover_patients():
     """Map {patient_id: csv_path} from samples_csv (single) or samples_csv_dir."""
@@ -172,6 +192,29 @@ for _p in PATIENTS:
     _patient_samples(_p)
 
 
+# Map each referenced BAM path -> sample_id, used by the optional alignment
+# rule to stamp the read-group SM tag with our sample_id so the joint-call and
+# admix VCFs carry sample_ids (not run accessions) as column names.
+BAM_TO_SAMPLE: dict[str, str] = {}
+for _p in PATIENTS:
+    _ref, _admix = _patient_samples(_p)
+    for _sid, _bam in {**_ref, **_admix}.items():
+        BAM_TO_SAMPLE.setdefault(_bam, _sid)
+
+
+def _sample_for_run(run):
+    """sample_id for an aligned run, from the CSV bam_filename it produces."""
+    bam = os.path.join(BAM_DIR, f"{run}.{BAM_SUFFIX}")
+    try:
+        return BAM_TO_SAMPLE[bam]
+    except KeyError:
+        raise ValueError(
+            f"No CSV row references {bam}; cannot set the read-group SM tag. "
+            f"Check that bam_dir ({BAM_DIR}) and bam_suffix ({BAM_SUFFIX}) match "
+            f"the bam_filename paths in the patient CSVs."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Output paths (all keyed on {patient})
 # ---------------------------------------------------------------------------
@@ -223,6 +266,53 @@ rule all:
 wildcard_constraints:
     patient="|".join(re.escape(p) for p in PATIENTS),
     sample=r"[^/]+",
+    run=r"[^/.]+",
+
+
+# ---------------------------------------------------------------------------
+# Phase 0 (optional): align FASTQ -> BAM with bwa mem
+# ---------------------------------------------------------------------------
+
+if FASTQ_DIR:
+    if not BAM_DIR:
+        raise ValueError(
+            "fastq_dir is set but bam_dir is not. Set bam_dir so the aligned "
+            "BAMs land at the bam_filename paths the patient CSVs reference."
+        )
+
+    rule bwa_align:
+        """Align one single-end FASTQ to a coordinate-sorted, indexed BAM.
+
+        Optional upstream phase, present only when `fastq_dir` is configured
+        (datasets that ship pre-aligned BAMs skip this entirely). The read
+        group stamps SM with the sample_id from the patient CSV, so the
+        phase-1 joint VCF and phase-2 admix VCF use our sample_ids as column
+        names — exactly the names passed to `allomix --host-sample /
+        --donor-sample / --sample`. The BAMs must not be duplicate-marked
+        (amplicon/MIP panels share read start/end; dup-marking would drop
+        nearly all coverage).
+        """
+        input:
+            fastq=os.path.join(FASTQ_DIR, "{run}." + FASTQ_SUFFIX),
+            ref=REF,
+        output:
+            bam=os.path.join(BAM_DIR, "{run}." + BAM_SUFFIX),
+            bai=os.path.join(BAM_DIR, "{run}." + BAM_SUFFIX + ".bai"),
+        log:
+            os.path.join(OUTPUT_DIR, "logs", "bwa_align", "{run}.log"),
+        threads: ALIGN_THREADS
+        params:
+            bwa=BWA,
+            samtools=SAMTOOLS,
+            sample=lambda wc: _sample_for_run(wc.run),
+        shell:
+            r"""
+            {params.bwa} mem -t {threads} \
+                -R '@RG\tID:{wildcards.run}\tSM:{params.sample}\tPL:ILLUMINA\tLB:{params.sample}' \
+                {input.ref} {input.fastq} 2> {log} \
+            | {params.samtools} sort -@ {threads} -o {output.bam} - 2>> {log}
+            {params.samtools} index {output.bam}
+            """
 
 
 # ---------------------------------------------------------------------------

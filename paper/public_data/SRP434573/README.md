@@ -115,11 +115,28 @@ no UMI bases (issue #16 verified this empirically), so this is raw-depth only.
 
 ### 3. Panel BED (`intervals:`)
 
-GATK needs a capture-panel BED. The thesis lists the 1045 panel rs IDs but no
-coordinates. Build `panel.hg38.bed` either by mapping the rs IDs to your genome
-build via dbSNP, or by deriving covered intervals from the panel pileups (issue
-#16's probe recovered ~1053 high-depth clusters from coverage alone). The
-`ref:` build in `config.yaml` must match this BED.
+GATK needs a capture-panel BED. The thesis publishes no coordinates, so the
+panel is rebuilt straight from the aligned BAMs: this is a MIP/amplicon assay,
+so every captured locus piles thousands of reads into one tight ~95 bp footprint
+and the panel self-recovers as high-depth clusters (off-target background sits
+far below). `SRP434573.bed` (committed here, hg38) was built with:
+
+```bash
+python scripts/build_srp434573_panel_bed.py \
+    --bam-glob 'output/bam/*.bam' \
+    --out paper/public_data/SRP434573/SRP434573.bed
+```
+
+It recovers 1052 intervals (1025 autosomal + 27 on chrX), in agreement with the
+issue #16 laptop probe (~1053) and the stated ~1062 SNPs. A position is kept
+when it is covered at >=100x (MAPQ/BASEQ >=20) in at least 50 of the 64 runs,
+and adjacent kept positions are merged into one interval per amplicon; every
+recovered cluster is amplicon-shaped (80-100 bp). Lower `--min-samples` to
+tolerate more per-sample dropout (e.g. 40 -> 1092 intervals). The 27 chrX
+clusters are genuine ~95 bp amplicons captured across the runs even though the
+thesis describes the panel as autosomal; pass `--bam-glob` plus a grep/filter,
+or drop them downstream, if a strictly autosomal BED is wanted. The `ref:` build
+in `config.yaml` must match this BED (hg38).
 
 ## Running
 

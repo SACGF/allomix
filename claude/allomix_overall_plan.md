@@ -46,6 +46,36 @@ The Step 27 bias filter is a stopgap (drops whole loci, heuristic thresholds). T
 - [ ] **Re-check NDAD/BHOA GoF (Step 24)** — expect REVIEW to clear once artifact markers are down-weighted by their own background.
 - [ ] Then the bias filter + any 7676483 blacklist are safety belts (no-controls fallback for new panels), not the mechanism.
 
+## SRP434573 run follow-ups (issue #16)
+
+Open items from the real-data run on SRP434573 (HiSeq 3000 MIP panel, ~1050 single-strand sites, known two/three-person mixtures titrated 10% -> 0.5%, minor contributor mapped to HOST so it reads as a declining-chimerism series). Confidence marked **[data]** (measured here), **[likely]** (well-supported inference), **[speculative]** (needs its own check). The wave-1 fixes from this run (one-sided robust trim, pre-trim GoF, contamination floor into LoD + presence background) are already implemented and validated in silico.
+
+## Step 29: Recalibrate the robust-drop REVIEW for the low end 🔲
+With the one-sided trim in place the drop fractions are much smaller, but a bare >15% drop count still does not separate "expected low-fraction trimming" from a real CNV/LoH/genotyping problem. Tie the threshold to the host fraction, or report the dominant *reason* for the drops (direction of trimmed residuals, clustering on a chromosome arm) instead of a count. Re-measure the post-fix drop distribution before changing the threshold. **[speculative]**
+
+## Step 30: Per-marker contamination term for the presence test 🔲
+The contamination floor currently feeds the presence background and reported LoD as a per-sample scalar (Observation 2, done). A donor-homozygous presence marker where a co-pooled genome carries the donor-absent allele is the one whose count is actually inflated; apportion the floor to those specific markers instead of taxing every donor-absent marker. With cohort genotypes this is identifiable; in deployment co-pooled genotypes are not visible, but the dose-response means the floor can still be apportioned. This is the strongest lever for sub-1% accuracy on co-pooled panels: on SRP434573 the floor (~0.06% on F2-M1, up to ~0.2% on M3-F3) competes directly with a 0.5-1% target, so even a correct per-sample floor bounds achievable low-end accuracy. **[speculative]**
+
+Re-check before trusting the low end: at the lowest fractions the contamination subtraction can pull the presence estimate *below* the MLE host, inverting the presence-vs-MLE ordering. On `mix_F2_into_M1` 0.5% the presence estimate (0.051%) sits below the MLE host (0.19%). The `qc.py` host-presence-vs-MLE REVIEW warning fires on `mle_host < f_host_mle` (presence above MLE), so the floor shifts its operating point at <1%. Re-check that gate's behaviour before trusting it there. **[data]**
+
+## Step 31: Caller-mismatch warning between panel and admix VCFs 🔲
+A bias table estimated from GATK-called panel het sites and applied to `bcftools mpileup` admix data makes results worse, because per-marker bias is caller-specific (issue #11). Cheap guard: detect the likely source of each VCF (`DP4`/`I16` present = mpileup, absent with GATK annotations = GATK) and warn on a mismatch. Small, self-contained, independent of the cohort work. **[likely]**
+
+Context: per-marker amplification bias on this panel is real and reproducible but is not the low-fraction limiting factor, and correcting it (now logit-space, issue #20) does not move the estimate. Global mean bias is ~0, the spread is already absorbed by the jointly-fit overdispersion `rho`, and the fully-informative low-fraction markers are homozygous in both contributors so their bias cannot be measured from a single pair. Per-marker bias correction is therefore deprioritized as a low-fraction accuracy lever (kept, harmless, small interior gain). **[data]**
+
+## Step 32: Validate contamination-flag thresholds on clean controls / other panels 🔲
+`CONTAMINATION_WARN_FRACTION` (0.2%), `CONTAMINATION_REVIEW_FRACTION` (1%), and the empirical p10 floor were all set from SRP434573 alone. The p10-floor estimator assumes a useful fraction of no-carrier sites and a particular allele-frequency spectrum, and even on clean data it reports a non-zero floor (~0.15% at 1% error, 2000x) from binomial sampling spread (shrinks as ~1/sqrt(depth)). Measure the false-positive rate on genuinely uncontaminated high-depth samples and confirm the empirical floor behaves on panels with different marker allele frequencies. Validation work, not a code change, but it gates trusting any LoD floor built on the contamination estimate in deployment. **[speculative]**
+
+## Step 33: Cohort / multi-sample phase 🔲
+Several follow-ups block on a multi-sample entry point that `monitor` (single patient) and `estimate-bias` (single pair) do not provide. Consolidated in `cohort_phase_plan.md`:
+- **Batch / run-level contamination QC:** group admix samples by `##allomixRunUnit` and flag a whole flowcell lane when its samples share an elevated floor (Observation 3). **[likely]**
+- **Cohort-recurrence bad-site detection:** a panel-level blacklist for loci systematically inconsistent across the repeated cohort (Observation 4). **[likely]**
+- **`estimate-bias --both-het` cohort entry point:** a pair's both-het markers only help *other* pairs, so the pooled table (which is the only way to reach the homozygous-in-both fully-informative markers) needs the multi-sample entry point (Observation 7). **[likely]**
+
+## Step 34: Lower-priority / needs-its-own-investigation 🔲
+- **Input-quality QC predicting poor fits.** The v1 library (F2-M1) fit worse than v2 (M3-F3) at matched fractions. A pre-estimate input-quality check (depth uniformity across the panel, per-site dropout) might predict which samples will fit poorly and warrant manual review before the estimate is attempted. **[speculative]**
+- **chrX recovery for sex-matched pairs.** The panel carries ~27 chrX amplicons that we default-drop. For a host/donor pair of the same sex they are usable informative markers; inferring sex from the data and keeping chrX when it matches adds markers, which matters most at low fractions where every informative marker counts. **[speculative]**
+
 ## Notes / gotchas (2026-06-01)
 
 - **run10 is the current-code canonical validation batch** (`output/validation_run10/batch.tsv`), from `scripts/run_csv_batch.py` (CSV-driven, not Snakemake), filter on by default. run9 predates current `main`, so its `donor_pct`/`n_informative` differ slightly — code evolution, NOT the filter (which touches only host-presence).

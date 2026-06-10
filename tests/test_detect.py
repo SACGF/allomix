@@ -44,8 +44,10 @@ def _imarker(
     section don't contaminate the calibration check.
     """
     mtypes = [marker_type(host_gt, d) for d in donor_gts]
-    mt = mtypes[0] if mtypes and mtypes[0] is not None else (
-        next((m for m in mtypes if m is not None), 0)
+    mt = (
+        mtypes[0]
+        if mtypes and mtypes[0] is not None
+        else (next((m for m in mtypes if m is not None), 0))
     )
     return InformativeMarker(
         chrom=chrom,
@@ -125,13 +127,9 @@ def _spiked_panel(
             y = sum(1 for _ in range(depth) if rng.random() < q)
             donor_absent_is_alt = donor_gt == (0, 0)
             if donor_absent_is_alt:
-                out.append(
-                    _imarker(host_gt, [donor_gt], ad_ref=depth - y, ad_alt=y, pos=pos)
-                )
+                out.append(_imarker(host_gt, [donor_gt], ad_ref=depth - y, ad_alt=y, pos=pos))
             else:
-                out.append(
-                    _imarker(host_gt, [donor_gt], ad_ref=y, ad_alt=depth - y, pos=pos)
-                )
+                out.append(_imarker(host_gt, [donor_gt], ad_ref=y, ad_alt=depth - y, pos=pos))
             pos += 100
     return out
 
@@ -253,7 +251,11 @@ class TestPower:
         # 80 markers, 2000x, f_h=1e-3 is well above the LoD this cell can
         # support; expect a tiny p-value.
         markers = _spiked_panel(
-            n_per_type=20, depth=2000, e=3e-4, f_h=1e-3, rng=rng,
+            n_per_type=20,
+            depth=2000,
+            e=3e-4,
+            f_h=1e-3,
+            rng=rng,
         )
         res = host_presence_test(markers, error_rate=3e-4)
         assert res.lrt_pval < 1e-3
@@ -274,7 +276,11 @@ class TestPower:
         """
         rng = random.Random(7)
         markers = _spiked_panel(
-            n_per_type=15, depth=2000, e=1e-3, f_h=5e-3, rng=rng,
+            n_per_type=15,
+            depth=2000,
+            e=1e-3,
+            f_h=5e-3,
+            rng=rng,
         )
         res = host_presence_test(markers, error_rate=1e-3)
         mle = estimate_single_donor_bb(markers, error_rate=1e-3, grid_steps=201)
@@ -301,7 +307,11 @@ class TestErrorTable:
         """
         rng = random.Random(99)
         markers = _spiked_panel(
-            n_per_type=10, depth=1000, e=1e-3, f_h=5e-4, rng=rng,
+            n_per_type=10,
+            depth=1000,
+            e=1e-3,
+            f_h=5e-4,
+            rng=rng,
         )
         baseline = host_presence_test(markers, error_rate=1e-3)
 
@@ -310,9 +320,7 @@ class TestErrorTable:
         # Lam, so the p-value rises.
         # Same set of keys covered in both directions, defensively.
         big = 1e-2
-        table_high = {
-            (m.chrom, m.pos, m.ref, m.alt): MarkerErrorRates(big, big) for m in markers
-        }
+        table_high = {(m.chrom, m.pos, m.ref, m.alt): MarkerErrorRates(big, big) for m in markers}
         inflated = host_presence_test(markers, marker_errors=table_high, error_rate=1e-3)
         assert inflated.lrt_pval >= baseline.lrt_pval
         assert inflated.used_per_site_error
@@ -371,6 +379,58 @@ class TestErrorTable:
 
 
 # ---------------------------------------------------------------------------
+# Contamination-floor background (Obs 2)
+# ---------------------------------------------------------------------------
+
+
+class TestContaminationFloor:
+    def test_floor_raises_pvalue(self):
+        """Adding a contamination floor raises the H0 background, so a borderline
+        positive looks more like background and its p-value rises.
+        """
+        rng = random.Random(2024)
+        markers = _spiked_panel(n_per_type=15, depth=2000, e=1e-3, f_h=2e-3, rng=rng)
+        baseline = host_presence_test(markers, error_rate=1e-3)
+        floored = host_presence_test(markers, error_rate=1e-3, contamination_floor=2e-3)
+        assert floored.lrt_pval >= baseline.lrt_pval
+        assert floored.poisson_pval >= baseline.poisson_pval
+        # The raised background also pulls the MLE host fraction down: part of the
+        # donor-absent signal is now attributed to contamination, not host.
+        assert floored.f_host_mle <= baseline.f_host_mle
+        # Background expectation Lam scales up with the floor.
+        assert floored.expected_background > baseline.expected_background
+
+    def test_zero_floor_is_noop(self):
+        """contamination_floor=0 reproduces the default call exactly."""
+        rng = random.Random(11)
+        markers = _spiked_panel(n_per_type=10, depth=1500, e=1e-3, f_h=1e-3, rng=rng)
+        default = host_presence_test(markers, error_rate=1e-3)
+        explicit_zero = host_presence_test(markers, error_rate=1e-3, contamination_floor=0.0)
+        assert explicit_zero.lrt_pval == default.lrt_pval
+        assert explicit_zero.poisson_pval == default.poisson_pval
+        assert explicit_zero.f_host_mle == default.f_host_mle
+        assert explicit_zero.expected_background == default.expected_background
+
+    def test_floor_suppresses_contamination_only_signal(self):
+        """A donor-absent excess that sits exactly at the contamination floor (no
+        real host) should not be called once the floor is applied.
+        """
+        rng = random.Random(7)
+        # Inject signal at f_h that is really contamination: the floor explains it.
+        markers = _spiked_panel(n_per_type=20, depth=2000, e=3e-4, f_h=2e-3, rng=rng)
+        uncorrected = host_presence_test(markers, error_rate=3e-4)
+        corrected = host_presence_test(markers, error_rate=3e-4, contamination_floor=2e-3)
+        # Without the floor this fires; with the floor matching the injected
+        # excess it should no longer be significant.
+        assert uncorrected.lrt_pval < 1e-3
+        assert corrected.lrt_pval > 0.05
+
+    def test_negative_floor_rejected(self):
+        with pytest.raises(ValueError, match="contamination_floor"):
+            host_presence_test([], error_rate=1e-3, contamination_floor=-1e-3)
+
+
+# ---------------------------------------------------------------------------
 # Degenerate inputs
 # ---------------------------------------------------------------------------
 
@@ -411,8 +471,7 @@ class TestDegenerate:
 # Single-strand library auto-skip of the strand-bias artifact filter (issue #18)
 # ---------------------------------------------------------------------------
 
-_DA_TYPES = (((0, 0), (1, 1), 2), ((1, 1), (0, 0), 2),
-             ((0, 1), (0, 0), 1), ((0, 1), (1, 1), 1))
+_DA_TYPES = (((0, 0), (1, 1), 2), ((1, 1), (0, 0), 2), ((0, 1), (0, 0), 1), ((0, 1), (1, 1), 1))
 
 
 def _dp4_marker(host_gt, donor_gt, h, f_h, depth, e, one_strand, pos):
@@ -433,10 +492,19 @@ def _dp4_marker(host_gt, donor_gt, h, f_h, depth, e, one_strand, pos):
         ad_ref, ad_alt, dp4 = y, other, (da_fwd, da_rev, of, orv)
     mt = marker_type(host_gt, donor_gt)
     return InformativeMarker(
-        chrom="chr1", pos=pos, ref="A", alt="G", host_gt=host_gt,
-        donor_gts=[donor_gt], marker_type=mt, admix_ad_ref=ad_ref,
-        admix_ad_alt=ad_alt, admix_dp=depth, marker_types=[mt],
-        informative_for=[True], admix_dp4=dp4,
+        chrom="chr1",
+        pos=pos,
+        ref="A",
+        alt="G",
+        host_gt=host_gt,
+        donor_gts=[donor_gt],
+        marker_type=mt,
+        admix_ad_ref=ad_ref,
+        admix_ad_alt=ad_alt,
+        admix_dp=depth,
+        marker_types=[mt],
+        informative_for=[True],
+        admix_dp4=dp4,
     )
 
 
@@ -444,8 +512,9 @@ def _dp4_panel(n, one_strand, pos_start=100, f_h=0.1, depth=2000, e=1e-3):
     out = []
     for i in range(n):
         host_gt, donor_gt, h = _DA_TYPES[i % 4]
-        out.append(_dp4_marker(host_gt, donor_gt, h, f_h, depth, e,
-                               one_strand, pos_start + i * 100))
+        out.append(
+            _dp4_marker(host_gt, donor_gt, h, f_h, depth, e, one_strand, pos_start + i * 100)
+        )
     return out
 
 
@@ -464,8 +533,7 @@ def test_two_strand_library_still_filters_one_strand_artifacts():
     """With genuine two-strand coverage the strand rule still drops one-strand sites."""
     balanced = _dp4_panel(32, one_strand=False, pos_start=100)
     artifacts = _dp4_panel(4, one_strand=True, pos_start=100_000)
-    res = host_presence_test(balanced + artifacts, error_rate=1e-3,
-                             artifact_filter=True)
+    res = host_presence_test(balanced + artifacts, error_rate=1e-3, artifact_filter=True)
     assert res.n_artifact_filtered == 4
     assert res.n_markers == 32
 

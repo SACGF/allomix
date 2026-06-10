@@ -234,9 +234,7 @@ _SINGLE_STRAND_MIN_MARKERS = 20  # need this many strand-readable markers to jud
 _SINGLE_STRAND_FRACTION = 0.9  # >= this fraction one-strand => single-strand library
 
 
-def _strand_test_uninformative(
-    records: list[_DonorAbsentMarker], thr: ArtifactThresholds
-) -> bool:
+def _strand_test_uninformative(records: list[_DonorAbsentMarker], thr: ArtifactThresholds) -> bool:
     """True if the strand-bias rule should be skipped for a single-strand library.
 
     Counts, over every marker with strand data and enough donor-absent reads to
@@ -464,6 +462,7 @@ def host_presence_test(
     marker_errors: dict[MarkerKey, MarkerErrorRates] | None = None,
     error_rate: float = DEFAULT_ERROR_RATE,
     error_floor: float = 1e-5,
+    contamination_floor: float = 0.0,
     artifact_filter: bool = True,
     artifact_thresholds: ArtifactThresholds | None = None,
 ) -> HostPresenceResult:
@@ -484,6 +483,15 @@ def host_presence_test(
         error_floor: Per-direction lower bound applied to every per-marker
             background rate. Prevents a zero rate from producing -inf
             log-likelihood on a single stray read.
+        contamination_floor: In-data third-party contamination fraction (see
+            ``allomix.contamination.estimate_contamination``) added to every
+            marker's H0 background rate. A co-pooled genome that carries the
+            host's (donor-absent) allele inflates exactly the donor-absent
+            counts this test reads, so the background a real host signal must
+            clear is the sequencing-error rate plus this floor. Defaults to
+            ``0.0`` (no contamination correction). Applied per-sample as a flat
+            scalar; a per-marker apportionment is a possible refinement (see
+            ``claude/further_improvements.md``, Obs 2).
         artifact_filter: When True (default), drop donor-homozygous markers
             whose donor-absent reads show alignment-artifact signatures
             (strand bias, soft-clip bias, read-position bias) before testing.
@@ -497,6 +505,8 @@ def host_presence_test(
         fraction and its profile CI, and the provenance of the background
         rates.
     """
+    if contamination_floor < 0.0:
+        raise ValueError(f"contamination_floor must be >= 0, got {contamination_floor!r}")
     markers = donor_hom_markers(informative_markers, artifact_thresholds)
     fallback_e = error_rate / N_OTHER_BASES
 
@@ -522,7 +532,10 @@ def host_presence_test(
         )
 
     e_list, n_per_site, n_fallback = _resolve_e_per_marker(
-        rows, marker_errors, fallback_e, error_floor,
+        rows,
+        marker_errors,
+        fallback_e,
+        error_floor,
     )
 
     if n_per_site and n_fallback:
@@ -536,7 +549,11 @@ def host_presence_test(
     ns = np.asarray([r.n for r in rows], dtype=float)
     hs = np.asarray([r.h for r in rows], dtype=float)
     coef = hs / 2.0
-    e = np.asarray(e_list, dtype=float)
+    # Background = sequencing-error rate plus the in-data contamination floor. A
+    # co-pooled genome carrying the donor-absent allele lands on these same
+    # counts, so a real host signal must clear both. With contamination_floor=0
+    # this is the plain sequencing-error background (the default).
+    e = np.asarray(e_list, dtype=float) + contamination_floor
 
     # Pooled Poisson under H0: y_i ~ Binomial(n_i, e_i), summed -> Poisson(Lam)
     # is accurate because e_i is tiny and n_i is large.

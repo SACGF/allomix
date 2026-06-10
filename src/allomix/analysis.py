@@ -55,6 +55,35 @@ class SampleAnalysis:
     donor_hom_markers: list[DonorHomMarker]
 
 
+def _floor_detection_limits(
+    result: ChimerismResult | MultiDonorResult, contamination_fraction: float
+) -> None:
+    """Raise the reported LoB/LoD to the in-data contamination floor in place.
+
+    The analytical ``lob_fraction`` / ``lod_fraction`` come from sequencing error
+    and Fisher information alone (see ``allomix.chimerism.detection_limit``). They
+    do not know about the co-pooled contamination floor allomix estimates per
+    sample, which is a second noise term competing with sub-1% host detection: at
+    a 0.2% floor a 0.5% host call is within noise, and the reported limit of
+    detection should say so. This floors both limits at the contamination
+    fraction so a sample whose contamination floor exceeds its analytical LoD
+    reports the floor. See ``claude/further_improvements.md``, Obs 2.
+
+    A no-op when ``contamination_fraction`` is 0 (a clean sample) or when the
+    result carries no LoB/LoD fields (multi-donor results do not). Monotonicity
+    ``lod >= lob`` is preserved because both are floored at the same value.
+
+    Args:
+        result: Chimerism result to update in place.
+        contamination_fraction: In-data contamination floor (donor-fraction
+            scale, 0.0-1.0) from ``allomix.contamination.estimate_contamination``.
+    """
+    if contamination_fraction <= 0.0 or not hasattr(result, "lob_fraction"):
+        return
+    result.lob_fraction = max(result.lob_fraction, contamination_fraction)
+    result.lod_fraction = max(result.lod_fraction, contamination_fraction)
+
+
 def analyse_sample(
     host: list[MarkerData],
     donors: list[list[MarkerData]],
@@ -139,13 +168,35 @@ def analyse_sample(
             robust_k=robust_k,
         )
 
+    # In-data contamination estimate at consensus-homozygous markers. Independent
+    # of the MLE and of any sequencing-run metadata (issue #12). Computed before
+    # the host-presence test and the LoD flooring below so its floor can feed
+    # both: a co-pooled genome is a second noise term competing with sub-1% host
+    # detection (see ``claude/further_improvements.md``, Obs 2). QC reads it off
+    # the result like the other identity checks.
+    result.contamination = estimate_contamination(
+        host,
+        donors,
+        admix,
+        marker_errors=cal.errors,
+        error_rate=error_rate,
+        min_dp=min_dp,
+    )
+    contamination_floor = result.contamination.contamination_fraction
+    _floor_detection_limits(result, contamination_floor)
+
     dh_markers: list[DonorHomMarker] = []
     if run_host_presence:
-        # Attached to the result before QC so the QC step can read it.
+        # Attached to the result before QC so the QC step can read it. The
+        # contamination floor is added to the per-marker H0 background: a
+        # co-pooled genome carrying the donor-absent allele inflates exactly the
+        # counts this test reads, so raising the background guards against
+        # calling that contamination as host signal.
         result.host_presence = host_presence_test(
             genotypes.informative,
             marker_errors=cal.errors,
             error_rate=error_rate,
+            contamination_floor=contamination_floor,
             artifact_filter=artifact_filter,
         )
         dh_markers = donor_hom_markers(genotypes.informative)
@@ -167,17 +218,6 @@ def analyse_sample(
     result.relatedness = relatedness
     result.admix_consistency = admix_consistency(
         host, donors, admix, error_rate=error_rate, min_dp=min_dp
-    )
-    # In-data contamination estimate at consensus-homozygous markers. Independent
-    # of the MLE and of any sequencing-run metadata (issue #12); QC reads it off
-    # the result like the other identity checks.
-    result.contamination = estimate_contamination(
-        host,
-        donors,
-        admix,
-        marker_errors=cal.errors,
-        error_rate=error_rate,
-        min_dp=min_dp,
     )
     # Run-unit metadata (index-hopping provenance) read from the admix VCF header
     # by the caller; attached before QC so the shared-run flag can be reported.

@@ -86,6 +86,11 @@ class QCReport:
         median_depth: Median sequencing depth across informative markers.
         min_depth: Minimum sequencing depth across informative markers.
         goodness_of_fit_pval: Chi-squared goodness-of-fit p-value, or None.
+        goodness_of_fit_pval_pretrim: Goodness-of-fit p-value computed on the
+            full marker set before any robust trim, or None. Equal to
+            goodness_of_fit_pval when no markers were trimmed. A fit that trimmed
+            away its outliers can report a clean post-trim GoF, so the REVIEW
+            gate uses the worse of the two.
         warnings: List of warning messages.
         status: Overall QC status, one of "PASS", "REVIEW", or "FAIL". "FAIL"
             means the result is unusable (e.g. too few informative markers).
@@ -110,6 +115,7 @@ class QCReport:
     median_depth: float
     min_depth: int
     goodness_of_fit_pval: float | None
+    goodness_of_fit_pval_pretrim: float | None = None
     warnings: list[str] = field(default_factory=list)
     status: str = "PASS"
     per_donor_n_informative: list[int] | None = None
@@ -148,6 +154,7 @@ def _compute_gof_pval(
     rho: float = float("inf"),
     n_fitted_params: int = 2,
     error_rate: float = 0.0,
+    pretrim: bool = False,
 ) -> float | None:
     """Compute chi-squared goodness-of-fit p-value from per-marker residuals.
 
@@ -176,12 +183,16 @@ def _compute_gof_pval(
             (f, rho). Multi-donor BB with k donors: k + 1.
         error_rate: Sequencing error rate used by the likelihood. Pass
             0.0 to use the raw ``expected_vaf`` for the variance floor.
+        pretrim: When True, evaluate the fit over every marker regardless of
+            its ``included`` flag, so a robust trim cannot hide a poor fit by
+            discarding its own outliers. When False (default), only markers
+            with ``included=True`` contribute.
 
     Returns:
         p-value from chi-squared survival function, or None if there are
-        not enough included markers (<= n_fitted_params).
+        not enough markers (<= n_fitted_params).
     """
-    included = [m for m in per_marker if m.included]
+    included = per_marker if pretrim else [m for m in per_marker if m.included]
     if len(included) <= n_fitted_params:
         return None
 
@@ -353,6 +364,21 @@ def assess_quality(
         n_fitted_params=n_fitted,
         error_rate=result.error_rate,
     )
+    # Also evaluate the fit over the full pre-trim marker set. The robust refit
+    # can trim away the markers that fit worst (host CNV/LoH, miscalls, and at
+    # low host fraction the host-carrying markers themselves), leaving a clean
+    # post-trim GoF on a sample whose fit is actually poor. Only recompute when
+    # something was trimmed; otherwise the two are identical.
+    if any(not m.included for m in result.per_marker):
+        gof_pval_pretrim = _compute_gof_pval(
+            result.per_marker,
+            rho=rho,
+            n_fitted_params=n_fitted,
+            error_rate=result.error_rate,
+            pretrim=True,
+        )
+    else:
+        gof_pval_pretrim = gof_pval
 
     # --- QC checks ---
 
@@ -392,13 +418,30 @@ def assess_quality(
             wide_ci = True
             warnings.append(f"Wide confidence interval: {ci_width:.1f}% > 20%")
 
-    # Poor goodness of fit
-    if gof_pval is not None and gof_pval < GOF_REVIEW_P:
+    # Poor goodness of fit. Gate on the worse of the post-trim and pre-trim
+    # fits so a sample cannot pass by trimming away its inconvenient markers.
+    gof_candidates = [p for p in (gof_pval, gof_pval_pretrim) if p is not None]
+    gof_for_review = min(gof_candidates) if gof_candidates else None
+    if gof_for_review is not None and gof_for_review < GOF_REVIEW_P:
         poor_gof = True
-        warnings.append(
-            "Poor model fit (goodness-of-fit p < 0.01) — "
-            "possible genotyping error, CNV, or sample issue"
-        )
+        if (
+            gof_pval_pretrim is not None
+            and gof_pval_pretrim < GOF_REVIEW_P
+            and (gof_pval is None or gof_pval >= GOF_REVIEW_P)
+        ):
+            # The post-trim fit looks fine; only the full set fails, i.e. the
+            # trim removed the misfitting markers.
+            warnings.append(
+                "Poor model fit on the full marker set (pre-trim "
+                f"goodness-of-fit p={gof_pval_pretrim:.1e} < 0.01) that the "
+                "robust trim masks — possible genotyping error, CNV, or, at low "
+                "host fraction, trimmed host signal"
+            )
+        else:
+            warnings.append(
+                "Poor model fit (goodness-of-fit p < 0.01) — "
+                "possible genotyping error, CNV, or sample issue"
+            )
 
     # Host-presence vs MLE disagreement: a significant presence test that the
     # global MLE host-fraction estimate does not echo is the clinically
@@ -541,6 +584,7 @@ def assess_quality(
         median_depth=median_depth,
         min_depth=min_depth,
         goodness_of_fit_pval=gof_pval,
+        goodness_of_fit_pval_pretrim=gof_pval_pretrim,
         warnings=warnings,
         status=status,
         per_donor_n_informative=per_donor_n_inf,

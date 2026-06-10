@@ -2,7 +2,23 @@
 
 Capture and amplification panels introduce systematic per-marker shifts in observed VAF. A marker that should read 0.5 in a heterozygous sample might consistently read 0.45 or 0.55 due to differential amplification efficiency. These biases are consistent across samples sequenced with the same panel, so they can be estimated once from a training set and then corrected during chimerism estimation.
 
-Bias correction is optional but recommended, particularly at low donor fractions (<5%) where small systematic errors in expected allele frequencies have the greatest impact on accuracy.
+Bias correction is optional. It targets per-marker amplification bias on panels where that bias is large; it does not address overdispersion, locus dropout, or cross-contamination, and on a well-behaved panel the uncorrected estimate is often already accurate. Validate that a table helps on your own data before relying on it.
+
+## How the correction is applied
+
+Each marker's bias is the median deviation of observed heterozygous VAF from 0.5, so it is measured where the expected reference weight is 0.5. allomix applies it multiplicatively, in logit space, rather than as a flat additive shift:
+
+```
+w_corrected = expit(logit(w) - logit(0.5 + bias))
+```
+
+At a heterozygous expected weight (0.5) this reproduces the measured deviation; at an informative marker whose expected VAF is near 0 or 1 (the common case at low chimerism) it is a small proportional nudge instead of a large additive jump. An earlier additive form (`w - bias`) overcorrected at those extreme VAFs and degraded the fit (issue #20).
+
+## Two things to get right: caller consistency and marker coverage
+
+**Caller consistency.** Per-marker bias is caller-specific: realignment, BAQ, and indel handling differ between callers, so a bias measured under one caller does not transfer to data called another way. The recommended two-phase pipeline genotypes host and donor with GATK joint calling but produces the admixture AD with `bcftools mpileup`. A bias table estimated from the GATK panel VCFs applied to mpileup admixture data makes results worse, not better. Estimate bias from data called the **same way as the admixture AD** (mpileup at the panel sites), or use the both-het mode below, which reads the admixture VCFs directly.
+
+**Marker coverage.** A marker is only correctable where it was measured as a heterozygote. The markers that are informative for a given host/donor pair are, by construction, homozygous in both contributors (e.g. host 0/0, donor 1/1), so their bias cannot be measured from that pair at all. The bias for those markers has to come from other samples in which the marker is heterozygous. This is why bias correction needs a table built across a cohort, and cannot be estimated inline from a single host/donor pair.
 
 ## When to run
 
@@ -170,13 +186,31 @@ allomix estimate-bias \
 
 Use this when your donor genotyping VCFs were joint-called alongside other samples and all donors are in a single multi-sample VCF. The sample names must match those in the VCF header.
 
+### Both-het mode (caller-consistent, from admixture VCFs)
+
+When you do not have reference samples called the same way as the admixture AD (the two-phase pipeline does not produce mpileup'd pure references), estimate bias from the admixture VCFs themselves, at markers where the host and every donor are heterozygous. There the true admixture VAF is 0.5 regardless of the mixing fraction, so the admixture AD gives the per-marker bias directly, from the same caller being analysed.
+
+```bash
+allomix estimate-bias --both-het \
+    --vcf patient_genotypes.vcf.gz \
+    --host-sample HOST --donor-sample DONOR \
+    --admix-vcfs patient.admix.vcf.gz \
+    --output bias_table.tsv
+```
+
+A pair's both-het markers are non-informative for that **same** pair, so a single patient's table only helps **other** patients. Build the table across a cohort (run per patient and accumulate, or pass several `--admix-vcfs`), then apply the pooled table to patients whose informative markers it covers. Coverage grows with cohort size, since a marker that is both-het in one pair is often informative in another. The standard het-site mode (above), run on a reference cohort processed the same way as the admixture, gives broader coverage per sample and is preferred when such references exist.
+
 ### Options
 
 | Option | Default | Description |
 |---|---|---|
-| `--vcfs` | | Per-sample VCFs, one per file (mutually exclusive with `--vcf`) |
-| `--vcf` | | Joint-called multi-sample VCF (use with `--samples`) |
-| `--samples` | | Sample names to extract from `--vcf` |
+| `--vcfs` | | Per-sample VCFs, one per file (het-site mode; mutually exclusive with `--vcf`) |
+| `--vcf` | | Joint-called multi-sample VCF (het-site mode with `--samples`, or genotype source for `--both-het`) |
+| `--samples` | | Sample names to extract from `--vcf` (het-site mode) |
+| `--both-het` | off | Estimate from admixture samples at host+donor both-het markers (caller-consistent cohort table) |
+| `--host-sample` | | Host sample name in `--vcf` (`--both-het` mode) |
+| `--donor-sample` | | Donor sample name in `--vcf` (`--both-het` mode; repeat for multi-donor) |
+| `--admix-vcfs` | | Admixture VCFs supplying the both-het observations (`--both-het` mode) |
 | `--output` / `-o` | `bias_table.tsv` | Output path for the bias table TSV |
 | `--min-het` | 1 | Minimum heterozygous observations required to include a marker |
 

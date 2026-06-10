@@ -8,6 +8,7 @@ from allomix.bias import (
     MarkerBias,
     biases_to_simple_dict,
     estimate_biases,
+    estimate_biases_both_het,
     load_bias_table,
     save_bias_table,
 )
@@ -15,6 +16,7 @@ from allomix.chimerism import (
     PanelCalibration,
     estimate_single_donor_bb,
     expected_weight,
+    inject_bias,
     total_log_likelihood_bb,
 )
 from allomix.genotype import InformativeMarker, MarkerData
@@ -171,6 +173,66 @@ class TestEstimateBiases:
         assert ("chr1", 100, "A", "T") in biases
 
 
+class TestEstimateBiasesBothHet:
+    """Estimate bias from admix samples at host+donor both-het markers (issue #11)."""
+
+    def _gt_marker(self, pos, gt, ad_ref, ad_alt, chrom="chr1"):
+        return MarkerData(
+            chrom=chrom, pos=pos, ref="A", alt="T", gt=gt,
+            ad_ref=ad_ref, ad_alt=ad_alt, dp=ad_ref + ad_alt,
+        )
+
+    def test_only_both_het_markers_used(self):
+        """Only markers where host and every donor are het contribute."""
+        host = [
+            self._gt_marker(100, (0, 1), 500, 500),  # both-het
+            self._gt_marker(200, (0, 0), 1000, 0),   # host hom -> excluded
+            self._gt_marker(300, (0, 1), 500, 500),  # donor hom -> excluded
+        ]
+        donors = [[
+            self._gt_marker(100, (0, 1), 500, 500),
+            self._gt_marker(200, (0, 1), 500, 500),
+            self._gt_marker(300, (1, 1), 0, 1000),
+        ]]
+        # admix VAF 0.53 at the both-het marker -> bias +0.03
+        admix = [[
+            self._gt_marker(100, (0, 1), 470, 530),
+            self._gt_marker(200, (0, 1), 480, 520),
+            self._gt_marker(300, (0, 1), 480, 520),
+        ]]
+        biases = estimate_biases_both_het(host, donors, admix)
+        assert list(biases.keys()) == [("chr1", 100, "A", "T")]
+        assert biases[("chr1", 100, "A", "T")].bias == pytest.approx(0.03)
+
+    def test_multiple_admix_samples_median(self):
+        """Each admix sample contributes one observation; bias is their median."""
+        host = [self._gt_marker(100, (0, 1), 500, 500)]
+        donors = [[self._gt_marker(100, (0, 1), 500, 500)]]
+        admix = [
+            [self._gt_marker(100, (0, 1), 490, 510)],  # +0.01
+            [self._gt_marker(100, (0, 1), 480, 520)],  # +0.02
+            [self._gt_marker(100, (0, 1), 460, 540)],  # +0.04
+        ]
+        biases = estimate_biases_both_het(host, donors, admix)
+        mb = biases[("chr1", 100, "A", "T")]
+        assert mb.n_het == 3
+        assert mb.bias == pytest.approx(0.02)  # median of 0.01, 0.02, 0.04
+
+    def test_min_het_filter(self):
+        """Markers below min_het are dropped."""
+        host = [self._gt_marker(100, (0, 1), 500, 500)]
+        donors = [[self._gt_marker(100, (0, 1), 500, 500)]]
+        admix = [[self._gt_marker(100, (0, 1), 480, 520)]]
+        assert estimate_biases_both_het(host, donors, admix, min_het=2) == {}
+
+    def test_low_depth_excluded(self):
+        """Observations below min_dp are not counted."""
+        host = [self._gt_marker(100, (0, 1), 500, 500)]
+        donors = [[self._gt_marker(100, (0, 1), 500, 500)]]
+        admix = [[self._gt_marker(100, (0, 1), 5, 5)]]
+        assert estimate_biases_both_het(host, donors, admix, min_dp=100) == {}
+
+
 # ---------------------------------------------------------------------------
 # Bias table I/O
 # ---------------------------------------------------------------------------
@@ -213,16 +275,54 @@ class TestExpectedWeightWithBias:
         assert w == pytest.approx(0.7)
 
     def test_positive_bias_decreases_ref_weight(self):
-        """Positive bias (ALT-favoured) decreases expected ref weight."""
+        """Positive bias (ALT-favoured) decreases expected ref weight.
+
+        Correction is multiplicative in logit/odds space (issue #20), not a flat
+        0.02 shift: w' = odds(0.7) / (odds(0.7) + odds(0.52)) = (7/3)/(7/3 + 13/12)
+        = 28/41.
+        """
         w_no_bias = expected_weight((0, 0), (1, 1), 0.3, bias=0.0)
         w_biased = expected_weight((0, 0), (1, 1), 0.3, bias=0.02)
         assert w_biased < w_no_bias
-        assert w_biased == pytest.approx(0.7 - 0.02)
+        assert w_biased == pytest.approx(28 / 41)
 
     def test_negative_bias_increases_ref_weight(self):
-        """Negative bias (REF-favoured) increases expected ref weight."""
+        """Negative bias (REF-favoured) increases expected ref weight.
+
+        w' = odds(0.7) / (odds(0.7) + odds(0.48)) = (7/3)/(7/3 + 12/13) = 91/127.
+        """
         w_biased = expected_weight((0, 0), (1, 1), 0.3, bias=-0.02)
-        assert w_biased == pytest.approx(0.7 + 0.02)
+        assert w_biased > expected_weight((0, 0), (1, 1), 0.3, bias=0.0)
+        assert w_biased == pytest.approx(91 / 127)
+
+    def test_het_site_matches_estimate(self):
+        """At a het site (w=0.5) the corrected ALT VAF is exactly 0.5 + bias."""
+        for bias in (-0.05, -0.02, 0.0, 0.02, 0.05):
+            w = expected_weight((0, 1), (1, 1), 0.0, bias=bias)  # host het, f=0 -> w_true=0.5
+            assert (1.0 - w) == pytest.approx(0.5 + bias, abs=1e-9)
+
+    def test_injection_matches_model_expectation(self):
+        """Simulator injection equals the estimator's expected biased weight.
+
+        At the true parameters the observed (injected) ALT VAF must equal what
+        the estimator's bias-corrected model expects, so simulation and
+        estimation stay self-consistent.
+        """
+        from allomix.chimerism import apply_bias
+
+        for w_true in (0.05, 0.3, 0.5, 0.7, 0.95):
+            for bias in (-0.04, 0.0, 0.03):
+                alt_observed = float(inject_bias(1.0 - w_true, bias))
+                expected_alt = 1.0 - float(apply_bias(w_true, bias))
+                assert alt_observed == pytest.approx(expected_alt, abs=1e-9)
+
+    def test_extreme_vaf_not_overcorrected(self):
+        """At extreme expected VAF the logit shift is small, unlike additive."""
+        # host 0/0, donor 1/1, f=0.03 -> expected ALT VAF 0.03 (w=0.97)
+        w = expected_weight((0, 0), (1, 1), 0.03, bias=0.02)
+        alt = 1.0 - w
+        assert alt == pytest.approx(0.0324, abs=1e-3)  # additive would give 0.05
+        assert alt < 0.04
 
     def test_bias_clamped_near_zero(self):
         """Bias doesn't push expected weight below epsilon."""
@@ -284,10 +384,9 @@ class TestEstimateSingleDonorWithBias:
         markers = []
         # Create type 0 markers (host 0/0, donor 1/1)
         for pos, bias in biases_map.items():
-            # True ALT VAF at this marker = true_f
-            true_vaf = true_f
-            # Observed ALT VAF = true_vaf + bias
-            obs_vaf = max(0.0, min(1.0, true_vaf + bias))
+            # True ALT VAF at this marker = true_f. Inject bias the same
+            # (multiplicative, logit-space) way the estimator corrects for it.
+            obs_vaf = float(inject_bias(true_f, bias))
             # Sample allele counts
             ad_alt = rng.binomialvariate(depth, obs_vaf)
             ad_ref = depth - ad_alt
@@ -358,10 +457,14 @@ class TestEstimateSingleDonorWithBias:
             calibration=PanelCalibration(biases=marker_biases),
         )
 
-        # Without correction, estimate should be biased high
-        assert result_no_bias.donor_fraction > true_f + 0.02
-        # With correction, estimate should be close to truth
-        assert abs(result_corrected.donor_fraction - true_f) < 0.02
+        # Without correction, estimate is biased high. The logit-space shift at
+        # VAF 0.2 for bias +0.03 is ~0.0199, so the uncorrected pull is ~0.018.
+        assert result_no_bias.donor_fraction > true_f + 0.01
+        # With correction, estimate should be close to truth and clearly better.
+        assert abs(result_corrected.donor_fraction - true_f) < 0.01
+        assert abs(result_corrected.donor_fraction - true_f) < abs(
+            result_no_bias.donor_fraction - true_f
+        )
 
     def test_ci_coverage_improves_with_bias_correction(self):
         """Bias correction should help CIs cover the truth more often."""

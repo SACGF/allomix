@@ -206,6 +206,30 @@ class TestCLIIntegration:
         assert rc == 0
         assert "donor_pct" in out.read_text()
 
+    def test_estimate_bias_both_het_table_builder(self, tmp_path):
+        """estimate-bias --both-het builds a pooled table from admix VCFs (issue #11)."""
+        out = tmp_path / "both_het_bias.tsv"
+        rc = main(
+            [
+                "estimate-bias",
+                "--both-het",
+                "--vcf", str(JOINT_VCF),
+                "--host-sample", "HOST",
+                "--donor-sample", "DONOR",
+                "--admix-vcfs", str(JOINT_VCF),
+                "--output", str(out),
+            ]
+        )
+        assert rc == 0
+        # Header plus at least one both-het marker row.
+        lines = out.read_text().splitlines()
+        assert lines[0].split("\t") == ["chrom", "pos", "ref", "alt", "bias", "n_het"]
+
+    def test_estimate_bias_both_het_requires_inputs(self):
+        """--both-het without the required genotype/admix inputs is an error."""
+        with pytest.raises(SystemExit):
+            main(["estimate-bias", "--both-het", "--vcf", str(JOINT_VCF)])
+
     def test_monitor_estimate_bias_conflicts_with_table(self, tmp_path):
         """--estimate-bias and --bias-table together is an error."""
         table = tmp_path / "bias.tsv"

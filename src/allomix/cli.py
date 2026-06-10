@@ -11,6 +11,7 @@ from allomix.analysis import analyse_sample
 from allomix.bias import (
     biases_to_simple_dict,
     estimate_biases,
+    estimate_biases_both_het,
     load_bias_table,
     save_bias_table,
 )
@@ -301,13 +302,21 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     """Build the per-marker calibration from the CLI table options.
 
     Bias comes from --bias-table, or is estimated inline from the panel VCF
-    samples when --estimate-bias is set (issue #11), or is empty. Per-site error
-    comes from --error-table or is empty. The --no-*-correction flags force the
-    respective correction off.
+    samples when --estimate-bias is set, or is empty. Per-site error comes from
+    --error-table or is empty. The --no-*-correction flags force the respective
+    correction off.
+
+    Per-marker bias only helps the markers that are informative for this run,
+    and those are hom in both contributors, so they cannot be measured inline
+    from one host/donor pair. Build a reusable table ahead of time with
+    ``allomix estimate-bias`` (from a reference cohort, or ``--both-het`` across
+    a patient cohort) and pass it with ``--bias-table``.
     """
-    if getattr(args, "estimate_bias", False) and not args.no_bias_correction:
-        if args.bias_table:
-            raise SystemExit("Use either --bias-table or --estimate-bias, not both")
+    estimate_bias = getattr(args, "estimate_bias", False)
+    if estimate_bias and args.bias_table:
+        raise SystemExit("Use either --bias-table or --estimate-bias, not both")
+
+    if estimate_bias and not args.no_bias_correction:
         samples = list(VCF(args.panel_vcf).samples)
         marker_lists = [
             parse_vcf(args.panel_vcf, sample=s, min_dp=0, min_gq=0) for s in samples
@@ -438,6 +447,9 @@ def cmd_timeline(args: argparse.Namespace) -> int:
 
 def cmd_estimate_bias(args: argparse.Namespace) -> int:
     """Run the estimate-bias subcommand."""
+    if args.both_het:
+        return _cmd_estimate_bias_both_het(args)
+
     if args.vcfs and args.vcf:
         raise SystemExit("Use either --vcfs or --vcf/--samples, not both")
     if not args.vcfs and not args.vcf:
@@ -462,6 +474,45 @@ def cmd_estimate_bias(args: argparse.Namespace) -> int:
     save_bias_table(biases, args.output)
     print(
         f"Estimated bias for {len(biases)} markers from {n_source} -> {args.output}",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _cmd_estimate_bias_both_het(args: argparse.Namespace) -> int:
+    """Build a pooled bias table from admix samples at both-het markers.
+
+    A marker that is heterozygous in both the host and every donor has true
+    admix VAF 0.5 regardless of the mixing fraction, so the admix AD there gives
+    the per-marker bias directly, from the same caller as the admix (issue #11).
+    Those markers are non-informative for the same host/donor pair, so this is a
+    cohort table builder: run it across patients and apply the table (with
+    ``--bias-table``) to other patients, whose informative markers it covers.
+    """
+    if args.vcfs or args.samples:
+        raise SystemExit(
+            "--both-het uses --vcf with --host-sample/--donor-sample, not --vcfs/--samples"
+        )
+    if not args.vcf or not args.host_sample or not args.donor_sample or not args.admix_vcfs:
+        raise SystemExit(
+            "--both-het requires --vcf, --host-sample, --donor-sample, and --admix-vcfs"
+        )
+
+    _validate_sample_names(args.vcf, [args.host_sample, *args.donor_sample])
+    host = parse_vcf(args.vcf, sample=args.host_sample, min_dp=0, min_gq=0)
+    donors = [parse_vcf(args.vcf, sample=d, min_dp=0, min_gq=0) for d in args.donor_sample]
+
+    admix_lists = []
+    for vcf_path in args.admix_vcfs:
+        for sample in VCF(vcf_path).samples:
+            admix_lists.append(parse_vcf(vcf_path, sample=sample, min_dp=0, min_gq=0))
+
+    biases = estimate_biases_both_het(host, donors, admix_lists, min_het=args.min_het)
+    save_bias_table(biases, args.output)
+    print(
+        f"Estimated both-het bias for {len(biases)} markers from "
+        f"{len(admix_lists)} admix sample(s) in {len(args.admix_vcfs)} VCF(s) "
+        f"-> {args.output}",
         file=sys.stderr,
     )
     return 0
@@ -552,7 +603,36 @@ def main(argv: list[str] | None = None) -> int:
         "--samples",
         nargs="+",
         metavar="SAMPLE_NAME",
-        help="Sample names to extract from --vcf",
+        help="Sample names to extract from --vcf (het-site mode)",
+    )
+    bias_parser.add_argument(
+        "--both-het",
+        action="store_true",
+        help="Both-het mode: estimate bias from admix samples at markers where "
+             "the host and every donor are heterozygous (true VAF 0.5 regardless "
+             "of mixing). Use this when you only have admix VCFs (no mpileup'd "
+             "reference samples) and need a caller-consistent table. Requires "
+             "--vcf (genotypes), --host-sample, --donor-sample, and --admix-vcfs. "
+             "A pair's both-het markers are non-informative for that same pair, "
+             "so build the table from a cohort and apply it to other patients.",
+    )
+    bias_parser.add_argument(
+        "--host-sample",
+        help="Host sample name in --vcf (both-het mode)",
+    )
+    bias_parser.add_argument(
+        "--donor-sample",
+        action="append",
+        default=[],
+        metavar="SAMPLE_NAME",
+        help="Donor sample name in --vcf (both-het mode; repeat for multi-donor)",
+    )
+    bias_parser.add_argument(
+        "--admix-vcfs",
+        nargs="+",
+        metavar="VCF",
+        help="Admix VCFs whose samples supply the both-het observations "
+             "(both-het mode); all samples in each are pooled",
     )
     bias_parser.add_argument(
         "--output",

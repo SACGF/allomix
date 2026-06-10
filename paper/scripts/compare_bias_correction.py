@@ -34,7 +34,7 @@ from allomix.simulate import (  # noqa: E402
     write_vcf,
 )
 from allomix.simulate import (  # noqa: E402
-    parse_vcf as sim_parse_vcf,
+    parse_text_vcf as sim_parse_vcf,
 )
 
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]

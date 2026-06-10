@@ -8,6 +8,7 @@ import pytest
 
 import allomix
 from allomix.chimerism import estimate_single_donor_bb
+from allomix.contamination import ContaminationResult
 from allomix.genotype import InformativeMarker, MarkerCounts, MarkerGenotypes
 from allomix.qc import (
     ChimerismResult,
@@ -131,6 +132,61 @@ class TestInsufficientMarkers:
         genotypes = _make_genotypes()
         qc = assess_quality(result, genotypes, min_informative=3)
         assert qc.pass_ is True
+
+
+class TestContaminationFlag:
+    """QC reads result.contamination and warns / REVIEWs by magnitude."""
+
+    @staticmethod
+    def _contamination(frac: float, p: float = 1e-12, n: int = 100) -> ContaminationResult:
+        return ContaminationResult(
+            n_markers=n,
+            contamination_fraction=frac,
+            median_minor_frac=frac,
+            error_floor=0.0,
+            floor_empirical=True,
+            pooled_minor_frac=frac,
+            n_minor_reads=int(frac * n * 2000),
+            total_depth=n * 2000,
+            p_value=p,
+            n_excluded_high=0,
+            used_per_site_error=False,
+            error_rate_source="global-fallback",
+        )
+
+    def test_clean_no_warning(self):
+        result = _make_chimerism_result()
+        result.contamination = self._contamination(0.0, p=1.0)
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Contamination" in w for w in qc.warnings)
+        assert qc.status == "PASS"
+
+    def test_moderate_contamination_warns_not_review(self):
+        result = _make_chimerism_result()
+        result.contamination = self._contamination(0.004)  # 0.4%: warn, below REVIEW
+        qc = assess_quality(result, _make_genotypes())
+        assert any("Contamination" in w for w in qc.warnings)
+        assert qc.status == "PASS"
+
+    def test_high_contamination_promotes_review(self):
+        result = _make_chimerism_result()
+        result.contamination = self._contamination(0.015)  # 1.5%: REVIEW
+        qc = assess_quality(result, _make_genotypes())
+        assert any("Contamination" in w for w in qc.warnings)
+        assert qc.status == "REVIEW"
+
+    def test_significant_but_tiny_not_flagged(self):
+        # p is significant (high depth) but the magnitude is below the warn gate.
+        result = _make_chimerism_result()
+        result.contamination = self._contamination(0.0005, p=1e-9)
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Contamination" in w for w in qc.warnings)
+
+    def test_no_markers_not_flagged(self):
+        result = _make_chimerism_result()
+        result.contamination = self._contamination(0.0, p=1.0, n=0)
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Contamination" in w for w in qc.warnings)
 
 
 class TestMarkerLossDiagnosis:

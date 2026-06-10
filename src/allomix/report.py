@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TextIO
 
 from allomix.chimerism import ChimerismResult, MultiDonorResult
+from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
 from allomix.qc import QCReport
 from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
@@ -142,6 +143,53 @@ def _relatedness_json(relatedness: list[RelatednessResult] | None) -> list[dict]
     return out
 
 
+# Contamination columns, appended after the relatedness block. ``contamination_frac``
+# is the estimated third-party floor (fraction above sequencing error), the
+# in-data half of issue #12.
+_CONTAMINATION_TSV_COLS = [
+    "contamination_frac",
+    "contamination_p",
+    "contamination_markers",
+]
+
+
+def _contamination_tsv_cells(contamination: ContaminationResult | None) -> list[str]:
+    """Format the three contamination columns. Order matches the cols above.
+
+    ``NA`` for every column when the estimate did not run; per-column ``NA`` for
+    the numeric cells when there were no usable consensus-hom markers.
+    """
+    if contamination is None:
+        return [_NA] * len(_CONTAMINATION_TSV_COLS)
+    if contamination.n_markers == 0:
+        return [_NA, _NA, str(contamination.n_markers)]
+    return [
+        f"{contamination.contamination_fraction:.6f}",
+        f"{contamination.p_value:.4g}",
+        str(contamination.n_markers),
+    ]
+
+
+def _contamination_json(contamination: ContaminationResult | None) -> dict | None:
+    """JSON view of a ContaminationResult; mirrors the TSV columns plus detail."""
+    if contamination is None:
+        return None
+    return {
+        "contamination_fraction": contamination.contamination_fraction,
+        "median_minor_frac": contamination.median_minor_frac,
+        "error_floor": contamination.error_floor,
+        "floor_empirical": contamination.floor_empirical,
+        "pooled_minor_frac": contamination.pooled_minor_frac,
+        "p_value": contamination.p_value,
+        "n_markers": contamination.n_markers,
+        "n_minor_reads": contamination.n_minor_reads,
+        "total_depth": contamination.total_depth,
+        "n_excluded_high": contamination.n_excluded_high,
+        "used_per_site_error": contamination.used_per_site_error,
+        "error_rate_source": contamination.error_rate_source,
+    }
+
+
 def _admix_consistency_json(ac: AdmixConsistencyResult | None) -> dict | None:
     """JSON view of the consensus-homozygote swap check."""
     if ac is None:
@@ -228,6 +276,7 @@ def _write_tsv(
         "qc_warnings",
         *_HOST_PRESENCE_TSV_COLS,
         *_RELATEDNESS_TSV_COLS,
+        *_CONTAMINATION_TSV_COLS,
     ]
     fh.write("\t".join(summary_cols) + "\n")
 
@@ -252,6 +301,7 @@ def _write_tsv(
         _warnings_cell(qc),
         *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
         *_relatedness_tsv_cells(getattr(result, "relatedness", None)),
+        *_contamination_tsv_cells(getattr(result, "contamination", None)),
     ]
     fh.write("\t".join(summary_vals) + "\n")
 
@@ -319,6 +369,7 @@ def _write_tsv_multi(
             "qc_warnings",
             *_HOST_PRESENCE_TSV_COLS,
             *_RELATEDNESS_TSV_COLS,
+            *_CONTAMINATION_TSV_COLS,
         ]
     )
     fh.write("\t".join(cols) + "\n")
@@ -348,6 +399,7 @@ def _write_tsv_multi(
             _warnings_cell(qc),
             *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
             *_relatedness_tsv_cells(getattr(result, "relatedness", None)),
+            *_contamination_tsv_cells(getattr(result, "contamination", None)),
         ]
     )
     fh.write("\t".join(vals) + "\n")
@@ -454,6 +506,7 @@ def to_json(
             "admix_consistency": _admix_consistency_json(
                 getattr(result, "admix_consistency", None)
             ),
+            "contamination": _contamination_json(getattr(result, "contamination", None)),
             "markers": markers_list,
         }
     else:
@@ -484,6 +537,7 @@ def to_json(
             "admix_consistency": _admix_consistency_json(
                 getattr(result, "admix_consistency", None)
             ),
+            "contamination": _contamination_json(getattr(result, "contamination", None)),
             "markers": markers_list,
         }
     return out
@@ -522,6 +576,7 @@ def timeline_json(
                 "qc_pass": qc.pass_,
                 "qc_status": qc.status,
                 "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
+                "contamination": _contamination_json(getattr(result, "contamination", None)),
             }
             for i, frac in enumerate(result.donor_fractions):
                 ci_lo, ci_hi = result.donor_fraction_cis[i]
@@ -554,6 +609,9 @@ def timeline_json(
                     "qc_status": qc.status,
                     "host_presence": _host_presence_json(
                         getattr(result, "host_presence", None)
+                    ),
+                    "contamination": _contamination_json(
+                        getattr(result, "contamination", None)
                     ),
                 }
             )

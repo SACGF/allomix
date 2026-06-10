@@ -12,6 +12,7 @@ from scipy.stats import chi2
 
 from allomix.chimerism import ChimerismResult, MarkerResult
 from allomix.constants import N_OTHER_BASES
+from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
 from allomix.genotype import MarkerGenotypes
 from allomix.relatedness import (
@@ -40,6 +41,23 @@ ROBUST_REVIEW_FRACTION = 0.15
 # consensus-homozygote swap test is significant at this level (and rests on at
 # least MIN_CONSENSUS markers) the sample is promoted to REVIEW.
 SWAP_REVIEW_P = 1e-3
+
+# In-data contamination estimate (third-party signal at consensus-homozygous
+# markers; see ``allomix.contamination``). This is the low-level floor a gross
+# swap test misses. Distinct from the index-hopping provenance flag (shared
+# sequencing run), which the joint-calling pipeline carries, not allomix.
+# Significance gate for the soft warning: at panel depth the pooled test is
+# significant for any real excess, so the magnitude thresholds below are what
+# actually gate.
+CONTAMINATION_P = 0.01
+# Warn when the estimated contamination floor is at least this fraction and
+# significant. Below this it is benign relative to the clinical <1% target.
+# Tunable: a lab can raise it to silence a known low-level pool floor or lower it
+# to police a more sensitive assay.
+CONTAMINATION_WARN_FRACTION = 0.002  # 0.2%
+# Promote to REVIEW above this: a floor this size biases low-level host
+# detection (it sits on top of the host fraction at donor-homozygous markers).
+CONTAMINATION_REVIEW_FRACTION = 0.01  # 1%
 
 # Sample-level QC warning thresholds (soft warnings, not the per-marker filters).
 LOW_MEAN_DEPTH_WARN = 100  # warn when mean admixture depth is below this
@@ -76,6 +94,7 @@ class QCReport:
         per_donor_n_informative: Per-donor informative marker counts (multi-donor).
         relatedness: Estimated relatedness per reference-sample pair, or None.
         admix_consistency: Consensus-homozygote swap check result, or None.
+        contamination: In-data third-party contamination estimate, or None.
     """
 
     n_total_markers: int
@@ -94,6 +113,7 @@ class QCReport:
     per_donor_n_informative: list[int] | None = None
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
+    contamination: ContaminationResult | None = None
 
     @property
     def pass_(self) -> bool:
@@ -463,10 +483,33 @@ def assess_quality(
             f"consensus-homozygous markers (swap p={ac.swap_pval:.2e})"
         )
 
+    # In-data contamination floor (low-level third-party signal the swap test
+    # above is not built to catch). A magnitude-gated warning, promoted to REVIEW
+    # when the floor is large enough to bias low-level host detection.
+    contamination_review = False
+    contamination: ContaminationResult | None = getattr(result, "contamination", None)
+    if (
+        contamination is not None
+        and contamination.n_markers > 0
+        and contamination.p_value < CONTAMINATION_P
+        and contamination.contamination_fraction >= CONTAMINATION_WARN_FRACTION
+    ):
+        warnings.append(
+            f"Contamination: third-party signal at {contamination.contamination_fraction:.4%} "
+            f"above the sequencing-error floor at "
+            f"{contamination.n_markers} consensus-homozygous markers "
+            f"(contamination_p={contamination.p_value:.2e}); possible index hopping or "
+            "cross-contamination, limits low-fraction host detection"
+        )
+        if contamination.contamination_fraction >= CONTAMINATION_REVIEW_FRACTION:
+            contamination_review = True
+
     # A computed-but-questionable result (poor fit, imprecise, heavily trimmed,
     # or a softer identity flag) is flagged for review rather than passed
     # silently or failed.
-    if status != "FAIL" and (poor_gof or wide_ci or high_robust_drop or identity_review):
+    if status != "FAIL" and (
+        poor_gof or wide_ci or high_robust_drop or identity_review or contamination_review
+    ):
         status = "REVIEW"
 
     return QCReport(
@@ -486,4 +529,5 @@ def assess_quality(
         per_donor_n_informative=per_donor_n_inf,
         relatedness=relatedness,
         admix_consistency=ac,
+        contamination=contamination,
     )

@@ -1,5 +1,82 @@
 # Supplementary Data
 
+## Supplementary Methods
+
+This section gives the statistical detail summarised in plain language in the main Methods. The notation is shared across subsections: for informative marker *i*, $g_{h,i}$ and $g_{d,i}$ are the reference-allele doses (0, 1, or 2) of host and donor, $n_i$ is the total read count, and $k_i$ is the alternative-allele count.
+
+### S1. Mixture model and marker classification
+
+For a proposed donor fraction *f*, the expected reference-allele weight at marker *i* is a blend of the two known genotypes:
+
+$$w_i(f) = (1 - f)\,\frac{g_{h,i}}{2} + f\,\frac{g_{d,i}}{2}$$
+
+Markers are informative when host and donor genotypes differ. Following De Vynck et al.,[@Vynck2023bias] each informative marker is assigned one of six types by host/donor alternative-allele dose:
+
+- **Type 0**: host 0/0, donor 1/1 (fully informative)
+- **Type 1**: host 1/1, donor 0/0 (fully informative)
+- **Type 10**: host 0/1, donor 0/0 (partially informative)
+- **Type 11**: host 0/1, donor 1/1 (partially informative)
+- **Type 20**: host 0/0, donor 0/1 (partially informative)
+- **Type 21**: host 1/1, donor 0/1 (partially informative)
+
+Types 0 and 1 give the maximum allelic contrast (the minority allele has a single possible source); the heterozygous types give half the contrast. Markers where host and donor share a genotype are non-informative. Default filters: host and donor GQ $\geq$ 20, admixture DP $\geq$ 100, and at least three informative markers.
+
+### S2. Sequencing-error model
+
+To account for base substitutions and polymerase errors, the observed allele probabilities use a 4-state (trinucleotide) model:
+
+$$p_{alt,i} = (1 - w_i)(1 - \varepsilon) + w_i\frac{\varepsilon}{3}, \qquad p_{ref,i} = w_i(1 - \varepsilon) + (1 - w_i)\frac{\varepsilon}{3}$$
+
+where $\varepsilon$ is the per-base error rate (default 0.01) and the factor of 3 distributes error among the three non-observed bases. Because VCF allele-depth fields count only reference and alternative, the likelihood uses the conditional $\tilde{p}_i = p_{alt,i} / (p_{ref,i} + p_{alt,i})$. This is the mixture genotype likelihood of Crysup and Woerner[@CrysupWoerner2023] applied in the inverse direction (estimating the fraction from known genotypes rather than genotyping at a known fraction).
+
+### S3. Beta-binomial likelihood and optimization
+
+A binomial model assumes all variance comes from read sampling; in practice per-marker amplification bias and depth variability produce overdispersion. allomix uses a beta-binomial,[@HindeDemetrio1998] parameterised by *f* and a shared concentration $\rho > 0$. The per-marker log-likelihood (up to a constant) is:
+
+$$\ell_i(f, \rho) = \log\Gamma(k_i + \alpha_i) + \log\Gamma(n_i - k_i + \beta_i) - \log\Gamma(n_i + \rho) - \log\Gamma(\alpha_i) - \log\Gamma(\beta_i) + \log\Gamma(\rho)$$
+
+with $\alpha_i = \tilde{p}_i\,\rho$ and $\beta_i = (1 - \tilde{p}_i)\,\rho$. As $\rho \to \infty$ this converges to the binomial; smaller $\rho$ flattens the likelihood and widens intervals. The total log-likelihood is $\mathcal{L}(f,\rho) = \sum_{i=1}^{M}\ell_i(f,\rho)$. Both parameters are fit jointly: a grid search over 1,001 evenly spaced values of *f* in [0, 1] with $\rho$ profiled out (bounded Brent on log-scale) at each point, followed by Nelder-Mead refinement over $(f, \log\rho)$ from the grid maximum.
+
+### S4. Profile-likelihood confidence intervals
+
+The 95% interval for *f* inverts the profile log-likelihood $\mathcal{L}_P(f) = \max_\rho \mathcal{L}(f,\rho)$, with bounds where
+
+$$2\left[\mathcal{L}_P(\hat{f}) - \mathcal{L}_P(f)\right] = \chi^2_{1,\,0.95} \approx 3.84$$
+
+found by Brent root-finding.[@Wilks1938] The reference maximum is re-derived from the same profiled optimizer (the profile value at $\hat{f}$, not the joint optimum) so the root-finder brackets a sign change. Bounds are pinned at 0 and 1, so an estimate near a boundary does not produce an interval running past it.
+
+### S5. Multi-donor extension
+
+For two donors with fractions $f_1, f_2$ (host the remainder), the weight at marker *i* is
+
+$$w_i(f_1, f_2) = (1 - f_1 - f_2)\,\frac{g_{h,i}}{2} + f_1\,\frac{g_{d1,i}}{2} + f_2\,\frac{g_{d2,i}}{2}$$
+
+A marker is informative if the host differs from any donor; per-donor informative counts are tracked separately. Optimization is a triangular grid over the simplex $\{(f_1, f_2): f_1, f_2 \geq 0,\; f_1 + f_2 \leq 1\}$ at 101 steps per dimension (~5,150 evaluations), then Nelder-Mead refinement. Per-donor 95% profile intervals use $\chi^2_{1,0.95}$ (each interval profiles one donor while optimising the other).
+
+### S6. Per-marker bias correction
+
+Per-marker bias is estimated at heterozygous training observations as $b_i = \text{median}(\text{VAF}_{het,i} - 0.5)$. A flat additive shift $w_i - b_i$ is valid only near 0.5 and overcorrects at the extreme expected weights that dominate low-fraction samples, so the correction is multiplicative in logit space:
+
+$$w'_i = \text{expit}\!\left(\text{logit}(w_i) - \text{logit}(0.5 + b_i)\right)$$
+
+clamped to $[10^{-6}, 1 - 10^{-6}]$. At a heterozygous site ($w_i = 0.5$) this reduces to $0.5 - b_i$; at an extreme weight it is a small proportional shift. A marker is correctable only where its bias was measured (where it was heterozygous), so the table is built across other samples, either a reference cohort called the same way as the admixture, or admixture samples at markers where host and every donor are heterozygous (true VAF 0.5 regardless of mixing).
+
+### S7. Residual-host presence test
+
+The presence test uses only markers where the donor is homozygous and the host carries the donor-absent allele (Vynck types 0, 1, 10, 11). Let $y_i$ be the donor-absent allele count out of $n_i$ reads, $e_i$ the per-marker error background in that direction, and $h_i$ the host dose of the donor-absent allele. Under a host fraction $f_h$ the expected donor-absent allele probability is
+
+$$q_i(f_h) = e_i + \frac{h_i}{2}\,f_h$$
+
+Two statistics are reported. A pooled one-sided Poisson test uses $Y = \sum_i y_i$ against $\Lambda = \sum_i n_i e_i$, with $p = P(\text{Poisson}(\Lambda) \geq Y)$. A bounded-MLE likelihood-ratio test maximises a per-marker binomial likelihood in $q_i(f_h)$ over $f_h \geq 0$. Because the null sits on the boundary $f_h = 0$, the LRT p-value uses a chi-bar-square reference (a 50:50 mixture of a point mass at 0 and $\chi^2_1$) rather than naive Wilks, and the reported confidence interval is the profile-likelihood interval clipped at 0. The test thus returns a p-value, a host-fraction estimate $\hat{f}_h$, and a CI, and is calibrated against the per-marker error background ($e_i$); in the present work a symmetric global error rate sets $e_i = \varepsilon/3$ per marker, pending a per-site, per-direction empirical error table.
+
+### S8. In-data contamination estimation
+
+Contamination is measured at consensus-homozygous markers, where host and every donor are homozygous for the same allele, so the minor allele can only be sequencing error or foreign DNA. The headline estimate is the background-subtracted median per-site minor-allele fraction: the median is used rather than a pooled mean so a few gross miscall sites do not dominate, sites above 10% minor fraction are capped as miscalls, and the error floor is the 10th percentile of per-site minor fractions (the no-carrier/error sites), so contamination is reported as the heterogeneous excess over a uniform error floor (a uniform error elevation lifts the floor too and is correctly not called contamination). Contamination is distinguished from real low-level chimerism by marker geometry rather than magnitude: a dose-response in which the minor fraction rises with the number of co-pooled panel individuals carrying that allele indicates foreign reads, whereas a flat elevation indicates error. A separate sample-swap / third-genome test runs at the same consensus sites: a per-site binomial tail at the error rate flags sites where the minor allele is individually significant, combined into a swap p-value over discordant sites, catching a wrong-patient VCF that the informative-marker goodness-of-fit never sees. An optional `##allomixRunUnit` VCF header (flowcell:lane) supports a pure-metadata index-hopping flag, kept separate from the in-data estimate.
+
+### S9. Simulation, limit of detection, and copy-number model
+
+The simulator draws each marker's expected alternative-allele frequency from the same mixture and error model used by the estimator, $\text{VAF}_{expected} = [(1-f)a_h + f a_d]/2$ (with $a_h, a_d$ the alternative doses), then applies per-marker bias, log-normal depth, sequencing error, and locus dropout (main Methods), and draws counts from a binomial (or, for the overdispersion characterisation, a beta-binomial at concentration $\rho$). The LoD sweep uses a nested design: for each relatedness level, multiple donor/host pairs (10 unrelated, 40 sibling) have fixed genotypes (population allele frequencies, MAF 0.2--0.5) and per-marker bias reused across all depths and panel sizes, with panels strictly nested (a smaller panel is a bit-identical prefix of a larger one); each pair then has 30 sequencing replicates per cell that vary only read-sampling noise. Holding the pair fixed isolates sequencing noise within a pair and makes each pair's LoD curve monotone in panel size, while the across-pair identity-by-descent spread is reported as a band rather than leaking into the central estimate. Seeds are SHA-256-derived for process-stable reproducibility. For recipient copy-number aberrations, the recipient is modelled as a mixture of normal diploid cells and an aberrant clone at a clonal fraction, with the expected allele fraction a copy-number-weighted average over normal recipient, recipient clone, and donor; three aberration types are produced by mutating one germline homolog of the clone (copy-neutral LoH: retained homolog duplicated, two copies, heterozygous sites only; deletion: one copy; gain: three copies), with deletion and gain also changing the locus DNA contribution at homozygous sites. The aberration is applied only to the admixture sample, matching the two-phase workflow.
+
 ## Supplementary Table S1. Empirical Panel Characterisation
 
 Per-marker amplification bias, depth distribution, locus dropout, and allele dropout were measured from {{ panel_empirical.n_vcfs | fmt('g') }} joint-called VCFs ({{ panel_empirical.n_samples | commas }} samples) generated from the 76-SNP IDT rhAmpSeq Sample ID panel as part of routine clinical sequencing. All {{ panel_empirical.n_bias_markers | fmt('g') }} biallelic markers with heterozygous observations were included. Simulation parameters used throughout this study were calibrated from these measurements.
@@ -88,4 +165,16 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 
 ![Figure S9](output/facts/fig_bias_stability.png)
 
-**Figure S9.** Validation of the fixed-bias-per-marker assumption used by the simulator and the bias-correction model. Each point is one of the {{ supp_synthetic.n_empirical_markers | dp(0) }} panel markers: the x-axis is its absolute median amplification bias (the systematic, marker-specific component), and the y-axis is its within-marker standard deviation of heterozygous VAF across samples (the random, sample-to-sample component). The two are only weakly correlated (r = {{ supp_synthetic.bias_stability_r | dp(2) }}), so a marker's systematic bias does not predict its sample-to-sample scatter. Bias behaves as a stable per-marker offset rather than a quantity that grows with marker noise, which supports modelling it as a fixed offset (Methods) and absorbing the residual scatter separately through the overdispersion term.
+**Figure S9.** Validation of the fixed-bias-per-marker assumption used by the simulator and the bias-correction model. Each point is one of the {{ supp_synthetic.n_empirical_markers | dp(0) }} panel markers: the x-axis is its absolute median amplification bias (the systematic, marker-specific component), and the y-axis is its within-marker standard deviation of heterozygous VAF across samples (the random, sample-to-sample component). The two are only weakly correlated (r = {{ supp_synthetic.bias_stability_r | dp(2) }}), so a marker's systematic bias does not predict its sample-to-sample scatter. Bias behaves as a stable per-marker offset rather than a quantity that grows with marker noise, which supports modelling it as a fixed offset (Supplementary Methods S6) and absorbing the residual scatter separately through the overdispersion term.
+
+### S10. Absolute Error by Depth (Boxplots)
+
+![Figure S10](output/facts/fig2_depth_boxplots.png)
+
+**Figure S10.** Distribution of absolute estimation error by sequencing depth (N={{ depth_50.n_replicates | dp(0) }} replicates per depth). Boxes show median and interquartile range for interior fractions (excluding 0% and 100% donor). Whiskers extend to 1.5× IQR. This is the per-fraction distribution behind the summary metrics in main-text Table 1.
+
+### S11. Depth-Performance Summary
+
+![Figure S11](output/facts/fig3_depth_summary.png)
+
+**Figure S11.** allomix performance as a function of sequencing depth (mean ± SD, N={{ depth_50.n_replicates | dp(0) }} replicates). Left: accuracy metrics (MAE, RMSE, maximum error). Centre: 95% profile-likelihood CI coverage versus the nominal 95% level (dashed). Right: mean CI width.

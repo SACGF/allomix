@@ -13,6 +13,7 @@ from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
 from allomix.qc import QCReport
 from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.runmeta import RunUnitInfo
 
 # Sentinel for the host-presence cells when the detector did not run (e.g.
 # --no-host-presence) or produced no usable markers. Keeps the TSV
@@ -170,6 +171,40 @@ def _contamination_tsv_cells(contamination: ContaminationResult | None) -> list[
     ]
 
 
+# Run-unit / index-hopping columns, appended after the contamination block. The
+# metadata is optional (read from the admix VCF header), so these are ``NA`` when
+# it is absent. ``index_hop_risk`` is the host-share flag.
+_RUNMETA_TSV_COLS = [
+    "run_unit",
+    "index_hop_risk",
+]
+
+
+def _runmeta_tsv_cells(run_unit: RunUnitInfo | None) -> list[str]:
+    """Format the run-unit columns. Order matches ``_RUNMETA_TSV_COLS``.
+
+    ``NA`` throughout when no run metadata was present; ``index_hop_risk`` is
+    ``true`` / ``false`` / ``NA`` (undetermined).
+    """
+    if run_unit is None:
+        return [_NA] * len(_RUNMETA_TSV_COLS)
+    unit = run_unit.run_unit if run_unit.run_unit else _NA
+    shares = run_unit.shares_run_with_host
+    risk = _NA if shares is None else ("true" if shares else "false")
+    return [unit, risk]
+
+
+def _runmeta_json(run_unit: RunUnitInfo | None) -> dict | None:
+    """JSON view of the run-unit metadata; mirrors the TSV columns plus detail."""
+    if run_unit is None:
+        return None
+    return {
+        "run_unit": run_unit.run_unit,
+        "source": run_unit.source,
+        "shares_run_with_host": run_unit.shares_run_with_host,
+    }
+
+
 def _contamination_json(contamination: ContaminationResult | None) -> dict | None:
     """JSON view of a ContaminationResult; mirrors the TSV columns plus detail."""
     if contamination is None:
@@ -277,6 +312,7 @@ def _write_tsv(
         *_HOST_PRESENCE_TSV_COLS,
         *_RELATEDNESS_TSV_COLS,
         *_CONTAMINATION_TSV_COLS,
+        *_RUNMETA_TSV_COLS,
     ]
     fh.write("\t".join(summary_cols) + "\n")
 
@@ -302,6 +338,7 @@ def _write_tsv(
         *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
         *_relatedness_tsv_cells(getattr(result, "relatedness", None)),
         *_contamination_tsv_cells(getattr(result, "contamination", None)),
+        *_runmeta_tsv_cells(getattr(result, "run_unit", None)),
     ]
     fh.write("\t".join(summary_vals) + "\n")
 
@@ -370,6 +407,7 @@ def _write_tsv_multi(
             *_HOST_PRESENCE_TSV_COLS,
             *_RELATEDNESS_TSV_COLS,
             *_CONTAMINATION_TSV_COLS,
+            *_RUNMETA_TSV_COLS,
         ]
     )
     fh.write("\t".join(cols) + "\n")
@@ -400,6 +438,7 @@ def _write_tsv_multi(
             *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
             *_relatedness_tsv_cells(getattr(result, "relatedness", None)),
             *_contamination_tsv_cells(getattr(result, "contamination", None)),
+            *_runmeta_tsv_cells(getattr(result, "run_unit", None)),
         ]
     )
     fh.write("\t".join(vals) + "\n")
@@ -507,6 +546,7 @@ def to_json(
                 getattr(result, "admix_consistency", None)
             ),
             "contamination": _contamination_json(getattr(result, "contamination", None)),
+            "run_unit": _runmeta_json(getattr(result, "run_unit", None)),
             "markers": markers_list,
         }
     else:
@@ -538,6 +578,7 @@ def to_json(
                 getattr(result, "admix_consistency", None)
             ),
             "contamination": _contamination_json(getattr(result, "contamination", None)),
+            "run_unit": _runmeta_json(getattr(result, "run_unit", None)),
             "markers": markers_list,
         }
     return out
@@ -577,6 +618,7 @@ def timeline_json(
                 "qc_status": qc.status,
                 "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
                 "contamination": _contamination_json(getattr(result, "contamination", None)),
+                "run_unit": _runmeta_json(getattr(result, "run_unit", None)),
             }
             for i, frac in enumerate(result.donor_fractions):
                 ci_lo, ci_hi = result.donor_fraction_cis[i]
@@ -613,6 +655,7 @@ def timeline_json(
                     "contamination": _contamination_json(
                         getattr(result, "contamination", None)
                     ),
+                    "run_unit": _runmeta_json(getattr(result, "run_unit", None)),
                 }
             )
     return {"timepoints": timepoints}

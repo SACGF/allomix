@@ -22,6 +22,7 @@ from allomix.relatedness import (
     RelatednessResult,
     evaluate_expected,
 )
+from allomix.runmeta import RunUnitInfo
 
 # Thresholds for the optional REVIEW warning when the host-presence detector
 # fires significantly but the global MLE does not echo the signal. Tunable
@@ -95,6 +96,7 @@ class QCReport:
         relatedness: Estimated relatedness per reference-sample pair, or None.
         admix_consistency: Consensus-homozygote swap check result, or None.
         contamination: In-data third-party contamination estimate, or None.
+        run_unit: Sequencing run-unit metadata for the sample, or None.
     """
 
     n_total_markers: int
@@ -114,6 +116,7 @@ class QCReport:
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
     contamination: ContaminationResult | None = None
+    run_unit: RunUnitInfo | None = None
 
     @property
     def pass_(self) -> bool:
@@ -504,6 +507,20 @@ def assess_quality(
         if contamination.contamination_fraction >= CONTAMINATION_REVIEW_FRACTION:
             contamination_review = True
 
+    # Index-hopping provenance: the sample shares a sequencing run unit (flowcell
+    # lane) with the host, so hopped host reads could leak in. A soft warning
+    # only, not a status change: sharing a run is a risk, not a defect; the
+    # contamination estimate above is what measures whether it actually bit. The
+    # flag is absent (degrades to silent) when the admix VCF carried no run
+    # metadata or the run unit was unrecoverable.
+    run_unit: RunUnitInfo | None = getattr(result, "run_unit", None)
+    if run_unit is not None and run_unit.shares_run_with_host:
+        warnings.append(
+            f"Index-hopping risk: shares sequencing run unit "
+            f"{run_unit.run_unit} with the host, so barcode hopping could leak "
+            "host reads into this sample; cross-check the contamination estimate"
+        )
+
     # A computed-but-questionable result (poor fit, imprecise, heavily trimmed,
     # or a softer identity flag) is flagged for review rather than passed
     # silently or failed.
@@ -530,4 +547,5 @@ def assess_quality(
         relatedness=relatedness,
         admix_consistency=ac,
         contamination=contamination,
+        run_unit=run_unit,
     )

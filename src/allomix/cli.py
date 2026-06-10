@@ -30,6 +30,7 @@ from allomix.error_rates import (
 from allomix.genotype import parse_vcf
 from allomix.relatedness import VALID_DECLARATIONS
 from allomix.report import timeline_json, to_json, to_tsv
+from allomix.runmeta import RunUnitInfo, read_run_units
 
 
 def _expected_relatedness_value(value: str) -> str:
@@ -251,6 +252,7 @@ def _run_single_sample(
     robust_k: float = ROBUST_K_DEFAULT,
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
+    run_unit: RunUnitInfo | None = None,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -279,6 +281,7 @@ def _run_single_sample(
         robust_k=robust_k,
         expected_relatedness=expected_relatedness,
         relatedness_tolerance=relatedness_tolerance,
+        run_unit=run_unit,
     )
 
     if not use_sex_chroms and analysis.genotypes.n_sex_chrom_excluded:
@@ -362,6 +365,10 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         for d in args.donor_sample
     ]
 
+    # Optional run-unit metadata stamped on the admix VCF header by the pipeline
+    # (index-hopping check, issue #12). Empty when the VCF carries none.
+    run_units = read_run_units(args.admix_vcf)
+
     out = _open_output(args.output)
     try:
         for sample_name in args.sample:
@@ -381,6 +388,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 robust_k=args.robust_k,
                 expected_relatedness=args.expected_relatedness,
                 relatedness_tolerance=args.relatedness_tolerance,
+                run_unit=run_units.get(sample_name),
             )
 
             if args.format == "json":
@@ -412,6 +420,8 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         for d in args.donor_sample
     ]
 
+    run_units = read_run_units(args.admix_vcf)
+
     results = []
     for sample_name in args.sample:
         result, qc, genotypes = _run_single_sample(
@@ -430,6 +440,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             robust_k=args.robust_k,
             expected_relatedness=args.expected_relatedness,
             relatedness_tolerance=args.relatedness_tolerance,
+            run_unit=run_units.get(sample_name),
         )
         results.append((genotypes.sample_name, result, qc))
 

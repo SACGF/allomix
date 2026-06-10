@@ -12,6 +12,7 @@ neither.
 Reads only output/genotypes/SRP434573. Pooled statistics only.
 """
 
+import csv
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
@@ -133,6 +134,25 @@ def main() -> int:
         xs = sorted(carrier_fracs_by_dose[b])
         n = len(xs)
         print(f"  {b:>10} {median(xs)*100:>10.4f} {xs[int(n*0.75)]*100:>9.4f} {n:>8}")
+
+    # Write headline facts for the paper (single-row CSV -> vibepaper namespace
+    # ``srp_contam``). These back the contamination dose-response described in
+    # the Results section.
+    facts_dir = Path("output/facts")
+    facts_dir.mkdir(parents=True, exist_ok=True)
+    facts = {
+        "n_nocarrier_sites": len(nocarrier_fracs),
+        "n_carrier_sites": len(carrier_fracs_all),
+        "nocarrier_floor_pct": f"{median(nocarrier_fracs) * 100:.3f}",
+        "carrier_median_pct": f"{median(carrier_fracs_all) * 100:.2f}",
+        "dose_1carrier_pct": f"{median(carrier_fracs_by_dose[1]) * 100:.2f}",
+        "dose_5carrier_pct": f"{median(carrier_fracs_by_dose[5]) * 100:.2f}",
+    }
+    with open(facts_dir / "srp_contam.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(facts.keys())
+        w.writerow(facts.values())
+    print(f"\nWrote {facts_dir / 'srp_contam.csv'}")
     return 0
 
 

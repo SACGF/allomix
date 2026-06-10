@@ -70,6 +70,36 @@ limitation, not introduced here. The per-marker contamination term (apportioning
 floor to the specific donor-absent markers a co-pooled carrier inflates) remains a
 [speculative] follow-up; this pass is the per-sample scalar. **[data]**
 
+Real-data corroboration on SRP434573 (`monitor` re-run at this commit, plotted in
+`output/srp434573_logy.png`): the LoB floors at the in-data estimate as intended.
+At `mix_F2_into_M1` 0.5%, `lob_pct` reports 0.060% which is exactly the estimated
+contamination floor (0.0597%), above the analytical Fisher-information LoB. The
+floor's effect on the presence estimate is small here (~0.06%, consistent with the
+F2-M1 library being clean): the presence `host_f_est` moved from ~0.11% to 0.051%.
+**[data]**
+
+Two things this run surfaced that the in-silico validation did not:
+
+- **At the lowest fraction the floor can invert the presence-vs-MLE ordering.** On
+  the same 0.5% sample the presence estimate (0.051%) now sits *below* the MLE host
+  (100 - 99.81 = 0.19%), where before Obs 2 the presence estimate was the higher,
+  more accurate one (Obs 1 relied on exactly that). The contamination subtraction is
+  what pulls presence under the MLE. This matters for the `qc.py` host-presence-vs-MLE
+  REVIEW warning, which fires on `mle_host < f_host_mle` (presence above MLE): the
+  floor makes that condition less likely at the very low end, so the warning's
+  operating point shifts. Re-check that gate's behaviour before trusting it at <1%.
+  **[data]**
+- **0.5% on this single-strand MIP panel is near a wall, and the floor is only part
+  of it.** Both estimators undershoot the known 0.5% badly (MLE 0.19%, presence
+  0.051%), and the contamination floor accounts for only ~0.06% of that gap; the rest
+  is panel/depth noise in this regime. The floor (~0.06% on F2-M1, up to ~0.2% on
+  M3-F3) competes directly with a 0.5-1% target, so even a correct floor bounds
+  achievable low-end accuracy. This is the strongest argument for the [speculative]
+  per-marker contamination term (spend the floor only where a carrier actually sits,
+  instead of taxing every donor-absent marker) and for the input-quality QC item
+  below (predict and flag these undershoot-prone low-fraction samples up front).
+  **[data]**
+
 **Next: cohort phase** (Observations 3, 4, and the pooled-bias part of 7; see
 `cohort_phase_plan.md`).
 

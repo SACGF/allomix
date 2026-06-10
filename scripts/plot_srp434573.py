@@ -32,6 +32,7 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator  # noqa: 
 
 OUT = Path("output")
 YFLOOR = 0.012  # where "not detected" (est 0%) points are drawn on the log axis
+SHOW_QC_REVIEW = False  # circle QC=REVIEW points in red and add a legend entry
 
 
 def _fmt_pct(v: float, _pos: int) -> str:
@@ -150,7 +151,7 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
                         markeredgecolor="white", markeredgewidth=0.6, zorder=3)
                 y_mle = YFLOOR
                 any_nd = True
-            if r.get("qc") == "REVIEW":
+            if SHOW_QC_REVIEW and r.get("qc") == "REVIEW":
                 ax.plot(x_mle, y_mle, marker="o", markersize=12, markerfacecolor="none",
                         markeredgecolor="red", markeredgewidth=1.2, zorder=4)
                 any_review = True

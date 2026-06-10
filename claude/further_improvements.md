@@ -43,8 +43,35 @@ the symmetric cut removed). This is small and absent at deployment depth, but it
 a second noise term that the LoD floor should account for, which feeds directly
 into Observation 2. **[data]**
 
-**Next: Observation 2** (contamination floor into the LoD and the host-presence
-background).
+**Observation 2 (contamination floor into the LoD and presence background): DONE.**
+The in-data contamination floor (`contamination.contamination_fraction`) now feeds
+two places, wired in `analysis.analyse_sample` (contamination is computed before the
+presence test and the LoD flooring so both can read it):
+
+- The reported `lob_fraction` / `lod_fraction` are floored at the contamination
+  estimate (`analysis._floor_detection_limits`), so a sample whose contamination
+  floor exceeds its analytical LoD reports the floor.
+- The host-presence test takes a `contamination_floor` argument
+  (`detect.host_presence_test`) added to every marker's H0 background, since a
+  co-pooled genome carrying the donor-absent allele inflates exactly those counts.
+
+In-silico validation (`scripts/validate_contamination_lod_floor.py`, N=20 seeds).
+Part A (LoD floor, against a synthetic 0.2% scalar since `blend_vcfs` has no
+contamination knob): at deployment depth the analytical LoD (~0.12%) sits below the
+floor in 100% of reps, so the reported LoD is raised to 0.2% every time. Part B (the
+Observation 6 gate, on clean high-depth blends through the real pipeline): the raised
+background never inflates the blank false-positive rate (0% at alpha=0.05, it can
+only make the test more conservative) and does not suppress genuine signal (0.5% host
+detected in 100% of reps with the in-data floor fed in, same as floor=0). Note the
+in-data estimator reports a non-zero floor (~0.15% at 1% error, 2000x) even on clean
+data: that is binomial sampling spread read as a floor, it shrinks as ~1/sqrt(depth)
+(0.15% -> 0.08% from 2000x to 8000x), and it is the pre-existing Observation 6
+limitation, not introduced here. The per-marker contamination term (apportioning the
+floor to the specific donor-absent markers a co-pooled carrier inflates) remains a
+[speculative] follow-up; this pass is the per-sample scalar. **[data]**
+
+**Next: cohort phase** (Observations 3, 4, and the pooled-bias part of 7; see
+`cohort_phase_plan.md`).
 
 **Cohort / multi-sample phase.** Observations 3, 4, and the pooled-bias-table part
 of Observation 7 all block on a multi-sample entry point that `monitor` (single
@@ -97,7 +124,9 @@ the collapse without touching clean-data or deployment-depth behaviour. **[data]
   clustering on a chromosome arm) instead of a count. Re-measure the post-fix drop
   distribution before changing the threshold. **[speculative]**
 
-## Observation 2 (NEXT): a ~0.2% co-pooled contamination floor competes directly with sub-1% detection, and it is independent of the host-presence background
+## Observation 2 (DONE): a ~0.2% co-pooled contamination floor competes directly with sub-1% detection, and it is independent of the host-presence background
+
+**Status: implemented and validated in silico (see Status above). The motivating analysis is kept below.**
 
 The contamination probe established a per-marker floor of ~0.2% (median; up to ~1.5%
 at p95) from co-loaded genomes, dose-proportional to how many co-pooled samples carry
@@ -110,7 +139,8 @@ co-pooled genome carries the host's allele **[likely]**.
 ### Improvements
 
 - **Feed the contamination estimate into the host-presence background and the
-  reported LoD.** The presence test and `contamination.py` are currently independent.
+  reported LoD. DONE (see Status).** The presence test and `contamination.py` were
+  previously independent.
   The contamination floor is a second noise term that should (a) raise the
   per-marker background the presence test compares against, and (b) floor the
   reported `lob_fraction` / `lod_fraction`, which today are computed from sequencing

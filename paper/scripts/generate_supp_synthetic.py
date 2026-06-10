@@ -115,6 +115,27 @@ CONDITIONS = {
         },
         "correct_bias": True,
     },
+    # No-overdispersion (binomial) baseline vs the same full model with
+    # beta-binomial read sampling. The binomial conditions above (in particular
+    # "Full") are the no-overdispersion baseline; this condition adds per-marker
+    # overdispersion at a realistic concentration (rho = 100, the value fitted
+    # from real per-sample data) applied only at intermediate-VAF markers
+    # (het_only), where PCR/capture jitter is physical. It isolates the effect
+    # of overdispersion, which the depth-by-markers LoD analysis identifies as
+    # the dominant control on the limit of detection at clinical coverage
+    # (Figures S7, S8), from the bias/depth/error/dropout components above.
+    "Overdispersion": {
+        "blend": {
+            "marker_bias_sd": 0.0,
+            "depth_cv": 0.43,
+            "error_rate": 0.01,
+            "locus_dropout_rate": 0.016,
+            "realistic_biases": True,
+            "rho": 100.0,
+            "rho_marker_type": "het_only",
+        },
+        "correct_bias": True,
+    },
 }
 
 
@@ -384,6 +405,7 @@ def plot_ablation(results, ax_rmse, ax_per_frac):
         "Depth only": "#FF9800",
         "Error only": "#9C27B0",
         "Full": "#2196F3",
+        "Overdispersion": "#212121",
     }
     linestyles = {c: "--" if "corrected" in c.lower() else "-" for c in CONDITIONS}
 

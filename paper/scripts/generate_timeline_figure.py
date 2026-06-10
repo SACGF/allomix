@@ -30,7 +30,7 @@ from allomix.simulate import (  # noqa: E402
     write_vcf,
 )
 from allomix.simulate import (  # noqa: E402
-    parse_vcf as sim_parse_vcf,
+    parse_text_vcf as sim_parse_vcf,
 )
 
 FACTS_DIR = Path("output/facts")

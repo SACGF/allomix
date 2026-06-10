@@ -34,7 +34,7 @@ FACTS_DIR = Path("output/facts")
 
 RELATEDNESS_ORDER = ["unrelated", "sibling"]
 FACET_TITLES = {"unrelated": "Unrelated", "sibling": "Full sibling"}
-THRESHOLDS = [0.5, 1.0]  # percent (0.1% is below the trimmed y-range)
+THRESHOLDS = [0.5, 1.0]  # percent (reference action-zone lines)
 # 25-marker panels aren't realistic in clinical practice; drop them from the
 # plot to give the rest of the data more horizontal real estate. The data
 # stays in lod_summary.csv (60 rows including 25-marker cells) so the
@@ -209,15 +209,16 @@ def plot(
         # band is the clinically interesting action zone for deeper / larger
         # panels — the standard 1-2-5 convention would skip them.
         ax.yaxis.set_major_locator(
-            plt.FixedLocator([0.2, 0.3, 0.4, 0.5, 1, 2, 5])
+            plt.FixedLocator([0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1, 2, 5])
         )
         ax.yaxis.set_minor_locator(NullLocator())
         ax.yaxis.set_major_formatter(FuncFormatter(_format_pct))
         # Trim y-range to focus on the action zone. The 25-marker cells (already
         # filtered above) and the worst-case sibling-100x-50-marker cell sit
-        # above 2%; the rest of the plot benefits from giving the 0.2-1% band
-        # more vertical real estate.
-        ax.set_ylim(0.15, 5.0)
+        # above 2%. The lower bound reaches down to the deepest LoB band
+        # (~0.023% at 2000x/400-marker) so the bottom LoD and LoB curves stay
+        # inside the axes instead of running off the bottom.
+        ax.set_ylim(0.02, 5.0)
 
         for thr in THRESHOLDS:
             ax.axhline(thr, color="black", linestyle="--", linewidth=0.7,

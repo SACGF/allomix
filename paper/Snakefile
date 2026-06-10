@@ -87,6 +87,12 @@ SUPP_SYNTHETIC_FACTS = [f"{FACTS_DIR}/supp_synthetic.csv"]
 SRP434573_FACTS = [f"{FACTS_DIR}/srp434573.csv"]
 SRP434573_FIGS = [f"{FACTS_DIR}/fig_srp434573.png"]
 
+# Real-data contamination dose-response (SRP434573). Reads the joint-called
+# VCFs (out-of-band, output/genotypes/SRP434573) and summarises the per-#-carriers
+# median minor-allele fraction into facts for the contamination paragraph. No
+# sequencing or joint calling here.
+SRP_CONTAM_FACTS = [f"{FACTS_DIR}/srp_contam.csv"]
+
 PAPER_FACTS = [
     f"{FACTS_DIR}/validation_summary.csv",
     f"{FACTS_DIR}/bias_no_bias.csv",
@@ -113,6 +119,7 @@ ALL_FACTS = (
     + OVERDISP_FACTS
     + CNV_LOH_FACTS
     + SRP434573_FACTS
+    + SRP_CONTAM_FACTS
 )
 
 ALL_FIGS = (
@@ -312,6 +319,17 @@ rule srp434573_facts:
         SRP434573_FIGS,
     shell:
         "python paper/scripts/generate_srp434573_facts.py"
+
+
+rule srp_contam_facts:
+    # Contamination dose-response on the SRP434573 joint-called VCFs (out-of-band,
+    # output/genotypes/SRP434573). Reads VCFs only; no sequencing or simulation.
+    input:
+        "output/genotypes/SRP434573/mix_F1_into_F3.admix.vcf.gz",
+    output:
+        SRP_CONTAM_FACTS,
+    shell:
+        "python scripts/probe_contam_median_srp434573.py"
 
 
 # --- Paper build (depends on all facts and figures) --------------------------

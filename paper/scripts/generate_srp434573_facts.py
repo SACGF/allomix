@@ -113,6 +113,20 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts["mle_onepct_min_pct"] = f"{mle[one].min():.2f}"
     facts["mle_onepct_max_pct"] = f"{mle[one].max():.2f}"
 
+    # Residual-host presence test (separate from the magnitude MLE): donor-
+    # homozygous markers where the host carries the donor-absent allele. Report
+    # how often it fires, how many markers it reads, and its host-fraction
+    # estimate at the clinically relevant 1% level.
+    pres_p = np.array([_f(r["presence_p"]) for r in two])
+    pres_pct = np.array([(_f(r["presence_pct"]) or 0.0) for r in two])
+    pres_mk = np.array([(_f(r["presence_markers"]) or 0.0) for r in two])
+    detected = pres_p < 0.05
+    facts["presence_n_detected"] = str(int(detected.sum()))
+    facts["presence_n_total"] = str(len(two))
+    facts["presence_markers_median"] = f"{np.median(pres_mk):.0f}"
+    facts["presence_onepct_min_pct"] = f"{pres_pct[one].min():.2f}"
+    facts["presence_onepct_max_pct"] = f"{pres_pct[one].max():.2f}"
+
     # Three-person mixture (1:3:5 of F2:M1:M2; host = F2, donors = M1, M2).
     by_comp = {r["component"]: r for r in three}
     for comp in ("F2", "M1", "M2"):

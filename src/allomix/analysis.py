@@ -31,6 +31,7 @@ from allomix.relatedness import (
     admix_consistency,
     relatedness_coefficient,
 )
+from allomix.runmeta import RunUnitInfo
 
 
 @dataclass
@@ -71,6 +72,7 @@ def analyse_sample(
     robust_k: float = ROBUST_K_DEFAULT,
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
+    run_unit: RunUnitInfo | None = None,
 ) -> SampleAnalysis:
     """Run the chimerism pipeline for one pre-parsed admixture sample.
 
@@ -177,6 +179,9 @@ def analyse_sample(
         error_rate=error_rate,
         min_dp=min_dp,
     )
+    # Run-unit metadata (index-hopping provenance) read from the admix VCF header
+    # by the caller; attached before QC so the shared-run flag can be reported.
+    result.run_unit = run_unit
 
     qc = assess_quality(
         result,

@@ -25,6 +25,14 @@ front of them:
         Then bcftools merge across admix samples.
         Output: <patient>.admix.vcf.gz  (raw AD at every panel site)
 
+    Run metadata — stamp each admix sample's flowcell+lane into the VCF (issue #12)
+        Per patient (when it has admix samples): read the sequencing run unit
+        from each BAM, flag admix samples that share one with the host (the
+        index-hopping risk allomix cannot see from the VCF alone), and inject the
+        result as ``##allomixRunUnit`` header lines on the admix VCF during the
+        merge. allomix reads them straight back from the header. Optional: when
+        no run unit is recoverable (e.g. SRA-renamed reads), nothing is added.
+
 Why this split: GATK is the right tool for genotyping the reference
 samples (we only need GT there). It is the wrong tool for the admix AD,
 because HaplotypeCaller -ERC GVCF strips minority ALT reads from
@@ -47,6 +55,7 @@ import csv
 import glob
 import os
 import re
+import sys
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +112,9 @@ READ_FILTERS = config.get("read_filters", "UNMAP,SECONDARY,QCFAIL,DUP")
 # Shared
 TABIX = config.get("tabix", "tabix")
 BGZIP = config.get("bgzip", "bgzip")
+# Interpreter for the pipeline helper scripts (pure stdlib, no allomix import).
+# Defaults to the Python running Snakemake, which is always a valid interpreter.
+PYTHON = config.get("python", sys.executable)
 
 # Optional alignment (FASTQ -> BAM) with bwa mem. Active only when `fastq_dir`
 # is set; otherwise the bam_filename paths in the CSVs are treated as
@@ -229,11 +241,23 @@ def _admix_vcf(patient):
     return os.path.join(OUTPUT_DIR, f"{patient}.admix.vcf.gz")
 
 
+def _patient_bams(patient):
+    """Distinct BAM paths for a patient (ref + admix), in stable order."""
+    ref, admix = _patient_samples(patient)
+    seen: list[str] = []
+    for bam in {**ref, **admix}.values():
+        if bam not in seen:
+            seen.append(bam)
+    return seen
+
+
 # Per-patient intermediates live under <OUTPUT_DIR>/<patient>/ to avoid
 # cross-patient collisions on shared filenames (combined.g.vcf.gz,
 # admix/per_sample/...).
 JOINT_VCF_TPL = os.path.join(OUTPUT_DIR, f"{{patient}}{_intervals_tag}.vcf.gz")
 ADMIX_VCF_TPL = os.path.join(OUTPUT_DIR, "{patient}.admix.vcf.gz")
+# Intermediate: the ##allomixRunUnit header fragment merged into the admix VCF.
+RUN_UNITS_HDR_TPL = os.path.join(OUTPUT_DIR, "{patient}", "run_units.hdr")
 GVCF_TPL = os.path.join(OUTPUT_DIR, "gvcfs", "{sample}.g.vcf.gz")
 COMBINED_GVCF_TPL = os.path.join(OUTPUT_DIR, "{patient}", "combined.g.vcf.gz")
 PANEL_TSV_TPL = os.path.join(OUTPUT_DIR, "{patient}", "admix", "targets.tsv.gz")
@@ -251,6 +275,8 @@ def _all_targets():
     for p in PATIENTS:
         out.append(_joint_vcf(p))
         if _admix_samples(p):
+            # The admix VCF carries the run-unit header metadata (index-hopping
+            # check) via its merge step, so it needs no separate target.
             out.append(_admix_vcf(p))
     return out
 
@@ -519,6 +545,11 @@ rule merge_admix:
 
     All per-sample VCFs cover every panel site (constrained calling
     guarantees this), so the merge has no missing-sample positions.
+
+    The merged stream is piped through ``bcftools annotate -h`` to stamp the
+    ``##allomixRunUnit`` header lines (index-hopping check, issue #12) onto the
+    admix VCF. The fragment is empty when no run unit was recoverable, so this is
+    a no-op in that case. allomix reads the header back via ``allomix.runmeta``.
     """
     input:
         vcfs=lambda wc: expand(
@@ -531,6 +562,7 @@ rule merge_admix:
             patient=[wc.patient],
             sample=list(_admix_samples(wc.patient)),
         ),
+        hdr=RUN_UNITS_HDR_TPL,
     output:
         vcf=ADMIX_VCF_TPL,
         tbi=ADMIX_VCF_TPL + ".tbi",
@@ -546,9 +578,53 @@ rule merge_admix:
             --threads {threads} \
             --force-single \
             -m all \
-            -Oz -o {output.vcf} \
-            {input.vcfs} 2>&1 | tee {log}
+            -Ou \
+            {input.vcfs} 2> {log} \
+        | {params.bcftools} annotate \
+            -h {input.hdr} \
+            --threads {threads} \
+            -Oz -o {output.vcf} - 2>> {log}
         {params.tabix} -f {output.vcf}
+        """
+
+
+# ---------------------------------------------------------------------------
+# Run-unit metadata: index-hopping check (issue #12)
+# ---------------------------------------------------------------------------
+
+rule run_units_header:
+    """Build the ##allomixRunUnit header fragment for one patient's admix samples.
+
+    allomix is VCF-first and never opens a BAM, so the flowcell identity an
+    index-hopping flag needs is read here and written as VCF header lines that
+    ``merge_admix`` stamps onto the admix VCF. Index hopping leaks reads between
+    samples clustered in the same flowcell lane, so a host sharing a run unit
+    with an admixture sample can deposit hopped host reads into it and fake a
+    host-presence signal. One ``##allomixRunUnit`` line per admix sample records
+    its run unit and whether it shares one with the host. On SRA-derived BAMs the
+    run unit is unrecoverable (renamed reads, no PU tag): such samples get no
+    line, and an all-unknown patient yields an empty fragment, so the flag stays
+    silent rather than reporting a false "no risk". See
+    ``pipeline/scripts/extract_run_units.py``.
+    """
+    input:
+        bams=lambda wc: _patient_bams(wc.patient),
+        csv=lambda wc: PATIENTS[wc.patient],
+        script=os.path.join(workflow.basedir, "scripts", "extract_run_units.py"),
+    output:
+        hdr=RUN_UNITS_HDR_TPL,
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "run_units_header", "{patient}.log"),
+    params:
+        python=PYTHON,
+        samtools=SAMTOOLS,
+    shell:
+        """
+        {params.python} {input.script} \
+            --csv {input.csv} \
+            --out {output.hdr} \
+            --samtools {params.samtools} \
+            2>&1 | tee {log}
         """
 
 

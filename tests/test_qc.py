@@ -24,6 +24,7 @@ from allomix.relatedness import (
     AdmixConsistencyResult,
     RelatednessResult,
 )
+from allomix.runmeta import RunUnitInfo
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -187,6 +188,41 @@ class TestContaminationFlag:
         result.contamination = self._contamination(0.0, p=1.0, n=0)
         qc = assess_quality(result, _make_genotypes())
         assert not any("Contamination" in w for w in qc.warnings)
+
+
+class TestIndexHoppingFlag:
+    """QC reads result.run_unit and warns (softly) when it shares the host run."""
+
+    def test_shared_run_warns_without_review(self):
+        result = _make_chimerism_result()
+        result.run_unit = RunUnitInfo(
+            run_unit="FC1:1", source="RG:PU", shares_run_with_host=True
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert any("Index-hopping" in w and "FC1:1" in w for w in qc.warnings)
+        assert qc.status == "PASS"  # soft warning only
+
+    def test_not_shared_no_warning(self):
+        result = _make_chimerism_result()
+        result.run_unit = RunUnitInfo(
+            run_unit="FC2:2", source="RG:PU", shares_run_with_host=False
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Index-hopping" in w for w in qc.warnings)
+
+    def test_undetermined_no_warning(self):
+        result = _make_chimerism_result()
+        result.run_unit = RunUnitInfo(
+            run_unit="FC3:3", source="RG:PU", shares_run_with_host=None
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Index-hopping" in w for w in qc.warnings)
+
+    def test_absent_metadata_no_warning(self):
+        result = _make_chimerism_result()  # run_unit defaults to None
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Index-hopping" in w for w in qc.warnings)
+        assert qc.run_unit is None
 
 
 class TestMarkerLossDiagnosis:

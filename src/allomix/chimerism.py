@@ -40,6 +40,7 @@ from allomix.detect import HostPresenceResult
 from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey
 from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.runmeta import RunUnitInfo
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,9 @@ class ChimerismResult:
     # In-data contamination estimate (see ``allomix.contamination``), attached by
     # ``analyse_sample``. None when the caller did not compute it.
     contamination: ContaminationResult | None = None
+    # Sequencing run-unit metadata for this admix sample, read from the admix VCF
+    # header (see ``allomix.runmeta``). None when the VCF carried no run metadata.
+    run_unit: RunUnitInfo | None = None
 
 
 @dataclass
@@ -161,6 +165,7 @@ class MultiDonorResult:
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
     contamination: ContaminationResult | None = None
+    run_unit: RunUnitInfo | None = None
 
 
 # Robust-refit tuning. The residual cut itself (ROBUST_K_DEFAULT) lives in

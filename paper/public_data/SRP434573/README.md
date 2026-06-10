@@ -170,4 +170,15 @@ Outputs land in `output/genotypes/SRP434573/`: per-patient `*.vcf.gz`
 to allomix and compare its estimate of the monitored minority (the **host**
 fraction, `known_minor_pct` in `manifest.tsv`) against the known values.
 
+The admix VCF also carries the index-hopping metadata (issue #12) in its header:
+one `##allomixRunUnit` line per admix sample with a recoverable sequencing run
+unit (flowcell+lane), flagged when it shares one with the host. allomix reads
+these back and surfaces `run_unit` / `index_hop_risk` columns. For this dataset
+no lines are written: SRA renamed the reads `<accession>.<n>` and stripped the
+`@RG PU` tag, so the flowcell is unrecoverable; the (optional) metadata is simply
+absent and the flag degrades to "cannot determine" rather than a false negative.
+On real lab BAMs (with PU tags or Illumina read names) the flowcell resolves and
+the flag is meaningful. Inspect it with `bcftools view -h <patient>.admix.vcf.gz
+| grep allomixRunUnit`.
+
 See `doc/joint_calling.md` for the two-phase rationale.

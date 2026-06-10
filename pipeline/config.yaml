@@ -50,3 +50,8 @@ max_depth: 100000  # set well above panel coverage so >1000x panels are not capp
 min_mapq: 20
 min_baseq: 20
 read_filters: "UNMAP,SECONDARY,QCFAIL,DUP"
+
+# Run-unit metadata (index-hopping check, issue #12). Interpreter for the helper
+# script pipeline/scripts/extract_run_units.py (pure stdlib). Defaults to the
+# Python running Snakemake; set only if you need a different one.
+# python: "python3"

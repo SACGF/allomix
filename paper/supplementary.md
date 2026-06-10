@@ -40,7 +40,7 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 
 ![Figure S1](output/facts/figS1_bias_distributions.png)
 
-**Figure S1.** Per-marker amplification bias distribution. (A) Histogram of empirical per-marker bias (median het VAF deviation from 0.5) measured across {{ supp_synthetic.n_empirical_markers }} markers, with kernel density estimates from a simple Gaussian model and the heavy-tailed mixture model used in allomix simulations. The mixture model (95% N(0, 0.012), 5% N(0, 0.08)) captures the heavy tails observed in the empirical data, where the 95th percentile of |bias| reaches {{ supp_synthetic.empirical_p95_abs_bias }}. (B) Cumulative distribution of |bias| showing the mixture model tracks the empirical tail while the simple Gaussian underestimates extreme values.
+**Figure S1.** Per-marker amplification bias distribution. (A) Histogram of empirical per-marker bias (median het VAF deviation from 0.5) measured across {{ supp_synthetic.n_empirical_markers | dp(0) }} markers, with kernel density estimates from a simple Gaussian model and the heavy-tailed mixture model used in allomix simulations. The mixture model (95% N(0, 0.012), 5% N(0, 0.08)) captures the heavy tails observed in the empirical data, where the 95th percentile of |bias| reaches {{ supp_synthetic.empirical_p95_abs_bias }}. (B) Cumulative distribution of |bias| showing the mixture model tracks the empirical tail while the simple Gaussian underestimates extreme values.
 
 ### S2. Depth Distribution
 
@@ -52,13 +52,13 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 
 ![Figure S3](output/facts/figS3_het_vaf.png)
 
-**Figure S3.** Violin plots of median heterozygous VAF per marker: empirical measurements ({{ supp_synthetic.n_empirical_markers }} markers from 76-SNP rhAmpSeq panel) vs simulated values drawn from the heavy-tailed mixture bias model. Both distributions are centred on 0.5 with comparable spread, confirming that the simulation reproduces the per-marker VAF displacement observed in real sequencing data.
+**Figure S3.** Violin plots of median heterozygous VAF per marker: empirical measurements ({{ supp_synthetic.n_empirical_markers | dp(0) }} markers from 76-SNP rhAmpSeq panel) vs simulated values drawn from the heavy-tailed mixture bias model. Both distributions are centred on 0.5 with comparable spread, confirming that the simulation reproduces the per-marker VAF displacement observed in real sequencing data.
 
 ### S4. Noise Component Ablation
 
 ![Figure S4](output/facts/figS4_ablation.png)
 
-**Figure S4.** Effect of individual noise components on estimation accuracy (500x depth, 10 replicates per condition, 6 conditions). (A) Overall RMSE by noise condition. Under ideal conditions RMSE is {{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification bias alone raises it to {{ supp_synthetic.ablation_rmse_bias_only_pct }}%, and bias correction leaves it essentially unchanged at this depth ({{ supp_synthetic.ablation_rmse_bias_corrected_pct }}%), since the injected biases average near zero and their spread is largely absorbed by the overdispersion term. The full realistic model (all noise sources with bias correction) produces {{ supp_synthetic.ablation_rmse_full_pct }}% RMSE. (B) Mean absolute error by true donor fraction for each condition. Dashed lines indicate conditions with bias correction applied.
+**Figure S4.** Effect of individual noise components on estimation accuracy (500x depth, 10 replicates per condition, 7 conditions). (A) Overall RMSE by noise condition. Under ideal conditions RMSE is {{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification bias alone raises it to {{ supp_synthetic.ablation_rmse_bias_only_pct }}%, and bias correction leaves it essentially unchanged at this depth ({{ supp_synthetic.ablation_rmse_bias_corrected_pct }}%), since the injected biases average near zero and their spread is largely absorbed by the overdispersion term. The full realistic model with binomial read sampling (all noise sources, bias corrected) produces {{ supp_synthetic.ablation_rmse_full_pct }}% RMSE; this is the no-overdispersion baseline. Adding per-marker overdispersion to that full model (beta-binomial read sampling at the fitted concentration rho = 100, applied at intermediate-VAF markers where amplification jitter is physical) raises RMSE to {{ supp_synthetic.ablation_rmse_overdispersion_pct }}%, a larger effect than any single bias, depth, or sequencing-error component. This is consistent with overdispersion, rather than depth, being the dominant control on accuracy and on the limit of detection at clinical coverage (Figures S7, S8). (B) Mean absolute error by true donor fraction for each condition. Dashed lines indicate conditions with bias correction applied.
 
 ### S5. Confidence Interval Calibration
 
@@ -83,3 +83,9 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 ![Figure S8](output/facts/fig_overdispersion_lod.png)
 
 **Figure S8.** In silico LoD as a function of the beta-binomial overdispersion concentration $\rho$, at {{ overdispersion_lod_headline.depth }}x depth with {{ overdispersion_lod_headline.n_markers }} informative markers (unrelated donor). Reads were simulated beta-binomial across a grid of $\rho$ and the donor fraction estimated with the standard pipeline; the analytic and simulated (tool) LoD agree closely. The LoD rises from {{ overdispersion_lod_headline.lod_binomial_pct }}% under pure-binomial sampling ($\rho \to \infty$) to {{ overdispersion_lod_headline.lod_rho100_pct }}% at $\rho = 100$ (a {{ overdispersion_lod_headline.fold_rho100_vs_binomial }}-fold increase) and {{ overdispersion_lod_headline.lod_rho30_pct }}% at $\rho = 30$. At clinical coverage the overdispersion, not the depth, is the dominant control on the achievable LoD, which is why a simulated $\rho$ calibrated from real per-sample fits is needed before the in silico LoD is taken as a performance figure.
+
+### S9. Fixed-Bias-Per-Marker Stability
+
+![Figure S9](output/facts/fig_bias_stability.png)
+
+**Figure S9.** Validation of the fixed-bias-per-marker assumption used by the simulator and the bias-correction model. Each point is one of the {{ supp_synthetic.n_empirical_markers | dp(0) }} panel markers: the x-axis is its absolute median amplification bias (the systematic, marker-specific component), and the y-axis is its within-marker standard deviation of heterozygous VAF across samples (the random, sample-to-sample component). The two are only weakly correlated (r = {{ supp_synthetic.bias_stability_r | dp(2) }}), so a marker's systematic bias does not predict its sample-to-sample scatter. Bias behaves as a stable per-marker offset rather than a quantity that grows with marker noise, which supports modelling it as a fixed offset (Methods) and absorbing the residual scatter separately through the overdispersion term.

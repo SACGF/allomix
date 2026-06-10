@@ -274,3 +274,75 @@ the whole method by counting, no algebra:
 - All equations -> Supplementary Methods.
 - EP17 LoD (~1,300 words, the single most-covered topic) is over-weighted; keep the headline number
   and the analytical-ceiling caveat, push the sweep detail toward supp/figure.
+
+---
+
+## Paper coverage audit v2 (re-counted 2026-06-10, post-rewrite)
+
+Re-count of the same per-topic attribution after the full in-place rewrite of `paper/*.md` was
+executed. Same method as the v1 audit above (attributed estimates: tag the sentences/passages
+describing each topic, sum, round to ~10; `{{ ... }}` placeholders count as one word; shared
+passages split by emphasis, so column totals are approximate). The **v1 Total** column is copied
+from the audit above so the two are directly comparable.
+
+Current section totals (raw `wc -w`, including tables, captions, and figure legends; not directly
+comparable to v1's prose-only section totals): abstract 330, introduction 727, methods 3518,
+results 3388, discussion 1807, supplementary 2918.
+
+### Per-topic word count (v1 -> v2)
+
+| Rank | Feature | v1 Total | v2 Total | Change |
+|---:|---|--:|--:|---|
+| 10 | Host-presence detection (relapse early-warning) | ~35 | **~880** | **+845.** Now has its own Methods subsection (~180), Results section (~230), Discussion section (~180), Supp S7 (~180), plus abstract/intro framing. Was the single worst-covered headline; now one of the best. |
+| 10 | Beta-binomial overdispersion as the LoD limiter | ~860 | **~1010** | +150. Still the best-served topic (dedicated Discussion section + Supp S3/S7/S8 + ablation S4). |
+| 9 | SRP434573 real-data validation + contamination floor | ~860 | **~900** | +40. Methods dataset section + Results section (incl. dose-response floor) + Discussion limitation. |
+| 9 | One-sided robust trim (preserves low-fraction host) | ~170 | **~250** | **Corrected.** Methods now describes it as explicitly *one-sided / host-direction-protected* (lines 68-70), fixing the v1 mis-description as a symmetric median/MAD refit. |
+| 8 | In-data contamination estimator (p10 floor) | ~190 | **~350** | +160. Estimator method now in Methods QC bullet + Supp S8 (median per-site minor, p10 error floor, 10% miscall cap), not just as a Results dataset property. |
+| 8 | Two-phase calling (GATK GT + bcftools AD) | ~315 | **~310** | ~flat. Methods section + Discussion workflow para. |
+| 8 | CNV/LoH handling + robust-refit recovery | ~710 | **~490** | -220. Compressed; Methods + Results + Supp S9 retained, Fig 7. |
+| 8 | Profile-likelihood confidence intervals | ~510 | **~310** | -200. Formula moved to Supp S4; body keeps the concept only. |
+| 7 | Three-state QC + anti-gaming GoF + presence-vs-MLE cross-check | ~225 | **~330** | +105. PASS/REVIEW/FAIL, pre/post-trim GoF, and the presence-vs-MLE cross-check are now described as such (Methods QC intro + Results QC section). |
+| 7 | Per-marker direction-specific empirical error null | 0 | **~37** | Still near-absent, but now *acknowledged*: Supp S7 states the symmetric global rate is a placeholder "pending a per-site, per-direction empirical error table," and Discussion lists it as a future priority. |
+| 7 | Logit-space bias correction + both-het estimation | ~595 | **~400** | -195. Compressed per plan; method detail -> Supp S6, body calls the effect "modest by design." |
+| 6 | EP17-A2 analytical LoB/LoD | ~1300 | **~640** | **-660.** No longer the most-covered topic; headline number + analytical-ceiling caveat kept in body, sweep detail pushed to Supp/figure. |
+| 6 | Multi-donor estimation (2 donors + host) | ~640 | **~430** | -210. Methods + Results + Discussion + Supp S5, formula to supp. |
+| 6 | Relatedness QC (AF-free kinship coefficient) | 0 | **~95** | **Now present.** Methods QC bullet describes the somalier-style AF-free coefficient and the asymmetric verdict logic; Results QC section names it. (Still distinct from the ~560-word relatedness-*effect* Results section.) |
+| 5 | Read-level artifact filter (effect-size, panel-aware) | ~15 | **~105** | +90. SCBZ/RPBZ/strand-bias effect-size logic and single-strand auto-disable now in Methods QC + Results QC. |
+| 5 | Self-consistent simulator | ~600 | **~450** | -150. Methods sim framework + Supp S9/S1-S6, trimmed. |
+| 4 | Index-hopping metadata flag (separate from in-data) | ~20 | **~75** | +55. `##allomixRunUnit` header + separation from in-data contamination now in Methods QC bullet and Supp S8. |
+| 4 | Admix-consistency swap / third-genome test | 0 | **~110** | **Now present.** Methods QC bullet + Supp S8 describe the consensus-site consistency test that catches a wrong-patient VCF the MLE cannot see. |
+| 3 | Vynck marker-type informativeness taxonomy | ~260 | **~350** | +90. Methods "Which markers are informative" + Box 1 + Supp S1. |
+| 3 | Reproducible nested validation design | ~160 | **~160** | ~flat. Inside the LoD methods + Supp S9. |
+| 2 | GT/AD consistency guard (panel side) | 0 | **~60** | **Now present.** Methods QC closing sentence describes dropping reference-sample markers whose GT contradicts their AD, applied to references only. |
+
+### New body content not in v1 (worked example)
+
+| Item | v2 words | Note |
+|---|--:|---|
+| **Box 1: reading the donor fraction off the counts, no algebra** | ~350 | The plan's clinician-facing replacement for the math. Two worked markers (fully vs partially informative) teach the two complementary tests, the error floor, marker pooling, and overdispersion by counting. Serves rank-3 (informativeness), rank-10 (two tests), and the error-floor/overdispersion concepts at once. |
+
+### What changed overall
+
+The rewrite did what the plan at the top of this file set out to do, and the v1 "coverage is
+roughly inverted against the ranking" finding is now largely resolved:
+
+1. **The six absent/near-absent features all gained body coverage.** Host-presence test
+   (0->880), relatedness QC (0->95), swap test (0->110), GT/AD guard (0->60), index-hopping
+   flag (20->75), artifact filter (15->105). Five of these are the "marker-geometry safety
+   suite" that theme #1 calls the conceptual core, and they now sit together in a QC and
+   sample-integrity Methods block plus a Results QC section.
+2. **The over-weighted, least-differentiating topics were compressed.** EP17 LoD (1300->640),
+   CNV/LoH (710->490), profile CIs (510->310), bias correction (595->400), multi-donor
+   (640->430), simulator (600->450). All equations moved to Supplementary Methods.
+3. **The robust-trim mis-description is corrected** to one-sided/host-direction-protected.
+4. **The unifying frame is now stated.** "Three low-fraction signals separated by marker
+   geometry" appears explicitly in both Methods (QC intro) and Discussion (safety-suite
+   section), where v1 had it at ~0 words.
+5. **Honesty guardrails held.** Host-presence is presented as a validated *capability* (down to
+   1% on SRP), not a demonstrated relapse result; EP17 LoD is repeatedly framed as an analytical
+   ceiling, not a head-to-head assay limit; the presence-vs-MLE cross-check stays a soft warning.
+
+Residual gap: the **per-site empirical error null** (rank 7) is still only future-work text
+(~37 words), not an implemented-and-described method in the body. That is consistent with the
+code (the presence test still uses a symmetric global rate), so this is an accurate omission
+rather than a coverage failure.

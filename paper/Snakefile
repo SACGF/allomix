@@ -80,6 +80,13 @@ SUPP_SYNTHETIC_FIGS = [
 ]
 SUPP_SYNTHETIC_FACTS = [f"{FACTS_DIR}/supp_synthetic.csv"]
 
+# Real-data demonstration (SRP434573 public titrated mixtures). The allomix
+# results TSVs are produced out-of-band by scripts/run_srp434573_allomix.py
+# (needs the joint-called VCFs in output/genotypes/SRP434573); this rule only
+# summarises those existing TSVs into facts + a figure for the paper.
+SRP434573_FACTS = [f"{FACTS_DIR}/srp434573.csv"]
+SRP434573_FIGS = [f"{FACTS_DIR}/fig_srp434573.png"]
+
 PAPER_FACTS = [
     f"{FACTS_DIR}/validation_summary.csv",
     f"{FACTS_DIR}/bias_no_bias.csv",
@@ -105,6 +112,7 @@ ALL_FACTS = (
     + LOD_SATURATION_FACTS
     + OVERDISP_FACTS
     + CNV_LOH_FACTS
+    + SRP434573_FACTS
 )
 
 ALL_FIGS = (
@@ -118,6 +126,7 @@ ALL_FIGS = (
     + LOD_SATURATION_FIGS
     + OVERDISP_FIGS
     + CNV_LOH_FIGS
+    + SRP434573_FIGS
 )
 
 
@@ -289,6 +298,20 @@ rule supp_synthetic:
         SUPP_SYNTHETIC_FIGS,
     shell:
         "python paper/scripts/generate_supp_synthetic.py"
+
+
+rule srp434573_facts:
+    # Summarises the already-computed allomix results on the SRP434573 public
+    # mixtures (produced out-of-band by scripts/run_srp434573_allomix.py) into
+    # facts + a figure. No sequencing or joint calling here.
+    input:
+        "output/srp434573_two_person.tsv",
+        "output/srp434573_three_person.tsv",
+    output:
+        SRP434573_FACTS,
+        SRP434573_FIGS,
+    shell:
+        "python paper/scripts/generate_srp434573_facts.py"
 
 
 # --- Paper build (depends on all facts and figures) --------------------------

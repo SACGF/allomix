@@ -15,13 +15,11 @@ supplementary = [
     "paper/supplementary.md",
 ]
 
-[output]
-dir = "output"
+# vibepaper reads all of these from the [paper] table (see build.py load_config).
+# They previously sat in separate [output]/[facts]/[bibliography] sections that
+# vibepaper ignored, so bibliography/csl were dropped and citations rendered raw.
 name = "allomix_paper"
-
-[facts]
-dir = "output/facts"
-
-[bibliography]
-bib = "paper/references.bib"
+facts_dir = "output/facts"
+output_dir = "output"
+bibliography = "paper/references.bib"
 csl = "paper/the-journal-of-molecular-diagnostics.csl"

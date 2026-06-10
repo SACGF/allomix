@@ -58,7 +58,7 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 
 ![Figure S4](output/facts/figS4_ablation.png)
 
-**Figure S4.** Effect of individual noise components on estimation accuracy (500x depth, 10 replicates per condition, 6 conditions). (A) Overall RMSE by noise condition. Under ideal conditions RMSE is {{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification bias alone raises it to {{ supp_synthetic.ablation_rmse_bias_only_pct }}%, which bias correction reduces to {{ supp_synthetic.ablation_rmse_bias_corrected_pct }}%. The full realistic model (all noise sources with bias correction) produces {{ supp_synthetic.ablation_rmse_full_pct }}% RMSE. (B) Mean absolute error by true donor fraction for each condition. Dashed lines indicate conditions with bias correction applied.
+**Figure S4.** Effect of individual noise components on estimation accuracy (500x depth, 10 replicates per condition, 6 conditions). (A) Overall RMSE by noise condition. Under ideal conditions RMSE is {{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification bias alone raises it to {{ supp_synthetic.ablation_rmse_bias_only_pct }}%, and bias correction leaves it essentially unchanged at this depth ({{ supp_synthetic.ablation_rmse_bias_corrected_pct }}%), since the injected biases average near zero and their spread is largely absorbed by the overdispersion term. The full realistic model (all noise sources with bias correction) produces {{ supp_synthetic.ablation_rmse_full_pct }}% RMSE. (B) Mean absolute error by true donor fraction for each condition. Dashed lines indicate conditions with bias correction applied.
 
 ### S5. Confidence Interval Calibration
 

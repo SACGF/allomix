@@ -223,8 +223,9 @@ rule calibration_batch:
 rule lod_validation:
     output:
         LOD_FACTS,
+    threads: 16
     shell:
-        "python paper/scripts/run_lod_validation.py"
+        "python paper/scripts/run_lod_validation.py --n-workers {threads}"
 
 
 rule lod_plot:
@@ -262,8 +263,9 @@ rule cnv_loh_validation:
     #       --depths 100 250 500 1000 2000 --n-markers 25 50 75 100 200 400
     output:
         CNV_LOH_FACTS,
+    threads: 8
     shell:
-        "python paper/scripts/run_cnv_loh_validation.py"
+        "python paper/scripts/run_cnv_loh_validation.py --n-workers {threads}"
 
 
 rule cnv_loh_plot:

@@ -263,9 +263,16 @@ class TestExpectedWeightMulti:
             assert w_multi == pytest.approx(w_single)
 
     def test_bias_applied(self):
+        # Bias is applied multiplicatively in logit space (issue #20), not as a
+        # flat additive shift. In odds space the correction is exact:
+        #   w' = odds(w) / (odds(w) + odds(0.5 + bias))
+        # With w = 0.625 and bias = 0.05: odds(0.625)=5/3, odds(0.55)=11/9, so
+        #   w' = (5/3) / (5/3 + 11/9) = 15/26.
         w_no_bias = expected_weight_multi((0, 0), [(1, 1), (0, 1)], [0.25, 0.25])
+        assert w_no_bias == pytest.approx(0.625)
         w_bias = expected_weight_multi((0, 0), [(1, 1), (0, 1)], [0.25, 0.25], bias=0.05)
-        assert w_bias == pytest.approx(w_no_bias - 0.05)
+        assert w_bias < w_no_bias
+        assert w_bias == pytest.approx(15 / 26)
 
 
 class TestMultiDonorLikelihood:

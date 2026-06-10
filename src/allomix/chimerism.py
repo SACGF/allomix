@@ -11,18 +11,13 @@ assumes all variance comes from random sampling; in practice, systematic
 effects produce extra-binomial variance that causes binomial CIs to
 undercover. The beta-binomial adds a shared concentration parameter rho
 that is jointly estimated from the data, naturally widening CIs when
-overdispersion is present.
-
-Benchmarking on synthetic data with realistic noise (40 markers, 2000x
-depth, bias SD 0.02, depth CV 0.4, 100 replicates x 10 fractions):
-
-    Beta-binomial CI coverage:  88.2%  (vs 79.8% binomial)
-    Point estimate MAE:         0.0029 (identical to binomial)
-    Mean CI width:              1.3%   (vs 1.1% binomial)
-
-The improvement is largest at low donor fractions (f=1%: 96% vs 86%
-coverage; f=2%: 100% vs 84%; f=5%: 88% vs 80%) where accurate CIs
-matter most clinically.
+overdispersion is present, with the largest improvement in CI coverage at
+low donor fractions where accurate CIs matter most clinically. Per-marker
+amplification bias (het-site VAF deviation, SD ~0.02 empirically) is
+corrected multiplicatively in logit space (see ``apply_bias``). The in
+silico CI-coverage and point-estimate accuracy across depths and noise
+conditions are reported in the paper's depth and bias-correction
+validations.
 """
 
 import math
@@ -31,7 +26,7 @@ from math import lgamma
 
 import numpy as np
 from scipy.optimize import brentq, minimize, minimize_scalar
-from scipy.special import gammaln
+from scipy.special import expit, gammaln, logit
 from scipy.stats import chi2, norm
 
 from allomix.constants import (
@@ -191,6 +186,63 @@ ROBUST_TRIGGER_MIN = 3
 # ---------------------------------------------------------------------------
 
 
+# Clamp keeping expected weights off the 0/1 boundary (log-likelihood needs p > 0).
+W_EPS = 1e-6
+
+
+def apply_bias(w: float | np.ndarray, bias: float | np.ndarray) -> float | np.ndarray:
+    """Correct an expected REF weight for per-marker amplification bias.
+
+    ``bias`` is the het-site convention used throughout: ``median(observed het
+    ALT VAF) - 0.5`` (positive = ALT preferentially captured). It is estimated
+    at heterozygous sites, where the expected REF weight is 0.5. Applying it as
+    a flat additive shift (``w - bias``) is only valid near 0.5; at informative
+    markers whose expected VAF is near 0 or 1 (the norm at low chimerism) it
+    overcorrects badly (issue #20). Instead apply it multiplicatively, in logit
+    space, where it is valid at any expected VAF:
+
+        w_corrected = expit(logit(w) - logit(0.5 + bias))
+
+    At a het site (w = 0.5) this reduces to ``0.5 - bias`` (ALT VAF 0.5 + bias),
+    matching the estimate; at an extreme expected VAF it is only a small
+    multiplicative nudge rather than a large additive jump. Works for scalars
+    and numpy arrays. The result is clamped to ``[W_EPS, 1 - W_EPS]``.
+
+    Args:
+        w: Expected reference allele weight(s) before correction.
+        bias: Per-marker bias(es) in het-site VAF units.
+
+    Returns:
+        Bias-corrected reference allele weight(s).
+    """
+    p = np.clip(0.5 + bias, W_EPS, 1.0 - W_EPS)  # observed het ALT-favouring as a probability
+    w_clamped = np.clip(w, W_EPS, 1.0 - W_EPS)
+    return np.clip(expit(logit(w_clamped) - logit(p)), W_EPS, 1.0 - W_EPS)
+
+
+def inject_bias(alt_vaf: float | np.ndarray, bias: float | np.ndarray) -> float | np.ndarray:
+    """Shift a true ALT VAF by a het-site bias, the simulator-side counterpart
+    of ``apply_bias``.
+
+    Used by the simulator to inject per-marker amplification bias the same way
+    the estimator corrects for it, so simulation and estimation stay
+    self-consistent: at the true parameters the injected ALT VAF equals the
+    estimator's expected biased ALT VAF, ``1 - apply_bias(w_true, bias)``.
+    Equivalent to ``expit(logit(alt_vaf) + logit(0.5 + bias))``; at a het site
+    (true VAF 0.5) the observed VAF becomes ``0.5 + bias``. (Note this is not an
+    algebraic inverse of ``apply_bias``: both shift in the same direction, so
+    composing them would double-correct.)
+
+    Args:
+        alt_vaf: True ALT-allele VAF(s) before bias.
+        bias: Per-marker bias(es) in het-site VAF units.
+
+    Returns:
+        Biased ALT VAF(s), clamped to ``[W_EPS, 1 - W_EPS]``.
+    """
+    return 1.0 - apply_bias(1.0 - np.asarray(alt_vaf, dtype=float), bias)
+
+
 def expected_weight(
     host_gt: tuple[int, int],
     donor_gt: tuple[int, int],
@@ -203,11 +255,8 @@ def expected_weight(
 
     where ref_dose = 2 - alt_dose.
 
-    When ``bias`` is non-zero, the weight is adjusted to account for
-    per-marker amplification bias.  A positive bias means the ALT allele
-    is preferentially captured, so the observed REF weight is lower:
-
-        w_corrected = w_true - bias   (clamped to [eps, 1 - eps])
+    When ``bias`` is non-zero, the weight is corrected for per-marker
+    amplification bias in logit space (see ``apply_bias``).
 
     Args:
         host_gt: Host diploid genotype, e.g. (0, 0), (0, 1), (1, 1).
@@ -222,8 +271,7 @@ def expected_weight(
     donor_ref_dose = 2 - (donor_gt[0] + donor_gt[1])
     w = (1.0 - f_donor) * host_ref_dose / 2.0 + f_donor * donor_ref_dose / 2.0
     if bias != 0.0:
-        # Clamp to avoid 0/1 boundary (log-likelihood needs p > 0)
-        w = max(1e-6, min(1.0 - 1e-6, w - bias))
+        w = float(apply_bias(w, bias))
     return w
 
 
@@ -452,10 +500,11 @@ def _total_ll_vec(
     Returns:
         Total log-likelihood.
     """
-    # Expected reference-allele weight, with the conditional bias clamp.
+    # Expected reference-allele weight, with the conditional logit-space bias
+    # correction (see apply_bias) applied only at markers that have an estimate.
     w = (1.0 - f_donor) * arr.host_ref_dose / 2.0 + f_donor * arr.donor_ref_dose / 2.0
     if arr.bias_mask.any():
-        w[arr.bias_mask] = np.clip(w[arr.bias_mask] - arr.bias[arr.bias_mask], 1e-6, 1.0 - 1e-6)
+        w[arr.bias_mask] = apply_bias(w[arr.bias_mask], arr.bias[arr.bias_mask])
 
     # P(observe ALT | w). Default is the 4-state symmetric model with the
     # global ``error_rate``; per-marker asymmetric rates (where supplied) use
@@ -551,7 +600,7 @@ def expected_weight_multi(
         d_ref_dose = 2 - (dgt[0] + dgt[1])
         w += f * d_ref_dose / 2.0
     if bias != 0.0:
-        w = max(1e-6, min(1.0 - 1e-6, w - bias))
+        w = float(apply_bias(w, bias))
     return w
 
 

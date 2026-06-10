@@ -89,11 +89,11 @@ Bias is estimated from a set of training samples (typically genotyping controls 
 
 $$b_i = \text{median}(\text{VAF}_{het,i} - 0.5)$$
 
-During chimerism estimation, the expected reference allele weight at each marker is adjusted:
+The bias is estimated at heterozygous sites, where the expected reference allele weight is 0.5. Applying it as a flat additive shift $w'_i = w_i - b_i$ is only valid near 0.5; at informative markers whose expected weight is near 0 or 1 (the common case at low chimerism) a fixed additive shift overcorrects and degrades the fit. The correction is therefore applied multiplicatively, in logit space, where it remains valid at any expected weight:
 
-$$w'_i = w_i - b_i$$
+$$w'_i = \text{expit}\!\left(\text{logit}(w_i) - \text{logit}(0.5 + b_i)\right)$$
 
-clamped to the interval [$10^{-6}$, $1 - 10^{-6}$] to prevent numerical instability. The corrected weight is then used in the likelihood calculation. Bias correction is optional and requires a pre-computed bias table; when no bias table is provided, correction is not applied.
+clamped to the interval [$10^{-6}$, $1 - 10^{-6}$] to prevent numerical instability. At a heterozygous site ($w_i = 0.5$) this reduces to $w'_i = 0.5 - b_i$, matching the estimate; at an extreme expected weight it is a small proportional shift rather than a large additive jump. The corrected weight is then used in the likelihood calculation. Bias correction is optional and uses a pre-computed per-marker table. A marker is only correctable if its bias was measured where it was heterozygous; the markers that are informative for a given host/donor pair are homozygous in both contributors, so their bias cannot be measured from that pair and must come from a table built across other samples. The table can be estimated from a cohort of reference samples called the same way as the admixture (so that per-marker bias, which is caller-specific, transfers), or from the admixture samples of a patient cohort at markers where the host and every donor are heterozygous (true VAF 0.5 regardless of mixing). When no table is provided, correction is not applied.
 
 ### Quality Control
 

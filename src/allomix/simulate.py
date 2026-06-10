@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
+from allomix.chimerism import inject_bias
 from allomix.constants import (
     DEFAULT_ERROR_RATE,
     HOM_ALT_MIN_VAF,
@@ -637,8 +638,12 @@ def generate_marker_biases(
     the systematic reference/alt allele capture efficiency difference seen
     in real hybridisation capture and amplicon data (Vynck et al.).
 
-    A bias of +0.02 means the observed ALT VAF is shifted +0.02 relative
-    to the true VAF (i.e. ALT allele is preferentially captured).
+    Bias is expressed in het-site VAF units: a bias of +0.02 shifts the
+    observed ALT VAF of a true heterozygote to 0.52 (ALT preferentially
+    captured). It is injected multiplicatively in logit space (see
+    ``allomix.chimerism.inject_bias``), so away from VAF 0.5 the shift is a
+    proportional nudge rather than a flat additive offset, matching how the
+    estimator corrects for it (issue #20).
 
     Args:
         n_markers: Number of markers.
@@ -1097,7 +1102,7 @@ def blend_vcfs(
         else:
             vaf = expected_vaf(host_gt, donor_gt, donor_fraction)
         this_bias = marker_biases[bias_idx]
-        vaf_biased = max(0.0, min(1.0, vaf + this_bias))
+        vaf_biased = float(inject_bias(vaf, this_bias)) if this_bias != 0.0 else vaf
         alt_allele_bias = host_rec.alt if host_rec.alt != "." else donor_rec.alt
         bias_info.append((host_rec.chrom, host_rec.pos, host_rec.ref, alt_allele_bias, this_bias))
         bias_idx += 1
@@ -1460,7 +1465,7 @@ def build_joint_vcf(
                 per_donor = [frac / len(donor_gts)] * len(donor_gts)
                 vaf = expected_vaf_multi(host_gt, donor_gts, per_donor)
 
-            vaf_biased = max(0.0, min(1.0, vaf + bias))
+            vaf_biased = float(inject_bias(vaf, bias)) if bias != 0.0 else vaf
             ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng, error_rate)
             total = ref_count + alt_count
             gt = gt_from_counts(ref_count, alt_count)

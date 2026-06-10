@@ -35,7 +35,10 @@ def _host_presence_tsv_cells(hp: HostPresenceResult | None) -> list[str]:
         # empty since the test was not actually exercised. The artifact count
         # is still informative (markers may have been filtered down to zero).
         return [
-            _NA, _NA, _NA, _NA,
+            _NA,
+            _NA,
+            _NA,
+            _NA,
             str(hp.n_markers),
             hp.error_rate_source,
             str(hp.n_artifact_filtered),
@@ -133,9 +136,7 @@ def _relatedness_json(relatedness: list[RelatednessResult] | None) -> list[dict]
             {
                 "pair": r.pair,
                 "coefficient": round(r.coefficient, 6) if r.coefficient is not None else None,
-                "ci": [round(r.ci_low, 6), round(r.ci_high, 6)]
-                if r.ci_low is not None
-                else None,
+                "ci": [round(r.ci_low, 6), round(r.ci_high, 6)] if r.ci_low is not None else None,
                 "confidence": r.confidence,
                 "relationship": r.relationship,
                 "n_sites": r.n_sites,
@@ -537,6 +538,11 @@ def to_json(
             "gof_pval": (
                 round(qc.goodness_of_fit_pval, 4) if qc.goodness_of_fit_pval is not None else None
             ),
+            "gof_pval_pretrim": (
+                round(qc.goodness_of_fit_pval_pretrim, 4)
+                if qc.goodness_of_fit_pval_pretrim is not None
+                else None
+            ),
             "qc_pass": qc.pass_,
             "qc_status": qc.status,
             "warnings": list(qc.warnings),
@@ -568,6 +574,11 @@ def to_json(
             "mean_depth": round(qc.mean_depth, 1),
             "gof_pval": (
                 round(qc.goodness_of_fit_pval, 4) if qc.goodness_of_fit_pval is not None else None
+            ),
+            "gof_pval_pretrim": (
+                round(qc.goodness_of_fit_pval_pretrim, 4)
+                if qc.goodness_of_fit_pval_pretrim is not None
+                else None
             ),
             "qc_pass": qc.pass_,
             "qc_status": qc.status,
@@ -614,6 +625,11 @@ def timeline_json(
                     if qc.goodness_of_fit_pval is not None
                     else None
                 ),
+                "gof_pval_pretrim": (
+                    round(qc.goodness_of_fit_pval_pretrim, 4)
+                    if qc.goodness_of_fit_pval_pretrim is not None
+                    else None
+                ),
                 "qc_pass": qc.pass_,
                 "qc_status": qc.status,
                 "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
@@ -649,12 +665,8 @@ def timeline_json(
                     ),
                     "qc_pass": qc.pass_,
                     "qc_status": qc.status,
-                    "host_presence": _host_presence_json(
-                        getattr(result, "host_presence", None)
-                    ),
-                    "contamination": _contamination_json(
-                        getattr(result, "contamination", None)
-                    ),
+                    "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
+                    "contamination": _contamination_json(getattr(result, "contamination", None)),
                     "run_unit": _runmeta_json(getattr(result, "run_unit", None)),
                 }
             )

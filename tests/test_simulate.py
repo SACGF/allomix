@@ -21,6 +21,7 @@ from allomix.simulate import (
     expected_vaf,
     extract_depth,
     extract_gt,
+    generate_paired_related_genotypes,
     generate_related_genotypes,
     gt_from_counts,
     is_informative,
@@ -698,6 +699,38 @@ class TestParseExampleVcf:
         for rec in records:
             depth = extract_depth(rec)
             assert depth is not None and depth > 0, f"No depth at {rec.locus}"
+
+
+class TestPairedRelatedGenotypes:
+    """generate_paired_related_genotypes shares a host across relatedness levels."""
+
+    LEVELS = ["unrelated", "cousin", "half-sibling", "sibling"]
+
+    def test_host_and_palt_shared_across_levels(self):
+        rng = random.Random(7)
+        panels = generate_paired_related_genotypes(200, self.LEVELS, rng)
+        ref = panels["unrelated"]
+        for rel in self.LEVELS[1:]:
+            assert len(panels[rel]) == len(ref)
+            for a, b in zip(ref, panels[rel]):
+                assert a["host_gt"] == b["host_gt"]
+                assert a["p_alt"] == b["p_alt"]
+
+    def test_informative_count_monotone_non_increasing(self):
+        # Averaged over replicates, informative markers should fall as relatedness
+        # rises. The paired design makes this hold per replicate too.
+        n_markers = 300
+        for rep in range(5):
+            rng = random.Random(100 + rep)
+            panels = generate_paired_related_genotypes(n_markers, self.LEVELS, rng)
+            counts = [sum(m["informative"] for m in panels[rel]) for rel in self.LEVELS]
+            for lo, hi in zip(counts, counts[1:]):
+                assert hi <= lo, f"non-monotone informative counts {counts} (rep {rep})"
+
+    def test_unknown_level_raises(self):
+        rng = random.Random(1)
+        with pytest.raises(ValueError):
+            generate_paired_related_genotypes(10, ["unrelated", "bogus"], rng)
 
 
 class TestBlendVcfLocusDropout:

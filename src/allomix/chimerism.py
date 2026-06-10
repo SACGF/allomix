@@ -35,6 +35,7 @@ from allomix.constants import (
     N_OTHER_BASES,
     ROBUST_K_DEFAULT,
 )
+from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
 from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey
@@ -133,6 +134,9 @@ class ChimerismResult:
     # caller did not compute them.
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
+    # In-data contamination estimate (see ``allomix.contamination``), attached by
+    # ``analyse_sample``. None when the caller did not compute it.
+    contamination: ContaminationResult | None = None
 
 
 @dataclass
@@ -156,6 +160,7 @@ class MultiDonorResult:
     # includes donor-vs-donor pairs.
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
+    contamination: ContaminationResult | None = None
 
 
 # Robust-refit tuning. The residual cut itself (ROBUST_K_DEFAULT) lives in

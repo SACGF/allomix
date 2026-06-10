@@ -22,6 +22,7 @@ from allomix.chimerism import (
     estimate_single_donor_bb,
 )
 from allomix.constants import ROBUST_K_DEFAULT
+from allomix.contamination import estimate_contamination
 from allomix.detect import DonorHomMarker, donor_hom_markers, host_presence_test
 from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
 from allomix.qc import QCReport, assess_quality
@@ -164,6 +165,17 @@ def analyse_sample(
     result.relatedness = relatedness
     result.admix_consistency = admix_consistency(
         host, donors, admix, error_rate=error_rate, min_dp=min_dp
+    )
+    # In-data contamination estimate at consensus-homozygous markers. Independent
+    # of the MLE and of any sequencing-run metadata (issue #12); QC reads it off
+    # the result like the other identity checks.
+    result.contamination = estimate_contamination(
+        host,
+        donors,
+        admix,
+        marker_errors=cal.errors,
+        error_rate=error_rate,
+        min_dp=min_dp,
     )
 
     qc = assess_quality(

@@ -809,6 +809,84 @@ def generate_related_genotypes(
     return markers
 
 
+def generate_paired_related_genotypes(
+    n_markers: int,
+    relatedness_levels: list[str],
+    rng: random.Random,
+    maf_range: tuple[float, float] = (0.2, 0.5),
+) -> dict[str, list[dict]]:
+    """Generate host-donor panels for several relatedness levels sharing one host.
+
+    Unlike calling :func:`generate_related_genotypes` once per relatedness level
+    with independent random draws, this generates a single host panel (allele
+    frequencies and host genotypes) and derives each level's donor from that same
+    host using the same per-marker random draws, mapped through the level's IBD
+    probabilities. The only thing that varies across levels is the IBD sharing, so
+    the informative-marker count is monotone non-increasing as relatedness rises
+    (more sharing leaves fewer markers where host and donor differ). This removes
+    the dominant pair-to-pair noise that, with independent draws, can leave a more
+    related level (e.g. first cousin) showing more informative markers than a less
+    related one (e.g. unrelated) by chance.
+
+    Args:
+        n_markers: Number of markers to generate.
+        relatedness_levels: Relatedness levels to derive, each a key of
+            ``RELATEDNESS_IBD``.
+        rng: Random instance for reproducibility.
+        maf_range: (min, max) minor allele frequency range for markers.
+
+    Returns:
+        Dict mapping each relatedness level to its list of marker dicts, with the
+        same keys as :func:`generate_related_genotypes`. The host genotype and
+        ``p_alt`` at marker i are identical across levels.
+    """
+    unknown = [r for r in relatedness_levels if r not in RELATEDNESS_IBD]
+    if unknown:
+        raise ValueError(
+            f"Unknown relatedness {unknown}. Choose from: {list(RELATEDNESS_IBD.keys())}"
+        )
+
+    panels: dict[str, list[dict]] = {rel: [] for rel in relatedness_levels}
+    for i in range(n_markers):
+        p_alt = rng.uniform(*maf_range)
+        host_gt = _draw_genotype(p_alt, rng)
+
+        # Pre-draw the per-marker randomness once, shared across all levels so a
+        # given marker's donor is derived from the same draws under every level.
+        r_ibd = rng.random()
+        share_idx = rng.randint(0, 1)
+        other_allele = 1 if rng.random() < p_alt else 0
+        swap = rng.random() < 0.5
+        indep_gt = _draw_genotype(p_alt, rng)
+
+        chrom = "chr1"
+        pos = 10000 + i * 1000
+        for rel in relatedness_levels:
+            ibd_probs = RELATEDNESS_IBD[rel]
+            if r_ibd < ibd_probs[0]:
+                donor_gt = indep_gt  # IBD=0: independent draw
+            elif r_ibd < ibd_probs[0] + ibd_probs[1]:
+                shared = host_gt[share_idx]  # IBD=1: share one allele
+                donor_gt = (shared, other_allele) if swap else (other_allele, shared)
+            else:
+                donor_gt = host_gt  # IBD=2: identical genotype
+
+            panels[rel].append(
+                {
+                    "chrom": chrom,
+                    "pos": pos,
+                    "ref": "A",
+                    "alt": "G",
+                    "host_gt": host_gt,
+                    "donor_gt": donor_gt,
+                    "p_alt": p_alt,
+                    "informative": alt_dose(host_gt) != alt_dose(donor_gt),
+                }
+            )
+
+    return panels
+
+
 def _mendelian_child(
     parent1: tuple[int, int],
     parent2: tuple[int, int],

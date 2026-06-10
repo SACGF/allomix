@@ -28,7 +28,7 @@ from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
-    generate_related_genotypes,
+    generate_paired_related_genotypes,
     write_genotype_vcf,
     write_vcf,
 )
@@ -37,7 +37,7 @@ FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 0.80, 0.95, 1.0]
 RELATEDNESS_LEVELS = ["unrelated", "cousin", "half-sibling", "sibling"]
 N_MARKERS = 100
 DEPTH = 500
-N_REPLICATES = 10  # multiple random donor-host pairs per relatedness level
+N_REPLICATES = 20  # paired donor-host panels per replicate (shared host across levels)
 FACTS_DIR = Path("output/facts")
 
 
@@ -50,16 +50,19 @@ def fraction_to_name(f: float) -> str:
 def run_one_replicate(
     relatedness: str,
     rep: int,
+    markers: list[dict],
     outdir: Path,
     seed: int,
 ) -> dict:
-    """Generate one donor-host pair and run validation across fractions."""
-    rng = random.Random(seed)
+    """Run validation across fractions for one (pre-generated) donor-host pair.
+
+    ``markers`` is the panel for this (relatedness, rep) from the paired design,
+    so the host genotypes are shared across relatedness levels and only the donor
+    differs by IBD sharing.
+    """
     rep_dir = outdir / relatedness / f"rep_{rep}"
     rep_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate genotypes
-    markers = generate_related_genotypes(N_MARKERS, relatedness, rng)
     n_informative = sum(1 for m in markers if m["informative"])
 
     host_vcf = rep_dir / "host.vcf"
@@ -231,6 +234,20 @@ def main() -> int:
 
     all_results: dict[str, list[dict]] = {}
 
+    # Paired design: one shared host panel per replicate, with each relatedness
+    # level's donor derived from that same host through its IBD probabilities. The
+    # only thing that varies across levels is the IBD sharing, so the
+    # informative-marker count is monotone non-increasing with relatedness instead
+    # of being swamped by independent host draws (which previously let 1st cousin
+    # show more informative markers than unrelated by chance). Same approach as the
+    # nested LoD sweep.
+    paired_panels = [
+        generate_paired_related_genotypes(
+            N_MARKERS, RELATEDNESS_LEVELS, random.Random(20240601 + rep)
+        )
+        for rep in range(N_REPLICATES)
+    ]
+
     for rel in RELATEDNESS_LEVELS:
         print(f"\n{'='*50}", file=sys.stderr)
         print(f"Relatedness: {rel}", file=sys.stderr)
@@ -238,8 +255,9 @@ def main() -> int:
 
         reps = []
         for rep in range(N_REPLICATES):
-            seed = 42 + rep * 1000 + hash(rel) % (2**16)
-            result = run_one_replicate(rel, rep, outdir, seed)
+            seed = 42 + rep * 1000 + RELATEDNESS_LEVELS.index(rel) * 7919
+            markers = paired_panels[rep][rel]
+            result = run_one_replicate(rel, rep, markers, outdir, seed)
             reps.append(result)
             print(
                 f"  Rep {rep}: {result['n_informative']} informative, "

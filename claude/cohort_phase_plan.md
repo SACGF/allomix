@@ -1,14 +1,15 @@
 # Cohort / multi-sample phase plan
 
-Three improvements from the SRP434573 run (`further_improvements.md`, Observations
-3, 4, and the pooled-bias-table part of 7) all block on the same missing piece: a
+Three improvements from the SRP434573 run (Observations 3, 4, and the
+pooled-bias-table part of 7, now captured in the SRP434573 section of
+`allomix_overall_plan.md`) all block on the same missing piece: a
 multi-sample entry point. `allomix monitor` takes one patient (host + donors +
 serial admix samples); `allomix estimate-bias` takes one host/donor pair plus its
 admix VCFs. Neither can aggregate across patients or across a sequencing batch.
 
 Building that entry point once unlocks all three payloads, so they belong in one
 phase rather than three separate efforts. This file is the plan; the evidence for
-each payload lives in `further_improvements.md`.
+each payload lives in the SRP434573 section of `allomix_overall_plan.md`.
 
 ## The shared dependency: a cohort entry point
 

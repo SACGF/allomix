@@ -6,6 +6,7 @@ import random
 import numpy as np
 import pytest
 
+from allomix import chimerism
 from allomix.chimerism import (
     ChimerismResult,
     MarkerResult,
@@ -593,3 +594,58 @@ class TestRobustRefit:
         assert res.n_robust_excluded == 0
         with pytest.raises(ValueError, match="robust must be one of"):
             estimate_multi_donor(markers, n_donors=2, robust="bogus")
+
+    def test_one_sided_keeps_host_direction_marker_in_fit(self) -> None:
+        """A marker deviating toward host presence is kept in the fit by the
+        one-sided trim but dropped from the fit by the symmetric trim.
+
+        host(1,1)/donor(0,0) markers have expected ALT VAF = f_host, so a marker
+        with ALT VAF well above f_host carries excess host signal (the
+        host-present direction). The symmetric MAD cut sees a large residual and
+        trims it from the fit (pulling the host estimate down); the one-sided cut
+        must keep it, so the host estimate is not biased low.
+        """
+        f_host = 0.05
+        rng = random.Random(3)
+        dp = 1000
+        markers = [
+            _make_marker((1, 1), (0, 0), dp - alt, alt, 0, f"chr{i + 1}", 1000)
+            for i, alt in enumerate(
+                sum(1 for _ in range(dp) if rng.random() < f_host) for _ in range(30)
+            )
+        ]
+        # One marker carrying far more host ALT than the fit expects.
+        big_alt = int(dp * (f_host + 0.15))
+        markers.append(_make_marker((1, 1), (0, 0), dp - big_alt, big_alt, 0, "chrZ", 9000))
+
+        saved = chimerism.ROBUST_ONE_SIDED
+        try:
+            chimerism.ROBUST_ONE_SIDED = False
+            sym = estimate_single_donor_bb(markers, robust="force")
+            chimerism.ROBUST_ONE_SIDED = True
+            one = estimate_single_donor_bb(markers, robust="force")
+        finally:
+            chimerism.ROBUST_ONE_SIDED = saved
+
+        # Symmetric trims the host-signal marker from the fit; one-sided keeps it.
+        assert sym.n_robust_excluded >= 1
+        assert one.n_robust_excluded == 0
+        # Keeping it leaves the host estimate higher (less biased low).
+        assert (1.0 - one.donor_fraction) > (1.0 - sym.donor_fraction)
+
+    def test_one_sided_still_trims_anti_host_outlier(self) -> None:
+        """The one-sided trim does not protect outliers pointing away from host.
+
+        The contamination fixture's bad markers (host(0,0)/donor(1,1) at VAF~0.9)
+        deviate away from the host-present direction, so one-sided trims them
+        exactly like the symmetric refit and recovers the true fraction.
+        """
+        markers = _make_contaminated(0.3, 52, 8, seed=1)
+        saved = chimerism.ROBUST_ONE_SIDED
+        try:
+            chimerism.ROBUST_ONE_SIDED = True
+            rob = estimate_single_donor_bb(markers, robust="auto")
+        finally:
+            chimerism.ROBUST_ONE_SIDED = saved
+        assert rob.n_robust_excluded == 8
+        assert rob.donor_fraction == pytest.approx(0.3, abs=0.02)

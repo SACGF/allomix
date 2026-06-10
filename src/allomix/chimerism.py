@@ -177,6 +177,19 @@ ROBUST_MIN_MARKERS = 15
 ROBUST_HARD_MIN = 4
 ROBUST_MODES = ("off", "auto", "force")
 
+# One-sided robust trim. The symmetric median/MAD cut removes a marker whenever
+# its residual is a large outlier in either direction. At low host fraction the
+# host-carrying markers sit off the donor-dominated fit *in the host-present
+# direction* (their observed VAF is pulled toward the host's own allele dose),
+# so a symmetric cut trims the very signal we want and collapses the estimate
+# toward the donor-only solution. With this on, a marker whose residual deviates
+# toward host presence is never trimmed; only residuals pointing away from host
+# presence (genotype miscalls, mapping artifacts, host CNV/LoH in the
+# anti-host direction) stay eligible for the cut. This is the intended trade:
+# at the limit of detection we would rather keep a few artifacts than discard a
+# real low-fraction host signal. See claude/further_improvements.md, Obs 1.
+ROBUST_ONE_SIDED = True
+
 # Residual outlier cut for the non-robust per-marker flag, in standard
 # deviations: a marker whose residual is more than this many SDs from the mean
 # residual is marked excluded (flagged, not refit). Used by both the single-
@@ -575,7 +588,9 @@ def total_log_likelihood_multi_bb(
         e_ar = entry.e_altref if entry is not None else None
         w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
         ll += log_likelihood_marker_bb(
-            m.admix_ad_ref, m.admix_ad_alt, w,
+            m.admix_ad_ref,
+            m.admix_ad_alt,
+            w,
             error_rate=error_rate,
             rho=rho,
             e_refalt=e_ra,
@@ -990,7 +1005,22 @@ def _robust_refit(
         mad = float(np.median(np.abs(resids - med))) * _MAD_TO_SD
         if mad <= 0.0:
             break
-        keep_mask = np.abs(resids - med) <= robust_k * mad
+        deviation = resids - med
+        keep_mask = np.abs(deviation) <= robust_k * mad
+        if ROBUST_ONE_SIDED:
+            # Protect markers whose residual deviates toward host presence.
+            # Increasing the host weight moves a marker's expected ALT VAF toward
+            # the host's own ALT dose (host_alt / 2), so the host-present
+            # direction at the current fit is sign(host_alt / 2 - expected_vaf).
+            # A residual deviating that way is under-fit host signal, not an
+            # artifact, and must not be trimmed. ``current`` and
+            # ``result.per_marker`` are in the same order (the core estimator
+            # builds per-marker results by iterating the marker list).
+            host_alt = np.array([m.host_gt[0] + m.host_gt[1] for m in current], dtype=float)
+            exp_vaf = np.array([mr.expected_vaf for mr in result.per_marker], dtype=float)
+            host_dir = np.sign(host_alt / 2.0 - exp_vaf)
+            points_to_host = (host_dir != 0.0) & (np.sign(deviation) == host_dir)
+            keep_mask = keep_mask | points_to_host
         n_keep = int(keep_mask.sum())
         # Gate: on the first pass, only engage if outliers exceed the trigger,
         # so clean samples (a chance outlier or two) are left untouched.
@@ -1008,8 +1038,7 @@ def _robust_refit(
     surviving = {_marker_key(m) for m in current}
     pm_all = recompute_per_marker_fn(all_markers, result)
     pm_final = [
-        replace(mr, included=_marker_key(m) in surviving)
-        for m, mr in zip(all_markers, pm_all)
+        replace(mr, included=_marker_key(m) in surviving) for m, mr in zip(all_markers, pm_all)
     ]
     return replace(
         result,
@@ -1151,7 +1180,11 @@ def _estimate_multi_donor_core(
             if f1 + f2 > 1.0 + 1e-9:
                 break
             ll = total_log_likelihood_multi_bb(
-                markers, [f1, f2], error_rate, rho_init, cal,
+                markers,
+                [f1, f2],
+                error_rate,
+                rho_init,
+                cal,
             )
             if ll > best_ll:
                 best_ll = ll
@@ -1166,7 +1199,11 @@ def _estimate_multi_donor_core(
         if rho < _RHO_MIN or rho > _RHO_MAX:
             return _INFEASIBLE_PENALTY
         return -total_log_likelihood_multi_bb(
-            markers, [f1, f2], error_rate, rho, cal,
+            markers,
+            [f1, f2],
+            error_rate,
+            rho,
+            cal,
         )
 
     opt = minimize(
@@ -1185,7 +1222,11 @@ def _estimate_multi_donor_core(
 
     # Step 3: Profile likelihood CIs per donor (profiling out other f and rho)
     cis = _profile_likelihood_cis_multi(
-        markers, f_mle, n_donors, error_rate, cal,
+        markers,
+        f_mle,
+        n_donors,
+        error_rate,
+        cal,
     )
 
     # Step 4: Per-marker residuals
@@ -1291,7 +1332,10 @@ def _profile_likelihood_cis_multi(
                 opt_rho = minimize_scalar(
                     lambda log_r: (
                         -total_log_likelihood_multi_bb(
-                            markers, fracs, error_rate, math.exp(log_r),
+                            markers,
+                            fracs,
+                            error_rate,
+                            math.exp(log_r),
                             calibration,
                         )
                     ),
@@ -1310,7 +1354,11 @@ def _profile_likelihood_cis_multi(
                     return _INFEASIBLE_PENALTY
                 fracs = [fi, fj] if _di == 0 else [fj, fi]
                 return -total_log_likelihood_multi_bb(
-                    markers, fracs, error_rate, rho, calibration,
+                    markers,
+                    fracs,
+                    error_rate,
+                    rho,
+                    calibration,
                 )
 
             opt = minimize(

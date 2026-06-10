@@ -561,6 +561,30 @@ class TestPearsonGoF:
         assert pval is not None
         assert pval < 0.999, f"GoF p-value is {pval:.6f} — not calibrated"
 
+    def test_pretrim_includes_excluded_markers(self):
+        """pretrim=True evaluates the fit over excluded markers too, so a trim
+        that removed the misfitting markers cannot hide a poor fit."""
+        good = [
+            _make_marker_result(pos=i * 100, dp=2000, residual=0.001, included=True)
+            for i in range(19)
+        ]
+        # A grossly misfitting marker that the robust refit excluded.
+        bad = [
+            _make_marker_result(
+                pos=1900,
+                dp=2000,
+                expected_vaf=0.10,
+                observed_vaf=0.50,
+                residual=0.40,
+                included=False,
+            )
+        ]
+        post = _compute_gof_pval(good + bad)
+        pre = _compute_gof_pval(good + bad, pretrim=True)
+        assert post is not None and pre is not None
+        assert post > 0.01  # post-trim fit looks clean (bad marker excluded)
+        assert pre < 0.01  # pre-trim fit exposes the misfitting marker
+
 
 class TestGoFEndToEnd:
     """GoF should catch a swapped genotype through the full estimation pipeline."""
@@ -661,6 +685,32 @@ class TestRobustExclusionReview:
         result = _make_chimerism_result(n_informative=30)
         qc = assess_quality(result, _make_genotypes())
         assert not any("Robust refit" in w for w in qc.warnings)
+
+    def test_pretrim_gof_promotes_review(self):
+        """A clean post-trim fit that hides a poor pre-trim fit is flagged.
+
+        The included markers fit well (good post-trim GoF) but an excluded
+        marker fits badly, so the pre-trim GoF fails and the result is REVIEW.
+        """
+        good = [
+            _make_marker_result(pos=i * 100, dp=2000, residual=0.001, included=True)
+            for i in range(19)
+        ]
+        bad = _make_marker_result(
+            pos=1900, dp=2000, expected_vaf=0.10, observed_vaf=0.50,
+            residual=0.40, included=False,
+        )
+        result = _make_chimerism_result(n_informative=20, per_marker=good + [bad])
+        result.n_robust_excluded = 1
+        result.robust_drop_fraction = 0.05  # below the drop-fraction review threshold
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.goodness_of_fit_pval is not None and qc.goodness_of_fit_pval > 0.01
+        assert (
+            qc.goodness_of_fit_pval_pretrim is not None
+            and qc.goodness_of_fit_pval_pretrim < 0.01
+        )
+        assert qc.status == "REVIEW"
+        assert any("pre-trim" in w for w in qc.warnings)
 
 
 def _rel(degree: int, coefficient: float) -> RelatednessResult:

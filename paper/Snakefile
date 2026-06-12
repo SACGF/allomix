@@ -362,6 +362,11 @@ PAPER_SECTIONS = [
 ]
 
 rule paper:
+    # Always renders DOCX + Markdown (needs pandoc). The PDF is optional: it
+    # needs weasyprint's system libraries (pango/cairo/gdk-pixbuf), so when they
+    # are missing we skip the PDF and still produce DOCX + Markdown rather than
+    # failing the whole build. See README "Building the Paper" for how to get
+    # the PDF.
     input:
         ALL_FACTS,
         ALL_FIGS,
@@ -370,7 +375,15 @@ rule paper:
     output:
         touch("output/.paper_built"),
     shell:
-        "vibepaper build --md --pdf"
+        r"""
+        if python -c 'import weasyprint' 2>/dev/null; then
+            vibepaper build --md --pdf
+        else
+            echo '[paper] weasyprint/pango not available: building DOCX + Markdown only (no PDF).' >&2
+            echo '[paper] To produce the PDF, install the dependencies in README "Building the Paper", then run: vibepaper build --md --pdf' >&2
+            vibepaper build --md
+        fi
+        """
 
 
 # --- Housekeeping ------------------------------------------------------------

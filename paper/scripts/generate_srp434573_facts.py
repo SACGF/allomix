@@ -1,6 +1,6 @@
 """Summarise the SRP434573 real-data mixture results for the paper.
 
-Reads the two TSVs produced by ``scripts/run_srp434573_allomix.py`` (which runs
+Reads the two TSVs produced by ``paper/scripts/run_srp434573_allomix.py`` (which runs
 allomix on the joint-called SRP434573 VCFs) and writes:
 
   output/facts/srp434573.csv     headline facts (template variables)
@@ -10,9 +10,9 @@ allomix on the joint-called SRP434573 VCFs) and writes:
 
 This script does no sequencing or joint calling: it only summarises the
 already-computed allomix output. If the input TSVs are missing, regenerate them
-first with ``scripts/run_srp434573_allomix.py`` (which reads
-``output/genotypes/SRP434573`` and needs the dataset to have been run through
-``pipeline/Snakefile`` with ``paper/public_data/SRP434573/config.yaml``).
+first with ``paper/scripts/run_srp434573_allomix.py`` (which reads the committed
+genotype snapshot in ``paper/public_data/SRP434573/genotypes``, or a freshly
+joint-called ``output/genotypes/SRP434573`` if present).
 
 The minor (titrated) contributor is mapped to HOST, so the reported quantity is
 the host fraction and the dilution series (10% down to 0.5%) reads as a
@@ -44,8 +44,8 @@ RELIABLE_MIN_PCT = 2.5
 def _read(path: Path) -> list[dict]:
     if not path.exists():
         sys.exit(
-            f"Missing {path}. Regenerate it with scripts/run_srp434573_allomix.py "
-            "(reads output/genotypes/SRP434573)."
+            f"Missing {path}. Regenerate it with paper/scripts/run_srp434573_allomix.py "
+            "(reads paper/public_data/SRP434573/genotypes)."
         )
     with open(path, newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f, delimiter="\t"))

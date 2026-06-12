@@ -25,13 +25,12 @@ mapping artifacts removed.
 Reads only output/genotypes/SRP434573. Pooled statistics only.
 """
 
-import sys
 from collections import defaultdict
-from pathlib import Path
 
 from cyvcf2 import VCF
+from srp434573_common import resolve_srp434573_genotypes_dir
 
-GEN = Path("output/genotypes/SRP434573")
+GEN = resolve_srp434573_genotypes_dir()
 REF_BAD_FRAC = 0.02      # reference minor frac above this => mis-called / artifact site
 REF_MIN_DP = 50          # need this much reference depth to judge a site
 

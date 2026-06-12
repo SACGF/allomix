@@ -9,7 +9,9 @@ no-carrier (pure sequencing error) median, and (b) rise with the number of
 co-pooled genomes carrying the allele (dose-response). A site artifact would do
 neither.
 
-Reads only output/genotypes/SRP434573. Pooled statistics only.
+Reads the committed genotype snapshot in paper/public_data/SRP434573/genotypes
+(or a freshly joint-called output/genotypes/SRP434573 if present). Pooled
+statistics only.
 """
 
 import csv
@@ -18,8 +20,9 @@ from pathlib import Path
 from statistics import median
 
 from cyvcf2 import VCF
+from srp434573_common import resolve_srp434573_genotypes_dir
 
-GEN = Path("output/genotypes/SRP434573")
+GEN = resolve_srp434573_genotypes_dir()
 HOM_REF, HET, UNKNOWN, HOM_ALT = 0, 1, 2, 3
 MIXES = {
     "mix_F1_into_F3": ("F1", "F3"), "mix_F2_into_F1": ("F2", "F1"),

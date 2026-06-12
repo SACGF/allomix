@@ -80,17 +80,20 @@ SUPP_SYNTHETIC_FIGS = [
 ]
 SUPP_SYNTHETIC_FACTS = [f"{FACTS_DIR}/supp_synthetic.csv"]
 
-# Real-data demonstration (SRP434573 public titrated mixtures). The allomix
-# results TSVs are produced out-of-band by scripts/run_srp434573_allomix.py
-# (needs the joint-called VCFs in output/genotypes/SRP434573); this rule only
-# summarises those existing TSVs into facts + a figure for the paper.
+# Real-data demonstration (SRP434573 public titrated mixtures). A committed
+# snapshot of the joint-called genotype VCFs lives in
+# paper/public_data/SRP434573/genotypes, so the paper builds from a fresh
+# checkout without downloading FASTQs or running joint calling. The srp434573_allomix
+# rule runs allomix on those VCFs to produce the result TSVs; srp434573_facts then
+# summarises them into facts + a figure. A freshly joint-called
+# output/genotypes/SRP434573 (full reproduction) takes precedence if present.
+SRP434573_GENOTYPES = "paper/public_data/SRP434573/genotypes"
 SRP434573_FACTS = [f"{FACTS_DIR}/srp434573.csv"]
 SRP434573_FIGS = [f"{FACTS_DIR}/fig_srp434573.png"]
 
-# Real-data contamination dose-response (SRP434573). Reads the joint-called
-# VCFs (out-of-band, output/genotypes/SRP434573) and summarises the per-#-carriers
-# median minor-allele fraction into facts for the contamination paragraph. No
-# sequencing or joint calling here.
+# Real-data contamination dose-response (SRP434573). Reads the committed genotype
+# VCFs and summarises the per-#-carriers median minor-allele fraction into facts
+# for the contamination paragraph. No sequencing or joint calling here.
 SRP_CONTAM_FACTS = [f"{FACTS_DIR}/srp_contam.csv"]
 
 PAPER_FACTS = [
@@ -307,10 +310,24 @@ rule supp_synthetic:
         "python paper/scripts/generate_supp_synthetic.py"
 
 
+rule srp434573_allomix:
+    # Runs allomix monitor on the committed SRP434573 genotype VCFs to produce the
+    # result TSVs the paper summarises. Reads VCFs only; no sequencing or joint
+    # calling (the FASTQ -> VCF steps are the committed snapshot's provenance).
+    input:
+        f"{SRP434573_GENOTYPES}/mix_F1_into_F3.SRP434573.vcf.gz",
+        f"{SRP434573_GENOTYPES}/mix_F1_into_F3.admix.vcf.gz",
+        "paper/scripts/run_srp434573_allomix.py",
+    output:
+        "output/srp434573_two_person.tsv",
+        "output/srp434573_three_person.tsv",
+    shell:
+        "python paper/scripts/run_srp434573_allomix.py"
+
+
 rule srp434573_facts:
-    # Summarises the already-computed allomix results on the SRP434573 public
-    # mixtures (produced out-of-band by scripts/run_srp434573_allomix.py) into
-    # facts + a figure. No sequencing or joint calling here.
+    # Summarises the allomix results on the SRP434573 public mixtures (from the
+    # srp434573_allomix rule) into facts + a figure. No sequencing or joint calling.
     input:
         "output/srp434573_two_person.tsv",
         "output/srp434573_three_person.tsv",
@@ -322,14 +339,14 @@ rule srp434573_facts:
 
 
 rule srp_contam_facts:
-    # Contamination dose-response on the SRP434573 joint-called VCFs (out-of-band,
-    # output/genotypes/SRP434573). Reads VCFs only; no sequencing or simulation.
+    # Contamination dose-response on the committed SRP434573 genotype VCFs. Reads
+    # VCFs only; no sequencing or simulation.
     input:
-        "output/genotypes/SRP434573/mix_F1_into_F3.admix.vcf.gz",
+        f"{SRP434573_GENOTYPES}/mix_F1_into_F3.admix.vcf.gz",
     output:
         SRP_CONTAM_FACTS,
     shell:
-        "python scripts/probe_contam_median_srp434573.py"
+        "python paper/scripts/probe_contam_median_srp434573.py"
 
 
 # --- Paper build (depends on all facts and figures) --------------------------

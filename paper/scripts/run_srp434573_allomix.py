@@ -21,18 +21,23 @@ two-person accuracy series):
   output/srp434573_two_person.tsv    one row per two-person dilution timepoint
   output/srp434573_three_person.tsv  one row per component of the 3-person mix
 
-Reads only output/genotypes/SRP434573; writes nothing to /tau.
+Genotype VCFs are read from the committed snapshot in
+``paper/public_data/SRP434573/genotypes`` so the paper builds out of the box,
+unless a freshly joint-called ``output/genotypes/SRP434573`` is present (full
+from-scratch reproduction), which takes precedence. Writes nothing to /tau.
 """
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from cyvcf2 import VCF
+from srp434573_common import resolve_srp434573_genotypes_dir
 
-GEN = Path("output/genotypes/SRP434573")
+GEN = resolve_srp434573_genotypes_dir()
 OUT = Path("output")
-ALLOMIX = [".venv/bin/allomix", "monitor"]
+ALLOMIX = [shutil.which("allomix") or ".venv/bin/allomix", "monitor"]
 
 # name -> (host = minor, [donors = major(s)]); two-person first, three-person last
 MIXES = {

@@ -33,11 +33,11 @@ Reads only output/genotypes/SRP434573. Emits pooled statistics, no coordinates.
 
 import sys
 from collections import defaultdict
-from pathlib import Path
 
 from cyvcf2 import VCF
+from srp434573_common import resolve_srp434573_genotypes_dir
 
-GEN = Path("output/genotypes/SRP434573")
+GEN = resolve_srp434573_genotypes_dir()
 
 MIXES = {
     "mix_F1_into_F3": ("F1", "F3"),

@@ -221,7 +221,7 @@ data/                 # De-identified example VCFs
 
 ### Building the Paper
 
-The paper build is orchestrated by Snakemake. All validation and figure scripts run in parallel, then vibepaper renders the final Word document from the facts they produce.
+The paper build is orchestrated by Snakemake. All validation and figure scripts run in parallel, then vibepaper renders the final document from the facts they produce.
 
 ```bash
 uv pip install -e ".[paper]"                   # install paper dependencies (matplotlib, snakemake, vibepaper)
@@ -232,6 +232,24 @@ snakemake -s paper/Snakefile clean             # remove all generated output
 ```
 
 Snakemake tracks file timestamps, so editing a script or its input data reruns only the affected rule and the downstream paper build.
+
+#### Output formats and system dependencies
+
+The build always produces a Word document (`output/allomix_paper_<date>.docx`) and rendered Markdown (`.md`). The DOCX step needs **pandoc** on the `PATH`.
+
+The **PDF is optional** and needs weasyprint's system libraries (pango, cairo, gdk-pixbuf). When those are missing, the build prints a note and produces the DOCX + Markdown without the PDF, rather than failing.
+
+To produce the PDF as well, install the dependencies, then re-render:
+
+```bash
+# Debian/Ubuntu (other distros: install the equivalent pango/cairo/gdk-pixbuf packages)
+sudo apt-get install -y pandoc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libcairo2
+
+vibepaper build --md --pdf                       # render DOCX + Markdown + PDF directly, or
+snakemake -s paper/Snakefile -f paper            # force the paper rule to re-run (now with PDF)
+```
+
+The Snakemake `paper` rule auto-detects weasyprint and adds `--pdf` when it imports cleanly, so once the libraries are installed a normal build includes the PDF. Use `-f paper` (or `--forceall`) to re-render if the build marker already exists from an earlier PDF-less run.
 
 ## License
 

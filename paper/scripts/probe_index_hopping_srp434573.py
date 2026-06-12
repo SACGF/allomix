@@ -32,8 +32,9 @@ from collections import defaultdict
 from pathlib import Path
 
 from cyvcf2 import VCF
+from srp434573_common import resolve_srp434573_genotypes_dir
 
-GEN = Path("output/genotypes/SRP434573")
+GEN = resolve_srp434573_genotypes_dir()
 OUT = Path("output/index_hopping_probe.tsv")
 
 # name -> (host = minor, [donors = major(s)]); same mapping as run_srp434573_allomix.

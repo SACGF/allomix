@@ -76,6 +76,7 @@ host vs donor. If the authors confirm the opposite ordering, flip
 | `sample_csvs/*.csv` | One per-patient CSV per mixture (the pipeline input). |
 | `manifest.tsv` | Ground truth: patient, sample, run, role, known minor %. |
 | `config.yaml` | allomix joint-calling config for this dataset. |
+| `genotypes/*.vcf.gz` | Committed snapshot of the joint-called genotype + admix VCFs (see below). |
 
 11 patient CSVs: 10 two-person mixture pairs + 1 three-person mixture. Each maps
 a contributor pair to one "patient": the two pure individuals as HOST/DONOR
@@ -87,7 +88,26 @@ Regenerate (e.g. to change the BAM directory):
 python make_sample_csvs.py --bam-dir /tau/data/chimerism/SRP434573/bam
 ```
 
-## Prerequisites before running
+## Committed genotype snapshot (default for the paper build)
+
+`genotypes/` holds a 2.6 MB snapshot of the joint-called outputs: per-mixture
+`<mix>.SRP434573.vcf.gz` (host/donor genotypes) and `<mix>.admix.vcf.gz` (raw AD
+at panel sites), with `.tbi` indexes. These are the only files the paper's
+real-data section consumes, so the build reproduces from a fresh checkout with
+just `allomix` and `cyvcf2` (issue #21): no FASTQ download, no alignment, no
+joint calling.
+
+The paper Snakefile reads this directory directly. `paper/scripts/run_srp434573_allomix.py`
+and `paper/scripts/probe_contam_median_srp434573.py` prefer a freshly joint-called
+`output/genotypes/SRP434573` if one is present (the full from-scratch run below),
+and otherwise fall back to this committed snapshot. The bulky joint-calling
+intermediates (gVCFs, per-mixture work dirs) are not committed; they are not
+needed downstream.
+
+The full pipeline below is optional and only needed to regenerate the snapshot
+from raw reads.
+
+## Prerequisites before running (full from-scratch pipeline, optional)
 
 ### 0. (Re)generate the ENA manifest + download list
 
@@ -137,7 +157,7 @@ and the panel self-recovers as high-depth clusters (off-target background sits
 far below). `SRP434573.bed` (committed here, hg38) was built with:
 
 ```bash
-python scripts/build_srp434573_panel_bed.py \
+python paper/scripts/build_srp434573_panel_bed.py \
     --bam-glob 'output/bam/*.bam' \
     --out paper/public_data/SRP434573/SRP434573.bed
 ```
@@ -169,6 +189,15 @@ Outputs land in `output/genotypes/SRP434573/`: per-patient `*.vcf.gz`
 (host/donor genotypes) and `*.admix.vcf.gz` (raw AD at panel sites). Feed those
 to allomix and compare its estimate of the monitored minority (the **host**
 fraction, `known_minor_pct` in `manifest.tsv`) against the known values.
+
+To refresh the committed snapshot from a fresh run, copy the two VCFs (plus
+`.tbi`) for each mixture into `genotypes/`:
+
+```bash
+cp output/genotypes/SRP434573/*.SRP434573.vcf.gz* \
+   output/genotypes/SRP434573/*.admix.vcf.gz* \
+   paper/public_data/SRP434573/genotypes/
+```
 
 The admix VCF also carries the index-hopping metadata (issue #12) in its header:
 one `##allomixRunUnit` line per admix sample with a recoverable sequencing run

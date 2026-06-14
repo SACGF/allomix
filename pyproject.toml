@@ -39,6 +39,8 @@ dev = [
 scripts = [
     "matplotlib>=3.7",
 ]
+# snakemake >=8 requires Python 3.11+, so the paper build needs a 3.11 venv
+# (`uv venv --python 3.11`) even though the core tool supports 3.10. See README.
 paper = [
     "allomix[scripts]",
     "snakemake>=8.0",

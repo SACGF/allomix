@@ -125,6 +125,13 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 The paper build uses Snakemake (`Snakefile` in repo root). All 7 validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
+The paper dependencies (snakemake >=8) require Python 3.11+, even though the core tool runs on 3.10+. Build in a 3.11 venv:
+
+```bash
+uv venv --python '>=3.11' && source .venv/bin/activate
+uv pip install -e ".[dev,scripts,paper]"
+```
+
 ```bash
 snakemake -s paper/Snakefile --cores $(nproc)              # full parallel build
 snakemake -s paper/Snakefile --cores $(nproc) --forceall   # force rerun everything

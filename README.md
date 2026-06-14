@@ -29,7 +29,7 @@ pip install allomix
 For development:
 
 ```bash
-git clone https://github.com/dlawrence/allomix.git
+git clone https://github.com/SACGF/allomix.git
 cd allomix
 uv pip install -e ".[dev]"
 ```

@@ -61,8 +61,16 @@ from allomix.simulate import (  # noqa: E402
     write_vcf,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paper_quick import qval  # noqa: E402
+
 # --- Sweep grid --------------------------------------------------------------
 
+# Quick-build mode (ALLOMIX_PAPER_QUICK=1) only cuts the replicate count (see
+# DEFAULT_N_REPS below), not the sweep grid: the headline snapshot needs every
+# relatedness/kind/burden cell and the full true-fraction grid for the LoD
+# interpolation, so trimming the grid leaves nan/"above range" headline values
+# that break the paper render.
 RELATEDNESS_LEVELS = ["unrelated", "sibling"]
 # Detection direction (which low-fraction component the LoD is for; the recipient
 # always carries the aberration). "donor": detect donor against a CN-LoH host
@@ -105,7 +113,10 @@ LOCUS_DROPOUT_RATE = 0.016
 DEPTH_CV = 0.43
 ESTIMATOR_GRID_STEPS = 201
 
-DEFAULT_N_REPS = 40
+# Quick-build mode (ALLOMIX_PAPER_QUICK=1) cuts the replicate count; the LoD
+# estimates get noisier but the rule finishes in a fraction of the time. The
+# resulting figure is watermarked, not for publication.
+DEFAULT_N_REPS = qval(40, 8)
 
 # CLSI EP17-A2 LoD helpers (mirrors run_lod_validation.py).
 LOGIT_95 = math.log(0.95 / 0.05)

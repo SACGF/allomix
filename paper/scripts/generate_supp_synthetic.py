@@ -41,6 +41,9 @@ from allomix.simulate import (  # noqa: E402
     write_vcf,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+
 # --- Config ---
 HOST_VCF = "tests/test_data/host.vcf"
 DONOR_VCF = "tests/test_data/donor.vcf"
@@ -48,9 +51,12 @@ EMPIRICAL_PER_MARKER = "paper/empirical_results/panel_per_marker.tsv"
 FACTS_DIR = Path("output/facts")
 CALIBRATION_DIR = Path("output/calibration")
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
-N_ABLATION_REPS = 10
-N_CALIBRATION_REPS = 100
-N_CALIBRATION_BATCHES = 10
+# Quick-build mode (ALLOMIX_PAPER_QUICK=1) cuts the replicate counts. The
+# calibration replicate total is driven by the Snakefile (batches x reps), kept
+# in sync there. Figures are watermarked, not for publication.
+N_ABLATION_REPS = qval(10, 3)
+N_CALIBRATION_REPS = qval(100, 6)
+N_CALIBRATION_BATCHES = qval(10, 2)
 
 # Ablation conditions: each defines blend_vcfs kwargs and whether to pass
 # the true bias table to the estimator (simulating bias correction).

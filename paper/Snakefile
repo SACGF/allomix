@@ -13,6 +13,19 @@ workdir: os.path.dirname(workflow.basedir)
 
 FACTS_DIR = "output/facts"
 
+# Quick build: `snakemake -s paper/Snakefile --config quick=1` (or set
+# ALLOMIX_PAPER_QUICK=1) shrinks the heavy validation rules (fewer pairs,
+# replicates, depths, panel sizes) so the build finishes in a fraction of the
+# time. The figures are then low-iteration and get a "QUICK BUILD" watermark
+# (see paper/scripts/paper_quick.py); do not use them for publication.
+QUICK = str(config.get("quick", "")).strip().lower() in {"1", "true", "yes", "on"}
+if QUICK:
+    os.environ["ALLOMIX_PAPER_QUICK"] = "1"
+
+# Calibration replicates are spread over batch jobs; quick mode runs far fewer.
+N_CAL_BATCHES = 2 if QUICK else 10
+CAL_REPS_PER_BATCH = 3 if QUICK else 10
+
 
 # --- Outputs produced by each script ----------------------------------------
 
@@ -41,7 +54,7 @@ BIAS_FIGS = ["output/bias_comparison/bias_correction_comparison.png"]
 TIMELINE_FACTS = [f"{FACTS_DIR}/timeline.csv"]
 TIMELINE_FIGS = [f"{FACTS_DIR}/fig_timeline.png"]
 
-CALIBRATION_BATCHES = expand("output/calibration/batch_{i}.csv", i=range(10))
+CALIBRATION_BATCHES = expand("output/calibration/batch_{i}.csv", i=range(N_CAL_BATCHES))
 
 LOD_FACTS = [
     f"{FACTS_DIR}/lod_grid_raw.csv",
@@ -236,7 +249,7 @@ rule calibration_batch:
     wildcard_constraints:
         i="\d+",
     shell:
-        "python paper/scripts/generate_supp_synthetic.py --calibration-batch {wildcards.i} 10"
+        f"python paper/scripts/generate_supp_synthetic.py --calibration-batch {{wildcards.i}} {CAL_REPS_PER_BATCH}"
 
 
 rule lod_validation:

@@ -23,6 +23,7 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
+from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
 
 from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
@@ -37,7 +38,7 @@ FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 0.80, 0.95, 1.0]
 RELATEDNESS_LEVELS = ["unrelated", "cousin", "half-sibling", "sibling"]
 N_MARKERS = 100
 DEPTH = 500
-N_REPLICATES = 20  # paired donor-host panels per replicate (shared host across levels)
+N_REPLICATES = qval(20, 4)  # paired donor-host panels (quick-build mode uses few)
 FACTS_DIR = Path("output/facts")
 
 

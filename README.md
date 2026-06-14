@@ -237,6 +237,14 @@ snakemake -s paper/Snakefile clean             # remove all generated output
 
 Snakemake tracks file timestamps, so editing a script or its input data reruns only the affected rule and the downstream paper build.
 
+#### Quick build (for previewing)
+
+```bash
+snakemake -s paper/Snakefile --cores $(nproc) --config quick=1
+```
+
+Quick mode shrinks the loops in the heavy validation rules (far fewer pairs, replicates, depths, and panel sizes), cutting a full build from roughly 1.5 hours to around 15 minutes on a 4-core machine. The biggest single saving is the LoD sweep (about 80 minutes down to under 2). The estimates are then low-iteration and noisy, so **every figure is stamped with a "QUICK BUILD" watermark** (see `paper/scripts/paper_quick.py`); do not use quick-build figures for publication. Setting the environment variable `ALLOMIX_PAPER_QUICK=1` has the same effect.
+
 #### Output formats and system dependencies
 
 The build produces a Word document (`output/allomix_paper_<date>.docx`) and rendered Markdown (`.md`). pandoc is bundled by vibepaper (via `pypandoc-binary`), so no system pandoc is needed.

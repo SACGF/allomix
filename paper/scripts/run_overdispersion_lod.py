@@ -37,6 +37,9 @@ import numpy as np  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
 
 from allomix.chimerism import detection_limit, estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import InformativeMarker  # noqa: E402
@@ -139,7 +142,8 @@ def main() -> None:
         "--markers", type=int, default=150, help="Informative markers (default 150)"
     )
     parser.add_argument(
-        "--n-reps", type=int, default=60, help="Blank replicates per rho (default 60)"
+        "--n-reps", type=int, default=qval(60, 10),
+        help="Blank replicates per rho (default 60; 10 in quick-build mode)",
     )
     parser.add_argument(
         "--rhos",

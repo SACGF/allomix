@@ -19,6 +19,7 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
 from matplotlib.lines import Line2D  # noqa: E402
 from scipy.stats import chi2  # noqa: E402
 

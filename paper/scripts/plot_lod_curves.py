@@ -21,6 +21,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
 from matplotlib.ticker import FuncFormatter, NullLocator  # noqa: E402
 
 

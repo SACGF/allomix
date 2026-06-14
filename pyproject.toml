@@ -51,7 +51,7 @@ paper = [
 allomix = "allomix.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/dlawrence/allomix"
+Homepage = "https://github.com/SACGF/allomix"
 
 [tool.setuptools.packages.find]
 where = ["src"]

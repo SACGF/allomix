@@ -362,9 +362,11 @@ PAPER_SECTIONS = [
 ]
 
 rule paper:
-    # Renders DOCX + Markdown. The PDF is not built here: it needs weasyprint's
-    # system libraries (pango/cairo/gdk-pixbuf). To produce a PDF, run
-    # `vibepaper build --md --pdf` yourself (see README "Building the Paper").
+    # Renders DOCX + Markdown, plus a PDF when weasyprint's system libraries
+    # (pango/cairo/gdk-pixbuf) are present. --pdf-if-available skips the PDF
+    # without failing the build when they are not (vibepaper >= 0.8.0). pandoc
+    # is bundled by vibepaper, so no system pandoc is needed. See README
+    # "Building the Paper".
     input:
         ALL_FACTS,
         ALL_FIGS,
@@ -373,7 +375,7 @@ rule paper:
     output:
         touch("output/.paper_built"),
     shell:
-        "vibepaper build --md"
+        "vibepaper build --md --pdf-if-available"
 
 
 # --- Housekeeping ------------------------------------------------------------

@@ -44,7 +44,7 @@ scripts = [
 paper = [
     "allomix[scripts]",
     "snakemake>=8.0",
-    "vibepaper",
+    "vibepaper>=0.8.0",  # bundles pandoc (pypandoc-binary) and adds --pdf-if-available
 ]
 
 [project.scripts]

@@ -239,7 +239,7 @@ Snakemake tracks file timestamps, so editing a script or its input data reruns o
 
 #### Output formats and system dependencies
 
-The build produces a Word document (`output/allomix_paper_<date>.docx`) and rendered Markdown (`.md`). The DOCX step needs **pandoc >= 2.11** (for `--citeproc`). The apt pandoc on some distros is too old (Ubuntu 22.04 ships 2.9.2.1); install a newer one with conda-forge (`conda install -c conda-forge "pandoc>=3"`), the official `.deb` from the [pandoc releases](https://github.com/jgm/pandoc/releases), or `pip install pypandoc-binary` (bundles a modern pandoc, no system install).
+The build produces a Word document (`output/allomix_paper_<date>.docx`) and rendered Markdown (`.md`). The DOCX step needs **pandoc >= 2.11** (for `--citeproc`); the optional PDF step also needs `--embed-resources`, which requires **pandoc >= 2.19**, so use **pandoc 3.x** to cover both. The apt pandoc on some distros is too old (Ubuntu 22.04 ships 2.9.2.1); install a newer one with conda-forge (`conda install -c conda-forge "pandoc>=3"`), the official `.deb` from the [pandoc releases](https://github.com/jgm/pandoc/releases), or `pip install pypandoc-binary` (bundles a modern pandoc, no system install).
 
 The Snakemake build does **not** produce a PDF. The PDF render needs weasyprint's system libraries (pango, cairo, gdk-pixbuf). To make one, install those and run vibepaper yourself:
 

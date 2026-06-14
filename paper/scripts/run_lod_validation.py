@@ -65,19 +65,29 @@ from allomix.simulate import (  # noqa: E402
     write_vcf,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paper_quick import qval  # noqa: E402
+
 # --- Sweep grid (plan section "Sweep design") -------------------------------
+# Quick-build mode (ALLOMIX_PAPER_QUICK=1) shrinks every loop: a few pairs, a
+# few sequencing replicates, one-ish depth, and a coarse panel/fraction grid.
+# That turns the slowest rule from ~tens of minutes into ~a minute, at the cost
+# of precision (the resulting figures are watermarked, not for publication).
 
 RELATEDNESS_LEVELS = ["unrelated", "sibling"]
-DEPTHS = [100, 250, 500, 1000, 2000]
-N_MARKERS_GRID = [25, 50, 75, 100, 200, 400]
-TRUE_FRACTIONS = [0.0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05]
+DEPTHS = qval([100, 250, 500, 1000, 2000], [100, 1000])
+N_MARKERS_GRID = qval([25, 50, 75, 100, 200, 400], [50, 100, 200])
+TRUE_FRACTIONS = qval(
+    [0.0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05],
+    [0.0, 0.005, 0.01, 0.02, 0.05],
+)
 # Number of donor/host pairs per relatedness. Siblings need many pairs to
 # characterise the IBD-driven spread; unrelated pairs barely vary, so a handful
 # is enough and the budget is better spent on siblings.
-DEFAULT_N_PAIRS = {"unrelated": 10, "sibling": 40}
+DEFAULT_N_PAIRS = qval({"unrelated": 10, "sibling": 40}, {"unrelated": 2, "sibling": 3})
 # Sequencing replicates per pair: enough blanks for a stable parametric LoB and
 # enough resolution on the 95% detection point (Wald SE ~3% at this count).
-DEFAULT_N_SEQ_REPS = 30
+DEFAULT_N_SEQ_REPS = qval(30, 5)
 # Across-pair band reported around the median LoD curve.
 BAND_LO_Q = 0.10
 BAND_HI_Q = 0.90

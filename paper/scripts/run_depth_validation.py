@@ -39,9 +39,12 @@ from allomix.simulate import (  # noqa: E402
     parse_text_vcf as sim_parse_vcf,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
 DEFAULT_DEPTHS = [50, 100, 200, 500, 1000]
-DEFAULT_N_REPLICATES = 5
+DEFAULT_N_REPLICATES = qval(5, 2)
 FACTS_DIR = Path("output/facts")
 
 

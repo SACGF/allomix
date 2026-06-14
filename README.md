@@ -239,21 +239,16 @@ Snakemake tracks file timestamps, so editing a script or its input data reruns o
 
 #### Output formats and system dependencies
 
-The build always produces a Word document (`output/allomix_paper_<date>.docx`) and rendered Markdown (`.md`). The DOCX step needs **pandoc** on the `PATH`.
+The build produces a Word document (`output/allomix_paper_<date>.docx`) and rendered Markdown (`.md`). The DOCX step needs **pandoc >= 2.11** (for `--citeproc`). The apt pandoc on some distros is too old (Ubuntu 22.04 ships 2.9.2.1); install a newer one with conda-forge (`conda install -c conda-forge "pandoc>=3"`), the official `.deb` from the [pandoc releases](https://github.com/jgm/pandoc/releases), or `pip install pypandoc-binary` (bundles a modern pandoc, no system install).
 
-The **PDF is optional** and needs weasyprint's system libraries (pango, cairo, gdk-pixbuf). When those are missing, the build prints a note and produces the DOCX + Markdown without the PDF, rather than failing.
-
-To produce the PDF as well, install the dependencies, then re-render:
+The Snakemake build does **not** produce a PDF. The PDF render needs weasyprint's system libraries (pango, cairo, gdk-pixbuf). To make one, install those and run vibepaper yourself:
 
 ```bash
 # Debian/Ubuntu (other distros: install the equivalent pango/cairo/gdk-pixbuf packages)
-sudo apt-get install -y pandoc libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libcairo2
+sudo apt-get install -y libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libcairo2
 
-vibepaper build --md --pdf                       # render DOCX + Markdown + PDF directly, or
-snakemake -s paper/Snakefile -f paper            # force the paper rule to re-run (now with PDF)
+vibepaper build --md --pdf       # DOCX + Markdown + PDF
 ```
-
-The Snakemake `paper` rule auto-detects weasyprint and adds `--pdf` when it imports cleanly, so once the libraries are installed a normal build includes the PDF. Use `-f paper` (or `--forceall`) to re-render if the build marker already exists from an earlier PDF-less run.
 
 ## License
 

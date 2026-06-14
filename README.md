@@ -223,7 +223,11 @@ data/                 # De-identified example VCFs
 
 The paper build is orchestrated by Snakemake. All validation and figure scripts run in parallel, then vibepaper renders the final document from the facts they produce.
 
+The paper dependencies (snakemake >=8) require **Python 3.11 or newer**, even though the core tool runs on 3.10+. Create a 3.11 virtual environment for the build:
+
 ```bash
+uv venv --python '>=3.11'                       # create a venv on Python 3.11 or newer (.venv)
+source .venv/bin/activate
 uv pip install -e ".[paper]"                   # install paper dependencies (matplotlib, snakemake, vibepaper)
 snakemake -s paper/Snakefile --cores $(nproc)              # run all scripts in parallel, then build paper
 snakemake -s paper/Snakefile --cores $(nproc) --forceall   # force rerun everything from scratch

@@ -117,8 +117,13 @@ SRP434573_ERROR_TABLES = sorted(glob.glob(f"{SRP434573_GENOTYPES}/*.error_table.
 
 # Real-data contamination dose-response (SRP434573). Reads the committed genotype
 # VCFs and summarises the per-#-carriers median minor-allele fraction into facts
-# for the contamination paragraph. No sequencing or joint calling here.
-SRP_CONTAM_FACTS = [f"{FACTS_DIR}/srp_contam.csv"]
+# for the contamination paragraph. No sequencing or joint calling here. The
+# per-site long-format CSV backs the Figure S13 boxplot.
+SRP_CONTAM_FACTS = [
+    f"{FACTS_DIR}/srp_contam.csv",
+    f"{FACTS_DIR}/srp_contam_persite.csv",
+]
+SRP_CONTAM_FIGS = [f"{FACTS_DIR}/figS13_srp_contam.png"]
 
 PAPER_FACTS = [
     f"{FACTS_DIR}/validation_summary.csv",
@@ -162,6 +167,7 @@ ALL_FIGS = (
     + CNV_LOH_FIGS
     + SRP434573_FIGS
     + SRP434573_LOGY_FIGS
+    + SRP_CONTAM_FIGS
 )
 
 
@@ -380,13 +386,26 @@ rule srp434573_logy_plot:
 
 rule srp_contam_facts:
     # Contamination dose-response on the committed SRP434573 genotype VCFs. Reads
-    # VCFs only; no sequencing or simulation.
+    # VCFs only; no sequencing or simulation. Writes the headline medians and the
+    # per-site long-format CSV that backs Figure S13.
     input:
         f"{SRP434573_GENOTYPES}/mix_F1_into_F3.admix.vcf.gz",
     output:
         SRP_CONTAM_FACTS,
     shell:
         "python paper/scripts/probe_contam_median_srp434573.py"
+
+
+rule srp_contam_plot:
+    # Supplementary Figure S13: contamination floor boxplot by co-pooled carrier
+    # count, from the per-site CSV. No simulation.
+    input:
+        f"{FACTS_DIR}/srp_contam_persite.csv",
+        "paper/scripts/plot_srp_contam.py",
+    output:
+        SRP_CONTAM_FIGS,
+    shell:
+        "python paper/scripts/plot_srp_contam.py"
 
 
 # --- Paper build (depends on all facts and figures) --------------------------

@@ -154,12 +154,13 @@ def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
     known = [_f(r["known_pct"]) for r in two]
     mle = [(_f(r["mle_pct"]) or 0.0) for r in two]
     pres = [(_f(r["presence_pct"]) or 0.0) for r in two]
-    review = [r["qc"] == "REVIEW" for r in two]
     floor = 0.04  # log-axis stand-in for "not detected" (0)
     mle_p = [m if m > 0 else floor for m in mle]
     pres_p = [p if p > 0 else floor for p in pres]
 
-    lims = [0.04, 13]
+    # Axis floor sits just below the lowest estimate (~0.26% at the 0.5% dilution)
+    # so the low-end scatter is kept without leaving a large empty lower-left.
+    lims = [0.2, 13]
     axA.plot(lims, lims, color="0.4", ls="--", lw=1.2, zorder=1, label="perfect recovery (y = x)")
     axA.scatter(
         known,
@@ -182,19 +183,6 @@ def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
         marker="s",
         zorder=3,
         label="presence-test",
-    )
-    rx = [k for k, rv in zip(known, review) if rv]
-    rmy = [m for m, rv in zip(mle_p, review) if rv]
-    axA.scatter(
-        rx,
-        rmy,
-        s=170,
-        facecolor="none",
-        edgecolor="red",
-        linewidth=1.2,
-        marker="o",
-        zorder=2,
-        label="QC = REVIEW",
     )
     axA.set_xscale("log")
     axA.set_yscale("log")

@@ -58,11 +58,10 @@ from allomix.simulate import (  # noqa: E402
     generate_marker_biases_realistic,
     generate_related_genotypes,
     write_genotype_vcf,
-    write_vcf,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from paper_quick import qval  # noqa: E402
+from paper_quick import QUICK, qval  # noqa: E402
 
 # --- Sweep grid --------------------------------------------------------------
 
@@ -111,7 +110,11 @@ MAF_RANGE = (0.2, 0.5)
 ERROR_RATE = 0.01
 LOCUS_DROPOUT_RATE = 0.016
 DEPTH_CV = 0.43
-ESTIMATOR_GRID_STEPS = 201
+# Quick-build mode also coarsens the estimator grid and skips the second
+# (robust) refit per cell, since the two estimator fits are ~99% of the per-cell
+# cost. The LoD gets coarser (quick figures are watermarked, not for
+# publication); the full build keeps grid_steps=201 and the robust refit.
+ESTIMATOR_GRID_STEPS = qval(201, 51)
 
 # Quick-build mode (ALLOMIX_PAPER_QUICK=1) cuts the replicate count; the LoD
 # estimates get noisier but the rule finishes in a fraction of the time. The
@@ -204,7 +207,6 @@ def _blend_and_estimate(
     minor_frac: float,
     depth: int,
     blend_seed: int,
-    admix_path: Path,
     n_markers_grid: list[int],
 ) -> dict[int, dict]:
     """Blend one sample at ``depth`` and estimate the minor component per panel.
@@ -235,14 +237,16 @@ def _blend_and_estimate(
         locus_dropout_rate=LOCUS_DROPOUT_RATE,
         depth_cv=DEPTH_CV,
         host_aberrations=aberrations,
+        return_markers=True,
     )
     bias_dict = (
         {(c, p, r, a): b for c, p, r, a, b in blend.marker_biases}
         if blend.marker_biases is not None
         else None
     )
-    write_vcf(blend, admix_path)
-    admix_md_full = parse_vcf(str(admix_path), min_dp=0, min_gq=0)
+    # Use the in-memory MarkerData directly instead of writing the admix VCF to
+    # disk and parsing it back (this cell runs hundreds of times per replicate).
+    admix_md_full = blend.markers
 
     def minor(f: float) -> float:
         return f if mode == "donor" else 1.0 - f
@@ -262,10 +266,16 @@ def _blend_and_estimate(
             genos.informative, error_rate=ERROR_RATE,
             grid_steps=ESTIMATOR_GRID_STEPS, calibration=calibration,
         )
-        robust = estimate_single_donor_bb(
-            genos.informative, error_rate=ERROR_RATE,
-            grid_steps=ESTIMATOR_GRID_STEPS, calibration=calibration, robust="auto",
-        )
+        # Quick-build mode skips the robust refit (the second of two fits that
+        # dominate the per-cell cost) and reuses the standard estimate, so the
+        # robust columns stay numeric. The full build runs the real robust refit.
+        if QUICK:
+            robust = result
+        else:
+            robust = estimate_single_donor_bb(
+                genos.informative, error_rate=ERROR_RATE,
+                grid_steps=ESTIMATOR_GRID_STEPS, calibration=calibration, robust="auto",
+            )
         out[n_markers] = dict(
             est=minor(result.donor_fraction),
             est_robust=minor(robust.donor_fraction),
@@ -307,7 +317,6 @@ def run_pair(
     bias_rng = random.Random(derive_seed("bias", relatedness, rep, base_seed))
     biases = generate_marker_biases_realistic(max_markers, bias_rng)
 
-    admix_path = pair_dir / "admix.vcf"
     rows: list[dict] = []
 
     def emit(kind, burden, clonal, aberrations, true_frac, depth):
@@ -315,7 +324,7 @@ def run_pair(
                                  true_frac, depth)
         per_panel = _blend_and_estimate(
             mode, host_vcf, donor_vcf, host_md, donor_md, biases, aberrations,
-            true_frac, depth, blend_seed, admix_path, n_markers_grid,
+            true_frac, depth, blend_seed, n_markers_grid,
         )
         for n_markers, res in per_panel.items():
             n_aff = 0 if aberrations is None else sum(1 for a in aberrations[:n_markers] if a)

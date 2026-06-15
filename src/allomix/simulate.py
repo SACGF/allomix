@@ -21,6 +21,7 @@ from allomix.constants import (
     HOM_REF_MAX_VAF,
     N_OTHER_BASES,
 )
+from allomix.genotype import MarkerData
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -594,6 +595,10 @@ class BlendResult:
     num_informative: int
     marker_biases: list[tuple[str, int, str, str, float]] | None = None
     # List of (chrom, pos, ref, alt, bias) for each shared marker, or None if no bias
+    markers: list[MarkerData] | None = None
+    # Per-marker MarkerData, populated only when blend_vcfs(return_markers=True).
+    # Identical to parse_vcf(write_vcf(result)) for the SNP panels the simulator
+    # emits, but built in memory to skip the disk write/parse round-trip.
 
 
 def sample_marker_depths(
@@ -1037,6 +1042,7 @@ def blend_vcfs(
     rho: float = float("inf"),
     rho_marker_type: str = "all",
     host_aberrations: list[HostAberration | None] | None = None,
+    return_markers: bool = False,
 ) -> BlendResult:
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
 
@@ -1140,6 +1146,7 @@ def blend_vcfs(
     num_markers = 0
     num_informative = 0
     bias_idx = 0
+    out_markers: list[MarkerData] = []
 
     for host_rec in host_records:
         donor_rec = donor_by_locus.get(host_rec.locus)
@@ -1244,6 +1251,28 @@ def blend_vcfs(
         )
         out_records.append(line)
 
+        # In-memory MarkerData, matching what parse_vcf(write_vcf(...)) yields.
+        # Mirror parse_vcf's skips: drop multiallelic (never emitted here) and
+        # indels; keep alt="." sites (ad_alt reads 0, as the round-trip would).
+        if return_markers and (
+            alt_allele == "." or (len(host_rec.ref) == 1 and len(alt_allele) == 1)
+        ):
+            a1, a2 = (int(x) for x in gt.split("/"))
+            out_markers.append(
+                MarkerData(
+                    chrom=host_rec.chrom,
+                    pos=host_rec.pos,
+                    ref=host_rec.ref,
+                    alt=alt_allele,
+                    gt=(min(a1, a2), max(a1, a2)),
+                    ad_ref=ref_count,
+                    ad_alt=alt_count if alt_allele != "." else 0,
+                    dp=total,
+                    gq=gq,
+                    filter="PASS",
+                )
+            )
+
     return BlendResult(
         header=out_header,
         records=out_records,
@@ -1252,6 +1281,7 @@ def blend_vcfs(
         marker_biases=bias_info
         if (marker_bias_sd > 0 or fixed_biases is not None or realistic_biases)
         else None,
+        markers=out_markers if return_markers else None,
     )
 
 

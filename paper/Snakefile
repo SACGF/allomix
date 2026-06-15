@@ -125,6 +125,25 @@ SRP_CONTAM_FACTS = [
 ]
 SRP_CONTAM_FIGS = [f"{FACTS_DIR}/figS13_srp_contam.png"]
 
+# Real-data LoD curves by sub-sampling SRP434573 (issue #24). Throws away markers
+# and reads from the committed high-depth mixtures until the LoD rises into the
+# measurable window, producing real-data analogs of the simulated Figure 1 for
+# both the MLE magnitude estimate and the presence test. Self-contained: reads
+# the committed genotype VCFs, no sequencing, simulation, or /tau access. Wired
+# into the default `all` target below but deliberately NOT into the `paper` build
+# rule's inputs yet (the rendered paper must not depend on these until the figure
+# is paired with Figure 1; see the plan section 6d).
+SUBSAMPLE_LOD_FACTS = [
+    f"{FACTS_DIR}/subsample_lod_raw.csv",
+    f"{FACTS_DIR}/subsample_lod_per_mixture.csv",
+    f"{FACTS_DIR}/subsample_lod_summary.csv",
+    f"{FACTS_DIR}/subsample_lod_headline.csv",
+]
+SUBSAMPLE_LOD_FIGS = [
+    f"{FACTS_DIR}/fig_subsample_lod_mle.png",
+    f"{FACTS_DIR}/fig_subsample_lod_presence.png",
+]
+
 PAPER_FACTS = [
     f"{FACTS_DIR}/validation_summary.csv",
     f"{FACTS_DIR}/bias_no_bias.csv",
@@ -177,6 +196,10 @@ ALL_FIGS = (
 rule all:
     input:
         "output/.paper_built",
+        # Real-data subsample LoD (issue #24): built by the default target but
+        # not a dependency of the `paper` rule (see SUBSAMPLE_LOD_FACTS above).
+        SUBSAMPLE_LOD_FACTS,
+        SUBSAMPLE_LOD_FIGS,
 
 
 # --- Validation scripts (all independent, run in parallel) -------------------
@@ -407,6 +430,33 @@ rule srp_contam_plot:
         SRP_CONTAM_FIGS,
     shell:
         "python paper/scripts/plot_srp_contam.py"
+
+
+rule subsample_lod:
+    # Real-data LoD sweep on the committed SRP434573 mixtures (issue #24). Reads
+    # the snapshot VCFs only; no sequencing, simulation, or /tau access. Editing
+    # this script body or the grids forces a rerun of this (slow) rule.
+    input:
+        glob.glob(f"{SRP434573_GENOTYPES}/*.SRP434573.vcf.gz"),
+        glob.glob(f"{SRP434573_GENOTYPES}/*.admix.vcf.gz"),
+        "paper/scripts/run_subsample_lod.py",
+    output:
+        SUBSAMPLE_LOD_FACTS,
+    threads: 16
+    shell:
+        "python paper/scripts/run_subsample_lod.py --n-workers {threads}"
+
+
+rule plot_subsample_lod:
+    # Two standalone real-data LoD figures (MLE magnitude, presence test). No
+    # simulated overlay; styled like the simulated Figure 1.
+    input:
+        f"{FACTS_DIR}/subsample_lod_summary.csv",
+        "paper/scripts/plot_subsample_lod.py",
+    output:
+        SUBSAMPLE_LOD_FIGS,
+    shell:
+        "python paper/scripts/plot_subsample_lod.py"
 
 
 # --- Paper build (depends on all facts and figures) --------------------------

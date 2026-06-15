@@ -32,6 +32,7 @@ from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator  # noqa: E402
 
 OUT = Path("output")
+FACTS_DIR = OUT / "facts"  # the logy CI figure is a paper supplementary figure
 YFLOOR = 0.012  # where "not detected" (est 0%) points are drawn on the log axis
 SHOW_QC_REVIEW = False  # circle QC=REVIEW points in red and add a legend entry
 
@@ -268,9 +269,12 @@ def plot_three_person(rows: list[dict], out_path: Path) -> None:
 
 
 def main() -> int:
+    FACTS_DIR.mkdir(parents=True, exist_ok=True)
     two = _read(OUT / "srp434573_two_person.tsv")
     plot_scatter(two, OUT / "srp434573_scatter.png")
-    plot_logy(two, OUT / "srp434573_logy.png")
+    # The log-Y CI dot plot is a paper supplementary figure (S12), so it goes to
+    # output/facts; the scatter and three-person plots are internal/regenerable.
+    plot_logy(two, FACTS_DIR / "figS12_srp434573_logy.png")
     plot_three_person(_read(OUT / "srp434573_three_person.tsv"),
                       OUT / "srp434573_three_person.png")
     return 0

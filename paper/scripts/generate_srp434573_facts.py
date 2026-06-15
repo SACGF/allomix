@@ -82,6 +82,14 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts["n_review"] = str(sum(1 for q in qc if q == "REVIEW"))
     facts["n_pass"] = str(sum(1 for q in qc if q == "PASS"))
 
+    # Informative markers actually used in the MLE after GT-quality and depth
+    # filtering (median and range across the two-person timepoints), distinct
+    # from the panel size (1,062 SNPs) and the reconstructed intervals (1,052).
+    n_used = np.array([_f(r["n_used"]) for r in two if _f(r["n_used"]) is not None])
+    facts["markers_used_median"] = f"{np.median(n_used):.0f}"
+    facts["markers_used_min"] = f"{n_used.min():.0f}"
+    facts["markers_used_max"] = f"{n_used.max():.0f}"
+
     # Accuracy on the reliable range (known >= 2.5%), where the co-pooled
     # contamination floor (~0.2%) is small relative to the true fraction.
     rel = known >= RELIABLE_MIN_PCT

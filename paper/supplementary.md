@@ -171,7 +171,7 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 
 ![Figure S10]({{ facts_dir }}/fig2_depth_boxplots.png)
 
-**Figure S10.** Distribution of absolute estimation error by sequencing depth (N={{ depth_50.n_replicates | dp(0) }} replicates per depth). Boxes show median and interquartile range for interior fractions (excluding 0% and 100% donor). Whiskers extend to 1.5× IQR. This is the per-fraction distribution behind the summary metrics in main-text Table 1.
+**Figure S10.** Distribution of absolute estimation error by sequencing depth (N={{ depth_50.n_replicates | dp(0) }} replicates per depth). Boxes show median and interquartile range for interior fractions (excluding 0% and 100% donor). Whiskers extend to 1.5× IQR. This is the per-fraction distribution behind the summary metrics in main-text Table 2.
 
 ### S11. Depth-Performance Summary
 

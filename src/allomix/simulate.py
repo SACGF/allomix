@@ -9,7 +9,7 @@ used in test environments without compiled libraries.
 
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +21,7 @@ from allomix.constants import (
     HOM_REF_MAX_VAF,
     N_OTHER_BASES,
 )
-from allomix.genotype import MarkerData
+from allomix.genotype import InformativeMarker, MarkerData
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -519,9 +519,7 @@ def sample_allele_counts(
         eps = 0.05
         apply_rho = eps < p < 1.0 - eps
     else:
-        raise ValueError(
-            f"rho_marker_type must be 'all' or 'het_only', got {rho_marker_type!r}"
-        )
+        raise ValueError(f"rho_marker_type must be 'all' or 'het_only', got {rho_marker_type!r}")
 
     # Apply sequencing error using the 4-state (trinucleotide) model,
     # matching chimerism.log_likelihood_marker().  A correct read is
@@ -557,6 +555,58 @@ def sample_allele_counts(
         alt_count = int(np.random.default_rng(seed).binomial(depth, p))
     ref_count = depth - alt_count
     return (ref_count, alt_count)
+
+
+def thin_informative_markers(
+    markers: list[InformativeMarker],
+    rate: float,
+    rng: np.random.Generator,
+) -> list[InformativeMarker]:
+    """Binomially down-sample admix AD by one global keep-rate (samtools -s).
+
+    A single ``rate`` (0 < rate <= 1) is applied to every marker, so the real
+    locus-to-locus depth coefficient of variation is preserved: a deep amplicon
+    lands near ``rate`` times its original depth and a shallow one near the same
+    fraction of its own depth, so deep markers stay deeper and shallow ones drop
+    out first. This is the faithful analog of ``samtools view -s`` / ``seqtk
+    sample`` on the reads, where each read survives independently with
+    probability ``rate``, making the surviving ref/alt counts binomial draws.
+
+    Host/donor genotypes, marker type, and bias annotations are preserved; only
+    the admix counts (``admix_ad_ref``, ``admix_ad_alt``, ``admix_dp``) are
+    resampled. ``rate == 1.0`` is a no-op pass-through (cannot upsample), and the
+    input markers are never mutated (fresh copies are returned).
+
+    Args:
+        markers: Informative markers from ``classify_markers``.
+        rate: Global keep-probability in (0, 1]. ``1.0`` returns copies of the
+            input unchanged.
+        rng: NumPy random generator for the binomial draws (deterministic for a
+            seeded generator).
+
+    Returns:
+        A new list of ``InformativeMarker`` with thinned admix counts.
+
+    Raises:
+        ValueError: If ``rate`` is not in (0, 1].
+    """
+    if not 0.0 < rate <= 1.0:
+        raise ValueError(f"rate must be in (0, 1], got {rate!r}")
+    if rate == 1.0:
+        return list(markers)
+    out: list[InformativeMarker] = []
+    for m in markers:
+        new_ref = int(rng.binomial(m.admix_ad_ref, rate))
+        new_alt = int(rng.binomial(m.admix_ad_alt, rate))
+        out.append(
+            replace(
+                m,
+                admix_ad_ref=new_ref,
+                admix_ad_alt=new_alt,
+                admix_dp=new_ref + new_alt,
+            )
+        )
+    return out
 
 
 def gt_from_counts(ref_count: int, alt_count: int) -> str:
@@ -1020,8 +1070,18 @@ def write_genotype_vcf(
             ad_alt = round(depth * n_alt / 2)
             ad_ref = depth - ad_alt
             sample_field = f"{gt_str}:{ad_ref},{ad_alt}:{depth}:99"
-            row = [m["chrom"], str(m["pos"]), ".", m["ref"], m["alt"], ".", "PASS", ".",
-                   "GT:AD:DP:GQ", sample_field]
+            row = [
+                m["chrom"],
+                str(m["pos"]),
+                ".",
+                m["ref"],
+                m["alt"],
+                ".",
+                "PASS",
+                ".",
+                "GT:AD:DP:GQ",
+                sample_field,
+            ]
             f.write("\t".join(row) + "\n")
 
 

@@ -116,6 +116,18 @@ BGZIP = config.get("bgzip", "bgzip")
 # Defaults to the Python running Snakemake, which is always a valid interpreter.
 PYTHON = config.get("python", sys.executable)
 
+# Optional phase 1b — per-patient empirical error table (host-presence background).
+# A raw bcftools mpileup of the HOST/DONOR BAMs at the panel sites plus one
+# force-called background position per amplicon (the BED-interval midpoints)
+# feeds `allomix estimate-errors`, giving a per-site, both-direction error table.
+# GATK cannot supply this: its GVCF reassembly strips minority ALT reads at
+# hom-ref blocks, the exact ref->alt signal we need (see doc/joint_calling.md).
+# Off would drop the error_table targets entirely. Needs `allomix` on PATH.
+BUILD_ERROR_TABLE = config.get("build_error_table", True)
+ALLOMIX = config.get("allomix", "allomix")
+# One single-base background position per panel interval, derived from INTERVALS.
+MIDPOINTS_BED = os.path.join(OUTPUT_DIR, f"midpoints{_intervals_tag}.bed")
+
 # Optional alignment (FASTQ -> BAM) with bwa mem. Active only when `fastq_dir`
 # is set; otherwise the bam_filename paths in the CSVs are treated as
 # pre-aligned inputs (the default for deployments that already have BAMs).
@@ -251,6 +263,19 @@ def _patient_bams(patient):
     return seen
 
 
+def _ref_bams(patient):
+    """Distinct HOST/DONOR BAM paths for a patient, in stable order.
+
+    The reference-pileup phase (1b) needs the host and donor BAMs only; the
+    admix BAMs carry the mixture and are not used to learn the clean background.
+    """
+    seen: list[str] = []
+    for bam in _ref_samples(patient).values():
+        if bam not in seen:
+            seen.append(bam)
+    return seen
+
+
 # Per-patient intermediates live under <OUTPUT_DIR>/<patient>/ to avoid
 # cross-patient collisions on shared filenames (combined.g.vcf.gz,
 # admix/per_sample/...).
@@ -264,6 +289,14 @@ PANEL_TSV_TPL = os.path.join(OUTPUT_DIR, "{patient}", "admix", "targets.tsv.gz")
 PER_SAMPLE_ADMIX_TPL = os.path.join(
     OUTPUT_DIR, "{patient}", "admix", "per_sample", "{sample}.vcf.gz"
 )
+# Phase 1b: raw reference-sample pileups + the derived per-patient error table.
+REFS_PANEL_TPL = os.path.join(OUTPUT_DIR, "{patient}", "refs", "panel.vcf.gz")
+REFS_BG_TPL = os.path.join(OUTPUT_DIR, "{patient}", "refs", "midpoints.vcf.gz")
+ERROR_TABLE_TPL = os.path.join(OUTPUT_DIR, "{patient}.error_table.tsv")
+
+
+def _error_table(patient):
+    return os.path.join(OUTPUT_DIR, f"{patient}.error_table.tsv")
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +311,10 @@ def _all_targets():
             # The admix VCF carries the run-unit header metadata (index-hopping
             # check) via its merge step, so it needs no separate target.
             out.append(_admix_vcf(p))
+        # Phase 1b error table needs only HOST/DONOR BAMs, so it is built for
+        # every patient (a patient always has at least one ref sample).
+        if BUILD_ERROR_TABLE:
+            out.append(_error_table(p))
     return out
 
 
@@ -585,6 +622,156 @@ rule merge_admix:
             --threads {threads} \
             -Oz -o {output.vcf} - 2>> {log}
         {params.tabix} -f {output.vcf}
+        """
+
+
+# ---------------------------------------------------------------------------
+# Phase 1b (optional): per-patient empirical error table for the host-presence
+# background. Raw mpileup of the HOST/DONOR BAMs (never GATK, which strips the
+# minority ALT reads we are measuring) at the panel sites + amplicon midpoints,
+# then `allomix estimate-errors`. See doc/joint_calling.md.
+# ---------------------------------------------------------------------------
+
+rule midpoint_bed:
+    """Derive one background position per panel interval (the BED midpoint).
+
+    The panel covers ~96 bp per amplicon but emits one polymorphic SNP, leaving
+    the rest as deep, almost-always-invariant sequence. The midpoint is a clean
+    hom-ref position in every individual (any that is actually polymorphic is
+    dropped later by the estimator's VAF guard), so a forced raw pileup there
+    measures the ref->alt error direction that the variant-only joint call
+    cannot. Equivalent to scripts/make_midpoint_bed.py; inlined here to keep the
+    pipeline self-contained.
+    """
+    input:
+        bed=INTERVALS,
+    output:
+        bed=MIDPOINTS_BED,
+    shell:
+        r"""
+        awk 'BEGIN{{OFS="\t"}} !/^#/ && NF>=3 {{ m=int(($2+$3)/2); print $1, m, m+1 }}' \
+            {input.bed} > {output.bed}
+        """
+
+
+rule pileup_refs_panel:
+    """Raw pileup of every HOST/DONOR BAM at the panel sites (one multi-sample VCF).
+
+    Mirrors the admix pileup (``mpileup -a AD,DP`` + ``call -m -A -C alleles -T``)
+    but on the reference BAMs, so the per-site AD carries the real REF/ALT read
+    counts GATK strips. A reference sample that is hom-ref at a panel site gives
+    the ref->alt rate there; one that is hom-alt gives alt->ref.
+    """
+    input:
+        bams=lambda wc: _ref_bams(wc.patient),
+        ref=REF,
+        targets=PANEL_TSV_TPL,
+        targets_tbi=PANEL_TSV_TPL + ".tbi",
+        panel=JOINT_VCF_TPL,
+    output:
+        vcf=REFS_PANEL_TPL,
+        tbi=REFS_PANEL_TPL + ".tbi",
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "pileup_refs_panel", "{patient}.log"),
+    threads: 2
+    params:
+        bcftools=BCFTOOLS,
+        tabix=TABIX,
+        max_depth=MAX_DEPTH,
+        min_mapq=MIN_MAPQ,
+        min_baseq=MIN_BASEQ,
+        read_filters=READ_FILTERS,
+    shell:
+        """
+        {params.bcftools} mpileup \
+            -f {input.ref} \
+            -R {input.panel} \
+            -a FORMAT/AD,FORMAT/DP \
+            -d {params.max_depth} \
+            -q {params.min_mapq} \
+            -Q {params.min_baseq} \
+            --ff {params.read_filters} \
+            --threads {threads} \
+            {input.bams} 2> {log} \
+        | {params.bcftools} call \
+            -m \
+            -A \
+            -C alleles \
+            -T {input.targets} \
+            -Oz -o {output.vcf} 2>> {log}
+        {params.tabix} -f {output.vcf}
+        """
+
+
+rule pileup_refs_bg:
+    """Raw pileup of every HOST/DONOR BAM at the amplicon-midpoint background sites.
+
+    No ``-C alleles``: midpoints have no known panel ALT, so ``call -m -A``
+    discovers whichever stray base appears and keeps it, leaving a 0/0 call with
+    the few error reads in AD. ``estimate-errors`` reads those as the ref->alt
+    direction. Almost every midpoint is hom-ref in every individual; the rare
+    polymorphic one is dropped by ``--max-vaf-homref``.
+    """
+    input:
+        bams=lambda wc: _ref_bams(wc.patient),
+        ref=REF,
+        midpoints=MIDPOINTS_BED,
+    output:
+        vcf=REFS_BG_TPL,
+        tbi=REFS_BG_TPL + ".tbi",
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "pileup_refs_bg", "{patient}.log"),
+    threads: 2
+    params:
+        bcftools=BCFTOOLS,
+        tabix=TABIX,
+        max_depth=MAX_DEPTH,
+        min_mapq=MIN_MAPQ,
+        min_baseq=MIN_BASEQ,
+        read_filters=READ_FILTERS,
+    shell:
+        """
+        {params.bcftools} mpileup \
+            -f {input.ref} \
+            -R {input.midpoints} \
+            -a FORMAT/AD,FORMAT/DP \
+            -d {params.max_depth} \
+            -q {params.min_mapq} \
+            -Q {params.min_baseq} \
+            --ff {params.read_filters} \
+            --threads {threads} \
+            {input.bams} 2> {log} \
+        | {params.bcftools} call \
+            -m \
+            -A \
+            -Oz -o {output.vcf} 2>> {log}
+        {params.tabix} -f {output.vcf}
+        """
+
+
+rule error_table:
+    """Per-patient, per-site, both-direction error table for the host-presence
+    background. Pools the panel pileup (both directions) with the midpoint
+    pileup (ref->alt) across the HOST/DONOR samples.
+    """
+    input:
+        panel=REFS_PANEL_TPL,
+        homref=REFS_BG_TPL,
+    output:
+        tsv=ERROR_TABLE_TPL,
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "error_table", "{patient}.log"),
+    params:
+        allomix=ALLOMIX,
+        samples=lambda wc: list(_ref_samples(wc.patient)),
+    shell:
+        """
+        {params.allomix} estimate-errors \
+            --vcf {input.panel} \
+            --homref-vcf {input.homref} \
+            --samples {params.samples} \
+            -o {output.tsv} \
+            2>&1 | tee {log}
         """
 
 

@@ -85,6 +85,15 @@ def run_mix(name: str, host: str, donors: list[str]) -> list[dict]:
         "--host-sample", host,
         "--format", "tsv",
     ]
+    # Per-patient empirical error table (issue #23). When the committed snapshot
+    # carries one (built TAU-side by the pipeline's phase-1b reference pileup),
+    # pass it so the host-presence background is data-derived per site instead of
+    # the flat --error-rate default, which over-attributes signal to error at the
+    # lowest dilutions. Absent (fresh checkout before the table is generated) the
+    # run falls back to the default, matching the previous behaviour.
+    error_table = GEN / f"{name}.error_table.tsv"
+    if error_table.exists():
+        cmd += ["--error-table", str(error_table)]
     for d in donors:
         cmd += ["--donor-sample", d, "--expected-relatedness", "unrelated"]
     for s in admix_samples(admix):

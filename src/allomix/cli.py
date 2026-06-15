@@ -538,6 +538,9 @@ def cmd_estimate_errors(args: argparse.Namespace) -> int:
     if args.vcf and not args.samples:
         raise SystemExit("--samples is required when using --vcf")
 
+    if args.homref_vcf and not args.samples:
+        raise SystemExit("--homref-vcf requires --samples (the shared sample names)")
+
     marker_lists = []
     if args.vcfs:
         for vcf_path in args.vcfs:
@@ -550,6 +553,17 @@ def cmd_estimate_errors(args: argparse.Namespace) -> int:
             markers = parse_vcf(args.vcf, sample=sample, min_dp=0, min_gq=args.min_gq)
             marker_lists.append(markers)
         n_source = f"{len(args.samples)} samples from {args.vcf}"
+
+    # Hom-ref background VCFs (e.g. raw mpileup at force-called amplicon
+    # midpoints) carry the same samples; their hom-ref calls add the ref->alt
+    # observations the variant-only joint call cannot supply. They go through the
+    # same estimator, so ref->alt is pooled across panel hom-ref sites and these.
+    for homref_path in args.homref_vcf:
+        _validate_sample_names(homref_path, args.samples)
+        for sample in args.samples:
+            markers = parse_vcf(homref_path, sample=sample, min_dp=0, min_gq=args.min_gq)
+            marker_lists.append(markers)
+        n_source += f" + {len(args.samples)} hom-ref samples from {homref_path}"
 
     errors = estimate_error_rates(
         marker_lists,
@@ -678,7 +692,20 @@ def main(argv: list[str] | None = None) -> int:
         "--samples",
         nargs="+",
         metavar="SAMPLE_NAME",
-        help="Sample names to extract from --vcf",
+        help="Sample names to extract from --vcf (and from every --homref-vcf)",
+    )
+    err_parser.add_argument(
+        "--homref-vcf",
+        nargs="+",
+        default=[],
+        metavar="VCF",
+        help="VCF(s) of force-called hom-ref background positions for the SAME "
+             "samples (raw bcftools mpileup, e.g. at amplicon midpoints, NOT "
+             "GATK, which strips the minority ALT reads being measured). The "
+             "stray ALT reads at these hom-ref calls supply the ref->alt error "
+             "background, which a variant-only joint call cannot (it emits no "
+             "all-hom-ref sites). Folded into the same estimate. Requires "
+             "--samples and uses the same sample names as --vcf/--vcfs.",
     )
     err_parser.add_argument(
         "--output",

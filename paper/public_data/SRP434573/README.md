@@ -77,6 +77,8 @@ host vs donor. If the authors confirm the opposite ordering, flip
 | `manifest.tsv` | Ground truth: patient, sample, run, role, known minor %. |
 | `config.yaml` | allomix joint-calling config for this dataset. |
 | `genotypes/*.vcf.gz` | Committed snapshot of the joint-called genotype + admix VCFs (see below). |
+| `genotypes/*.error_table.tsv` | Optional per-patient host-presence error tables (issue #23), present once built TAU-side (see "Error tables" below). |
+| `SRP434573.midpoints.bed` | One background position per amplicon (BED midpoints), the force-called hom-ref sites the error tables learn the ref->alt rate from. |
 
 11 patient CSVs: 10 two-person mixture pairs + 1 three-person mixture. Each maps
 a contributor pair to one "patient": the two pure individuals as HOST/DONOR
@@ -198,6 +200,34 @@ cp output/genotypes/SRP434573/*.SRP434573.vcf.gz* \
    output/genotypes/SRP434573/*.admix.vcf.gz* \
    paper/public_data/SRP434573/genotypes/
 ```
+
+### Error tables (issue #23)
+
+The presence-test fraction reads too low at the lowest dilutions (0.5%, 1%)
+because, with no per-site error table, the detector falls back to the flat
+`--error-rate` default, which is larger than the real signal at those fractions
+(root cause in issue #22). The committed genotype VCFs cannot supply a clean
+ref->alt background: GATK joint calling emitted variant sites only, so there are
+no all-hom-ref sites, and GATK strips the minority ALT reads at hom-ref blocks
+anyway (`doc/joint_calling.md`).
+
+The fix is the pipeline's phase 1b: a raw `bcftools mpileup` of the HOST/DONOR
+BAMs at the panel sites plus the amplicon midpoints (`SRP434573.midpoints.bed`),
+fed to `allomix estimate-errors`. This runs TAU-side (the BAMs are on `/tau`).
+`build_error_table: true` is the default, so the standard pipeline run above
+already produces `output/genotypes/SRP434573/<mix>.error_table.tsv`. Copy them
+into the snapshot:
+
+```bash
+cp output/genotypes/SRP434573/*.error_table.tsv \
+   paper/public_data/SRP434573/genotypes/
+```
+
+Once committed, `run_srp434573_allomix.py` passes each table to `allomix monitor
+--error-table` automatically (it falls back to the default model when absent), so
+the paper figures pick up the data-derived background on the next build. The
+tables hold only aggregated per-site rates and read counts (no patient
+identifiers or genotypes), consistent with the data-access rule.
 
 The admix VCF also carries the index-hopping metadata (issue #12) in its header:
 one `##allomixRunUnit` line per admix sample with a recoverable sequencing run

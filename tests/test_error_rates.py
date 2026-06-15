@@ -12,6 +12,7 @@ from allomix.chimerism import (
     log_likelihood_marker_bb,
     total_log_likelihood_bb,
 )
+from allomix.cli import main
 from allomix.error_rates import (
     DEFAULT_ERROR_FLOOR,
     MarkerError,
@@ -327,3 +328,81 @@ class TestLikelihoodIntegration:
         assert res_default.log_likelihood == pytest.approx(
             res_with_empty.log_likelihood, abs=1e-8,
         )
+
+
+# ---------------------------------------------------------------------------
+# estimate-errors CLI: hom-ref background VCF folding (--homref-vcf)
+# ---------------------------------------------------------------------------
+
+_VCF_HEADER = (
+    "##fileformat=VCFv4.2\n"
+    "##contig=<ID=chr1>\n"
+    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+    '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">\n'
+    '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">\n'
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\tS2\n"
+)
+
+
+def _write_vcf(path: Path, rows: list[str]) -> None:
+    path.write_text(_VCF_HEADER + "".join(r + "\n" for r in rows))
+
+
+class TestEstimateErrorsHomrefVcf:
+    """`allomix estimate-errors --homref-vcf` folds hom-ref background sites in."""
+
+    def _panel_vcf(self, path: Path) -> None:
+        # One both-hom-alt panel site: REF reads there measure alt->ref.
+        # No hom-ref-with-reads site, so ref->alt is unmeasurable from this VCF
+        # alone (mirrors the variant-only joint call).
+        _write_vcf(
+            path,
+            ["chr1\t100\t.\tA\tG\t.\t.\t.\tGT:AD:DP\t1/1:3,1497:1500\t1/1:2,1498:1500"],
+        )
+
+    def _homref_vcf(self, path: Path) -> None:
+        # A forced hom-ref background site (e.g. an amplicon midpoint): the few
+        # ALT reads at a 0/0 call measure ref->alt.
+        _write_vcf(
+            path,
+            ["chr1\t200\t.\tC\tT\t.\t.\t.\tGT:AD:DP\t0/0:1497,3:1500\t0/0:1498,2:1500"],
+        )
+
+    def test_panel_alone_has_no_refalt(self, tmp_path):
+        panel = tmp_path / "panel.vcf"
+        out = tmp_path / "err.tsv"
+        self._panel_vcf(panel)
+        main(
+            ["estimate-errors", "--vcf", str(panel), "--samples", "S1", "S2",
+             "--min-reads", "100", "-o", str(out)]
+        )
+        table = load_error_table(out, error_floor=0.0)
+        # alt->ref recovered at the hom-alt site; no ref->alt anywhere.
+        assert (("chr1", 100, "A", "G")) in table
+        assert table[("chr1", 100, "A", "G")].e_altref is not None
+        assert all(r.e_refalt is None for r in table.values())
+
+    def test_homref_vcf_adds_refalt_direction(self, tmp_path):
+        panel = tmp_path / "panel.vcf"
+        homref = tmp_path / "homref.vcf"
+        out = tmp_path / "err.tsv"
+        self._panel_vcf(panel)
+        self._homref_vcf(homref)
+        main(
+            ["estimate-errors", "--vcf", str(panel), "--homref-vcf", str(homref),
+             "--samples", "S1", "S2", "--min-reads", "100", "-o", str(out)]
+        )
+        table = load_error_table(out, error_floor=0.0)
+        # Background site now supplies the ref->alt rate: 5 ALT / 3000 DP.
+        homref_entry = table[("chr1", 200, "C", "T")]
+        assert homref_entry.e_refalt == pytest.approx(5 / 3000, rel=1e-6)
+        assert homref_entry.e_altref is None
+        # The panel hom-alt site's alt->ref is still present and unchanged.
+        assert table[("chr1", 100, "A", "G")].e_altref is not None
+
+    def test_homref_vcf_requires_samples(self, tmp_path):
+        homref = tmp_path / "homref.vcf"
+        self._homref_vcf(homref)
+        with pytest.raises(SystemExit):
+            main(["estimate-errors", "--vcfs", str(homref), "--homref-vcf", str(homref),
+                  "-o", str(tmp_path / "err.tsv")])

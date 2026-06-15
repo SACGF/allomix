@@ -31,6 +31,16 @@ per-patient CSV (sample_id, bam_filename, sample_type)
   |                                 v
   |                      <patient>.vcf.gz   (panel sites + host/donor GTs)
   |                                 |
+  |   (phase 1b, optional)          |
+  |   bcftools mpileup -a AD,DP on HOST+DONOR BAMs
+  |     at panel sites + amplicon midpoints
+  |     |                           |
+  |     v                           |
+  |   allomix estimate-errors --vcf panel --homref-vcf midpoints
+  |     |                           |
+  |     v                           |
+  |   <patient>.error_table.tsv   (per-site, both-direction background)
+  |                                 |
   +-- ADMIX rows                    |
                 |                   |
                 v                   v
@@ -47,6 +57,15 @@ per-patient CSV (sample_id, bam_filename, sample_type)
 Phase 1 (GATK) is used only for what it is good at: producing high-confidence germline genotypes. `AD` from phase 1 is never read for chimerism work, so the AD-stripping behaviour is irrelevant there.
 
 Phase 2 (bcftools mpileup) handles every admixture timepoint. `bcftools mpileup -a FORMAT/AD,FORMAT/DP` writes raw REF/ALT base counts directly from the pileup, with no local reassembly to filter minority reads. `bcftools call -m -C alleles -T panel.targets.tsv.gz` then constrains genotyping to the phase-1 panel's REF/ALT pair at every panel position, so the output VCF has a `GT` + `AD` row for every panel site in every admix sample regardless of whether the ALT was observed.
+
+Phase 1b (optional, `build_error_table: true`, on by default) builds a per-patient sequencing-error background for the host-presence detector. The detector asks whether the donor-absent allele appears above the per-site error rate, so at low host fraction the answer is dominated by how clean that background is: the flat `--error-rate` default (0.01 -> 0.33% per direction) sits above the real per-site rate (~0.05%) and over-attributes genuine host reads to error, underestimating the fraction at the bottom of a dilution series. Phase 1b measures the background directly.
+
+It cannot use GATK for the same reason phase 2 does not: the GVCF reassembly strips minority ALT reads at hom-ref blocks, which is the exact ref->alt signal an error rate needs. So phase 1b runs `bcftools mpileup -a FORMAT/AD,FORMAT/DP` on the HOST and DONOR BAMs (the pure, uncontaminated references) at two sets of positions:
+
+- the panel sites (same constrained `call -m -A -C alleles -T panel.targets` as phase 2): a reference sample that is hom-ref there gives the ref->alt rate, one that is hom-alt gives alt->ref.
+- one force-called background position per amplicon, the BED-interval midpoint (`call -m -A`, no panel allele): almost always hom-ref in every individual, so the few stray ALT reads there are clean ref->alt error. The variant-only joint call emits no all-hom-ref sites, so without these the ref->alt direction would be undersampled.
+
+`allomix estimate-errors --vcf <panel> --homref-vcf <midpoints> --samples HOST DONOR...` pools both into one per-site, both-direction table (`<patient>.error_table.tsv`). A midpoint that is actually polymorphic in some individual is dropped by the estimator's `--max-vaf-homref` guard, so no external allele-frequency resource is needed. Pass the table to `allomix monitor --error-table`. Phase 1b needs the HOST/DONOR BAMs only, so it runs for every patient regardless of whether admix timepoints exist yet, and it needs `allomix` on `PATH` (set `allomix:` in config to point at it).
 
 The two phases live in one Snakefile and share one DAG. Snakemake skips phase-1 work that already exists when only new admix timepoints are added.
 

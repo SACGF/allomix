@@ -11,12 +11,18 @@ Completed steps are summarised to the decision + rationale; the full implementat
 ---
 
 ## Remaining paper-edit work (from full re-read of the comments)
-- **Contamination-floor figure for SRP434573 (#19).** Visualise the co-pooled floor by
-  dose-response (data in `srp_contam.csv`: 0.004% at no-carrier sites -> 0.10% at 1 carrier ->
-  0.36% at 5 carriers; carrier-site median 0.23%). Proposed: boxplots of per-site minor-allele
-  fraction grouped by number of co-pooled carriers, optionally vs "other genotype calls in the
-  run" (Dave's idea: count het as 1, hom as 2 carriers). New panel on Figure 4 or supplementary.
-  Touches the SRP figure script, possibly a new per-carrier-count fact, Figure 4 caption.
+- ✅ **Contamination-floor figure for SRP434573 (#19). DONE.** Co-pooled floor as a dose-response
+  boxplot, **Supplementary Figure S13**. `probe_contam_median_srp434573.py` now also writes a
+  long-format `output/facts/srp_contam_persite.csv` (per pooled dp>=500 site: `n_carriers`,
+  `n_alleles` het=1/hom=2 dose, `minor_frac`); the six `srp_contam.csv` medians are unchanged.
+  New `plot_srp_contam.py` renders the carrier-count x-axis (0..5) boxplot to
+  `figS13_srp_contam.png` (log y, per-bin median line, n_sites per box). Dave picked carrier-count
+  over allele-dose after reviewing both; the allele-dose view (0..8+) stays behind a default-off
+  `--allele-dose` flag, not in the build. Wired as Snakefile rules `srp_contam_facts` (now emits
+  the per-site CSV too) + new `srp_contam_plot`, added to `ALL_FIGS`, captioned as S13 in
+  `supplementary.md` (after S12), and cross-referenced from the Results contamination paragraph in
+  `results.md`. Lint + `snakemake -n` dry run pass; full `vibepaper build` not yet run, so the S13
+  caption Jinja is rendered-by-inspection only (all `srp_contam.*` keys already used in Results).
 - ✅ **Alternative CI view for Figure 4 (#21). DONE.** `plot_srp434573.py:plot_logy()` (already
   existed) now writes `output/facts/figS12_srp434573_logy.png` (MLE + presence each with 95% CI vs
   known, grouped by mixture). Wired into the Snakefile as rule `srp434573_logy_plot`, added to

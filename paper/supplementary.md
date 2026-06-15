@@ -115,66 +115,66 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 
 ### S1. Amplification Bias Distribution
 
-![Figure S1](output/facts/figS1_bias_distributions.png)
+![Figure S1]({{ facts_dir }}/figS1_bias_distributions.png)
 
 **Figure S1.** Per-marker amplification bias distribution. (A) Histogram of empirical per-marker bias (median het VAF deviation from 0.5) measured across {{ supp_synthetic.n_empirical_markers | dp(0) }} markers, with kernel density estimates from a simple Gaussian model and the heavy-tailed mixture model used in allomix simulations. The mixture model (95% N(0, 0.012), 5% N(0, 0.08)) captures the heavy tails observed in the empirical data, where the 95th percentile of |bias| reaches {{ supp_synthetic.empirical_p95_abs_bias }}. (B) Cumulative distribution of |bias| showing the mixture model tracks the empirical tail while the simple Gaussian underestimates extreme values.
 
 ### S2. Depth Distribution
 
-![Figure S2](output/facts/figS2_depth_distributions.png)
+![Figure S2]({{ facts_dir }}/figS2_depth_distributions.png)
 
 **Figure S2.** Per-marker sequencing depth. (A) Empirical mean depth per marker vs log-normal model draws at the same mean and CV. (B) Within-marker depth CV across samples for each marker, showing the range of per-marker depth variability.
 
 ### S3. Heterozygous VAF Comparison
 
-![Figure S3](output/facts/figS3_het_vaf.png)
+![Figure S3]({{ facts_dir }}/figS3_het_vaf.png)
 
 **Figure S3.** Violin plots of median heterozygous VAF per marker: empirical measurements ({{ supp_synthetic.n_empirical_markers | dp(0) }} markers from 76-SNP rhAmpSeq panel) vs simulated values drawn from the heavy-tailed mixture bias model. Both distributions are centred on 0.5 with comparable spread, confirming that the simulation reproduces the per-marker VAF displacement observed in real sequencing data.
 
 ### S4. Noise Component Ablation
 
-![Figure S4](output/facts/figS4_ablation.png)
+![Figure S4]({{ facts_dir }}/figS4_ablation.png)
 
 **Figure S4.** Effect of individual noise components on estimation accuracy (500x depth, 10 replicates per condition, 7 conditions). (A) Overall RMSE by noise condition. Under ideal conditions RMSE is {{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification bias alone raises it to {{ supp_synthetic.ablation_rmse_bias_only_pct }}%, and bias correction leaves it essentially unchanged at this depth ({{ supp_synthetic.ablation_rmse_bias_corrected_pct }}%), since the injected biases average near zero and their spread is largely absorbed by the overdispersion term. The full realistic model with binomial read sampling (all noise sources, bias corrected) produces {{ supp_synthetic.ablation_rmse_full_pct }}% RMSE; this is the no-overdispersion baseline. Adding per-marker overdispersion to that full model (beta-binomial read sampling at the fitted concentration rho = 100, applied at intermediate-VAF markers where amplification jitter is physical) raises RMSE to {{ supp_synthetic.ablation_rmse_overdispersion_pct }}%, a larger effect than any single bias, depth, or sequencing-error component. This is consistent with overdispersion, rather than depth, being the dominant control on accuracy and on the limit of detection at clinical coverage (Figures S7, S8). (B) Mean absolute error by true donor fraction for each condition. Dashed lines indicate conditions with bias correction applied.
 
 ### S5. Confidence Interval Calibration
 
-![Figure S5](output/facts/figS5_ci_calibration.png)
+![Figure S5]({{ facts_dir }}/figS5_ci_calibration.png)
 
 **Figure S5.** CI calibration under the full noise model (100 replicates per fraction, run as 10 parallel batches of 10 via Snakemake). (A) Observed 95% CI coverage rate by true donor fraction; overall coverage is {{ supp_synthetic.cal_coverage_pct }}%. (B) Mean CI width by true donor fraction, with standard deviation bars.
 
 ### S6. Per-Marker Residuals
 
-![Figure S6](output/facts/figS6_residuals.png)
+![Figure S6]({{ facts_dir }}/figS6_residuals.png)
 
 **Figure S6.** Per-marker residuals (observed minus expected VAF) from a simulated 30% donor mixture at 500x. (A) Residual histogram with normal fit. (B) Residuals plotted against expected VAF, showing no systematic trend across the VAF range.
 
 ### S7. Limit of Detection vs Depth (Saturation)
 
-![Figure S7](output/facts/fig_lod_saturation.png)
+![Figure S7]({{ facts_dir }}/fig_lod_saturation.png)
 
 **Figure S7.** Limit of detection as a function of mean depth for the simulated unrelated panels in the LoD sweep. Points are the in silico LoD per panel size; lines are the LoD model $\mathrm{LoD} = (A/\sqrt{M})\sqrt{(n + \rho)/(n(\rho + 1))}$ fitted across panels ($M$ = informative markers, $n$ = depth, $\rho$ = beta-binomial overdispersion concentration). The simulator draws reads from a binomial (Methods), so the fit returns a near-infinite $\rho$ and the LoD falls close to $1/\sqrt{n}$ with no floor (dashed binomial reference). Under real, finite $\rho$ the per-marker variance instead approaches $p(1-p)/(\rho + 1)$, so the LoD saturates at a floor and depth beyond an effective cap of $\rho + 1$ reads yields diminishing returns. The in silico LoD reported elsewhere is therefore an analytical best case under near-binomial sampling.
 
 ### S8. Effect of Overdispersion on the Limit of Detection
 
-![Figure S8](output/facts/fig_overdispersion_lod.png)
+![Figure S8]({{ facts_dir }}/fig_overdispersion_lod.png)
 
 **Figure S8.** In silico LoD as a function of the beta-binomial overdispersion concentration $\rho$, at {{ overdispersion_lod_headline.depth }}x depth with {{ overdispersion_lod_headline.n_markers }} informative markers (unrelated donor). Reads were simulated beta-binomial across a grid of $\rho$ and the donor fraction estimated with the standard pipeline; the analytic and simulated (tool) LoD agree closely. The LoD rises from {{ overdispersion_lod_headline.lod_binomial_pct }}% under pure-binomial sampling ($\rho \to \infty$) to {{ overdispersion_lod_headline.lod_rho100_pct }}% at $\rho = 100$ (a {{ overdispersion_lod_headline.fold_rho100_vs_binomial }}-fold increase) and {{ overdispersion_lod_headline.lod_rho30_pct }}% at $\rho = 30$. At clinical coverage the overdispersion, not the depth, is the dominant control on the achievable LoD, which is why a simulated $\rho$ calibrated from real per-sample fits is needed before the in silico LoD is taken as a performance figure.
 
 ### S9. Fixed-Bias-Per-Marker Stability
 
-![Figure S9](output/facts/fig_bias_stability.png)
+![Figure S9]({{ facts_dir }}/fig_bias_stability.png)
 
 **Figure S9.** Validation of the fixed-bias-per-marker assumption used by the simulator and the bias-correction model. Each point is one of the {{ supp_synthetic.n_empirical_markers | dp(0) }} panel markers: the x-axis is its absolute median amplification bias (the systematic, marker-specific component), and the y-axis is its within-marker standard deviation of heterozygous VAF across samples (the random, sample-to-sample component). The two are only weakly correlated (r = {{ supp_synthetic.bias_stability_r | dp(2) }}), so a marker's systematic bias does not predict its sample-to-sample scatter. Bias behaves as a stable per-marker offset rather than a quantity that grows with marker noise, which supports modelling it as a fixed offset (Supplementary Methods S6) and absorbing the residual scatter separately through the overdispersion term.
 
 ### S10. Absolute Error by Depth (Boxplots)
 
-![Figure S10](output/facts/fig2_depth_boxplots.png)
+![Figure S10]({{ facts_dir }}/fig2_depth_boxplots.png)
 
 **Figure S10.** Distribution of absolute estimation error by sequencing depth (N={{ depth_50.n_replicates | dp(0) }} replicates per depth). Boxes show median and interquartile range for interior fractions (excluding 0% and 100% donor). Whiskers extend to 1.5× IQR. This is the per-fraction distribution behind the summary metrics in main-text Table 1.
 
 ### S11. Depth-Performance Summary
 
-![Figure S11](output/facts/fig3_depth_summary.png)
+![Figure S11]({{ facts_dir }}/fig3_depth_summary.png)
 
 **Figure S11.** allomix performance as a function of sequencing depth (mean ± SD, N={{ depth_50.n_replicates | dp(0) }} replicates). Left: accuracy metrics (MAE, RMSE, maximum error). Centre: 95% profile-likelihood CI coverage versus the nominal 95% level (dashed). Right: mean CI width.

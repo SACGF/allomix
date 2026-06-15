@@ -17,15 +17,15 @@ Completed steps are summarised to the decision + rationale; the full implementat
   fraction grouped by number of co-pooled carriers, optionally vs "other genotype calls in the
   run" (Dave's idea: count het as 1, hom as 2 carriers). New panel on Figure 4 or supplementary.
   Touches the SRP figure script, possibly a new per-carrier-count fact, Figure 4 caption.
-- **Alternative CI view for Figure 4 (#21).** Same SRP434573 dilution data shown with confidence
-  intervals (estimate +/- 95% CI vs known) alongside / instead of the log-log scatter. A script
-  to generate it likely already exists in `paper/scripts` (writes `output/srp434573_logy.png`).
-  Likely a supplementary figure.
-- **Quantify "markers used" on SRP434573 (#14, partial).** Methods/Results now give the panel
-  (1,062 SNPs) and reconstructed intervals (1,052) but not how many markers were actually *used*
-  per sample after GT-quality/depth filtering (only `presence_markers_median` = 346 donor-hom
-  presence-test markers exists). Add a fact for the informative-marker count used in the estimate
-  (median/range across the two-person timepoints) and cite it in the real-mixtures paragraph.
+- ✅ **Alternative CI view for Figure 4 (#21). DONE.** `plot_srp434573.py:plot_logy()` (already
+  existed) now writes `output/facts/figS12_srp434573_logy.png` (MLE + presence each with 95% CI vs
+  known, grouped by mixture). Wired into the Snakefile as rule `srp434573_logy_plot`, added to
+  `ALL_FIGS`, embedded as **Figure S12** in `supplementary.md`, and cross-referenced from the
+  Figure 4 caption in `results.md`.
+- ✅ **Quantify "markers used" on SRP434573 (#14). DONE.** The per-sample `n_used` count was already
+  written to `srp434573_two_person.tsv`, so no rerun was needed. Added `markers_used_median`/`_min`/
+  `_max` facts in `generate_srp434573_facts.py` (median 534, range 493-595) and cited them in the
+  real-mixtures paragraph of `results.md`.
 - **Real-data prominence in Methods (#13, partial/optional).** Results now leads with LOD and puts
   the real-mixture section third; the Methods "Real-data validation dataset" subsection is still
   last (after Simulation / LoD / CNV). Kept there as a logical build-up. If Dave wants real data

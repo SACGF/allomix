@@ -9,6 +9,8 @@ Usage (from repo root):
     snakemake -s paper/Snakefile clean          # remove all generated output
 """
 
+import glob
+
 workdir: os.path.dirname(workflow.basedir)
 
 FACTS_DIR = "output/facts"
@@ -103,6 +105,12 @@ SUPP_SYNTHETIC_FACTS = [f"{FACTS_DIR}/supp_synthetic.csv"]
 SRP434573_GENOTYPES = "paper/public_data/SRP434573/genotypes"
 SRP434573_FACTS = [f"{FACTS_DIR}/srp434573.csv"]
 SRP434573_FIGS = [f"{FACTS_DIR}/fig_srp434573.png"]
+# Optional per-patient error tables (issue #23), committed alongside the genotype
+# VCFs once built TAU-side by the pipeline's phase-1b reference pileup. Listed as
+# inputs only when present so the allomix rule reruns if they are added/updated;
+# their absence leaves the build unchanged (run_srp434573_allomix.py falls back to
+# the default error model).
+SRP434573_ERROR_TABLES = sorted(glob.glob(f"{SRP434573_GENOTYPES}/*.error_table.tsv"))
 
 # Real-data contamination dose-response (SRP434573). Reads the committed genotype
 # VCFs and summarises the per-#-carriers median minor-allele fraction into facts
@@ -331,6 +339,7 @@ rule srp434573_allomix:
         f"{SRP434573_GENOTYPES}/mix_F1_into_F3.SRP434573.vcf.gz",
         f"{SRP434573_GENOTYPES}/mix_F1_into_F3.admix.vcf.gz",
         "paper/scripts/run_srp434573_allomix.py",
+        *SRP434573_ERROR_TABLES,
     output:
         "output/srp434573_two_person.tsv",
         "output/srp434573_three_person.tsv",

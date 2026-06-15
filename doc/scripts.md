@@ -22,6 +22,7 @@ scripts/<name>.py`. They depend on `allomix` being installed (`pip install -e
 | `generate_timeline_data.py` | Generate a synthetic post-HSCT timeline (serial chimeric VCFs). |
 | `make_synthetic_genotypes.py` | Create synthetic host/donor genotype VCFs (100 biallelic SNPs). |
 | `measure_panel_bias.py` | Measure per-marker bias/characteristics from joint-called genotyping VCFs. |
+| `make_midpoint_bed.py` | Derive a thin background-site BED (one position per amplicon, the interval midpoint) from a capture BED, for the host-presence error-table background. Equivalent to the pipeline's `midpoint_bed` rule; use standalone to inspect or commit the positions. |
 | `qc_bias_samples.py` | Sample-level QC for bias-estimation training samples. |
 | `mix_bams.sh` | Mix two BAMs at a target donor fraction for a synthetic admixture sample. |
 

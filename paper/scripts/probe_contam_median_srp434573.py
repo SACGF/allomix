@@ -64,6 +64,7 @@ def main() -> int:
     nocarrier_fracs = []
     carrier_fracs_by_dose = defaultdict(list)
     carrier_fracs_all = []
+    persite_rows = []  # (n_carriers, n_alleles, minor_frac) per pooled site, for the figure
 
     for name, (host, donor) in MIXES.items():
         others = [s for s in all_indiv if s not in (host, donor)]
@@ -78,14 +79,24 @@ def main() -> int:
                 minor_is_alt = False
             else:
                 continue
-            n_carriers = sum(
-                1 for o in others
-                if key in gt[o] and (
-                    (minor_is_alt and gt[o][key] in (HET, HOM_ALT))
-                    or (not minor_is_alt and gt[o][key] in (HET, HOM_REF))
-                )
-            )
-            marker_info[key] = (minor_is_alt, n_carriers)
+            # n_carriers: each other individual carrying the minor allele counts 1
+            # (het or hom). n_alleles: dose-weighted (het=1, hom=2), the number of
+            # co-pooled minor alleles, which is the more mechanistically honest
+            # x-axis for an index-hopping floor.
+            n_carriers = 0
+            n_alleles = 0
+            for o in others:
+                g = gt[o].get(key)
+                if g is None:
+                    continue
+                hom_minor = HOM_ALT if minor_is_alt else HOM_REF
+                if g == HET:
+                    n_carriers += 1
+                    n_alleles += 1
+                elif g == hom_minor:
+                    n_carriers += 1
+                    n_alleles += 2
+            marker_info[key] = (minor_is_alt, n_carriers, n_alleles)
 
         site_acc = defaultdict(lambda: [0, 0])  # key -> [minor, dp] summed over admix samples
         avcf = VCF(str(GEN / f"{name}.admix.vcf.gz"))
@@ -95,7 +106,7 @@ def main() -> int:
             info = marker_info.get(key)
             if info is None:
                 continue
-            minor_is_alt, _ = info
+            minor_is_alt = info[0]
             ad = v.format("AD")
             if ad is None:
                 continue
@@ -112,7 +123,8 @@ def main() -> int:
             if dp < 500:  # need enough pooled depth for a stable per-site fraction
                 continue
             frac = mr / dp
-            n_carriers = marker_info[key][1]
+            _, n_carriers, n_alleles = marker_info[key]
+            persite_rows.append((n_carriers, n_alleles, frac))
             if n_carriers == 0:
                 nocarrier_fracs.append(frac)
             else:
@@ -156,6 +168,17 @@ def main() -> int:
         w.writerow(facts.keys())
         w.writerow(facts.values())
     print(f"\nWrote {facts_dir / 'srp_contam.csv'}")
+
+    # Long-format per-site export for the contamination-floor figure (#19). One row
+    # per pooled site (dp>=500, same site set as the medians above), so the figure
+    # and the cited medians describe the same data. No genomic coordinates needed.
+    persite_path = facts_dir / "srp_contam_persite.csv"
+    with open(persite_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["n_carriers", "n_alleles", "minor_frac"])
+        for n_carriers, n_alleles, frac in persite_rows:
+            w.writerow([n_carriers, n_alleles, f"{frac:.8f}"])
+    print(f"Wrote {persite_path}  ({len(persite_rows)} rows)")
     return 0
 
 

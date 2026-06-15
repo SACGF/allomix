@@ -199,6 +199,19 @@ def main():
             ),
         })
 
+    # --- Simulation calibration inputs ---
+    # The non-uniform-depth CV, locus-dropout rate, and sequencing-error rate
+    # used as inputs across the validation scripts (run_depth_validation.py,
+    # run_relatedness_validation.py, generate_timeline_figure.py, etc.). These
+    # are rounded from the empirical panel_empirical values (depth CV 0.429,
+    # no-call 1.6%); exposing them as a fact keeps the paper prose in sync with
+    # what the simulator actually ran rather than re-typing the constants.
+    write_fact("sim_calibration", {
+        "depth_cv": 0.43,
+        "locus_dropout_pct": 1.6,
+        "seq_error_pct": 1,
+    })
+
     # --- Tool landscape facts ---
     write_fact("tool_landscape", {
         "n_commercial_tools": 4,
@@ -206,7 +219,10 @@ def main():
         "alloseq_n_markers": 202,
         "alloseq_lod": 0.3,
         "devyser_n_markers": 24,
-        "devyser_lod": 0.05,
+        # EP17 limit of detection from Qama et al. 2026 (J Mol Diagn) full text:
+        # "limit of detection and limit of quantitation were 0.06% and 0.1%"
+        # (LoB 0.04%). The 0.1% in the abstract is the limit of quantitation.
+        "devyser_lod": 0.06,
         "n_open_source_chimerism": 0,
         "n_tools_surveyed": 30,
     })

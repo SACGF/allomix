@@ -178,3 +178,7 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 ![Figure S11]({{ facts_dir }}/fig3_depth_summary.png)
 
 **Figure S11.** allomix performance as a function of sequencing depth (mean ± SD, N={{ depth_50.n_replicates | dp(0) }} replicates). Left: accuracy metrics (MAE, RMSE, maximum error). Centre: 95% profile-likelihood CI coverage versus the nominal 95% level (dashed). Right: mean CI width.
+
+![Figure S12]({{ facts_dir }}/figS12_srp434573_logy.png)
+
+**Figure S12.** Confidence-interval view of the SRP434573 two-person dilution series (main-text Figure 4A shows the same data as a log-log scatter). Each timepoint is plotted on a log host-fraction axis grouped by mixture, with the maximum-likelihood estimate (filled circle, 100 minus donor%) and the residual-host presence-test estimate (open square) each shown with its 95% confidence interval, against the known fraction (grey diamond). At the higher titration levels the intervals are tight and bracket the known value; at the 0.5% level the intervals widen and sit above the known fraction where the co-pooled contamination floor competes with the true host signal (Results, Figure 4 caption).

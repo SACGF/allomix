@@ -105,6 +105,9 @@ SUPP_SYNTHETIC_FACTS = [f"{FACTS_DIR}/supp_synthetic.csv"]
 SRP434573_GENOTYPES = "paper/public_data/SRP434573/genotypes"
 SRP434573_FACTS = [f"{FACTS_DIR}/srp434573.csv"]
 SRP434573_FIGS = [f"{FACTS_DIR}/fig_srp434573.png"]
+# Supplementary log-Y CI view of the same two-person dilution series (Figure S12);
+# reads the result TSVs, no sequencing or simulation.
+SRP434573_LOGY_FIGS = [f"{FACTS_DIR}/figS12_srp434573_logy.png"]
 # Optional per-patient error tables (issue #23), committed alongside the genotype
 # VCFs once built TAU-side by the pipeline's phase-1b reference pileup. Listed as
 # inputs only when present so the allomix rule reruns if they are added/updated;
@@ -158,6 +161,7 @@ ALL_FIGS = (
     + OVERDISP_FIGS
     + CNV_LOH_FIGS
     + SRP434573_FIGS
+    + SRP434573_LOGY_FIGS
 )
 
 
@@ -358,6 +362,20 @@ rule srp434573_facts:
         SRP434573_FIGS,
     shell:
         "python paper/scripts/generate_srp434573_facts.py"
+
+
+rule srp434573_logy_plot:
+    # Supplementary log-Y CI view of the two-person dilution series (Figure S12):
+    # each timepoint's MLE and presence-test host fractions with 95% CIs against
+    # the known fraction. Reads the result TSVs from srp434573_allomix.
+    input:
+        "output/srp434573_two_person.tsv",
+        "output/srp434573_three_person.tsv",
+        "paper/scripts/plot_srp434573.py",
+    output:
+        SRP434573_LOGY_FIGS,
+    shell:
+        "python paper/scripts/plot_srp434573.py"
 
 
 rule srp_contam_facts:

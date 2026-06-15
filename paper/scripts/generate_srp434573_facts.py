@@ -36,6 +36,7 @@ OUT = Path("output")
 FACTS_DIR = OUT / "facts"
 TWO_TSV = OUT / "srp434573_two_person.tsv"
 THREE_TSV = OUT / "srp434573_three_person.tsv"
+PANEL_BED = Path("paper/public_data/SRP434573/SRP434573.bed")
 
 # Fractions at and above which the ~0.2% co-pooled contamination floor is
 # negligible relative to the true host fraction (Methods / Discussion).
@@ -57,6 +58,24 @@ def _f(v):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _count_intervals(bed: Path) -> dict[str, int]:
+    """Count reconstructed panel intervals in the BED, split by chromosome class."""
+    if not bed.exists():
+        sys.exit(f"Missing {bed}; needed for panel interval counts.")
+    total = autosomal = chrx = 0
+    with open(bed, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip() or line.startswith(("#", "track", "browser")):
+                continue
+            chrom = line.split("\t", 1)[0]
+            total += 1
+            if chrom == "chrX":
+                chrx += 1
+            elif chrom.removeprefix("chr").isdigit():
+                autosomal += 1
+    return {"total": total, "autosomal": autosomal, "chrx": chrx}
 
 
 def _fmt_pct(v: float, _pos: int) -> str:
@@ -81,6 +100,26 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts["depth_max"] = f"{depth.max():.0f}"
     facts["n_review"] = str(sum(1 for q in qc if q == "REVIEW"))
     facts["n_pass"] = str(sum(1 for q in qc if q == "PASS"))
+
+    # Panel and platform metadata (paper/public_data/SRP434573/README.md). The
+    # SNP count is the thesis-stated 1,062; the intervals are reconstructed from
+    # the aligned reads (1,052 = 1,025 autosomal + 27 chrX, derived from the BED).
+    facts["panel_n_snps"] = "1062"
+    facts["platform"] = "Illumina HiSeq 3000"
+    facts["raw_depth_min"] = "1000"
+    facts["raw_depth_max"] = "1900"
+    iv = _count_intervals(PANEL_BED)
+    facts["n_intervals"] = str(iv["total"])
+    facts["n_intervals_autosomal"] = str(iv["autosomal"])
+    facts["n_intervals_chrx"] = str(iv["chrx"])
+
+    # Dilution ladder (minor-contributor %), derived from the known fractions
+    # so the listed levels stay in step with the data.
+    ladder = sorted({float(k) for k in known}, reverse=True)
+    facts["n_dilution_levels"] = str(len(ladder))
+    facts["dilution_max_pct"] = f"{ladder[0]:g}"
+    facts["dilution_min_pct"] = f"{ladder[-1]:g}"
+    facts["dilution_ladder"] = ", ".join(f"{v:g}%" for v in ladder)
 
     # Informative markers actually used in the MLE after GT-quality and depth
     # filtering (median and range across the two-person timepoints), distinct

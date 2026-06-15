@@ -8,8 +8,10 @@ import tempfile
 import textwrap
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from allomix.genotype import InformativeMarker
 from allomix.simulate import (
     HostAberration,
     alt_dose,
@@ -27,6 +29,7 @@ from allomix.simulate import (
     is_informative,
     parse_text_vcf,
     sample_allele_counts,
+    thin_informative_markers,
     write_genotype_vcf,
     write_joint_vcf,
     write_vcf,
@@ -241,13 +244,23 @@ class TestSampleAlleleCounts:
         rng1 = random.Random(22)
         alt_at_zero = [
             sample_allele_counts(
-                0.0, depth, rng0, error_rate=e, rho=100.0, rho_marker_type="het_only",
+                0.0,
+                depth,
+                rng0,
+                error_rate=e,
+                rho=100.0,
+                rho_marker_type="het_only",
             )[1]
             for _ in range(n_trials)
         ]
         ref_at_one = [
             sample_allele_counts(
-                1.0, depth, rng1, error_rate=e, rho=100.0, rho_marker_type="het_only",
+                1.0,
+                depth,
+                rng1,
+                error_rate=e,
+                rho=100.0,
+                rho_marker_type="het_only",
             )[0]
             for _ in range(n_trials)
         ]
@@ -277,12 +290,14 @@ class TestSampleAlleleCounts:
         rho = 100.0
         rng_bin = random.Random(33)
         rng_bb = random.Random(33)
-        binom = [
-            sample_allele_counts(0.5, depth, rng_bin)[1] / depth for _ in range(n)
-        ]
+        binom = [sample_allele_counts(0.5, depth, rng_bin)[1] / depth for _ in range(n)]
         betab = [
             sample_allele_counts(
-                0.5, depth, rng_bb, rho=rho, rho_marker_type="het_only",
+                0.5,
+                depth,
+                rng_bb,
+                rho=rho,
+                rho_marker_type="het_only",
             )[1]
             / depth
             for _ in range(n)
@@ -301,7 +316,11 @@ class TestSampleAlleleCounts:
     def test_rho_marker_type_invalid_raises(self) -> None:
         with pytest.raises(ValueError, match="rho_marker_type"):
             sample_allele_counts(
-                0.5, 1000, random.Random(1), rho=100.0, rho_marker_type="nope",
+                0.5,
+                1000,
+                random.Random(1),
+                rho=100.0,
+                rho_marker_type="nope",
             )
 
 
@@ -952,7 +971,9 @@ class TestAssignCnlohAberrations:
             {"host_gt": (0, 1)},
         ]
         rng = random.Random(0)
-        aberrs = assign_cnloh_aberrations(markers, fraction_affected=1.0, clonal_fraction=1.0, rng=rng)
+        aberrs = assign_cnloh_aberrations(
+            markers, fraction_affected=1.0, clonal_fraction=1.0, rng=rng
+        )
         assert aberrs[0] is None
         assert aberrs[1] is None
         assert aberrs[2] is not None
@@ -982,7 +1003,11 @@ class TestBlendVcfsWithAberrations:
         )
         with pytest.raises(ValueError, match="host_aberrations length"):
             blend_vcfs(
-                host_path, donor_path, 0.1, target_depth=2000, seed=1,
+                host_path,
+                donor_path,
+                0.1,
+                target_depth=2000,
+                seed=1,
                 host_aberrations=[None, None],
             )
 
@@ -997,8 +1022,13 @@ class TestBlendVcfsWithAberrations:
         )
         aberr = [HostAberration(cn=2, alt_copies=2, clonal_fraction=1.0)]
         result = blend_vcfs(
-            host_path, donor_path, 0.1, target_depth=20000, seed=7,
-            error_rate=0.0, host_aberrations=aberr,
+            host_path,
+            donor_path,
+            0.1,
+            target_depth=20000,
+            seed=7,
+            error_rate=0.0,
+            host_aberrations=aberr,
         )
         sample = result.records[0].split("\t")[9]
         ad_ref, ad_alt = (int(x) for x in sample.split(":")[1].split(","))
@@ -1069,3 +1099,133 @@ class TestAssignCnvAberrations:
         # num = f*2 = 0.2 ; den = (1-f)*3 + f*2 = 2.9 -> 0.069
         assert gained == pytest.approx(0.2 / 2.9)
         assert gained < diploid
+
+
+# ---------------------------------------------------------------------------
+# Depth thinning of informative markers (thin_informative_markers)
+# ---------------------------------------------------------------------------
+
+
+def _make_markers(
+    n: int, mean_depth: int, depth_cv: float, vaf: float, seed: int
+) -> list[InformativeMarker]:
+    """Build a synthetic informative-marker list with a real-ish depth spread.
+
+    Per-marker depths are drawn log-normal (mean ``mean_depth``, CV ``depth_cv``)
+    and ALT counts binomial at ``vaf``, so the list looks like a parsed admix
+    sample with locus-to-locus depth variation to thin.
+    """
+    rng = np.random.default_rng(seed)
+    sigma2 = math.log(1 + depth_cv**2)
+    mu = math.log(mean_depth) - sigma2 / 2
+    sigma = math.sqrt(sigma2)
+    markers = []
+    for i in range(n):
+        dp = max(1, int(round(math.exp(rng.normal(mu, sigma)))))
+        alt = int(rng.binomial(dp, vaf))
+        markers.append(
+            InformativeMarker(
+                chrom="chr1",
+                pos=1000 + i,
+                ref="A",
+                alt="G",
+                host_gt=(0, 0),
+                donor_gts=[(0, 1)],
+                marker_type=1,
+                admix_ad_ref=dp - alt,
+                admix_ad_alt=alt,
+                admix_dp=dp,
+            )
+        )
+    return markers
+
+
+class TestThinInformativeMarkers:
+    """Tests for global-rate binomial thinning of admix counts."""
+
+    def test_rate_one_is_passthrough(self) -> None:
+        """rate=1.0 returns markers with unchanged counts."""
+        markers = _make_markers(50, 2000, 0.43, 0.25, seed=1)
+        rng = np.random.default_rng(0)
+        out = thin_informative_markers(markers, 1.0, rng)
+        assert len(out) == len(markers)
+        for a, b in zip(markers, out):
+            assert (a.admix_ad_ref, a.admix_ad_alt, a.admix_dp) == (
+                b.admix_ad_ref,
+                b.admix_ad_alt,
+                b.admix_dp,
+            )
+
+    def test_invalid_rate_raises(self) -> None:
+        markers = _make_markers(5, 2000, 0.0, 0.25, seed=1)
+        rng = np.random.default_rng(0)
+        for bad in (0.0, -0.1, 1.5):
+            with pytest.raises(ValueError):
+                thin_informative_markers(markers, bad, rng)
+
+    def test_dp_is_ref_plus_alt(self) -> None:
+        """Thinned admix_dp equals the thinned ref + alt counts at every marker."""
+        markers = _make_markers(200, 1500, 0.43, 0.3, seed=2)
+        rng = np.random.default_rng(7)
+        out = thin_informative_markers(markers, 0.3, rng)
+        for m in out:
+            assert m.admix_dp == m.admix_ad_ref + m.admix_ad_alt
+            assert m.admix_dp <= 1500 * 5  # sanity bound
+
+    def test_mean_depth_scales_with_rate(self) -> None:
+        """Mean thinned depth ~ rate * original mean over many markers."""
+        markers = _make_markers(2000, 2000, 0.43, 0.25, seed=3)
+        orig_mean = float(np.mean([m.admix_dp for m in markers]))
+        rng = np.random.default_rng(11)
+        rate = 0.25
+        out = thin_informative_markers(markers, rate, rng)
+        thin_mean = float(np.mean([m.admix_dp for m in out]))
+        assert thin_mean == pytest.approx(rate * orig_mean, rel=0.03)
+
+    def test_allele_ratio_preserved_in_expectation(self) -> None:
+        """Pooled ALT fraction is preserved over many seeds (thinning is unbiased)."""
+        markers = _make_markers(500, 2000, 0.43, 0.3, seed=4)
+        orig_alt = sum(m.admix_ad_alt for m in markers)
+        orig_tot = sum(m.admix_dp for m in markers)
+        orig_frac = orig_alt / orig_tot
+        rate = 0.2
+        fracs = []
+        for s in range(30):
+            rng = np.random.default_rng(100 + s)
+            out = thin_informative_markers(markers, rate, rng)
+            alt = sum(m.admix_ad_alt for m in out)
+            tot = sum(m.admix_dp for m in out)
+            fracs.append(alt / tot)
+        assert float(np.mean(fracs)) == pytest.approx(orig_frac, abs=0.01)
+
+    def test_depth_cv_preserved(self) -> None:
+        """Thinning at a global rate preserves the locus-to-locus depth CV.
+
+        A per-marker normalisation would flatten this; the global rate must not.
+        """
+        markers = _make_markers(3000, 2000, 0.43, 0.25, seed=5)
+        depths = np.array([m.admix_dp for m in markers], dtype=float)
+        orig_cv = depths.std() / depths.mean()
+        rng = np.random.default_rng(13)
+        out = thin_informative_markers(markers, 0.25, rng)
+        td = np.array([m.admix_dp for m in out], dtype=float)
+        thin_cv = td.std() / td.mean()
+        # Binomial thinning adds a little sampling variance at low counts but the
+        # real depth spread dominates, so the CV is preserved to within ~15%.
+        assert thin_cv == pytest.approx(orig_cv, rel=0.15)
+
+    def test_deterministic_with_seeded_rng(self) -> None:
+        """Same seeded generator gives identical thinned counts."""
+        markers = _make_markers(100, 2000, 0.43, 0.25, seed=6)
+        out_a = thin_informative_markers(markers, 0.4, np.random.default_rng(42))
+        out_b = thin_informative_markers(markers, 0.4, np.random.default_rng(42))
+        for a, b in zip(out_a, out_b):
+            assert (a.admix_ad_ref, a.admix_ad_alt) == (b.admix_ad_ref, b.admix_ad_alt)
+
+    def test_input_not_mutated(self) -> None:
+        """The input markers are left unchanged (fresh copies returned)."""
+        markers = _make_markers(50, 2000, 0.43, 0.25, seed=8)
+        snapshot = [(m.admix_ad_ref, m.admix_ad_alt, m.admix_dp) for m in markers]
+        thin_informative_markers(markers, 0.3, np.random.default_rng(0))
+        after = [(m.admix_ad_ref, m.admix_ad_alt, m.admix_dp) for m in markers]
+        assert snapshot == after

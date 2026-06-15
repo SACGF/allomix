@@ -144,6 +144,19 @@ SUBSAMPLE_LOD_FIGS = [
     f"{FACTS_DIR}/fig_subsample_lod_presence.png",
 ]
 
+# Simulated presence-test LoD curve (issue #25): the companion to the MLE-only
+# Figure 1. Same two-level pair design as run_lod_validation, but with per-marker
+# bias off so the presence-test null stays calibrated (see the script docstring).
+# Self-contained simulation. Wired into the default `all` target below but NOT
+# into the `paper` build rule yet (figure pairing with Figure 1 is deferred,
+# mirroring the issue #24 subsample figures).
+PRESENCE_LOD_FACTS = [
+    f"{FACTS_DIR}/presence_lod_grid_raw.csv",
+    f"{FACTS_DIR}/presence_lod_curve_summary.csv",
+    f"{FACTS_DIR}/presence_lod_curve_headline.csv",
+]
+PRESENCE_LOD_FIGS = [f"{FACTS_DIR}/fig_presence_lod_curves.png"]
+
 PAPER_FACTS = [
     f"{FACTS_DIR}/validation_summary.csv",
     f"{FACTS_DIR}/bias_no_bias.csv",
@@ -200,6 +213,9 @@ rule all:
         # not a dependency of the `paper` rule (see SUBSAMPLE_LOD_FACTS above).
         SUBSAMPLE_LOD_FACTS,
         SUBSAMPLE_LOD_FIGS,
+        # Simulated presence-test LoD curve (issue #25): same treatment.
+        PRESENCE_LOD_FACTS,
+        PRESENCE_LOD_FIGS,
 
 
 # --- Validation scripts (all independent, run in parallel) -------------------
@@ -457,6 +473,30 @@ rule plot_subsample_lod:
         SUBSAMPLE_LOD_FIGS,
     shell:
         "python paper/scripts/plot_subsample_lod.py"
+
+
+rule presence_lod_validation:
+    # Simulated presence-test LoD sweep (issue #25), companion to the MLE Figure 1.
+    # Self-contained simulation; editing the script body or grids forces a rerun
+    # of this (slow) rule.
+    input:
+        "paper/scripts/run_presence_lod_validation.py",
+    output:
+        PRESENCE_LOD_FACTS,
+    threads: 16
+    shell:
+        "python paper/scripts/run_presence_lod_validation.py --n-workers {threads}"
+
+
+rule presence_lod_plot:
+    # Two-facet simulated presence-test LoD figure, parallel to Figure 1.
+    input:
+        f"{FACTS_DIR}/presence_lod_curve_summary.csv",
+        "paper/scripts/plot_presence_lod_curves.py",
+    output:
+        PRESENCE_LOD_FIGS,
+    shell:
+        "python paper/scripts/plot_presence_lod_curves.py"
 
 
 # --- Paper build (depends on all facts and figures) --------------------------

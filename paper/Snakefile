@@ -266,7 +266,7 @@ rule calibration_batch:
     output:
         "output/calibration/batch_{i}.csv",
     wildcard_constraints:
-        i="\d+",
+        i=r"\d+",
     shell:
         f"python paper/scripts/generate_supp_synthetic.py --calibration-batch {{wildcards.i}} {CAL_REPS_PER_BATCH}"
 

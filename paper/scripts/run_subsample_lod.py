@@ -284,11 +284,22 @@ def _empirical_pair_lod(rows: list[dict], detected_key: str) -> dict:
             lod, note = float("nan"), "fit_failed"
     else:
         lod = fit[0]
+        if lod > MAX_FRACTION:
+            # The 95% crossing extrapolates beyond the largest probed fraction:
+            # detection never reached 95% in range, so the LoD is above it. Treat
+            # as above-range (a conservative ceiling) instead of plotting a
+            # meaningless far-extrapolated value.
+            lod, note = LOD_ABOVE_RANGE, "above_range_extrap"
 
     return {
         "lod": lod,
         "note": note,
         "mean_n_used": float(np.mean(n_used)) if n_used else 0.0,
+        # This mixture's own lowest probed fraction. Used to clamp an
+        # all-detected sentinel to a bound we actually tested, rather than the
+        # global grid minimum (which a mixture missing the lowest titration
+        # point never reached).
+        "min_fraction": min(fr_units) if fr_units else MIN_POS_FRACTION,
     }
 
 
@@ -310,23 +321,30 @@ def _analytical_pair_lod(rows: list[dict]) -> dict:
         "lod": lod,
         "note": "" if vals else "no_finite_analytical",
         "mean_n_used": float(np.mean(n_used)) if n_used else 0.0,
+        # The analytical LoD is a real number from Fisher information, never an
+        # all-detected sentinel, so it carries no own-floor clamp.
+        "min_fraction": None,
     }
 
 
-def _lod_for_aggregation(lod: float) -> float | None:
-    """Map a per-mixture LoD (possibly a sentinel) to a finite fraction.
+def _lod_for_aggregation(ps: dict) -> tuple[float, bool] | None:
+    """Map a per-mixture LoD (possibly a sentinel) to a (fraction, censored) pair.
 
-    ``all_detected`` clamps to the smallest probed fraction (a conservative
-    floor we cannot resolve below), ``none_detected`` to the largest probed
-    fraction (a conservative ceiling), and NaN is dropped.
+    ``all_detected`` is an upper bound: every probed fraction was detected, so
+    the true LoD is at or below this mixture's OWN lowest probed fraction (not
+    the global grid minimum, which a mixture missing the lowest titration point
+    never reached). It is returned as that fraction, flagged censored.
+    ``none_detected`` clamps to the largest probed fraction (a conservative
+    ceiling). NaN is dropped.
     """
+    lod = ps["lod"]
     if lod == LOD_BELOW_RANGE:
-        return MIN_POS_FRACTION
+        return (ps.get("min_fraction") or MIN_POS_FRACTION, True)
     if lod == LOD_ABOVE_RANGE:
-        return MAX_FRACTION
+        return (MAX_FRACTION, False)
     if lod is None or math.isnan(lod):
         return None
-    return lod
+    return (lod, False)
 
 
 def _to_pct(x: float) -> float:
@@ -341,21 +359,38 @@ def _to_pct(x: float) -> float:
 
 
 def summarise_cell(test: str, depth: int, n_markers: int, pair_summaries: list[dict]) -> dict:
-    """Aggregate per-mixture LoDs into a median curve point and a 10-90% band."""
-    lods = [v for ps in pair_summaries if (v := _lod_for_aggregation(ps["lod"])) is not None]
-    n_used = [ps["mean_n_used"] for ps in pair_summaries]
-    n_dropped = len(pair_summaries) - len(lods)
+    """Aggregate per-mixture LoDs into a median curve point and a 10-90% band.
 
-    if lods:
-        arr = np.asarray(lods, dtype=float)
-        lod_med = float(np.median(arr))
-        lod_lo = float(np.quantile(arr, BAND_LO_Q))
-        lod_hi = float(np.quantile(arr, BAND_HI_Q))
+    The cell is flagged ``censored`` when its median lands on a mixture that
+    only yielded an upper bound (all_detected). The real LoD is then below the
+    dilution grid at that point, so the plotted value must be read as
+    "<= lod_pct", not a resolved estimate.
+    """
+    pairs = [p for ps in pair_summaries if (p := _lod_for_aggregation(ps)) is not None]
+    n_used = [ps["mean_n_used"] for ps in pair_summaries]
+    n_dropped = len(pair_summaries) - len(pairs)
+
+    if pairs:
+        vals = np.asarray([v for v, _ in pairs], dtype=float)
+        cens = np.asarray([c for _, c in pairs], dtype=bool)
+        lod_med = float(np.median(vals))
+        lod_lo = float(np.quantile(vals, BAND_LO_Q))
+        lod_hi = float(np.quantile(vals, BAND_HI_Q))
+        # The median is itself an upper bound when the mixture(s) at the median
+        # position only gave "<= own floor" sentinels.
+        cens_sorted = cens[np.argsort(vals)]
+        n = len(vals)
+        cell_censored = (
+            bool(cens_sorted[n // 2])
+            if n % 2
+            else bool(cens_sorted[n // 2 - 1] or cens_sorted[n // 2])
+        )
     else:
         lod_med = lod_lo = lod_hi = float("nan")
+        cell_censored = False
 
     note = ""
-    if not lods:
+    if not pairs:
         note = "no_mixtures_fit"
     elif n_dropped:
         note = f"{n_dropped}_mixtures_dropped"
@@ -367,12 +402,45 @@ def summarise_cell(test: str, depth: int, n_markers: int, pair_summaries: list[d
         "lod_pct": _to_pct(lod_med),
         "lod_pct_ci_lo": _to_pct(lod_lo),
         "lod_pct_ci_hi": _to_pct(lod_hi),
+        "censored": cell_censored,
         "median_n_used": round(float(np.median(n_used)), 1) if n_used else 0.0,
         "n_mixtures": len(pair_summaries),
-        "n_mixtures_used": len(lods),
+        "n_mixtures_used": len(pairs),
         "n_mixtures_dropped": n_dropped,
         "note": note,
     }
+
+
+def _monotonize_over_panels(by_nm: dict[int, dict]) -> None:
+    """Enforce non-increasing per-mixture LoD across ascending panel size, in place.
+
+    The panels are nested (a larger panel is a superset of a smaller one, sharing
+    one marker permutation), so the true LoD cannot rise as markers are added. A
+    cell whose fitted LoD exceeds the best seen at a smaller panel is therefore
+    estimation noise; clamp it to that running minimum. Sentinels order as
+    below-range (best, the dilution-grid floor) < any finite LoD < above-range
+    (worst); NaN cells (fit failed) are left untouched and do not update the
+    running minimum.
+    """
+    best = math.inf
+    for nm in sorted(by_nm):
+        ps = by_nm[nm]
+        lod = ps["lod"]
+        if lod == LOD_BELOW_RANGE:
+            v = -math.inf
+        elif lod == LOD_ABOVE_RANGE:
+            v = math.inf
+        elif lod is None or (isinstance(lod, float) and math.isnan(lod)):
+            continue
+        else:
+            v = lod
+        best = min(best, v)
+        if best == -math.inf:
+            ps["lod"] = LOD_BELOW_RANGE
+        elif best == math.inf:
+            ps["lod"] = LOD_ABOVE_RANGE
+        else:
+            ps["lod"] = best
 
 
 # --- Output writers ----------------------------------------------------------
@@ -412,11 +480,13 @@ def write_per_mixture(rows: list[dict], path: Path) -> None:
 def write_summary(rows: list[dict], path: Path) -> None:
     fields = [
         "test",
+        "mixture_set",
         "depth",
         "n_markers",
         "lod_pct",
         "lod_pct_ci_lo",
         "lod_pct_ci_hi",
+        "censored",
         "median_n_used",
         "n_mixtures",
         "n_mixtures_used",
@@ -464,7 +534,12 @@ def write_headline(
 
     def lookup(test: str, d: int, nm: int) -> float:
         for s in summaries:
-            if s["test"] == test and s["depth"] == d and s["n_markers"] == nm:
+            if (
+                s["test"] == test
+                and s["depth"] == d
+                and s["n_markers"] == nm
+                and s.get("mixture_set", "all") == "all"
+            ):
                 return s["lod_pct"]
         return float("nan")
 
@@ -496,6 +571,40 @@ def write_headline(
 # --- Driver ------------------------------------------------------------------
 
 
+def _read_raw_csv(path: Path) -> list[dict]:
+    """Load a previously written subsample_lod_raw.csv back into typed rows.
+
+    Lets the aggregation, summary, and plotting stages be recomputed from an
+    existing sweep without repeating the (expensive) read sub-sampling. Column
+    types mirror what ``run_mixture`` emits so the summarisation code is
+    unchanged.
+    """
+
+    def _f(x: str) -> float:
+        return float(x) if x not in ("", "nan", "None") else float("nan")
+
+    rows: list[dict] = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            rows.append(
+                {
+                    "mixture": r["mixture"],
+                    "sample": r["sample"],
+                    "fraction_pct": float(r["fraction_pct"]),
+                    "depth": int(r["depth"]),
+                    "n_markers": int(r["n_markers"]),
+                    "seed": int(r["seed"]),
+                    "n_used": int(r["n_used"]),
+                    "mle_host_frac": _f(r["mle_host_frac"]),
+                    "mle_detected": int(r["mle_detected"]),
+                    "presence_f": _f(r["presence_f"]),
+                    "presence_detected": int(r["presence_detected"]),
+                    "mle_analytical_lod": _f(r["mle_analytical_lod"]),
+                }
+            )
+    return rows
+
+
 def _worker(arg: tuple) -> list[dict]:
     name, host, donor, n_seeds = arg
     return run_mixture(name, host, donor, n_seeds)
@@ -512,44 +621,65 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--n-workers", "-j", type=int, default=1, help="Process pool size (one task per mixture)."
     )
+    parser.add_argument(
+        "--from-raw",
+        type=str,
+        default=None,
+        help="Recompute per-mixture, summary, and headline CSVs from an existing "
+        "subsample_lod_raw.csv, skipping the (expensive) read sub-sampling sweep.",
+    )
     args = parser.parse_args(argv)
 
     FACTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    tasks = [(name, host, donor, args.n_seeds) for name, (host, donor) in TWO_PERSON_MIXES.items()]
-    print(
-        f"Sweep: mixtures={len(tasks)}, depths={DEPTHS}, n_markers={N_MARKERS_GRID}, "
-        f"fractions={FRACTIONS_PCT}, n_seeds={args.n_seeds}",
-        file=sys.stderr,
-    )
-
-    all_rows: list[dict] = []
-    if args.n_workers <= 1:
-        for i, t in enumerate(tasks, 1):
-            all_rows.extend(_worker(t))
-            print(f"  [{i}/{len(tasks)}] {t[0]} done", file=sys.stderr)
-    else:
-        with ProcessPoolExecutor(max_workers=args.n_workers) as pool:
-            futures = {pool.submit(_worker, t): t[0] for t in tasks}
-            done = 0
-            for fut in as_completed(futures):
-                all_rows.extend(fut.result())
-                done += 1
-                print(f"  [{done}/{len(futures)}] {futures[fut]} done", file=sys.stderr)
-
-    all_rows.sort(
-        key=lambda r: (
-            r["mixture"],
-            r["sample"],
-            r["n_markers"],
-            r["depth"],
-            r["fraction_pct"],
-            r["seed"],
+    if args.from_raw:
+        all_rows = _read_raw_csv(Path(args.from_raw))
+        n_seeds_eff = len({r["seed"] for r in all_rows})
+        print(
+            f"Loaded {len(all_rows)} raw rows from {args.from_raw}; skipping sweep "
+            f"(n_seeds={n_seeds_eff})",
+            file=sys.stderr,
         )
-    )
+    else:
+        n_seeds_eff = args.n_seeds
+        tasks = [
+            (name, host, donor, args.n_seeds) for name, (host, donor) in TWO_PERSON_MIXES.items()
+        ]
+        print(
+            f"Sweep: mixtures={len(tasks)}, depths={DEPTHS}, n_markers={N_MARKERS_GRID}, "
+            f"fractions={FRACTIONS_PCT}, n_seeds={args.n_seeds}",
+            file=sys.stderr,
+        )
 
-    write_raw(all_rows, FACTS_DIR / "subsample_lod_raw.csv")
-    print(f"Wrote {FACTS_DIR / 'subsample_lod_raw.csv'} ({len(all_rows)} rows)", file=sys.stderr)
+        all_rows = []
+        if args.n_workers <= 1:
+            for i, t in enumerate(tasks, 1):
+                all_rows.extend(_worker(t))
+                print(f"  [{i}/{len(tasks)}] {t[0]} done", file=sys.stderr)
+        else:
+            with ProcessPoolExecutor(max_workers=args.n_workers) as pool:
+                futures = {pool.submit(_worker, t): t[0] for t in tasks}
+                done = 0
+                for fut in as_completed(futures):
+                    all_rows.extend(fut.result())
+                    done += 1
+                    print(f"  [{done}/{len(futures)}] {futures[fut]} done", file=sys.stderr)
+
+        all_rows.sort(
+            key=lambda r: (
+                r["mixture"],
+                r["sample"],
+                r["n_markers"],
+                r["depth"],
+                r["fraction_pct"],
+                r["seed"],
+            )
+        )
+
+        write_raw(all_rows, FACTS_DIR / "subsample_lod_raw.csv")
+        print(
+            f"Wrote {FACTS_DIR / 'subsample_lod_raw.csv'} ({len(all_rows)} rows)", file=sys.stderr
+        )
 
     # Per-mixture LoD: group rows by (mixture, depth, n_markers), fit one LoD per
     # mixture per empirical test; the analytical test pools the cell directly.
@@ -557,8 +687,9 @@ def main(argv: list[str] | None = None) -> int:
     for r in all_rows:
         by_cell[(r["mixture"], r["depth"], r["n_markers"])].append(r)
 
-    per_mixture: list[dict] = []
-    pairs_by_summary: dict[tuple, list[dict]] = defaultdict(list)
+    # One LoD per (test, mixture, depth, n_markers) cell, grouped so the panel
+    # axis can be monotonized per mixture before aggregating across mixtures.
+    ps_by_group: dict[tuple, dict[int, dict]] = defaultdict(dict)
     mixtures_seen = set()
     for (mixture, depth, nm), rows in by_cell.items():
         mixtures_seen.add(mixture)
@@ -569,6 +700,20 @@ def main(argv: list[str] | None = None) -> int:
                 ps = _empirical_pair_lod(rows, "presence_detected")
             else:
                 ps = _analytical_pair_lod(rows)
+            ps["mixture"] = mixture
+            ps_by_group[(test, mixture, depth)][nm] = ps
+
+    # Project each per-mixture curve onto the monotone constraint implied by the
+    # nested panels (LoD cannot rise with more markers). Median/quantiles of
+    # monotone curves are themselves monotone, so the summary curve and band come
+    # out smooth without enforcing anything on the aggregate directly.
+    for by_nm in ps_by_group.values():
+        _monotonize_over_panels(by_nm)
+
+    per_mixture: list[dict] = []
+    pairs_by_summary: dict[tuple, list[dict]] = defaultdict(list)
+    for (test, mixture, depth), by_nm in ps_by_group.items():
+        for nm, ps in by_nm.items():
             pairs_by_summary[(test, depth, nm)].append(ps)
             per_mixture.append(
                 {
@@ -589,6 +734,23 @@ def main(argv: list[str] | None = None) -> int:
         file=sys.stderr,
     )
 
+    # Mixtures whose titration series reaches the lowest probed fraction. The
+    # all-mixture median is pinned above that fraction by the mixtures that lack
+    # it, so a second curve over just these mixtures shows the LoD the data can
+    # actually resolve at the bottom of the grid (labelled and overlaid in the
+    # figure, not a replacement for the all-mixture curve).
+    min_frac_pct = min(FRACTIONS_PCT)
+    mix_fracs: dict[str, set] = defaultdict(set)
+    for r in all_rows:
+        mix_fracs[r["mixture"]].add(r["fraction_pct"])
+    lowdf_mixtures = {m for m, fs in mix_fracs.items() if min_frac_pct in fs}
+    lowdf_set_name = f"to_{min_frac_pct:g}pct"
+    print(
+        f"Mixture subset reaching {min_frac_pct:g}%: {len(lowdf_mixtures)} of {len(mix_fracs)} "
+        f"({', '.join(sorted(lowdf_mixtures))})",
+        file=sys.stderr,
+    )
+
     summaries: list[dict] = []
     for test in TESTS:
         for depth in DEPTHS:
@@ -596,7 +758,12 @@ def main(argv: list[str] | None = None) -> int:
                 ps_list = pairs_by_summary.get((test, depth, nm), [])
                 if not ps_list:
                     continue
-                summaries.append(summarise_cell(test, depth, nm, ps_list))
+                summaries.append({**summarise_cell(test, depth, nm, ps_list), "mixture_set": "all"})
+                subset = [ps for ps in ps_list if ps.get("mixture") in lowdf_mixtures]
+                if subset:
+                    summaries.append(
+                        {**summarise_cell(test, depth, nm, subset), "mixture_set": lowdf_set_name}
+                    )
 
     write_summary(summaries, FACTS_DIR / "subsample_lod_summary.csv")
     print(
@@ -608,7 +775,7 @@ def main(argv: list[str] | None = None) -> int:
         all_rows,
         FACTS_DIR / "subsample_lod_headline.csv",
         n_mixtures=len(mixtures_seen),
-        n_seeds=args.n_seeds,
+        n_seeds=n_seeds_eff,
     )
     print(f"Wrote {FACTS_DIR / 'subsample_lod_headline.csv'}", file=sys.stderr)
 

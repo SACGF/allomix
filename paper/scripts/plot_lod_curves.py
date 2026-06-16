@@ -248,16 +248,21 @@ def plot(
         "Limit of detection as a function of panel size and sequencing depth",
         fontsize=13, y=1.02,
     )
+    # State the data source up front: these curves are simulated, not a wetlab
+    # assay limit.
+    subtitle = "simulated (in silico) data"
     if presence is not None:
         # Make the error assumption explicit: the presence test is far more
         # error-sensitive than the MLE, so the two curves are only comparable
         # when the chimerism sweep was run at this same error rate.
-        fig.text(
-            0.5, 0.985,
-            f"presence LoD overlaid at error rate {presence_error_rate:g}; "
-            "valid only if the chimerism sweep used the same rate",
-            ha="center", va="top", fontsize=9, color="0.35",
+        subtitle += (
+            f"; presence LoD overlaid at error rate {presence_error_rate:g}, "
+            "valid only if the chimerism sweep used the same rate"
         )
+    fig.text(
+        0.5, 0.985, subtitle,
+        ha="center", va="top", fontsize=9, color="0.35",
+    )
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)

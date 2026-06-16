@@ -140,8 +140,7 @@ SUBSAMPLE_LOD_FACTS = [
     f"{FACTS_DIR}/subsample_lod_headline.csv",
 ]
 SUBSAMPLE_LOD_FIGS = [
-    f"{FACTS_DIR}/fig_subsample_lod_mle.png",
-    f"{FACTS_DIR}/fig_subsample_lod_presence.png",
+    f"{FACTS_DIR}/fig_subsample_lod_grid.png",
 ]
 
 # Simulated presence-test LoD curve (issue #25): the companion to the MLE-only
@@ -321,10 +320,12 @@ rule lod_validation:
 rule lod_plot:
     input:
         f"{FACTS_DIR}/lod_summary.csv",
+        f"{FACTS_DIR}/presence_lod_curve_summary.csv",
+        "paper/scripts/plot_lod_grid.py",
     output:
         LOD_FIGS,
     shell:
-        "python paper/scripts/plot_lod_curves.py"
+        "python paper/scripts/plot_lod_grid.py"
 
 
 rule lod_saturation:
@@ -464,8 +465,8 @@ rule subsample_lod:
 
 
 rule plot_subsample_lod:
-    # Two standalone real-data LoD figures (MLE magnitude, presence test). No
-    # simulated overlay; styled like the simulated Figure 1.
+    # One real-data LoD grid (2x2: MLE/presence columns, all-mixtures/0.5%-subset
+    # rows). No simulated overlay; styled like the simulated Figure 1.
     input:
         f"{FACTS_DIR}/subsample_lod_summary.csv",
         "paper/scripts/plot_subsample_lod.py",

@@ -209,3 +209,6 @@ __marimo__/
 /.idea/
 /output/
 /.snakemake/
+
+# vibepaper Google Docs sync: OAuth client secret, token, and local sync state
+/.vibepaper/

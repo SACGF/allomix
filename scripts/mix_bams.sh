@@ -92,7 +92,7 @@ samtools merge \
 
 echo "[4/4] Unifying read groups under sample '$SAMPLE_NAME'"
 samtools addreplacerg \
-    --mode overwrite_all \
+    -m overwrite_all \
     -r "ID:${SAMPLE_NAME}" \
     -r "SM:${SAMPLE_NAME}" \
     -r "LB:${SAMPLE_NAME}" \

@@ -101,6 +101,10 @@ def main() -> int:
         site_acc = defaultdict(lambda: [0, 0])  # key -> [minor, dp] summed over admix samples
         avcf = VCF(str(GEN / f"{name}.admix.vcf.gz"))
         n_samples = len(avcf.samples)
+        # Endpoint columns (pure host/donor, 0%/100% host) are single-source
+        # samples, not co-pooled dilution mixtures; exclude them so the floor is
+        # estimated only from the titration samples.
+        skip_idx = {i for i, s in enumerate(avcf.samples) if s in (host, donor)}
         for v in avcf:
             key = (v.CHROM, v.POS, v.REF, v.ALT[0] if v.ALT else None)
             info = marker_info.get(key)
@@ -111,6 +115,8 @@ def main() -> int:
             if ad is None:
                 continue
             for i in range(n_samples):
+                if i in skip_idx:
+                    continue
                 ref_n, alt_n = int(ad[i][0]), int(ad[i][1])
                 dp = ref_n + alt_n
                 if dp <= 0:

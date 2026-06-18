@@ -87,6 +87,11 @@ def _fmt_pct(v: float, _pos: int) -> str:
 def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts: dict[str, str] = {}
 
+    # Titration accuracy is computed on the dilution series only. The pure
+    # host/donor endpoints (0% and 100% host) carry no titration known fraction
+    # and serve as detection anchors in the figS12 plot, so drop them here.
+    two = [r for r in two if _f(r["known_pct"]) is not None]
+
     known = np.array([_f(r["known_pct"]) for r in two])
     mle = np.array([(_f(r["mle_pct"]) or 0.0) for r in two])
     depth = np.array([_f(r["mean_depth"]) for r in two])
@@ -190,6 +195,8 @@ def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
     fig, (axA, axB) = plt.subplots(1, 2, figsize=(12.5, 5.4))
 
     # Panel A: dilution-series accuracy (log-log scatter, both estimators).
+    # Endpoints (0%/100% host) have no titration known fraction; exclude them.
+    two = [r for r in two if _f(r["known_pct"]) is not None]
     known = [_f(r["known_pct"]) for r in two]
     mle = [(_f(r["mle_pct"]) or 0.0) for r in two]
     pres = [(_f(r["presence_pct"]) or 0.0) for r in two]

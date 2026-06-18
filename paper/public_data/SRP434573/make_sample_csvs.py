@@ -141,6 +141,20 @@ def main() -> None:
         for sid, run, pct in sorted(mixes, key=lambda x: x[2]):
             rows_out.append((sid, bam_path(args.bam_dir, run, args.bam_suffix), "ADMIX"))
             manifest.append((patient, sid, run, "ADMIX", minor, f"{pct:g}"))
+        # Endpoint controls: the titrated series stops at 0.5% host, so feed each
+        # pure single-source run back in as a full-depth ADMIX sample to reach the
+        # 0%/100% extremes. The endpoints then come through as ordinary admix
+        # columns (re-piled at ~1000x+), not from the downsampled genotype VCF.
+        # Names mirror the "1_N_X-Y" aliases so the known host fraction reads off
+        # the name:
+        #   100_0_<minor>-<major> = pure minor = 100% host (full relapse)
+        #   0_100_<minor>-<major> = pure major = 0% host / 100% donor (full graft)
+        for sid, run, pct in (
+            (f"100_0_{minor}-{major}", pure_run[minor], 100.0),
+            (f"0_100_{minor}-{major}", pure_run[major], 0.0),
+        ):
+            rows_out.append((sid, bam_path(args.bam_dir, run, args.bam_suffix), "ADMIX"))
+            manifest.append((patient, sid, run, "ADMIX", minor, f"{pct:g}"))
         write_csv(patient, rows_out)
         n_patients += 1
 

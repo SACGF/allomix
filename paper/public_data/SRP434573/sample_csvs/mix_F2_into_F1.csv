@@ -11,3 +11,5 @@ F1,/tau/data/chimerism/SRP434573/bam/SRR24309257.hg38.bam,DONOR
 1_19_F2-F1_v1,/tau/data/chimerism/SRP434573/bam/SRR24309167.hg38.bam,ADMIX
 1_9_F2-F1_v2,/tau/data/chimerism/SRP434573/bam/SRR24309187.hg38.bam,ADMIX
 1_9_F2-F1_v1,/tau/data/chimerism/SRP434573/bam/SRR24309200.hg38.bam,ADMIX
+100_0_F2-F1,/tau/data/chimerism/SRP434573/bam/SRR24309258.hg38.bam,ADMIX
+0_100_F2-F1,/tau/data/chimerism/SRP434573/bam/SRR24309257.hg38.bam,ADMIX

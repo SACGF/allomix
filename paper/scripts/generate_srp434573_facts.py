@@ -230,6 +230,9 @@ def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
         zorder=3,
         label="presence-test",
     )
+    # The semi-synthetic sub-0.5% points (issue #5) are deliberately kept off this
+    # real-data panel: they live on their own zoomed figure
+    # (fig_srp434573_synthetic.png) so real and synthetic are never conflated.
     axA.set_xscale("log")
     axA.set_yscale("log")
     axA.set_xlim(*lims)

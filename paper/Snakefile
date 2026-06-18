@@ -114,6 +114,14 @@ SRP434573_LOGY_FIGS = [f"{FACTS_DIR}/figS12_srp434573_logy.png"]
 # their absence leaves the build unchanged (run_srp434573_allomix.py falls back to
 # the default error model).
 SRP434573_ERROR_TABLES = sorted(glob.glob(f"{SRP434573_GENOTYPES}/*.error_table.tsv"))
+# Semi-synthetic sub-0.5% admix VCFs (issue #5), committed under genotypes_synthetic
+# once generated TAU-side. Listed as optional inputs so srp434573_allomix reruns
+# (and writes output/srp434573_synthetic.tsv) when they are added/updated; their
+# absence leaves the build unchanged (the synthetic run is skipped).
+SRP434573_SYNTHETIC_GENOTYPES = "paper/public_data/SRP434573/genotypes_synthetic"
+SRP434573_SYNTHETIC_VCFS = sorted(
+    glob.glob(f"{SRP434573_SYNTHETIC_GENOTYPES}/*.synthetic.admix.vcf.gz")
+)
 
 # Real-data contamination dose-response (SRP434573). Reads the committed genotype
 # VCFs and summarises the per-#-carriers median minor-allele fraction into facts
@@ -140,6 +148,17 @@ SUBSAMPLE_LOD_FACTS = [
 SUBSAMPLE_LOD_FIGS = [
     f"{FACTS_DIR}/fig_subsample_lod_grid.png",
 ]
+
+# Semi-synthetic sub-0.5% mixtures (issue #5): each pair's two pure reference BAMs
+# blended with samtools subsample at host fractions 0.1-0.5%, joint-called the same
+# way, committed under paper/public_data/SRP434573/genotypes_synthetic and consumed
+# here. The facts script degrades to an n_points=0 stub + placeholder figure when
+# that snapshot is absent (fresh checkout before the TAU-side generation step), so
+# the rule is always satisfiable. Wired into the default `all` target but NOT into
+# the `paper` build rule yet (figure-into-manuscript placement is a follow-up,
+# mirroring the deferred PRESENCE_LOD/subsample figures).
+SYNTHETIC_FACTS = [f"{FACTS_DIR}/srp434573_synthetic.csv"]
+SYNTHETIC_FIGS = [f"{FACTS_DIR}/fig_srp434573_synthetic.png"]
 
 # Simulated presence-test LoD curve (issue #25): the companion to the MLE-only
 # Figure 1. Same two-level pair design as run_lod_validation, but with per-marker
@@ -212,6 +231,10 @@ rule all:
         # target but not a dependency of the `paper` rule yet.
         PRESENCE_LOD_FACTS,
         PRESENCE_LOD_FIGS,
+        # Semi-synthetic sub-0.5% mixtures (issue #5): built by the default target
+        # but not a dependency of the `paper` rule yet (manuscript placement TBD).
+        SYNTHETIC_FACTS,
+        SYNTHETIC_FIGS,
 
 
 # --- Validation scripts (all independent, run in parallel) -------------------
@@ -387,12 +410,31 @@ rule srp434573_allomix:
         f"{SRP434573_GENOTYPES}/mix_F1_into_F3.SRP434573.vcf.gz",
         f"{SRP434573_GENOTYPES}/mix_F1_into_F3.admix.vcf.gz",
         "paper/scripts/run_srp434573_allomix.py",
+        "paper/scripts/srp434573_common.py",
         *SRP434573_ERROR_TABLES,
+        *SRP434573_SYNTHETIC_VCFS,
     output:
         "output/srp434573_two_person.tsv",
         "output/srp434573_three_person.tsv",
     shell:
         "python paper/scripts/run_srp434573_allomix.py"
+
+
+rule srp434573_synthetic_facts:
+    # Summarises the semi-synthetic sub-0.5% mixtures (issue #5) into facts + a
+    # figure, reading output/srp434573_synthetic.tsv (written by srp434573_allomix
+    # when the genotypes_synthetic snapshot is present). Degrades to an n_points=0
+    # stub + placeholder figure when that snapshot is absent. No sequencing or
+    # joint calling. Depends on two_person.tsv to order it after srp434573_allomix.
+    input:
+        "output/srp434573_two_person.tsv",
+        "paper/scripts/generate_srp434573_synthetic_facts.py",
+        *SRP434573_SYNTHETIC_VCFS,
+    output:
+        SYNTHETIC_FACTS,
+        SYNTHETIC_FIGS,
+    shell:
+        "python paper/scripts/generate_srp434573_synthetic_facts.py"
 
 
 rule srp434573_facts:

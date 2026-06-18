@@ -109,6 +109,58 @@ needed downstream.
 The full pipeline below is optional and only needed to regenerate the snapshot
 from raw reads.
 
+## Semi-synthetic sub-0.5% mixtures (issue #5)
+
+The real titration bottoms out at a 0.5% minor (host) fraction. To see allomix
+behaviour below that, each two-person pair's two pure reference BAMs are blended
+with `samtools view --subsample` (via `scripts/mix_bams.sh`) at host fractions
+0.1-0.5% (5 independent subsample seeds each), then joint-called the same way.
+These points are **semi-synthetic**: real reads, real panel noise, real
+GATK/bcftools path, but an artificial mixing ratio. They are always labelled as
+such in the figures so a synthetic fraction is never presented as a measured one.
+The 0.5% synthetic point doubles as a cross-check against the real 0.5%.
+
+The committed snapshot lives in `genotypes_synthetic/` (per-pair
+`<pair>.synthetic.SRP434573.vcf.gz` genotypes + `<pair>.synthetic.admix.vcf.gz`
+raw AD). The paper build consumes it through
+`paper/scripts/run_srp434573_allomix.py` (which reuses each pair's real
+`genotypes/<pair>.error_table.tsv`, since the host/donor individuals are
+unchanged) and `paper/scripts/generate_srp434573_synthetic_facts.py`. When the
+snapshot is absent (fresh checkout before generation), the synthetic run is
+skipped and the facts/figure degrade to an `n_points=0` stub, so the build stays
+green.
+
+### Regenerating (TAU-side, where the BAMs are)
+
+`samtools view --subsample` needs the aligned BAMs, which live on `/tau`. Run the
+driver, then the normal pipeline over the synthetic CSVs, then copy the VCFs into
+the committed snapshot:
+
+```bash
+# 1. Subsample+merge the pure reference BAMs and write the synthetic sample CSVs.
+python scripts/make_semisynthetic_srp434573.py \
+    --bam-dir /tau/data/chimerism/SRP434573/synthetic_bam
+# (run with --dry-run first to inspect the mix_bams commands without touching BAMs)
+
+# 2. Joint-call + pileup the synthetic mixtures with the normal pipeline.
+snakemake -s pipeline/Snakefile \
+    --configfile paper/public_data/SRP434573/config.yaml \
+    --config samples_csv_dir=output/semisynthetic_csv \
+             output_dir=output/genotypes/SRP434573_synthetic \
+    --cores 16
+
+# 3. Copy the per-pair genotype + admix VCFs into the committed snapshot.
+mkdir -p paper/public_data/SRP434573/genotypes_synthetic
+cp output/genotypes/SRP434573_synthetic/*.synthetic.*.vcf.gz* \
+   paper/public_data/SRP434573/genotypes_synthetic/
+```
+
+The driver prints these exact follow-on commands. Convention note: `mix_bams.sh`
+treats its `DONOR_BAM` argument as the minor (titrated) contributor, while
+SRP434573/allomix treats the **host** as the minor monitored fraction, so the
+driver passes each pair's allomix-host BAM as `mix_bams`' DONOR argument. Getting
+that backwards would invert every fraction.
+
 ## Prerequisites before running (full from-scratch pipeline, optional)
 
 ### 0. (Re)generate the ENA manifest + download list

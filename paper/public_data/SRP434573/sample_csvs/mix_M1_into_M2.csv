@@ -5,3 +5,5 @@ M2,/tau/data/chimerism/SRP434573/bam/SRR24309254.hg38.bam,DONOR
 1_99_M1-M2-degraded,/tau/data/chimerism/SRP434573/bam/SRR24309244.hg38.bam,ADMIX
 1_39_M1-M2-degraded,/tau/data/chimerism/SRP434573/bam/SRR24309264.hg38.bam,ADMIX
 1_9_M1-M2-degraded,/tau/data/chimerism/SRP434573/bam/SRR24309265.hg38.bam,ADMIX
+100_0_M1-M2,/tau/data/chimerism/SRP434573/bam/SRR24309255.hg38.bam,ADMIX
+0_100_M1-M2,/tau/data/chimerism/SRP434573/bam/SRR24309254.hg38.bam,ADMIX

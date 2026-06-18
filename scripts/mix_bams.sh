@@ -86,8 +86,8 @@ samtools view \
 
 echo "[3/4] Merging subsampled BAMs"
 samtools merge \
-    --force \
-    --output "$MERGED" \
+    -f \
+    -o "$MERGED" \
     "$HOST_SUB" "$DONOR_SUB"
 
 echo "[4/4] Unifying read groups under sample '$SAMPLE_NAME'"

@@ -3,31 +3,37 @@
 
 The public SRP434573 titration series bottoms out at a 0.5% minor (host)
 fraction. This driver builds *lower* points (host fractions 0.1-0.5% by default)
-by blending each two-person mixture's two pure reference BAMs with
-``samtools view --subsample`` (wrapped by ``scripts/mix_bams.sh``). The resulting
+by blending pure reference BAMs with ``samtools view --subsample`` (wrapped by
+``scripts/mix_bams.sh``, which depth-normalizes on on-target reads). The resulting
 reads are real (real panel noise, real GATK/bcftools path) but the mixing ratio
 is artificial, so the points are *semi-synthetic* and must be labelled as such
 downstream.
 
+Two kinds of mixture are produced:
+
+  - Two-person dilution series (one donor): host titrated along the low ladder in
+    a single donor background, the sub-0.5% counterpart of the real titration.
+  - Three-person host + 2 donor mixtures (the real F2/M1/M2 trio): host titrated
+    along the same ladder while the two donors split the remaining background by
+    each ``--donor-splits`` ratio. This exercises allomix's 2-donor capability on
+    real-noise reads (issue #5, requested for double-graft monitoring).
+
 This step runs ONCE, TAU-side, because the source BAMs live on ``/tau``. It does
 two things:
 
-  1. For every two-person pair, subsample+merge the pure HOST and DONOR BAMs at
-     each (fraction, seed) into a mixed BAM under ``--bam-dir``.
-  2. Write one synthetic per-pair CSV (``<pair>.synthetic.csv``) whose HOST/DONOR
-     rows reuse the pure reference BAMs (so phase-1 genotypes match the real run)
-     and whose ADMIX rows point at the mixed BAMs.
+  1. For every mixture, subsample+merge the pure reference BAMs at each
+     (fraction, [split,] seed) into a mixed BAM under ``--bam-dir``. Each
+     component is passed to ``mix_bams.sh`` with its explicit target fraction, so
+     there is no minor/major argument-order trap to get wrong.
+  2. Write one synthetic per-mixture CSV (``<name>.synthetic.csv``) whose
+     HOST/DONOR rows reuse the pure reference BAMs (so phase-1 genotypes match the
+     real run) and whose ADMIX rows point at the mixed BAMs.
 
-It then prints the two follow-on commands to run by hand (it does NOT launch GATK
+It then prints the follow-on commands to run by hand (it does NOT launch GATK
 itself): the existing ``pipeline/Snakefile`` over the synthetic CSVs, then a copy
-of the per-pair genotype + admix VCFs into the committed snapshot at
+of the genotype + admix VCFs into the committed snapshot at
 ``paper/public_data/SRP434573/genotypes_synthetic``. The paper build consumes
 that snapshot (see ``paper/scripts/run_srp434573_allomix.py``).
-
-Convention trap: ``mix_bams.sh HOST_BAM DONOR_BAM DONOR_FRACTION`` treats its
-DONOR_BAM as the *minor* (titrated) contributor. In SRP434573/allomix the *host*
-is the minor monitored fraction. So the allomix-HOST individual is passed as
-mix_bams' DONOR_BAM, and the allomix-DONOR (background) as mix_bams' HOST_BAM.
 
 Usage (TAU-side, where the BAMs are):
 
@@ -59,13 +65,27 @@ PIPELINE_OUTPUT_DIR = "output/genotypes/SRP434573_synthetic"
 DEFAULT_FRACTIONS_PCT = [0.1, 0.2, 0.3, 0.4, 0.5]
 DEFAULT_REPS = 5
 
+# Three-person (host + 2 donor) mixtures reuse the real F2/M1/M2 trio. The host is
+# titrated at the same low ladder; the two donors split the remaining background by
+# these ratios (donor1 : donor2). "eq" is a realistic balanced double graft; the
+# unequal split also stresses allomix resolving two donors at different levels. The
+# realised donor percents are written into each sample name (the ground truth the
+# paper runner decodes), so these ratios live in one place.
+DEFAULT_DONOR_SPLITS = {
+    "eq": (1.0, 1.0),
+    "2to1": (2.0, 1.0),
+}
 
-def read_pair_csv(path: Path) -> tuple[tuple[str, str], tuple[str, str]] | None:
-    """Return ((host_id, host_bam), (donor_id, donor_bam)) for a two-person CSV.
 
-    The host is the minor (titrated) contributor, the donor the majority
-    background. Returns ``None`` for CSVs that are not a clean one-host/one-donor
-    pair (e.g. the three-person mixture), which are skipped.
+def read_mix_csv(
+    path: Path,
+) -> tuple[tuple[str, str], list[tuple[str, str]]] | None:
+    """Return ``((host_id, host_bam), [(donor_id, donor_bam), ...])`` for a CSV.
+
+    The host is the minor (titrated) contributor, the donor(s) the majority
+    background. Handles both the two-person pairs (one donor) and the three-person
+    host + 2 donor mixture. Returns ``None`` for CSVs with no host or with neither
+    one nor two donors.
     """
     host: tuple[str, str] | None = None
     donors: list[tuple[str, str]] = []
@@ -77,13 +97,13 @@ def read_pair_csv(path: Path) -> tuple[tuple[str, str], tuple[str, str]] | None:
                 host = entry
             elif stype == "DONOR":
                 donors.append(entry)
-    if host is None or len(donors) != 1:
+    if host is None or len(donors) not in (1, 2):
         return None
-    return host, donors[0]
+    return host, donors
 
 
 def sample_name(minor: str, major: str, pct: float, rep: int) -> str:
-    """Synthetic admix sample id, e.g. ``syn_F2-M1_f0.1_rep3``.
+    """Two-person synthetic admix sample id, e.g. ``syn_F2-M1_f0.1_rep3``.
 
     The known host fraction and replicate read straight off the name, mirroring
     how the real ``1_N_X-Y`` aliases encode their fraction.
@@ -91,67 +111,123 @@ def sample_name(minor: str, major: str, pct: float, rep: int) -> str:
     return f"syn_{minor}-{major}_f{pct:g}_rep{rep}"
 
 
+def sample_name3(
+    host: str, d1: str, d2: str, hpct: float, d1pct: float, d2pct: float, rep: int
+) -> str:
+    """Three-person synthetic admix sample id.
+
+    e.g. ``syn3_F2-M1-M2_h0.5_d66.47-33.23_rep1``. The known host percent and the
+    two donor percents (the ground truth ``run_srp434573_allomix.py`` decodes)
+    read straight off the name, so no separate split table has to be kept in sync.
+    """
+    return f"syn3_{host}-{d1}-{d2}_h{hpct:g}_d{d1pct:g}-{d2pct:g}_rep{rep}"
+
+
 def mixed_bam_path(bam_dir: Path, minor: str, major: str, pct: float, rep: int) -> Path:
     return bam_dir / f"{minor}-{major}_f{pct:g}_rep{rep}.bam"
 
 
-def build_pair(
+def mix_cmd(
+    mix_script: Path,
+    out_bam: Path,
+    panel_bed: Path,
+    sid: str,
+    seed: int,
+    components: list[tuple[str, float]],
+) -> list[str]:
+    """Build a mix_bams.sh command: fixed args then (BAM, fraction) pairs."""
+    cmd = [str(mix_script), str(out_bam), str(panel_bed), sid, str(seed)]
+    for bam, frac in components:
+        cmd += [bam, f"{frac:g}"]
+    return cmd
+
+
+def _emit(cmd: list[str], dry_run: bool) -> None:
+    if dry_run:
+        print("  mix: " + " ".join(cmd))
+    else:
+        subprocess.run(cmd, check=True)
+
+
+def _write_csv(
+    csv_path: Path,
+    rows: list[tuple[str, str, str]],
+    n_ref: int,
+    dry_run: bool,
+) -> None:
+    if dry_run:
+        print(f"  would write {csv_path} ({len(rows)} rows: {n_ref} reference, "
+              f"{len(rows) - n_ref} ADMIX)")
+        return
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(csv_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["sample_id", "bam_filename", "sample_type"])
+        w.writerows(rows)
+    print(f"Wrote {csv_path} ({len(rows) - n_ref} synthetic ADMIX rows)")
+
+
+def build_mix(
     patient: str,
     host: tuple[str, str],
-    donor: tuple[str, str],
+    donors: list[tuple[str, str]],
     fractions_pct: list[float],
     reps: int,
+    donor_splits: dict[str, tuple[float, float]],
     bam_dir: Path,
     out_csv_dir: Path,
     mix_script: Path,
     panel_bed: Path,
     dry_run: bool,
 ) -> int:
-    """Mix one pair across the grid and write its synthetic CSV.
+    """Mix one host/donor(s) group across the grid and write its synthetic CSV.
 
-    Returns the number of ADMIX (synthetic mixture) rows produced.
+    One donor -> two-person dilution series (host minor fraction ladder). Two
+    donors -> three-person host + 2 donor mixtures: the host is titrated at the
+    same ladder while the two donors split the remaining background by each ratio
+    in ``donor_splits``. Returns the number of ADMIX rows produced.
     """
-    host_id, host_bam = host          # allomix host = minor (titrated)
-    donor_id, donor_bam = donor       # allomix donor = majority background
+    host_id, host_bam = host
+    rows: list[tuple[str, str, str]] = [(host_id, host_bam, "HOST")]
+    rows += [(d_id, d_bam, "DONOR") for d_id, d_bam in donors]
+    n_ref = len(rows)
 
-    rows: list[tuple[str, str, str]] = [
-        (host_id, host_bam, "HOST"),
-        (donor_id, donor_bam, "DONOR"),
-    ]
     for pct in fractions_pct:
-        frac = pct / 100.0
+        t = pct / 100.0
         for rep in range(1, reps + 1):
-            sid = sample_name(host_id, donor_id, pct, rep)
-            out_bam = mixed_bam_path(bam_dir, host_id, donor_id, pct, rep)
-            # Spaced so host (seed) and donor (seed+1) never collide across reps.
+            # Spaced so a component's seed (seed + i) never collides across reps.
             seed = 100 * rep
-            cmd = [
-                str(mix_script),
-                donor_bam,   # mix_bams HOST_BAM = majority background
-                host_bam,    # mix_bams DONOR_BAM = minor (titrated) = allomix host
-                f"{frac:g}",
-                str(out_bam),
-                str(panel_bed),  # on-target depth normalization (see mix_bams.sh)
-                sid,
-                str(seed),
-            ]
-            if dry_run:
-                print("  mix: " + " ".join(cmd))
+            if len(donors) == 1:
+                d_id, d_bam = donors[0]
+                sid = sample_name(host_id, d_id, pct, rep)
+                out_bam = mixed_bam_path(bam_dir, host_id, d_id, pct, rep)
+                # Donor (background) first so it keeps the seed the old 2-person
+                # runs used (seed); host (minor) gets seed+1 as before.
+                components = [(d_bam, 1.0 - t), (host_bam, t)]
+                _emit(mix_cmd(mix_script, out_bam, panel_bed, sid, seed, components),
+                      dry_run)
+                rows.append((sid, str(out_bam), "ADMIX"))
             else:
-                subprocess.run(cmd, check=True)
-            rows.append((sid, str(out_bam), "ADMIX"))
+                (d1_id, d1_bam), (d2_id, d2_bam) = donors
+                for split_name, (w1, w2) in donor_splits.items():
+                    bg = 1.0 - t
+                    d1f = bg * w1 / (w1 + w2)
+                    d2f = bg * w2 / (w1 + w2)
+                    sid = sample_name3(
+                        host_id, d1_id, d2_id, pct, d1f * 100, d2f * 100, rep
+                    )
+                    out_bam = bam_dir / (
+                        f"{host_id}-{d1_id}-{d2_id}_h{pct:g}_{split_name}_rep{rep}.bam"
+                    )
+                    components = [(d1_bam, d1f), (d2_bam, d2f), (host_bam, t)]
+                    _emit(
+                        mix_cmd(mix_script, out_bam, panel_bed, sid, seed, components),
+                        dry_run,
+                    )
+                    rows.append((sid, str(out_bam), "ADMIX"))
 
-    csv_path = out_csv_dir / f"{patient}.synthetic.csv"
-    if dry_run:
-        print(f"  would write {csv_path} ({len(rows)} rows: 1 HOST, 1 DONOR, "
-              f"{len(rows) - 2} ADMIX)")
-    else:
-        out_csv_dir.mkdir(parents=True, exist_ok=True)
-        with open(csv_path, "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["sample_id", "bam_filename", "sample_type"])
-            w.writerows(rows)
-        print(f"Wrote {csv_path} ({len(rows) - 2} synthetic ADMIX rows)")
+    _write_csv(out_csv_dir / f"{patient}.synthetic.csv", rows, n_ref, dry_run)
+    return len(rows) - n_ref
     return len(rows) - 2
 
 
@@ -172,39 +248,50 @@ def main() -> int:
     ap.add_argument("--fractions", type=float, nargs="+", default=DEFAULT_FRACTIONS_PCT,
                     metavar="PCT", help="Host (minor) fractions to synthesise, as percentages.")
     ap.add_argument("--reps", type=int, default=DEFAULT_REPS,
-                    help="Independent subsample seeds per (pair, fraction).")
+                    help="Independent subsample seeds per (mixture, fraction).")
+    ap.add_argument("--donor-splits", nargs="+", default=list(DEFAULT_DONOR_SPLITS),
+                    metavar="NAME", choices=list(DEFAULT_DONOR_SPLITS),
+                    help="Donor1:donor2 background splits for the three-person (host + "
+                         f"2 donor) mixtures. Choices: {', '.join(DEFAULT_DONOR_SPLITS)}.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Print the mix_bams commands and follow-on steps; touch nothing.")
     args = ap.parse_args()
+
+    donor_splits = {k: DEFAULT_DONOR_SPLITS[k] for k in args.donor_splits}
 
     csv_paths = [p for p in sorted(args.csv_dir.glob("*.csv"))
                  if not p.name.endswith(".synthetic.csv")]
     if not csv_paths:
         sys.exit(f"No sample CSVs found in {args.csv_dir}")
 
-    n_pairs = 0
+    n_two = 0
+    n_three = 0
     n_skipped = 0
     total_rows = 0
     for path in csv_paths:
         patient = path.stem
-        pair = read_pair_csv(path)
-        if pair is None:
-            print(f"Skipping {patient} (not a one-host/one-donor pair)")
+        mix = read_mix_csv(path)
+        if mix is None:
+            print(f"Skipping {patient} (no host, or not 1-2 donors)")
             n_skipped += 1
             continue
-        host, donor = pair
-        print(f"Pair {patient}: host(minor)={host[0]} donor(major)={donor[0]}")
-        total_rows += build_pair(
-            patient, host, donor, args.fractions, args.reps,
+        host, donors = mix
+        if len(donors) == 1:
+            print(f"Pair {patient}: host(minor)={host[0]} donor(major)={donors[0][0]}")
+            n_two += 1
+        else:
+            print(f"Trio {patient}: host(minor)={host[0]} "
+                  f"donors={donors[0][0]},{donors[1][0]} splits={list(donor_splits)}")
+            n_three += 1
+        total_rows += build_mix(
+            patient, host, donors, args.fractions, args.reps, donor_splits,
             args.bam_dir, args.out_csv_dir, args.mix_script, args.panel_bed,
             args.dry_run,
         )
-        n_pairs += 1
 
     print(
-        f"\n{n_pairs} pairs processed, {n_skipped} skipped, "
-        f"{total_rows} synthetic mixtures "
-        f"({len(args.fractions)} fractions x {args.reps} reps x {n_pairs} pairs)."
+        f"\n{n_two} pairs + {n_three} trios processed, {n_skipped} skipped, "
+        f"{total_rows} synthetic mixtures."
     )
 
     csv_glob = f"{args.out_csv_dir}/*.synthetic.csv"

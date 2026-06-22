@@ -24,7 +24,7 @@ scripts/<name>.py`. They depend on `allomix` being installed (`pip install -e
 | `measure_panel_bias.py` | Measure per-marker bias/characteristics from joint-called genotyping VCFs. |
 | `make_midpoint_bed.py` | Derive a thin background-site BED (one position per amplicon, the interval midpoint) from a capture BED, for the host-presence error-table background. Equivalent to the pipeline's `midpoint_bed` rule; use standalone to inspect or commit the positions. |
 | `qc_bias_samples.py` | Sample-level QC for bias-estimation training samples. |
-| `mix_bams.sh` | Mix two BAMs at a target donor fraction for a synthetic admixture sample. |
+| `mix_bams.sh` | Mix N BAMs at explicit target fractions into one synthetic admixture sample, depth-normalized on on-target reads (host + 1 or 2 donors). |
 
 The two most commonly used scripts are documented in detail below.
 

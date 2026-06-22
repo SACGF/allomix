@@ -112,19 +112,32 @@ from raw reads.
 ## Semi-synthetic sub-0.5% mixtures (issue #5)
 
 The real titration bottoms out at a 0.5% minor (host) fraction. To see allomix
-behaviour below that, each two-person pair's two pure reference BAMs are blended
-with `samtools view --subsample` (via `scripts/mix_bams.sh`) at host fractions
-0.1-0.5% (5 independent subsample seeds each), then joint-called the same way.
-These points are **semi-synthetic**: real reads, real panel noise, real
-GATK/bcftools path, but an artificial mixing ratio. They are always labelled as
-such in the figures so a synthetic fraction is never presented as a measured one.
-The 0.5% synthetic point doubles as a cross-check against the real 0.5%.
+behaviour below that, pure reference BAMs are blended with `samtools view
+--subsample` (via `scripts/mix_bams.sh`) at host fractions 0.1-0.5% (5 independent
+subsample seeds each), then joint-called the same way. Two kinds of mixture are
+made:
 
-The committed snapshot lives in `genotypes_synthetic/` (per-pair
-`<pair>.synthetic.SRP434573.vcf.gz` genotypes + `<pair>.synthetic.admix.vcf.gz`
+- **Two-person** (one donor): each pair's host titrated in a single donor
+  background, the sub-0.5% counterpart of the real titration. The 0.5% synthetic
+  point doubles as a cross-check against the real 0.5%.
+- **Three-person** host + 2 donor (the real F2/M1/M2 trio): host titrated along
+  the same ladder while the two donors split the remaining background, by an equal
+  (`eq`) and a 2:1 (`2to1`) ratio. This exercises allomix's 2-donor capability on
+  real-noise reads (requested for double-graft monitoring).
+
+`mix_bams.sh` depth-normalizes on on-target reads so the realized fraction of each
+component equals its target regardless of the inputs' depth ratios (see the script
+header and issue #5; a fixed-self-fraction subsample mislabeled the fractions by
+up to ~2x). These points are **semi-synthetic**: real reads, real panel noise,
+real GATK/bcftools path, but an artificial mixing ratio. They are always labelled
+as such in the figures so a synthetic fraction is never presented as a measured
+one.
+
+The committed snapshot lives in `genotypes_synthetic/`
+(`<name>.synthetic.SRP434573.vcf.gz` genotypes + `<name>.synthetic.admix.vcf.gz`
 raw AD). The paper build consumes it through
-`paper/scripts/run_srp434573_allomix.py` (which reuses each pair's real
-`genotypes/<pair>.error_table.tsv`, since the host/donor individuals are
+`paper/scripts/run_srp434573_allomix.py` (which reuses each mixture's real
+`genotypes/<name>.error_table.tsv`, since the host/donor individuals are
 unchanged) and `paper/scripts/generate_srp434573_synthetic_facts.py`. When the
 snapshot is absent (fresh checkout before generation), the synthetic run is
 skipped and the facts/figure degrade to an `n_points=0` stub, so the build stays
@@ -155,11 +168,10 @@ cp output/genotypes/SRP434573_synthetic/*.synthetic.*.vcf.gz* \
    paper/public_data/SRP434573/genotypes_synthetic/
 ```
 
-The driver prints these exact follow-on commands. Convention note: `mix_bams.sh`
-treats its `DONOR_BAM` argument as the minor (titrated) contributor, while
-SRP434573/allomix treats the **host** as the minor monitored fraction, so the
-driver passes each pair's allomix-host BAM as `mix_bams`' DONOR argument. Getting
-that backwards would invert every fraction.
+The driver prints these exact follow-on commands. Each component is passed to
+`mix_bams.sh` with its own explicit target fraction (`BAM1 FRAC1 BAM2 FRAC2 ...`),
+so there is no minor/major argument-order trap: the host (minor) always carries
+the titrated fraction and the donor(s) the background.
 
 ## Prerequisites before running (full from-scratch pipeline, optional)
 

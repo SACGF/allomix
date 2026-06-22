@@ -50,6 +50,7 @@ DEFAULT_CSV_DIR = REPO / "paper/public_data/SRP434573/sample_csvs"
 DEFAULT_OUT_CSV_DIR = REPO / "output/semisynthetic_csv"
 DEFAULT_BAM_DIR = REPO / "output/semisynthetic_bam"
 DEFAULT_MIX_SCRIPT = REPO / "scripts/mix_bams.sh"
+DEFAULT_PANEL_BED = REPO / "paper/public_data/SRP434573/SRP434573.bed"
 SNAPSHOT_DIR = REPO / "paper/public_data/SRP434573/genotypes_synthetic"
 PIPELINE_OUTPUT_DIR = "output/genotypes/SRP434573_synthetic"
 
@@ -103,6 +104,7 @@ def build_pair(
     bam_dir: Path,
     out_csv_dir: Path,
     mix_script: Path,
+    panel_bed: Path,
     dry_run: bool,
 ) -> int:
     """Mix one pair across the grid and write its synthetic CSV.
@@ -129,6 +131,7 @@ def build_pair(
                 host_bam,    # mix_bams DONOR_BAM = minor (titrated) = allomix host
                 f"{frac:g}",
                 str(out_bam),
+                str(panel_bed),  # on-target depth normalization (see mix_bams.sh)
                 sid,
                 str(seed),
             ]
@@ -163,6 +166,9 @@ def main() -> int:
                     help="Where to write the mixed BAMs (TAU-side, large).")
     ap.add_argument("--mix-script", type=Path, default=DEFAULT_MIX_SCRIPT,
                     help="Path to scripts/mix_bams.sh.")
+    ap.add_argument("--panel-bed", type=Path, default=DEFAULT_PANEL_BED,
+                    help="Capture-panel BED used to depth-normalize the subsampling "
+                         "(on-target reads). Must match the pipeline `intervals` BED.")
     ap.add_argument("--fractions", type=float, nargs="+", default=DEFAULT_FRACTIONS_PCT,
                     metavar="PCT", help="Host (minor) fractions to synthesise, as percentages.")
     ap.add_argument("--reps", type=int, default=DEFAULT_REPS,
@@ -190,7 +196,8 @@ def main() -> int:
         print(f"Pair {patient}: host(minor)={host[0]} donor(major)={donor[0]}")
         total_rows += build_pair(
             patient, host, donor, args.fractions, args.reps,
-            args.bam_dir, args.out_csv_dir, args.mix_script, args.dry_run,
+            args.bam_dir, args.out_csv_dir, args.mix_script, args.panel_bed,
+            args.dry_run,
         )
         n_pairs += 1
 

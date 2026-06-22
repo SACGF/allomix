@@ -15,11 +15,13 @@ Ground truth: admix alias 1_<N>_<X>-<Y> => minor (= host) fraction 1/(1+N).
 Three-person 1_3_5_F2-M1-M2 (1:3:5 of F2:M1:M2) => host F2 (1/9), donors M1
 (3/9) and M2 (5/9).
 
-Writes two files (the three-person sample is kept but split out of the
-two-person accuracy series):
+Writes (the three-person sample is kept but split out of the two-person accuracy
+series; the semi-synthetic outputs appear only when that snapshot is present):
 
   output/srp434573_two_person.tsv    one row per two-person dilution timepoint
-  output/srp434573_three_person.tsv  one row per component of the 3-person mix
+  output/srp434573_three_person.tsv  one row per component of the real 3-person mix
+  output/srp434573_synthetic.tsv     semi-synthetic two-person sub-0.5% series (#5)
+  output/srp434573_synthetic_three_person.tsv  semi-synthetic host + 2 donor mix (#5)
 
 Genotype VCFs are read from the committed snapshot in
 ``paper/public_data/SRP434573/genotypes`` so the paper builds out of the box,
@@ -87,6 +89,29 @@ def parse_synthetic_sample(sample: str) -> tuple[float, int] | None:
         frac_tok = next(p for p in sample.split("_") if p.startswith("f"))
         rep_tok = next(p for p in sample.split("_") if p.startswith("rep"))
         return float(frac_tok[1:]), int(rep_tok[3:])
+    except (StopIteration, ValueError):
+        return None
+
+
+def parse_synthetic3_sample(sample: str) -> tuple[float, list[float], int] | None:
+    """Parse ``syn3_<h>-<d1>-<d2>_h<hpct>_d<d1pct>-<d2pct>_rep<n>``.
+
+    The three-person semi-synthetic mixtures (issue #5, host + 2 donors) encode
+    the known host percent and both donor percents directly in the name (written
+    by ``make_semisynthetic_srp434573.sample_name3``), so the ground truth needs
+    no separate split table. Returns ``(host_pct, [donor1_pct, donor2_pct], rep)``
+    or ``None`` for any name that does not match.
+    """
+    if not sample.startswith("syn3_"):
+        return None
+    parts = sample.split("_")
+    try:
+        h_tok = next(p for p in parts if p.startswith("h") and p[1:2].isdigit())
+        d_tok = next(p for p in parts if p.startswith("d") and "-" in p[1:])
+        rep_tok = next(p for p in parts if p.startswith("rep"))
+        hpct = float(h_tok[1:])
+        d1pct, d2pct = (float(x) for x in d_tok[1:].split("-"))
+        return hpct, [d1pct, d2pct], int(rep_tok[3:])
     except (StopIteration, ValueError):
         return None
 
@@ -242,6 +267,55 @@ def run_synthetic(syn_dir: Path) -> list[dict]:
     return rows
 
 
+def run_synthetic_three(syn_dir: Path) -> list[dict]:
+    """Run allomix on the semi-synthetic host + 2 donor mixtures (issue #5).
+
+    The three-person trio (host F2, donors M1 + M2) is titrated with the host at
+    the low fraction ladder while the two donors split the background. Returns one
+    row per (sample, component) with the known and estimated percent, mirroring the
+    real three-person rows but with the ground truth decoded from the ``syn3_``
+    name. Reuses the trio's real per-patient error table (same individuals).
+    """
+    rows: list[dict] = []
+    for name, (host, donors) in MIXES.items():
+        if len(donors) != 2:
+            continue
+        panel = syn_dir / f"{name}.synthetic.SRP434573.vcf.gz"
+        admix = syn_dir / f"{name}.synthetic.admix.vcf.gz"
+        if not admix.exists():
+            continue
+        error_table = GEN / f"{name}.error_table.tsv"
+        recs = run_mix(name, host, donors, panel=panel, admix=admix,
+                       error_table=error_table)
+        for rec in recs:
+            parsed = parse_synthetic3_sample(rec.get("sample") or "")
+            if parsed is None:
+                continue
+            hpct, (d1pct, d2pct), rep = parsed
+            comps = [
+                (host, "host", hpct, fnum(rec.get("host_pct")), None, None),
+                (donors[0], "donor", d1pct, fnum(rec.get("donor1_pct")),
+                 fnum(rec.get("donor1_ci_lo")), fnum(rec.get("donor1_ci_hi"))),
+                (donors[1], "donor", d2pct, fnum(rec.get("donor2_pct")),
+                 fnum(rec.get("donor2_ci_lo")), fnum(rec.get("donor2_ci_hi"))),
+            ]
+            for indiv, role, known, est, lo, hi in comps:
+                rows.append({
+                    "mixture": name,
+                    "sample": rec.get("sample"),
+                    "component": indiv,
+                    "role": role,
+                    "host_known_pct": hpct,
+                    "known_pct": known,
+                    "est_pct": est,
+                    "ci_lo": lo,
+                    "ci_hi": hi,
+                    "seed": rep,
+                    "qc": rec.get("qc_status"),
+                })
+    return rows
+
+
 def main() -> int:
     two, three = [], []
     for name, (host, donors) in MIXES.items():
@@ -297,7 +371,16 @@ def main() -> int:
         syn = run_synthetic(syn_dir)
         syn_cols = two_cols + ["frac_pct", "seed"]
         write_tsv(OUT / "srp434573_synthetic.tsv", syn_cols, syn)
-        sys.stderr.write(f"Wrote {len(syn)} semi-synthetic rows from {syn_dir}.\n")
+        sys.stderr.write(f"Wrote {len(syn)} semi-synthetic two-person rows from {syn_dir}.\n")
+
+        # Three-person host + 2 donor semi-synthetic mixtures (issue #5). Separate
+        # TSV so the two-person low-fraction series stays clean; absent when only
+        # two-person synthetic VCFs were generated.
+        syn3 = run_synthetic_three(syn_dir)
+        syn3_cols = ["mixture", "sample", "component", "role", "host_known_pct",
+                     "known_pct", "est_pct", "ci_lo", "ci_hi", "seed", "qc"]
+        write_tsv(OUT / "srp434573_synthetic_three_person.tsv", syn3_cols, syn3)
+        sys.stderr.write(f"Wrote {len(syn3)} semi-synthetic three-person rows.\n")
     else:
         sys.stderr.write("No semi-synthetic snapshot found; skipping synthetic run.\n")
     return 0

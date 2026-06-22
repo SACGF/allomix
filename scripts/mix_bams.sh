@@ -1,138 +1,137 @@
 #!/bin/bash
-# Mix two BAMs at a target donor (minor) fraction, producing a single merged BAM
-# suitable for joint calling as one admixture sample.
+# Mix N BAMs at known target fractions into a single merged BAM suitable for
+# joint calling as one admixture sample. Used to build semi-synthetic chimerism
+# mixtures (host + 1 or 2 donors) from real reference BAMs (issue #5).
 #
-# Each input BAM is subsampled independently, then merged, with all reads
-# retagged to a single read-group sample name so the variant caller treats the
-# result as one sample rather than two.
+# Each input is subsampled independently, then merged, with all reads retagged to
+# a single read-group sample name so the variant caller treats the result as one
+# sample rather than several.
 #
-# Depth normalization: the subsample fractions are sized from each input's
-# ON-TARGET depth (summed per-base coverage over PANEL_BED) so the realized minor
-# fraction equals DONOR_FRACTION regardless of the two libraries' depth ratio.
-# Subsampling each input by a fixed fraction of its own reads (the naive
-# approach) makes the realized fraction drift with the depth ratio. On-target
-# reads, not raw BAM counts, because off-target rates differ between samples.
-# Given on-target depths Dmajor, Dminor and target minor fraction t:
-#     D0      = min( Dminor / t , Dmajor / (1 - t) )   # largest non-oversampling output depth
-#     f_major = (1 - t) * D0 / Dmajor
-#     f_minor =       t * D0 / Dminor
+# Depth normalization: subsample fractions are sized from each input's ON-TARGET
+# depth (summed per-base coverage over PANEL_BED) so the realized fraction of each
+# component equals its target regardless of the inputs' depth ratios. Subsampling
+# each input by a fixed fraction of its own reads (the naive approach) makes the
+# realized fractions drift with the depth ratios. On-target reads, not raw BAM
+# counts, because off-target rates differ between samples. For components with
+# on-target depths D_i and target fractions t_i (which must sum to 1):
+#     D0  = min_i( D_i / t_i )        # largest output depth that over-samples no input
+#     s_i = t_i * D0 / D_i            # subsample fraction for component i
 # Per-site (rather than total on-target) normalization would be marginally more
 # faithful but is second-order and not practical with samtools' global
 # --subsample; see issue #5 for the rationale.
 #
 # Usage:
-#   scripts/mix_bams.sh HOST_BAM DONOR_BAM DONOR_FRACTION OUTPUT_BAM PANEL_BED [SAMPLE_NAME] [SEED]
+#   scripts/mix_bams.sh OUTPUT_BAM PANEL_BED SAMPLE_NAME SEED BAM1 FRAC1 [BAM2 FRAC2 ...]
 #
 # Arguments:
-#   HOST_BAM         Path to the host/majority (background) BAM
-#   DONOR_BAM        Path to the donor/minority (titrated) BAM
-#   DONOR_FRACTION   Target fraction of on-target reads from DONOR_BAM (0 < f < 1)
-#   OUTPUT_BAM       Path to write the mixed, indexed BAM to
-#   PANEL_BED        Capture-panel BED; on-target depth is measured over this
-#   SAMPLE_NAME      Optional read-group SM tag (default: MIX_F<fraction>)
-#   SEED             Optional integer seed for reproducible subsampling
-#                    (default: 42). Host uses SEED; donor uses SEED+1 so the
-#                    two sources are sampled independently.
+#   OUTPUT_BAM    Path to write the mixed, indexed BAM to
+#   PANEL_BED     Capture-panel BED; on-target depth is measured over this
+#   SAMPLE_NAME   Read-group SM tag for the merged sample
+#   SEED          Integer base seed; component i is subsampled with SEED+i so the
+#                 sources are sampled independently and reproducibly
+#   BAMi FRACi    One or more (BAM, target on-target fraction) pairs. FRACs are in
+#                 (0, 1) and must sum to 1. At least 2 components are required.
 #
-# Example:
-#   scripts/mix_bams.sh host.bam donor.bam 0.005 output/mix_f0005_rep1.bam \
-#       paper/public_data/SRP434573/SRP434573.bed MIX_F0005_REP1 100
+# Examples:
+#   # Two-person: host (minor) at 0.5%, donor background at 99.5%
+#   scripts/mix_bams.sh out/mix.bam panel.bed SYN_F2_M1_f0005_rep1 100 \
+#       donor.bam 0.995 host.bam 0.005
+#   # Three-person: host 0.5%, two donors split the rest equally
+#   scripts/mix_bams.sh out/mix3.bam panel.bed SYN3_F2_M1_M2_h0005_eq_rep1 100 \
+#       donor1.bam 0.4975 donor2.bam 0.4975 host.bam 0.005
 
 set -euo pipefail
 
-if [ "$#" -lt 5 ] || [ "$#" -gt 7 ]; then
-    echo "Usage: $0 HOST_BAM DONOR_BAM DONOR_FRACTION OUTPUT_BAM PANEL_BED [SAMPLE_NAME] [SEED]" >&2
+if [ "$#" -lt 6 ]; then
+    echo "Usage: $0 OUTPUT_BAM PANEL_BED SAMPLE_NAME SEED BAM1 FRAC1 [BAM2 FRAC2 ...]" >&2
     exit 1
 fi
 
-HOST_BAM="$1"
-DONOR_BAM="$2"
-DONOR_FRACTION="$3"
-OUTPUT_BAM="$4"
-PANEL_BED="$5"
-SEED="${7:-42}"
+OUTPUT_BAM="$1"; shift
+PANEL_BED="$1"; shift
+SAMPLE_NAME="$1"; shift
+SEED="$1"; shift
 
-if [ -n "${6:-}" ]; then
-    SAMPLE_NAME="$6"
-else
-    # Default sample name: "MIX_F0_005" for fraction 0.005
-    SAMPLE_NAME="MIX_F$(echo "$DONOR_FRACTION" | tr '.' '_')"
-fi
-
-# Validate fraction is a number strictly in (0, 1): the depth-normalized
-# subsampling divides by both t and (1 - t).
-if ! awk -v x="$DONOR_FRACTION" 'BEGIN { exit !(x+0 == x && x > 0 && x < 1) }'; then
-    echo "Error: DONOR_FRACTION must be a number strictly between 0 and 1 (got: $DONOR_FRACTION)" >&2
+if [ $(( $# % 2 )) -ne 0 ]; then
+    echo "Error: components must be given as 'BAM FRAC' pairs (odd argument count)" >&2
     exit 1
 fi
 
-for f in "$HOST_BAM" "$DONOR_BAM" "$PANEL_BED"; do
+BAMS=(); FRACS=()
+while [ "$#" -gt 0 ]; do
+    BAMS+=("$1"); FRACS+=("$2"); shift 2
+done
+N="${#BAMS[@]}"
+if [ "$N" -lt 2 ]; then
+    echo "Error: need at least 2 components" >&2
+    exit 1
+fi
+
+# Each fraction strictly in (0, 1) (the depth normalization divides by t_i).
+for t in "${FRACS[@]}"; do
+    if ! awk -v x="$t" 'BEGIN { exit !(x+0 == x && x > 0 && x < 1) }'; then
+        echo "Error: each fraction must be a number strictly between 0 and 1 (got: $t)" >&2
+        exit 1
+    fi
+done
+
+# Fractions must sum to 1 (within rounding tolerance).
+SUM=$(printf '%s\n' "${FRACS[@]}" | awk '{ s += $1 } END { printf "%.8f", s }')
+if ! awk -v s="$SUM" 'BEGIN { exit !(s > 0.999 && s < 1.001) }'; then
+    echo "Error: component fractions must sum to 1 (got: $SUM)" >&2
+    exit 1
+fi
+
+for f in "$PANEL_BED" "${BAMS[@]}"; do
     if [ ! -f "$f" ]; then
         echo "Error: input file not found: $f" >&2
         exit 1
     fi
 done
 
-# On-target depth (summed per-base coverage over the panel) of each pure BAM.
-D_MAJOR=$(samtools bedcov "$PANEL_BED" "$HOST_BAM" | awk '{s += $NF} END { printf "%.0f", s }')
-D_MINOR=$(samtools bedcov "$PANEL_BED" "$DONOR_BAM" | awk '{s += $NF} END { printf "%.0f", s }')
+# On-target depth (summed per-base coverage over the panel) of each input.
+DEPTHS=()
+for b in "${BAMS[@]}"; do
+    d=$(samtools bedcov "$PANEL_BED" "$b" | awk '{ s += $NF } END { printf "%.0f", s }')
+    if [ "$d" -le 0 ]; then
+        echo "Error: zero on-target depth over $PANEL_BED for $b" >&2
+        exit 1
+    fi
+    DEPTHS+=("$d")
+done
 
-if [ "$D_MAJOR" -le 0 ] || [ "$D_MINOR" -le 0 ]; then
-    echo "Error: zero on-target depth over $PANEL_BED (major=$D_MAJOR minor=$D_MINOR)" >&2
-    exit 1
-fi
-
-# Subsample fractions that land the realized minor fraction on DONOR_FRACTION at
-# output on-target depth D0 (the largest depth that over-samples neither input).
-read -r MAJOR_SUBFRAC MINOR_SUBFRAC D0 < <(awk \
-    -v t="$DONOR_FRACTION" -v dmin="$D_MINOR" -v dmaj="$D_MAJOR" 'BEGIN {
-        d0a = dmin / t
-        d0b = dmaj / (1 - t)
-        d0  = (d0a < d0b) ? d0a : d0b
-        fmaj = (1 - t) * d0 / dmaj
-        fmin =       t * d0 / dmin
-        if (fmaj > 1) fmaj = 1
-        if (fmin > 1) fmin = 1
-        printf "%.8f %.8f %.0f\n", fmaj, fmin, d0
-    }')
-
-HOST_SEED="$SEED"
-DONOR_SEED=$((SEED + 1))
+# D0 = min_i(D_i / t_i): the largest output depth that over-samples no input.
+D0=$(for i in $(seq 0 $((N - 1))); do printf '%s %s\n' "${DEPTHS[$i]}" "${FRACS[$i]}"; done \
+    | awk 'BEGIN { d0 = -1 } { v = $1 / $2; if (d0 < 0 || v < d0) d0 = v } END { printf "%.6f", d0 }')
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-HOST_SUB="$TMPDIR/host.sub.bam"
-DONOR_SUB="$TMPDIR/donor.sub.bam"
-MERGED="$TMPDIR/merged.bam"
-
 mkdir -p "$(dirname "$OUTPUT_BAM")"
 
-echo "On-target depth: major=$D_MAJOR minor=$D_MINOR -> output D0=$D0 (target minor fraction $DONOR_FRACTION)"
+echo "On-target depths: ${DEPTHS[*]}  target fractions: ${FRACS[*]}  output D0=$D0"
 
-echo "[1/4] Subsampling host (major) to fraction $MAJOR_SUBFRAC (seed $HOST_SEED)"
-samtools view \
-    --bam \
-    --subsample "$MAJOR_SUBFRAC" \
-    --subsample-seed "$HOST_SEED" \
-    --output "$HOST_SUB" \
-    "$HOST_BAM"
+SUBBAMS=()
+for i in $(seq 0 $((N - 1))); do
+    subfrac=$(awk -v t="${FRACS[$i]}" -v d="${DEPTHS[$i]}" -v d0="$D0" \
+        'BEGIN { x = t * d0 / d; if (x > 1) x = 1; printf "%.8f", x }')
+    seed=$(( SEED + i ))
+    sub="$TMPDIR/comp${i}.bam"
+    echo "[comp $((i + 1))/$N] $(basename "${BAMS[$i]}") target=${FRACS[$i]} -> subsample $subfrac (seed $seed)"
+    samtools view \
+        --bam \
+        --subsample "$subfrac" \
+        --subsample-seed "$seed" \
+        --output "$sub" \
+        "${BAMS[$i]}"
+    SUBBAMS+=("$sub")
+done
 
-echo "[2/4] Subsampling donor (minor) to fraction $MINOR_SUBFRAC (seed $DONOR_SEED)"
-samtools view \
-    --bam \
-    --subsample "$MINOR_SUBFRAC" \
-    --subsample-seed "$DONOR_SEED" \
-    --output "$DONOR_SUB" \
-    "$DONOR_BAM"
+MERGED="$TMPDIR/merged.bam"
+echo "Merging $N subsampled BAMs"
+samtools merge -f -o "$MERGED" "${SUBBAMS[@]}"
 
-echo "[3/4] Merging subsampled BAMs"
-samtools merge \
-    -f \
-    -o "$MERGED" \
-    "$HOST_SUB" "$DONOR_SUB"
-
-echo "[4/4] Unifying read groups under sample '$SAMPLE_NAME'"
+echo "Unifying read groups under sample '$SAMPLE_NAME'"
 samtools addreplacerg \
     -m overwrite_all \
     -r "ID:${SAMPLE_NAME}" \
@@ -145,4 +144,4 @@ samtools addreplacerg \
 
 samtools index "$OUTPUT_BAM"
 
-echo "Done: $OUTPUT_BAM (sample: $SAMPLE_NAME)"
+echo "Done: $OUTPUT_BAM (sample: $SAMPLE_NAME, $N components)"

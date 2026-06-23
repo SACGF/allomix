@@ -24,6 +24,17 @@ QUICK = str(config.get("quick", "")).strip().lower() in {"1", "true", "yes", "on
 if QUICK:
     os.environ["ALLOMIX_PAPER_QUICK"] = "1"
 
+# Fast LoD estimator: `snakemake -s paper/Snakefile --config fast_grid=1` (or set
+# ALLOMIX_FAST_GRID=1) routes the LoD sweep (run_lod_validation.py) through the
+# opt-in vectorized grid estimator, about 6.5x faster with a max lod_pct
+# deviation of 0.0011 pp vs the exact estimator (see estimate_single_donor_bb_grid).
+# Independent of and composable with quick=1 (quick shrinks the grid; fast_grid
+# swaps the estimator). The exact estimator stays the default, so OMIT this for
+# the final publication build.
+FAST_GRID = str(config.get("fast_grid", "")).strip().lower() in {"1", "true", "yes", "on"}
+if FAST_GRID:
+    os.environ["ALLOMIX_FAST_GRID"] = "1"
+
 # Calibration replicates are spread over batch jobs; quick mode runs far fewer.
 N_CAL_BATCHES = 2 if QUICK else 10
 CAL_REPS_PER_BATCH = 3 if QUICK else 10

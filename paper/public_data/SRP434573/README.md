@@ -203,8 +203,11 @@ indexed). The only manual step is **bwa-indexing the reference once**:
 bwa index /path/to/hg38.fa
 ```
 
-The aligner is configurable like the other tools (`bwa:` / `samtools:` paths,
-`align_threads:`). BAMs are **not** duplicate-marked on purpose: this is an
+Tool paths (`samtools:`) and `align_threads:` live in `pipeline/tools.yaml`
+(per-machine, loaded automatically). This dataset's `config.yaml` overrides only
+the aligner, `bwa: bwa-mem2`, since the panel needs bwa-mem2 (index the
+reference with `bwa-mem2 index`, not `bwa index`). BAMs are **not**
+duplicate-marked on purpose: this is an
 amplicon/MIP panel where every amplicon read shares start/end coordinates, so
 dup-marking would discard almost all coverage. The `bam_dir` / `bam_suffix` in
 `config.yaml` must match the CSV `bam_filename` paths (the

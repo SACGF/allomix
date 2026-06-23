@@ -1,0 +1,36 @@
+# allomix pipeline — TOOL / MACHINE config (issue #30).
+#
+# This file holds only the things that vary per MACHINE: where each external
+# executable lives and the local resource limits. Set it up once per machine
+# and forget it. The per-RUN settings (reference, panel BED, sample CSVs,
+# output dir, mpileup parameters) live in a separate run config that you pass
+# with --configfile; see pipeline/config.yaml.
+#
+# The Snakefile loads THIS file automatically (via its `configfile:` directive),
+# so a normal run is:
+#
+#     snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 16
+#
+# tools.yaml supplies the tool paths; config.yaml (and any --config key=val)
+# layers the run settings on top and overrides where they overlap. Check a new
+# machine with:  snakemake -s pipeline/Snakefile validate_tools
+#
+# Every value below is also the built-in default, so you only need to edit the
+# lines for tools that are NOT on PATH (point them at a full path instead).
+
+# External executables. Use a bare name to take it from PATH, or a full path.
+gatk: "gatk"          # e.g. /tau/tools/gatk-4.1.3.0/gatk
+bcftools: "bcftools"
+samtools: "samtools"
+bwa: "bwa"            # the aligner for the optional FASTQ -> BAM phase
+tabix: "tabix"
+bgzip: "bgzip"
+allomix: "allomix"   # only needed when build_error_table is on (the default)
+
+# Interpreter for the pipeline helper scripts (pure stdlib, no allomix import).
+# Leave unset to use the Python running Snakemake, which is always valid.
+# python: "python3"
+
+# Local resource limits.
+java_mem: "8g"        # Java heap per GATK job
+align_threads: 8      # threads per bwa-mem alignment job (Phase 0)

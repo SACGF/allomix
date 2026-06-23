@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Never hallucinate.** Do not state inferences, guesses, or recalled facts as if they were verified. If you are not certain, say so and verify first. This applies to dataset identities, file contents, study citations, anything.
 - **Stop at permission/paywall walls.** If you hit a 401/403/404, a private repo, a login prompt, or any access wall, stop and ask the user to provide auth, fix access, or retrieve the content. Do not work around the wall with guesses or assumptions.
 - **Never close GitHub issues.** Do not close issues yourself, and do not use auto-closing keywords (`Closes`, `Fixes`, `Resolves`, etc. followed by `#N`) in commit messages or PR descriptions. Reference issues with a plain `#N` only. Closing is the user's decision; a feature being merged does not mean the issue is done.
+- **Commit only under the user's identity.** Make commits using the user's git author/committer name and email. Do not attribute commits to Claude, and do not add `Co-Authored-By: Claude` or `Generated with Claude Code` trailers to commit messages or PR descriptions.
+- **Commit directly to `main`.** Work on and commit to `main` by default. Do not create a branch or open a PR unless the user specifically asks for one.
 
 ## Purpose
 
@@ -125,10 +127,10 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 The paper build uses Snakemake (`Snakefile` in repo root). All 7 validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
-The paper dependencies (snakemake >=8) require Python 3.11+, even though the core tool runs on 3.10+. Build in a 3.11 venv:
+The paper dependencies (snakemake >=8) require Python 3.11+, even though the core tool runs on 3.10+. Pin the venv to Python 3.13. Do not use `--python '>=3.11'`: it resolves to the newest available interpreter (e.g. 3.14), and snakemake's transitive dependency `immutables==0.21` ships no wheel for 3.14, so it falls back to compiling a C extension from source and fails without a compiler installed.
 
 ```bash
-uv venv --python '>=3.11' && source .venv/bin/activate
+uv venv --python 3.13 && source .venv/bin/activate
 uv pip install -e ".[dev,scripts,paper]"
 ```
 

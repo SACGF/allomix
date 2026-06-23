@@ -42,7 +42,15 @@ depends on. ``bcftools mpileup`` preserves raw per-allele counts;
 ``bcftools call -C alleles`` then assigns a GT at every panel site
 using only the panel's known REF/ALT pair as candidates.
 
+Config is two-layer (issue #30): pipeline/tools.yaml holds per-machine tool
+paths and resources (set up once per machine); pipeline/config.yaml holds the
+per-run settings (reference, panel, sample CSVs, output, mpileup params). Both
+load as defaults; --configfile and --config override on top.
+
 Usage (from repo root):
+    # First time on a machine: check the tools in tools.yaml are runnable
+    snakemake -s pipeline/Snakefile validate_tools
+
     # All patients in pipeline/sample_csvs/
     snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 16
 
@@ -62,6 +70,10 @@ import sys
 # Configuration
 # ---------------------------------------------------------------------------
 
+# Two-layer config (issue #30): tools.yaml holds per-machine tool paths and
+# resources; config.yaml holds the per-run settings. Both load as defaults here
+# (tools first, so run config and any --configfile / --config override on top).
+configfile: os.path.join(workflow.basedir, "tools.yaml")
 configfile: os.path.join(workflow.basedir, "config.yaml")
 
 REF = config["ref"]
@@ -321,6 +333,81 @@ def _all_targets():
 rule all:
     input:
         _all_targets(),
+
+
+# ---------------------------------------------------------------------------
+# Tool validation (issue #30): check the tools.yaml executables are runnable.
+# Not part of `rule all`; request it by name on a new machine:
+#     snakemake -s pipeline/Snakefile validate_tools
+# ---------------------------------------------------------------------------
+
+# (executable, version-probe args). bwa has no --version flag (it prints usage
+# to stderr and exits 1), so it is probed by existence only, below.
+_TOOL_PROBES = {
+    "gatk": (GATK, ["--version"]),
+    "bcftools": (BCFTOOLS, ["--version"]),
+    "samtools": (SAMTOOLS, ["--version"]),
+    "tabix": (TABIX, ["--version"]),
+    "bgzip": (BGZIP, ["--version"]),
+    "python": (PYTHON, ["--version"]),
+}
+if BUILD_ERROR_TABLE:
+    _TOOL_PROBES["allomix"] = (ALLOMIX, ["--version"])
+# bwa is only used by the optional alignment phase; require it only then.
+_EXIST_ONLY = {"bwa": BWA} if FASTQ_DIR else {}
+
+
+rule validate_tools:
+    """Smoke-test every configured external tool: present on PATH and runnable.
+
+    Fails (non-zero exit) listing any tool that is missing or errors on its
+    version probe, so a fresh machine's tools.yaml is verified before a real
+    run. `bwa` is checked only when the alignment phase is active (fastq_dir
+    set); `allomix` only when build_error_table is on.
+    """
+    run:
+        import shutil
+        import subprocess
+
+        problems = []
+        for name, exe in _EXIST_ONLY.items():
+            path = shutil.which(exe)
+            if path is None:
+                problems.append(f"{name}: {exe!r} not found on PATH")
+                print(f"MISSING  {name}: {exe!r} not found on PATH")
+            else:
+                print(f"OK       {name}: {exe} -> {path} (existence only)")
+        for name, (exe, probe) in _TOOL_PROBES.items():
+            path = shutil.which(exe)
+            if path is None:
+                problems.append(f"{name}: {exe!r} not found on PATH")
+                print(f"MISSING  {name}: {exe!r} not found on PATH")
+                continue
+            try:
+                res = subprocess.run(
+                    [exe, *probe],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                problems.append(f"{name}: {exe} failed to run ({exc})")
+                print(f"BROKEN   {name}: {exe} failed to run ({exc})")
+                continue
+            if res.returncode != 0:
+                err = (res.stderr or res.stdout or "").strip().splitlines()
+                detail = err[0] if err else f"exit {res.returncode}"
+                problems.append(f"{name}: {exe} exited {res.returncode} ({detail})")
+                print(f"BROKEN   {name}: {exe} exited {res.returncode} ({detail})")
+                continue
+            ver = (res.stdout or res.stderr or "").strip().splitlines()
+            print(f"OK       {name}: {exe} -> {ver[0] if ver else 'runnable'}")
+        if problems:
+            raise ValueError(
+                "validate_tools found "
+                f"{len(problems)} problem(s):\n  " + "\n  ".join(problems)
+            )
+        print("\nAll configured tools are present and runnable.")
 
 
 # Restrict wildcards so {patient}/{sample} cannot match path separators

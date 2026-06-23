@@ -1,3 +1,11 @@
+# allomix pipeline — RUN config (issue #30).
+#
+# This file holds only PER-RUN settings: the reference, the panel/intervals,
+# which samples to process, where output goes, and the mpileup parameters for
+# the panel. Tool locations and machine resources live separately in
+# pipeline/tools.yaml (set up once per machine, loaded automatically by the
+# Snakefile). To use a tool that is not on PATH, edit tools.yaml, not this file.
+#
 # One CSV per patient with columns:
 #     sample_id,bam_filename,sample_type
 # sample_type must be HOST, DONOR, or ADMIX.
@@ -6,13 +14,13 @@
 # the directory).
 # Pipeline runs GATK on HOST + DONOR, then forced bcftools mpileup on ADMIX
 # at the GATK-derived panel sites — see pipeline/Snakefile for the rationale.
+#
+# Run from repo root:
+#     snakemake -s pipeline/Snakefile --configfile pipeline/config.yaml --cores 16
 
 ref: "/path/to/hg38.fa"
 samples_csv_dir: "pipeline/sample_csvs"
 output_dir: "output/genotypes"
-
-tabix: "tabix"
-bgzip: "bgzip"
 
 # Phase 0 (optional) — align FASTQ -> BAM with bwa mem.
 # Off by default: leave fastq_dir unset to use pre-aligned BAMs (the CSV
@@ -21,17 +29,13 @@ bgzip: "bgzip"
 # <bam_dir>/<run>.<bam_suffix>, which must equal the CSV bam_filename paths.
 # The reference must be bwa-indexed (`bwa index <ref>`). The read group's SM is
 # set to each sample's sample_id from the CSV. BAMs are NOT duplicate-marked.
-bwa: "bwa"
-samtools: "samtools"
+# (The aligner executable + thread count are in tools.yaml: bwa, align_threads.)
 # fastq_dir: "/path/to/fastqs"
 # fastq_suffix: "fastq.gz"
 # bam_dir: "/path/to/bams"
 # bam_suffix: "hg38.bam"
-# align_threads: 8
 
 # Phase 1 — GATK
-gatk: "gatk"  # full path if not on PATH, e.g. /tau/tools/gatk-4.1.3.0/gatk
-java_mem: "8g"  # Java heap per GATK job
 intervals: "/path/to/targets.bed"  # REQUIRED — capture-panel BED restricting GATK to the targeted loci
 # Optional fixed panel of (CHROM,POS,REF,ALT) sites. When set:
 #   - GenotypeGVCFs uses --force-output-intervals at every panel allele, so
@@ -45,13 +49,7 @@ intervals: "/path/to/targets.bed"  # REQUIRED — capture-panel BED restricting 
 # panel_alleles_vcf: "/path/to/panel.vcf.gz"
 
 # Phase 2 — bcftools mpileup
-bcftools: "bcftools"
 max_depth: 100000  # set well above panel coverage so >1000x panels are not capped
 min_mapq: 20
 min_baseq: 20
 read_filters: "UNMAP,SECONDARY,QCFAIL,DUP"
-
-# Run-unit metadata (index-hopping check, issue #12). Interpreter for the helper
-# script pipeline/scripts/extract_run_units.py (pure stdlib). Defaults to the
-# Python running Snakemake; set only if you need a different one.
-# python: "python3"

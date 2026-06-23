@@ -129,12 +129,16 @@ If a patient has only pre-transplant baseline samples (no ADMIX rows yet), the p
 
 ## Configuration
 
-Edit `pipeline/config.yaml` or pass values on the command line. Key options:
+Config is split in two (issue #30):
+
+- `pipeline/tools.yaml` — per-machine tool paths (`gatk`, `bcftools`, `samtools`, `bwa`, `tabix`, `bgzip`, `allomix`) and resources (`java_mem`, `align_threads`). Set up once per machine. The Snakefile loads it automatically, so you rarely touch it after the first run. Verify a new machine with `snakemake -s pipeline/Snakefile validate_tools`.
+- `pipeline/config.yaml` — per-run settings. Edit this (or pass values on the command line) for each cohort. Key options:
 
 ```yaml
 ref: "/path/to/hg38.fa"
 samples_csv: "patient_4MO.csv"
 output_dir: "output/genotypes"
+intervals: "/path/to/targets.bed"   # REQUIRED capture-panel BED
 
 # Phase 2 filters (defaults shown)
 max_depth: 100000      # set well above panel coverage so >1000x is not capped
@@ -143,7 +147,7 @@ min_baseq: 20
 read_filters: "UNMAP,SECONDARY,QCFAIL,DUP"
 ```
 
-The phase-2 filters approximate sensible GATK-equivalent defaults. They are tunable per patient if you need stricter or looser thresholds.
+The phase-2 filters approximate sensible GATK-equivalent defaults. They are tunable per patient if you need stricter or looser thresholds. A `--configfile` you pass (and any `--config key=val`) overrides both default files.
 
 ## Running
 

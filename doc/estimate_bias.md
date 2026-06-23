@@ -92,8 +92,9 @@ ref: "/path/to/hg38.fa"
 samples_csv: "output/samples_bias_training.csv"
 intervals: "/tau/ngs_pipelines/hg38_reference_files/capture_kits/idt_rhampseq_sid/v1/idt_rhampseq_sid_SNPsQC.bed"
 output_dir: "output/bias_training"
-gatk: "/tau/tools/gatk-4.1.3.0/gatk"
 ```
+
+Tool paths (for example a non-PATH `gatk: "/tau/tools/gatk-4.1.3.0/gatk"`) go in `pipeline/tools.yaml`, which the Snakefile loads automatically, not in this per-run file (issue #30).
 
 Then run:
 

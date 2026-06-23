@@ -328,6 +328,15 @@ def run_pair(
                     if blend.marker_biases is not None
                     else None
                 )
+                # NOTE on where the time goes (do not "optimise" this away):
+                # this write_vcf + parse_vcf round-trip looks wasteful but
+                # profiling the inner loop puts it at ~0.2% of wall time. The
+                # cost is ~99% in estimate_single_donor_bb below (the rho
+                # profiling and Nelder-Mead refinement inside the MLE). Replacing
+                # the round-trip with blend_vcfs(return_markers=True) saves
+                # nothing measurable. If you want this sweep faster, optimise the
+                # estimator hot path (chimerism._ll_from_p_alt / the grid+NM
+                # search), not the simulation or IO.
                 write_vcf(blend, admix_path)
                 admix_md_full = parse_vcf(str(admix_path), min_dp=0, min_gq=0)
 

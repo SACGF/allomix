@@ -432,6 +432,14 @@ class _MarkerArrays:
     e_refalt: np.ndarray
     e_altref: np.ndarray
     error_mask: np.ndarray  # True where both per-direction rates are known
+    # (f, rho)-independent precomputations, hoisted out of the per-evaluation
+    # hot path. ``has_bias``/``has_error`` cache the per-call ``.any()`` checks;
+    # ``logit_bias_masked`` is ``logit(clip(0.5 + bias))`` at the biased markers
+    # (the only bias-dependent term in ``apply_bias``), so the likelihood loop
+    # never recomputes it. All exact: same values the per-call code produced.
+    has_bias: bool
+    has_error: bool
+    logit_bias_masked: np.ndarray
 
 
 def _precompute_marker_arrays(
@@ -489,16 +497,26 @@ def _precompute_marker_arrays(
             e_altref[i] = entry.e_altref
     error_mask = ~np.isnan(e_refalt)
 
+    bias_mask = bias != 0.0
+    # logit(clip(0.5 + bias)) at the biased markers, in array order, so it lines
+    # up with ``w[bias_mask]``. This is exactly the ``logit(p)`` term inside
+    # ``apply_bias``; lifting it here keeps the per-evaluation work to the
+    # w-dependent part only.
+    logit_bias_masked = logit(np.clip(0.5 + bias[bias_mask], W_EPS, 1.0 - W_EPS))
+
     return _MarkerArrays(
         host_ref_dose=host_ref_dose,
         donor_ref_dose=donor_ref_dose,
         n=ad_ref + ad_alt,
         k=ad_alt,
         bias=bias,
-        bias_mask=bias != 0.0,
+        bias_mask=bias_mask,
         e_refalt=e_refalt,
         e_altref=e_altref,
         error_mask=error_mask,
+        has_bias=bool(bias_mask.any()),
+        has_error=bool(error_mask.any()),
+        logit_bias_masked=logit_bias_masked,
     )
 
 
@@ -523,11 +541,30 @@ def _total_ll_vec(
     Returns:
         Total log-likelihood.
     """
+    return _ll_from_p_alt(arr, _p_alt_for_f(arr, f_donor, error_rate), rho)
+
+
+def _p_alt_for_f(
+    arr: _MarkerArrays,
+    f_donor: float,
+    error_rate: float = DEFAULT_ERROR_RATE,
+) -> np.ndarray:
+    """Per-marker P(observe ALT) at donor fraction ``f_donor`` (rho-independent).
+
+    This is the f-dependent half of ``_total_ll_vec``. Splitting it out lets the
+    rho profiling (which holds f fixed and sweeps rho) compute this once per f
+    instead of once per (f, rho). The arithmetic is identical to the inline
+    version, so the returned array is bit-for-bit the same.
+    """
     # Expected reference-allele weight, with the conditional logit-space bias
     # correction (see apply_bias) applied only at markers that have an estimate.
     w = (1.0 - f_donor) * arr.host_ref_dose / 2.0 + f_donor * arr.donor_ref_dose / 2.0
-    if arr.bias_mask.any():
-        w[arr.bias_mask] = apply_bias(w[arr.bias_mask], arr.bias[arr.bias_mask])
+    if arr.has_bias:
+        # Inlined apply_bias with the bias-only ``logit(p)`` term precomputed.
+        wm = np.clip(w[arr.bias_mask], W_EPS, 1.0 - W_EPS)
+        w[arr.bias_mask] = np.clip(
+            expit(logit(wm) - arr.logit_bias_masked), W_EPS, 1.0 - W_EPS
+        )
 
     # P(observe ALT | w). Default is the 4-state symmetric model with the
     # global ``error_rate``; per-marker asymmetric rates (where supplied) use
@@ -537,12 +574,19 @@ def _total_ll_vec(
     p_alt_raw = (1.0 - w) * (1.0 - e) + w * e_specific
     p_ref_raw = w * (1.0 - e) + (1.0 - w) * e_specific
     p_alt = p_alt_raw / (p_ref_raw + p_alt_raw)
-    if arr.error_mask.any():
+    if arr.has_error:
         # Sub in the asymmetric per-marker rates at the masked positions.
         p_alt_asym = w * arr.e_refalt + (1.0 - w) * (1.0 - arr.e_altref)
         p_alt = np.where(arr.error_mask, p_alt_asym, p_alt)
-    p_alt = np.clip(p_alt, 1e-6, 1.0 - 1e-6)
+    return np.clip(p_alt, 1e-6, 1.0 - 1e-6)
 
+
+def _ll_from_p_alt(arr: _MarkerArrays, p_alt: np.ndarray, rho: float) -> float:
+    """Total beta-binomial log-likelihood from a precomputed ``p_alt`` and rho.
+
+    The rho-dependent half of ``_total_ll_vec``; identical arithmetic to the
+    inline version.
+    """
     a = np.maximum(p_alt * rho, 1e-10)
     b = np.maximum((1.0 - p_alt) * rho, 1e-10)
     n, k = arr.n, arr.k
@@ -852,6 +896,17 @@ def _estimate_single_donor_bb_core(
             error_rate=error_rate,
         )
 
+    # This function is the hot path of every validation sweep in the paper (LoD,
+    # relatedness, depth, overdispersion all bottom out here, millions of calls).
+    # Per profiling it is ~99% of those builds; simulation and VCF IO are noise.
+    # The cost lives in the two scipy searches below (grid rho-profiling and the
+    # Nelder-Mead refinement) hammering _ll_from_p_alt. Optimise here, exactly:
+    # the f-invariant work (w/bias/p_alt via _p_alt_for_f) is already hoisted out
+    # of the rho loops, and the per-call-constant terms are precomputed in
+    # _precompute_marker_arrays. Keep any further change bit-identical (this
+    # estimator's output is validated against fixtures; ~0.1% drift matters at
+    # the low-fraction limit of detection).
+
     # Precompute the (f, rho)-independent per-marker arrays once and reuse them
     # across the grid search, Nelder-Mead refinement, and profile-likelihood CI.
     arr = _precompute_marker_arrays(markers, cal)
@@ -863,9 +918,11 @@ def _estimate_single_donor_bb_core(
     best_rho = 100.0
 
     for f in grid:
-        # Optimise rho for this f
+        # p_alt depends on f only, so compute it once and reuse it across the
+        # rho profiling (was recomputed at every rho evaluation).
+        p_alt_f = _p_alt_for_f(arr, f, error_rate)
         opt_rho = minimize_scalar(
-            lambda log_r, _f=f: -_total_ll_vec(arr, _f, error_rate, math.exp(log_r)),
+            lambda log_r, _p=p_alt_f: -_ll_from_p_alt(arr, _p, math.exp(log_r)),
             bounds=(math.log(1.0), math.log(10000.0)),
             method="bounded",
         )
@@ -904,8 +961,9 @@ def _estimate_single_donor_bb_core(
 
     def profile_ll_f(f_val: float) -> float:
         """Max LL over rho at a given f."""
+        p_alt_f = _p_alt_for_f(arr, f_val, error_rate)
         opt_rho = minimize_scalar(
-            lambda log_r: -_total_ll_vec(arr, f_val, error_rate, math.exp(log_r)),
+            lambda log_r: -_ll_from_p_alt(arr, p_alt_f, math.exp(log_r)),
             bounds=(math.log(1.0), math.log(_RHO_MAX)),
             method="bounded",
         )

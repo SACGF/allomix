@@ -202,6 +202,7 @@ ALL_FACTS = (
     + SRP434573_FACTS
     + SRP_CONTAM_FACTS
     + SUBSAMPLE_LOD_FACTS
+    + SYNTHETIC_FACTS  # results.md now cites the semi-synthetic sub-0.5% facts (#5)
 )
 
 ALL_FIGS = (

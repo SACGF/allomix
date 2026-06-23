@@ -123,6 +123,8 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 ### Building the Paper
 
+**Do NOT run the full paper build (`snakemake -s paper/Snakefile ...` for the `all` or `paper` target) without the user's express permission.** A full build runs the heavy validation simulations (LoD sweeps, presence sweep, subsample LoD, real-data runs, calibration batches) and takes 6+ hours. When you only need to validate new code, build the single rule or run the single script that produces the facts/figure you changed, and confirm those outputs in isolation. Leave the full render to the user, who runs it on a machine with more cores.
+
 The paper build uses Snakemake (`Snakefile` in repo root). All 7 validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
 The paper dependencies (snakemake >=8) require Python 3.11+, even though the core tool runs on 3.10+. Build in a 3.11 venv:

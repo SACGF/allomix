@@ -38,6 +38,16 @@ Outputs:
 Usage:
     python paper/scripts/run_lod_validation.py
     python paper/scripts/run_lod_validation.py --n-pairs 5 --n-seq-reps 10 --n-workers 8
+
+    # Opt in to the fast vectorized grid estimator (~6.5x faster, max lod_pct
+    # deviation 0.0011 pp vs the exact default; see estimate_single_donor_bb_grid).
+    # Use for fast iteration; OMIT for the final publication run.
+    python paper/scripts/run_lod_validation.py --fast-grid
+    ALLOMIX_FAST_GRID=1 python paper/scripts/run_lod_validation.py
+
+    # Composes with quick mode (ALLOMIX_PAPER_QUICK / --config quick=1): quick
+    # shrinks the grid, fast-grid swaps the estimator.
+    ALLOMIX_PAPER_QUICK=1 ALLOMIX_FAST_GRID=1 python paper/scripts/run_lod_validation.py
 """
 
 import argparse

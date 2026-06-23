@@ -1159,6 +1159,27 @@ def estimate_single_donor_bb_grid(
     The exact estimator (``estimate_single_donor_bb``) stays the default and is
     untouched; this path is selected explicitly by the caller.
 
+    Performance and accuracy (measured on the LoD sweep parameter space, see
+    ``scripts/validate_grid_estimator.py``):
+
+      - About 6.5x faster per call than the exact estimator (~30 ms vs ~191 ms;
+        4-7x depending on panel size, with the grid build dominating and the
+        refine ~5 ms). The win comes from replacing the exact estimator's
+        Python-level f-grid loop (a bounded rho profile per f point) and the
+        joint Nelder-Mead refinement with a few vectorized array passes.
+      - Donor-fraction agreement with the exact estimator: median 1e-6 pp,
+        worst case 0.0115 pp over fractions <= 5% (the whole LoD-sweep regime).
+        The only deviations above 0.01 pp are at f=0.5 (outside the LoD range),
+        and there the grid finds the strictly higher likelihood, i.e. it is the
+        more accurate of the two, not the reverse.
+      - End-to-end effect on the reported LoD: across the full 60-cell
+        ``lod_summary`` grid (relatedness x depth x panel size), the per-cell
+        ``lod_pct`` matches the exact estimator to a median of 0.0000 pp and a
+        maximum of 0.0011 pp, comfortably under a 0.01 pp tolerance.
+
+    So this path is appropriate for fast iteration on the LoD sweeps; run the
+    exact estimator (the default) for the final publication figures.
+
     Args:
         markers: Informative markers with admixture allele counts.
         error_rate: Sequencing error rate (fallback when a marker lacks

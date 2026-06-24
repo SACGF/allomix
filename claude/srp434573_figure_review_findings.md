@@ -171,6 +171,31 @@ root), not just the display. Strongest sub-1% lever for co-pooled panels; more w
 speculative in the plan. The gate makes the MLE display honest today; Step 30 makes the MLE
 number itself correct.
 
+## Step 30 feasibility test (does the donor-hom inflation track co-pooled carrier dose?)
+
+Script: `output/figure_review/step30_feasibility.py`. NOT a full Step 30 implementation;
+it tests the PREMISE that the contamination on donor-hom informative markers is apportionable
+by co-pooled-carrier dose. Binary carrier/no-carrier is useless (the host allele is common, so
+~99% of donor-hom markers have >=1 carrier). Binning by NUMBER of co-pooled carriers (host
+allele carried by other panel individuals) at the true-0% endpoints:
+
+- HIGH-contamination endpoints: clear dose-response.
+  - M3->F2 host-allele bg: 1 carrier 0.29%, 2 0.25%, 3 0.33%, 4 0.50%, 5 0.85%.
+  - F3->F2: 1 0.10%, 2 0.37%, 3 0.36%, 4 0.46%, 5 0.70%.
+- CLEAN endpoints: FLAT ~0.15% across carrier counts (no dose-response) = sequencing/mapping
+  error floor, not contamination (F2->M1 0.15-0.22%; M1->M2 0.11-0.20%).
+
+Conclusion: the Step 30 PREMISE holds where it matters. The donor-hom contamination is real and
+scales with co-pooled carrier dose, so it is identifiable and apportionable per marker; the
+flat error floor at clean mixtures correctly carries no dose signal. So Step 30 is not built on
+sand. STILL UNPROVEN end-to-end: that apportioning/subtracting the dose-predicted contamination
+actually pulls the MLE floor to ~0 WITHOUT harming real low-host estimates. Caveats: at
+informative markers in a real low-host sample, contamination and true host both add host-allele
+reads (confounded), so Step 30 must PREDICT the contamination from the carrier dose (calibrated
+on the dose-response / consensus-hom floor) and subtract it - that prediction model is the
+actual work. The dose slope differs by mixture/pool, and co-pooled genotypes are available in
+cohort but not deployment (the plan notes the dose-response still allows apportionment there).
+
 ## Cross-cutting takeaway
 Q1 and Q3 point to the SAME root cause: co-pooled contamination landing specifically on
 donor-homozygous host-allele markers, which the consensus-hom contamination floor does not

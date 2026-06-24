@@ -133,6 +133,44 @@ Q3 clamp test (profile extended into negative host fraction):
   boundary nudge), but for reporting the clamp is correct (negative % unphysical) and the real
   fix for the contamination cases is the presence gate / Step 30.
 
+## Remedies explained (presence-test gate vs Step 30), with verified presence internals
+
+Presence-test internals at the boundary (analyse_sample + error table; Y = pooled donor-absent
+reads, Lam = sum n_i*e_i expected background under H0 "no host"):
+| sample | n_mk | Y | Lam | Y/Lam | poisson_p | f_host | verdict |
+|---|---|---|---|---|---|---|---|
+| M3->F2 endpoint (true 0%, high contam) | 341 | 2260 | 3559 | 0.64 | 1.0 | 0.000% | not detected |
+| F2->M1 endpoint (true 0%, clean) | 349 | 7196 | 11246 | 0.64 | 1.0 | 0.000% | not detected |
+| F2->M2 real 0.5% host | 329 | 23902 | 12092 | 1.98 | 0.0 | 0.287% | detected |
+
+**Presence-test gate (cheap, report layer).** allomix already runs a host-presence test
+(`detect.py`): it reads donor-homozygous markers where the host carries the donor-absent
+allele, POOLS the donor-absent reads Y, and tests them against the per-site empirical error
+background Lam (from the error table) via a one-sided pooled-Poisson + chi-bar-square LRT.
+At BOTH true-0% endpoints Y/Lam ~= 0.64 (observed below the modeled background -> p=1.0); at
+real 0.5% host Y/Lam ~= 2.0 -> p=0. It cleanly separates true-0% (including the high-
+contamination M3->F2) from real low host. The gate is a REPORTING change: when presence is
+not-detected, report the MLE host as "not detected / < LoD" instead of the bare positive
+point; keep the point as a diagnostic. Zero estimator change, kills the S12 floating points.
+Why it works where the raw MLE does not: the presence test pools against a per-site background
+and requires significance; the MLE is an unguarded point (best-fit f >= 0, no null) that fits
+a small positive f from a few elevated markers. NOTE the error table (#23, per-site) is
+already doing much of the per-marker-background job FOR THE PRESENCE TEST (Lam > Y at the
+contam endpoint), which is exactly why presence is robust there.
+
+**Step 30 (principled, estimator layer).** The contamination floor today is a per-SAMPLE
+scalar applied uniformly. Physically, a donor-hom marker is inflated only when a CO-POOLED
+genome carries the donor-absent (host) allele at that site; those specific markers get extra
+reads, others do not (Q1: the +0.24% donor-hom background, dose-dependent on co-pooled
+carriers). Step 30 apportions the contamination to the specific markers it inflates instead of
+taxing every donor-absent marker by the average. Identifiable directly with cohort genotypes;
+in deployment the dose-response still lets the floor be apportioned. This corrects the
+per-marker background for BOTH the presence test and the MLE, so it pulls the MLE's positive
+floor at the contam endpoints down to ~0 (fixes the Q1 low-end bias and the Q3 floor at the
+root), not just the display. Strongest sub-1% lever for co-pooled panels; more work, marked
+speculative in the plan. The gate makes the MLE display honest today; Step 30 makes the MLE
+number itself correct.
+
 ## Cross-cutting takeaway
 Q1 and Q3 point to the SAME root cause: co-pooled contamination landing specifically on
 donor-homozygous host-allele markers, which the consensus-hom contamination floor does not

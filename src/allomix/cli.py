@@ -153,12 +153,14 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--marker-type-overdispersion",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Fit a separate beta-binomial concentration (rho) for the "
              "donor-homozygous and donor-heterozygous marker classes instead of "
              "one shared rho (single-donor only). Removes the sub-0.5%% MLE "
-             "floor (issue #33). Off by default; falls back to shared rho (with "
-             "a QC warning) when a class has too few markers.",
+             "floor (issue #33). On by default; use --no-marker-type-overdispersion "
+             "for the legacy shared-rho estimator. Falls back to shared rho for a "
+             "sample when a class has too few markers.",
     )
     parser.add_argument("--verbose", action="store_true", help="Include per-marker detail")
     parser.add_argument(
@@ -259,7 +261,7 @@ def _run_single_sample(
     artifact_filter: bool = True,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
-    marker_type_overdispersion: bool = False,
+    marker_type_overdispersion: bool = True,
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,

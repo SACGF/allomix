@@ -173,7 +173,7 @@ def estimate_single_donor_bb_grid(
     n_f: int = 201,
     n_rho: int = 32,
     refine: bool = True,
-    marker_type_overdispersion: bool = False,
+    marker_type_overdispersion: bool = True,
 ) -> GridChimerismResult:
     """Fast approximate single-donor MLE via a vectorized (f, rho) grid.
 
@@ -225,9 +225,10 @@ def estimate_single_donor_bb_grid(
             (default True).
         marker_type_overdispersion: Profile a separate rho per marker class
             (donor-hom vs donor-het) on the grid and sum the per-class
-            profiled-over-rho curves before the f argmax (issue #33). Off by
-            default (single-rho grid, unchanged). Falls back to the single-rho
-            grid when a class has fewer than ``MIN_CLASS_MARKERS`` markers.
+            profiled-over-rho curves before the f argmax (issue #33). On by
+            default (matches the exact estimator's default). Set False for the
+            legacy single-rho grid. Falls back to the single-rho grid when a class
+            has fewer than ``MIN_CLASS_MARKERS`` markers.
 
     Returns:
         ``GridChimerismResult`` with the donor-fraction estimate and a coarse CI.
@@ -254,8 +255,8 @@ def estimate_single_donor_bb_grid(
                 markers, het_mask, error_rate, cal, n_f, n_rho, refine
             )
         fell_back: str | None = (
-            f"per-marker-type overdispersion requested but a class is sparse "
-            f"(hom={n_hom}, het={n_het}, min={MIN_CLASS_MARKERS}); used shared rho"
+            f"a marker class is sparse (hom={n_hom}, het={n_het}, "
+            f"min={MIN_CLASS_MARKERS}); used shared rho for this sample"
         )
     else:
         fell_back = None

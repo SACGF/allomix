@@ -395,16 +395,19 @@ def _estimate_single_donor_bb_core(
     error_rate: float = DEFAULT_ERROR_RATE,
     grid_steps: int = 1001,
     calibration: PanelCalibration | None = None,
-    marker_type_overdispersion: bool = False,
+    marker_type_overdispersion: bool = True,
 ) -> ChimerismResult:
     """Single-donor beta-binomial MLE over the given marker set (no robust trim).
 
     This is the unguarded estimator; ``estimate_single_donor_bb`` wraps it with
     the optional robust refit. Args/returns as in that wrapper, plus
-    ``marker_type_overdispersion`` (issue #33): when True, fit a separate rho for
-    the donor-hom and donor-het marker classes instead of one shared rho, which
-    removes the sub-0.5% MLE floor. Off by default, so the shared-rho path stays
-    byte-identical.
+    ``marker_type_overdispersion`` (issue #33): when True (the default), fit a
+    separate rho for the donor-hom and donor-het marker classes instead of one
+    shared rho, which removes the sub-0.5% MLE floor. Set False to recover the
+    legacy shared-rho path (byte-identical to the pre-#33 estimator). When a
+    marker class has fewer than ``MIN_CLASS_MARKERS`` markers the per-class rho
+    is not identifiable, so the estimator falls back to shared rho for that
+    sample and records the reason on the result (diagnostic only, not a warning).
     """
     cal = calibration or PanelCalibration()
     n_informative = len(markers)
@@ -427,13 +430,13 @@ def _estimate_single_donor_bb_core(
         n_hom = n_informative - n_het
         if n_het >= MIN_CLASS_MARKERS and n_hom >= MIN_CLASS_MARKERS:
             return _estimate_single_donor_two_rho(markers, het_mask, error_rate, grid_steps, cal)
-        # Sparse class: its rho is not identifiable. Fall through to the
-        # shared-rho path, but record the reason so QC can surface it (stderr is
-        # lost when the CLI is driven as a subprocess by the runner / paper
-        # pipeline).
+        # Sparse class: its per-class rho is not identifiable, so fall through to
+        # the shared-rho path for this sample and record the reason on the result.
+        # This is routine for small or hom-dominated panels and is a diagnostic
+        # field only, not a QC warning (two-rho is the default, not a request).
         fell_back: str | None = (
-            f"per-marker-type overdispersion requested but a class is sparse "
-            f"(hom={n_hom}, het={n_het}, min={MIN_CLASS_MARKERS}); used shared rho"
+            f"a marker class is sparse (hom={n_hom}, het={n_het}, "
+            f"min={MIN_CLASS_MARKERS}); used shared rho for this sample"
         )
     else:
         fell_back = None
@@ -792,7 +795,7 @@ def estimate_single_donor_bb(
     calibration: PanelCalibration | None = None,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
-    marker_type_overdispersion: bool = False,
+    marker_type_overdispersion: bool = True,
 ) -> ChimerismResult:
     """Estimate single-donor chimerism with beta-binomial likelihood.
 
@@ -818,8 +821,9 @@ def estimate_single_donor_bb(
         robust_k: Residual cut in robust SDs for the refit.
         marker_type_overdispersion: Fit a separate beta-binomial concentration
             for the donor-hom and donor-het marker classes instead of one shared
-            rho (issue #33). Off by default (shared rho, byte-identical). Removes
-            the sub-0.5% MLE floor; falls back to shared rho when a class has
+            rho (issue #33). On by default; removes the sub-0.5% MLE floor. Set
+            False for the legacy shared-rho path (byte-identical to the pre-#33
+            estimator). Falls back to shared rho for a sample when a class has
             fewer than ``MIN_CLASS_MARKERS`` markers.
 
     Returns:

@@ -196,6 +196,42 @@ on the dose-response / consensus-hom floor) and subtract it - that prediction mo
 actual work. The dose slope differs by mixture/pool, and co-pooled genotypes are available in
 cohort but not deployment (the plan notes the dose-response still allows apportionment there).
 
+## Step 30 prototype tested end-to-end (does it work?) -> YES, with pool-level dose calibration
+
+Script: `output/figure_review/step30_prototype.py`. Predict per-marker contamination on
+donor-hom markers (types 0/1) from co-pooled carrier dose, subtract from the host-allele count,
+re-estimate. Three calibrations tried:
+- **consensus-hom transfer** (c(n) from consensus-hom sites): consistent but OVER-corrects clean
+  mixtures, because informative markers carry a ~0.15% intrinsic mapping floor that consensus-hom
+  sites (~0.01% floor) lack -> the cross-marker-class floor does not transfer (F2->M1 0.5%:
+  0.262 -> 0.140, away from the ~0.4 truth).
+- **within-sample regression** (host-allele frac ~ a + b*n_carriers per sample; slope b =
+  contamination/carrier, intercept = host+floor): no transfer, deployment-valid, PRESERVES the
+  clean mixture (F2->M1 0.5% 0.262 -> 0.248) and removes the high-contam floors, but the
+  per-sample slope is NOISY at high host fraction (flips to 0 at 1% and 5%).
+- **pool slope** (one slope per pool, est. from the clean endpoint; contamination/carrier is a
+  pool property): the winner.
+
+Pool-slope results (baseline two-rho -> Step 30):
+| mixture | endpoint(0%) | 1% | 2.5% | 5% | 10% |
+|---|---|---|---|---|---|
+| M3->F2 (slope 0.16%/carr) | 0.165->0.000 | 1.184->0.909 | 3.051->2.769 | 5.387->5.116 | 11.098->10.869 |
+| F3->F2 (slope 0.13%/carr) | 0.101->0.000 | 1.144->0.877 | 2.985->2.759 | 4.670->4.443 | 10.783->10.576 |
+| F2->M1 (slope ~0)         | 0.000->0.000 | 0.834->0.785 | 2.067->2.035 | 4.377->4.351 | 0.5%: 0.262->0.213 |
+
+Verdict: Step 30 WORKS. Per-marker dose subtraction removes the zero-host floor entirely on the
+high-contamination mixtures AND brings their whole (upward-inflated) dilution series toward truth,
+while correctly PRESERVING clean low-contamination samples (slope ~0 -> ~no correction). Note this
+reframes Q1: contamination INFLATES these mixtures upward at every level (it adds host-allele
+reads); at the high-contam endpoints that inflation is the floor, and Step 30 removes both.
+
+Caveats / what is not yet proven: (1) the pool slope was estimated from the true-0% endpoint, which
+deployment lacks; the within-sample regression is deployment-valid and serial monitoring (>=3
+timepoints/patient) gives the data to pool the slope per patient and beat the per-sample noise. (2)
+Only donor-hom types 0/1 corrected; donor-het left alone. (3) Validated on 3 mixtures; needs the
+full set + the synthetic ladder + a no-harm check across all clean mixtures before productionizing.
+This is now a justified implementation, not a speculation: scripts in `output/figure_review/`.
+
 ## Cross-cutting takeaway
 Q1 and Q3 point to the SAME root cause: co-pooled contamination landing specifically on
 donor-homozygous host-allele markers, which the consensus-hom contamination floor does not

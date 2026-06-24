@@ -93,6 +93,46 @@ even with the per-marker error table, is not.
    is "is any present"; the raw MLE point must not be read as a detection near zero. Add the
    S12 caption sentence (the floating points are pure-donor endpoints; presence is the call).
 
+## Follow-up (Dave's Q1 "why down not looser CI / is it a /2" and Q3 "was clamping a mistake")
+
+Script: `output/figure_review/q1q3_followup.py`.
+
+Q1 class decomposition at 0.5% nominal (host %):
+| mixture | two-rho | shared-rho | donor-hom only | donor-het only |
+|---|---|---|---|---|
+| F2->M1 | 0.262 | 0.443 | 0.265 | 0.000 |
+| F2->M2 | 0.287 | 0.834 | 0.287 | 0.292 |
+| M1->M2 | 0.241 | 0.475 | 0.243 | 0.000 |
+
+- **two-rho == donor-hom-only** (0.262 vs 0.265, etc). At low f two-rho down-weights the
+  donor-het class to ~zero, so the estimate IS the donor-hom-only estimate.
+- shared-rho is HIGHER (0.44-0.83) because it keeps the donor-het markers, whose symmetric
+  near-0.5 overdispersion RECTIFIES upward into a positive host signal (the old #33 floor).
+- So the "down" is a POINT/BIAS effect, not a variance effect: two-rho removes a DIRECTIONAL
+  upward bias from the donor-het class, which moves the point (not just the CI). Contamination
+  does not push the point down; it inflates the donor-hom reads (up). The point lands low
+  because (a) two-rho drops the donor-het upward rectification and (b) the error model
+  subtracts a per-marker background from the donor-hom reads (raw 0.54 -> MLE 0.26; model-free
+  background-subtracted true ~0.38, so the error model over-subtracts ~0.1pp at this rung).
+
+NOT a divide-by-2. two-rho estimate / nominal across levels (would be ~0.5 everywhere if /2):
+0.5%: 0.48-0.57; 1%: 0.61-0.83; 2.5%: 0.78-0.88; 5%: 0.77-0.88; 10%: 0.85-0.99. The ratio
+RISES toward 1 with fraction. The estimator fits ONE shared f; splitting rho does not divide
+f. The ~half at 0.5% is a roughly FIXED background subtraction eating a level-dependent
+fraction of signal (largest at the lowest rung) -> coincidence, not a /2.
+
+Q3 clamp test (profile extended into negative host fraction):
+- clean endpoint (F2->M1, true 0%): unconstrained peak @ **-0.020%** -> the clamp floors a
+  ~0 (slightly negative) estimate at exactly 0. Negligible upward nudge.
+- contamination endpoint (M3->F2, true 0%): unconstrained peak @ **+0.165%** -> a GENUINE
+  positive interior maximum (real excess host-allele reads from contamination). The clamp is
+  irrelevant here; unclamping would NOT remove it.
+- So clamping was not the main mistake: clean endpoints sit ~0 with or without it; the visible
+  S12 floors are contamination signal, not clamp pile-up. Valid kernel: a signed estimate
+  would let true-0% samples center on 0 for diagnostics/presentation (removes the tiny
+  boundary nudge), but for reporting the clamp is correct (negative % unphysical) and the real
+  fix for the contamination cases is the presence gate / Step 30.
+
 ## Cross-cutting takeaway
 Q1 and Q3 point to the SAME root cause: co-pooled contamination landing specifically on
 donor-homozygous host-allele markers, which the consensus-hom contamination floor does not

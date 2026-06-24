@@ -15,8 +15,8 @@ sliced to nested panel prefixes. This exercises the real noise model (per-marker
 capture bias, depth CV, locus dropout) rather than a hand-rolled binomial.
 
 Usage:
-    python scripts/validate_grid_estimator.py
-    python scripts/validate_grid_estimator.py --quick
+    python paper/scripts/validate_grid_estimator.py
+    python paper/scripts/validate_grid_estimator.py --quick
 """
 
 import argparse
@@ -28,13 +28,12 @@ import tempfile
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import (  # noqa: E402
-    PanelCalibration,
-    estimate_single_donor_bb,
-    estimate_single_donor_bb_grid,
-)
+from fast_grid_estimator import estimate_single_donor_bb_grid  # noqa: E402
+
+from allomix.chimerism import PanelCalibration, estimate_single_donor_bb  # noqa: E402
 from allomix.error_rates import MarkerErrorRates  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import (  # noqa: E402

@@ -36,12 +36,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from allomix.chimerism import (  # noqa: E402
     _RHO_MAX,
+    MIN_CLASS_MARKERS,
     W_EPS,
     PanelCalibration,
+    _donor_het_mask,
     _ll_from_p_alt,
     _MarkerArrays,
     _p_alt_for_f,
     _precompute_marker_arrays,
+    _profile_rho_at_f,
+    _two_rho_profile_ll,
 )
 from allomix.constants import (  # noqa: E402
     CI_LEVEL,
@@ -69,6 +73,11 @@ class GridChimerismResult:
     n_markers_used: int
     error_rate: float
     rho: float = float("inf")
+    # Per-marker-type overdispersion (issue #33). None unless the two-rho mode ran
+    # with both classes above MIN_CLASS_MARKERS; then rho is the het-class rho.
+    rho_hom: float | None = None
+    rho_het: float | None = None
+    marker_type_overdispersion_fallback: str | None = None
 
 
 def _p_alt_grid(
@@ -162,6 +171,7 @@ def estimate_single_donor_bb_grid(
     n_f: int = 201,
     n_rho: int = 32,
     refine: bool = True,
+    marker_type_overdispersion: bool = False,
 ) -> GridChimerismResult:
     """Fast approximate single-donor MLE via a vectorized (f, rho) grid.
 
@@ -211,6 +221,11 @@ def estimate_single_donor_bb_grid(
         n_rho: Number of log-spaced rho-grid points on ``[1, _RHO_MAX]``.
         refine: Run the 1-D profiled local polish from the grid argmax
             (default True).
+        marker_type_overdispersion: Profile a separate rho per marker class
+            (donor-hom vs donor-het) on the grid and sum the per-class
+            profiled-over-rho curves before the f argmax (issue #33). Off by
+            default (single-rho grid, unchanged). Falls back to the single-rho
+            grid when a class has fewer than ``MIN_CLASS_MARKERS`` markers.
 
     Returns:
         ``GridChimerismResult`` with the donor-fraction estimate and a coarse CI.
@@ -227,6 +242,21 @@ def estimate_single_donor_bb_grid(
             n_markers_used=0,
             error_rate=error_rate,
         )
+
+    if marker_type_overdispersion:
+        het_mask = _donor_het_mask(markers)
+        n_het = int(het_mask.sum())
+        n_hom = n_informative - n_het
+        if n_het >= MIN_CLASS_MARKERS and n_hom >= MIN_CLASS_MARKERS:
+            return _estimate_single_donor_bb_grid_two_rho(
+                markers, het_mask, error_rate, cal, n_f, n_rho, refine
+            )
+        fell_back: str | None = (
+            f"per-marker-type overdispersion requested but a class is sparse "
+            f"(hom={n_hom}, het={n_het}, min={MIN_CLASS_MARKERS}); used shared rho"
+        )
+    else:
+        fell_back = None
 
     arr = _precompute_marker_arrays(markers, cal)
 
@@ -301,4 +331,90 @@ def estimate_single_donor_bb_grid(
         n_markers_used=n_informative,
         error_rate=error_rate,
         rho=best_rho,
+        marker_type_overdispersion_fallback=fell_back,
+    )
+
+
+def _estimate_single_donor_bb_grid_two_rho(
+    markers: list[InformativeMarker],
+    het_mask: np.ndarray,
+    error_rate: float,
+    cal: PanelCalibration,
+    n_f: int,
+    n_rho: int,
+    refine: bool,
+) -> GridChimerismResult:
+    """Fast grid two-rho estimator (issue #33), the §5.9 counterpart of the core.
+
+    Profiles each class's rho out on the same log-spaced rho-grid the single-rho
+    fast path uses (``_ll_grid_over_rho`` -> max over the rho axis), sums the two
+    per-class profiled-over-rho curves, and takes the f argmax. The optional
+    refine and the reported per-class rhos reuse the exact estimator's 1-D rho
+    profile (``_profile_rho_at_f`` / ``_two_rho_profile_ll`` from
+    ``allomix.chimerism``), so the polished fraction matches the exact two-rho MLE.
+    """
+    hom_markers = [m for m, h in zip(markers, het_mask) if not h]
+    het_markers = [m for m, h in zip(markers, het_mask) if h]
+    arr_hom = _precompute_marker_arrays(hom_markers, cal)
+    arr_het = _precompute_marker_arrays(het_markers, cal)
+
+    f_grid = np.linspace(0.0, 1.0, n_f)
+    rho_grid = np.exp(np.linspace(math.log(_GRID_RHO_LO), math.log(_RHO_MAX), n_rho))
+
+    # Profile rho out of each class on the grid, then sum the per-class profiles.
+    p_hom = _p_alt_grid(arr_hom, f_grid, error_rate)  # (n_f, M_hom)
+    p_het = _p_alt_grid(arr_het, f_grid, error_rate)  # (n_f, M_het)
+    ll_hom = _ll_grid_over_rho(arr_hom, p_hom, rho_grid)  # (n_f, n_rho)
+    ll_het = _ll_grid_over_rho(arr_het, p_het, rho_grid)  # (n_f, n_rho)
+    prof_hom = ll_hom.max(axis=1)  # (n_f,)
+    prof_het = ll_het.max(axis=1)
+    prof_total = prof_hom + prof_het  # rho profiled, per f
+
+    fi = int(np.argmax(prof_total))
+    best_f = float(f_grid[fi])
+    best_ll = float(prof_total[fi])
+    best_rho_hom = float(rho_grid[int(np.argmax(ll_hom[fi]))])
+    best_rho_het = float(rho_grid[int(np.argmax(ll_het[fi]))])
+
+    if refine:
+        step = 1.0 / (n_f - 1)
+        lo = max(0.0, best_f - 2.0 * step)
+        hi = min(1.0, best_f + 2.0 * step)
+        if hi > lo:
+            opt = minimize_scalar(
+                lambda f: -_two_rho_profile_ll(arr_hom, arr_het, f, error_rate),
+                bounds=(lo, hi),
+                method="bounded",
+                options={"xatol": 1e-8},
+            )
+            f_ref = max(0.0, min(1.0, float(opt.x)))
+            ll_ref = -float(opt.fun)
+            if ll_ref >= best_ll:
+                best_f = f_ref
+                best_ll = ll_ref
+                # Exact per-class rho profile at the refined f (mirrors the core).
+                _, best_rho_hom = _profile_rho_at_f(arr_hom, best_f, error_rate)
+                _, best_rho_het = _profile_rho_at_f(arr_het, best_f, error_rate)
+
+    # Coarse CI from the summed profiled-over-rho curve (same bracket as single-rho).
+    half_threshold = float(chi2.ppf(CI_LEVEL, df=1)) / 2.0
+    above = prof_total >= (best_ll - half_threshold)
+    idx = np.nonzero(above)[0]
+    if idx.size:
+        f_lo = float(f_grid[idx[0]])
+        f_hi = float(f_grid[idx[-1]])
+    else:
+        f_lo = f_hi = best_f
+
+    return GridChimerismResult(
+        donor_fraction=best_f,
+        donor_fraction_ci=(f_lo, f_hi),
+        host_fraction=1.0 - best_f,
+        log_likelihood=best_ll,
+        n_informative=len(markers),
+        n_markers_used=len(markers),
+        error_rate=error_rate,
+        rho=best_rho_het,  # headline = het class
+        rho_hom=best_rho_hom,
+        rho_het=best_rho_het,
     )

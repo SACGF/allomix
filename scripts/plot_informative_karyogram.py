@@ -45,38 +45,48 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from bioutils.assemblies import get_assembly, get_assembly_names  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 
 from allomix.genotype import is_sex_chrom, marker_key, parse_vcf  # noqa: E402
 
-# hg38 chromosome lengths (bp), for a proportional genome x axis. Autosomes plus
-# the sex/mito contigs (drawn only with --include-sex).
-HG38 = {
-    "chr1": 248956422,
-    "chr2": 242193529,
-    "chr3": 198295559,
-    "chr4": 190214555,
-    "chr5": 181538259,
-    "chr6": 170805979,
-    "chr7": 159345973,
-    "chr8": 145138636,
-    "chr9": 138394717,
-    "chr10": 133797422,
-    "chr11": 135086622,
-    "chr12": 133275309,
-    "chr13": 114364328,
-    "chr14": 107043718,
-    "chr15": 101991189,
-    "chr16": 90338345,
-    "chr17": 83257441,
-    "chr18": 80373285,
-    "chr19": 58617616,
-    "chr20": 64444167,
-    "chr21": 46709983,
-    "chr22": 50818468,
-    "chrX": 156040895,
-    "chrY": 57227415,
-}
+
+def norm_chrom(chrom: str) -> str:
+    """Canonical chromosome name: drop a 'chr' prefix, upper-case, M -> MT.
+
+    Lets the genome scaffold (keyed by the assembly's bare names: 1..22, X, Y,
+    MT) match VCF contigs whether they are written 'chr1' or '1', 'chrM' or
+    'chrMT'.
+    """
+    c = chrom[3:] if chrom.lower().startswith("chr") else chrom
+    c = c.upper()
+    return "MT" if c == "M" else c
+
+
+def chromosome_lengths(build: str) -> dict[str, int]:
+    """Assembled-molecule chromosome lengths (bp) for a genome build.
+
+    Pulls the lengths from bioutils rather than hardcoding them, so the build is
+    a parameter (GRCh37, GRCh38, ...) instead of a baked-in assumption.
+
+    Args:
+        build: A genome build name known to bioutils, e.g. "GRCh38" or "GRCh37".
+
+    Returns:
+        Ordered mapping of canonical chromosome name (1..22, X, Y, MT) to length,
+        in assembly order. Scaffolds, patches and alt loci are excluded.
+    """
+    try:
+        asm = get_assembly(build)
+    except FileNotFoundError:
+        known = ", ".join(sorted(get_assembly_names()))
+        raise SystemExit(f"Unknown genome build {build!r}. Known builds: {known}") from None
+    return {
+        norm_chrom(s["name"]): s["length"]
+        for s in asm["sequences"]
+        if s["sequence_role"] == "assembled-molecule"
+    }
+
 
 # IBS class colours. IBS0 is the relatedness-informative state (red, tall ticks);
 # IBS1 is partial (amber); IBS2 is the shared/non-informative background (grey).
@@ -88,24 +98,28 @@ IBS_LABEL = {
 }
 
 
-def genome_axis(include_sex: bool) -> tuple[list[str], dict[str, int], int]:
-    """Build the concatenated-genome coordinate scaffold.
+def genome_axis(
+    build: str, include_sex: bool
+) -> tuple[list[str], dict[str, int], dict[str, int], int]:
+    """Build the concatenated-genome coordinate scaffold for a genome build.
 
     Args:
+        build: Genome build name passed to ``chromosome_lengths``.
         include_sex: Keep the sex and mitochondrial contigs in the axis.
 
     Returns:
-        (chrom_order, offset, genome_len): the chromosomes in plotting order,
-        each chromosome's start offset along the concatenated axis, and the
-        total genome length.
+        (chrom_order, lengths, offset, genome_len): the chromosomes in plotting
+        order, their lengths, each chromosome's start offset along the
+        concatenated axis, and the total genome length.
     """
-    chrom_order = [c for c in HG38 if include_sex or not is_sex_chrom(c)]
+    lengths = chromosome_lengths(build)
+    chrom_order = [c for c in lengths if include_sex or not is_sex_chrom(c)]
     offset: dict[str, int] = {}
     acc = 0
     for c in chrom_order:
         offset[c] = acc
-        acc += HG38[c]
-    return chrom_order, offset, acc
+        acc += lengths[c]
+    return chrom_order, lengths, offset, acc
 
 
 def ibs_class(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> int:
@@ -149,9 +163,10 @@ def load_pair(
     out: list[tuple[float, int]] = []
     for h in host_markers:
         d = donor_idx.get(marker_key(h))
-        if d is None or h.chrom not in offset:
+        chrom = norm_chrom(h.chrom)
+        if d is None or chrom not in offset:
             continue
-        out.append((offset[h.chrom] + h.pos, ibs_class(h.gt, d.gt)))
+        out.append((offset[chrom] + h.pos, ibs_class(h.gt, d.gt)))
     return out
 
 
@@ -177,8 +192,10 @@ def _draw_lane(ax, y: float, markers: list[tuple[float, int]]) -> dict[int, int]
 def plot(
     lanes: list[tuple[str, list[tuple[float, int]]]],
     chrom_order: list[str],
+    lengths: dict[str, int],
     offset: dict[str, int],
     genome_len: int,
+    build: str,
     title: str,
     out: Path,
 ) -> None:
@@ -189,7 +206,7 @@ def plot(
     # Alternating chromosome background bands so position is readable.
     for i, c in enumerate(chrom_order):
         if i % 2:
-            ax.axvspan(offset[c], offset[c] + HG38[c], color="#f5f5f5", zorder=0)
+            ax.axvspan(offset[c], offset[c] + lengths[c], color="#f5f5f5", zorder=0)
 
     yticklabels = []
     for lane_i, (label, markers) in enumerate(lanes):
@@ -205,10 +222,10 @@ def plot(
     ax.set_yticks(list(range(n)))
     ax.set_yticklabels(list(reversed(yticklabels)), fontsize=8)
     ax.set_xlim(0, genome_len)
-    ticks = [offset[c] + HG38[c] / 2 for c in chrom_order]
+    ticks = [offset[c] + lengths[c] / 2 for c in chrom_order]
     ax.set_xticks(ticks)
-    ax.set_xticklabels([c[3:] for c in chrom_order], fontsize=7)
-    ax.set_xlabel("genomic position (hg38)")
+    ax.set_xticklabels(chrom_order, fontsize=7)
+    ax.set_xlabel(f"genomic position ({build})")
     ax.set_title(title)
 
     handles = [Line2D([], [], color=IBS_COLOR[k], lw=2.0, label=IBS_LABEL[k]) for k in (0, 1, 2)]
@@ -239,6 +256,12 @@ def main() -> None:
     )
     ap.add_argument("--min-gq", type=int, default=20, help="Minimum GQ for host/donor (default 20)")
     ap.add_argument(
+        "--genome-build",
+        default="GRCh38",
+        help="Genome build for chromosome lengths, resolved by bioutils "
+        "(e.g. GRCh38, GRCh37). Default GRCh38.",
+    )
+    ap.add_argument(
         "--include-sex",
         action="store_true",
         help="Keep sex/mitochondrial contigs (excluded by default, as for chimerism)",
@@ -251,12 +274,12 @@ def main() -> None:
     ap.add_argument("--out", type=Path, required=True, help="Output PNG path (local file only)")
     args = ap.parse_args()
 
-    chrom_order, offset, genome_len = genome_axis(args.include_sex)
+    chrom_order, lengths, offset, genome_len = genome_axis(args.genome_build, args.include_sex)
     lanes = [
         (donor, load_pair(args.vcf, args.host, donor, args.min_gq, offset)) for donor in args.donor
     ]
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    plot(lanes, chrom_order, offset, genome_len, args.title, args.out)
+    plot(lanes, chrom_order, lengths, offset, genome_len, args.genome_build, args.title, args.out)
 
 
 if __name__ == "__main__":

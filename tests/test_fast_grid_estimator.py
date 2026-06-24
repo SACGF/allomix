@@ -95,18 +95,19 @@ class TestGridTwoRho:
         assert exact.rho_hom is not None and grid.rho_hom is not None
         assert abs(grid.donor_fraction - exact.donor_fraction) < 1e-3
 
-    def test_grid_two_rho_default_unchanged(self) -> None:
-        # With the flag off, the grid result is identical to today's path.
+    def test_grid_shared_rho_path_byte_identical(self) -> None:
+        # The opt-out single-rho grid is identical to the pre-#33 path. On this
+        # hom-only fixture the default (two-rho on) also falls back, so it matches.
         markers = _make_markers_overdispersed(0.02, n_markers=120, dp=1000, seed=3)
-        base = estimate_single_donor_bb_grid(markers, error_rate=0.01)
-        flag_off = estimate_single_donor_bb_grid(
+        shared = estimate_single_donor_bb_grid(
             markers, error_rate=0.01, marker_type_overdispersion=False
         )
-        assert flag_off.donor_fraction == base.donor_fraction
-        assert flag_off.donor_fraction_ci == base.donor_fraction_ci
-        assert flag_off.log_likelihood == base.log_likelihood
-        assert flag_off.rho == base.rho
-        assert flag_off.rho_hom is None and flag_off.rho_het is None
+        default = estimate_single_donor_bb_grid(markers, error_rate=0.01)  # default on
+        assert default.donor_fraction == shared.donor_fraction
+        assert default.donor_fraction_ci == shared.donor_fraction_ci
+        assert default.log_likelihood == shared.log_likelihood
+        assert default.rho == shared.rho
+        assert shared.rho_hom is None and shared.rho_het is None
 
     def test_grid_two_rho_sparse_falls_back(self) -> None:
         # Too few het markers: the grid falls back to the single-rho path and
@@ -114,10 +115,10 @@ class TestGridTwoRho:
         markers = _make_mixed_class_markers(
             f_host=0.0, n_hom=120, n_het=10, dp=2000, het_overdisp_rho=71, seed=13
         )
-        single = estimate_single_donor_bb_grid(markers, error_rate=0.01)
-        req = estimate_single_donor_bb_grid(
-            markers, error_rate=0.01, marker_type_overdispersion=True
+        single = estimate_single_donor_bb_grid(
+            markers, error_rate=0.01, marker_type_overdispersion=False
         )
-        assert req.donor_fraction == single.donor_fraction
-        assert req.rho_hom is None and req.rho_het is None
-        assert req.marker_type_overdispersion_fallback is not None
+        default = estimate_single_donor_bb_grid(markers, error_rate=0.01)  # default on
+        assert default.donor_fraction == single.donor_fraction
+        assert default.rho_hom is None and default.rho_het is None
+        assert default.marker_type_overdispersion_fallback is not None

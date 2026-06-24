@@ -717,11 +717,12 @@ def _make_qc_genotypes() -> MarkerGenotypes:
 class TestMarkerTypeOverdispersion:
     """Two-rho mode: separate beta-binomial rho per marker class (issue #33)."""
 
-    def test_default_path_byte_identical(self) -> None:
-        """Flag off (default) is bit-identical to the captured shared-rho result.
+    def test_shared_rho_path_byte_identical(self) -> None:
+        """The opt-out shared-rho path is bit-identical to the pre-#33 estimator.
 
-        This is the fixture-safety guard: the new branch must not perturb the
-        validated default path in the last ULPs.
+        Fixture-safety guard: ``marker_type_overdispersion=False`` must reproduce
+        the legacy shared-rho values exactly. On this hom-only fixture the default
+        (two-rho on) also falls back to shared rho, so it matches too.
         """
         markers = _make_markers_overdispersed(0.20, n_markers=60, dp=2000, seed=42)
         r = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
@@ -730,10 +731,16 @@ class TestMarkerTypeOverdispersion:
         assert r.donor_fraction_ci == (0.1938503158157703, 0.20376169046929146)
         assert r.log_likelihood == -64885.513825790265
         assert r.rho == 563.5448641013647
-        # New fields stay unset on the shared-rho path.
         assert r.rho_hom is None
         assert r.rho_het is None
         assert r.marker_type_overdispersion_fallback is None
+        # The default (two-rho on) on a hom-only panel falls back to the same fit.
+        d = estimate_single_donor_bb(markers)
+        assert d.donor_fraction == r.donor_fraction
+        assert d.donor_fraction_ci == r.donor_fraction_ci
+        assert d.log_likelihood == r.log_likelihood
+        assert d.rho == r.rho
+        assert d.rho_hom is None and d.rho_het is None
 
     def test_partition_mask(self) -> None:
         """_donor_het_mask is True only for donor (0,1)/(1,0), False for homs."""
@@ -806,9 +813,24 @@ class TestMarkerTypeOverdispersion:
         assert two_rho.rho_het is not None
         assert two_rho.rho == two_rho.rho_het
         assert two_rho.marker_type_overdispersion_fallback is None
-        # Shared-rho result leaves them None.
-        shared = estimate_single_donor_bb(markers)
+        # The opt-out shared-rho result leaves them None.
+        shared = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
         assert shared.rho_hom is None and shared.rho_het is None
+
+    def test_default_engages_two_rho(self) -> None:
+        """Two-rho is the default: an ample mixed set engages it without the flag."""
+        markers = _make_mixed_class_markers(
+            f_host=0.0, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=70, seed=47
+        )
+        result = estimate_single_donor_bb(markers)  # no flag -> default on
+        assert result.rho_hom is not None
+        assert result.rho_het is not None
+        assert result.rho == result.rho_het
+        assert result.marker_type_overdispersion_fallback is None
+        # The default matches an explicit request, and removes the floor.
+        explicit = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
+        assert result.donor_fraction == explicit.donor_fraction
+        assert result.host_fraction < 0.0015
 
     def test_ci_monotone_and_contains_mle(self) -> None:
         """profile_ll is maximized at f_mle and the CI is well-formed."""
@@ -846,18 +868,23 @@ class TestMarkerTypeOverdispersion:
         all_hom = fraction_se(markers, 0.02, rho=R, rho_hom=R, rho_het=R)
         assert het_down > all_hom
 
-    def test_fallback_sets_qc_warning(self) -> None:
-        """Sparse-class fallback surfaces as a QC warning, status unchanged."""
+    def test_fallback_is_diagnostic_not_a_qc_warning(self) -> None:
+        """Sparse-class fallback sets the diagnostic field but does NOT warn.
+
+        Two-rho is the default estimator, so a sparse marker class is routine and
+        must not spam the QC warnings (which would fire on every hom-dominated
+        sample). The reason is recorded on the result for diagnostics only.
+        """
         markers = _make_mixed_class_markers(
             f_host=0.0, n_hom=60, n_het=MIN_CLASS_MARKERS - 1, dp=2000,
             het_overdisp_rho=70, seed=71,
         )
-        result = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
+        result = estimate_single_donor_bb(markers)  # default on; het class sparse
         assert result.marker_type_overdispersion_fallback is not None
+        assert result.rho_hom is None and result.rho_het is None
         qc = assess_quality(result, _make_qc_genotypes())
-        assert any(
-            w == result.marker_type_overdispersion_fallback for w in qc.warnings
-        )
+        assert result.marker_type_overdispersion_fallback not in qc.warnings
+        assert not any("sparse" in w for w in qc.warnings)
 
     def test_robust_auto_with_two_rho_converges(self) -> None:
         """Two-rho mode and --robust auto together run and stay sane (Open risk)."""

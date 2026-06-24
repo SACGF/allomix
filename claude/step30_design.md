@@ -63,14 +63,22 @@ hardcoded. Concretely, build a per-flowcell contamination table:
    - c(0): the sequencing-error floor (no-carrier sites).
    - slope: the per-carrier contamination rate for this flowcell.
    - a SIGNIFICANCE for the slope (is the dose-response real given this run's depth/noise?).
-3. Gate = the slope's significance on THIS flowcell. Clean run -> slope not significant ->
-   no correction (no harm). Contaminated run -> significant -> correct by the measured amount.
-4. Apply slope * n_carriers to the donor-hom informative markers (dose part only).
+3. Gate = the consensus-hom slope's significance on THIS flowcell. Clean run -> slope not
+   significant -> no correction (no harm). Contaminated run -> significant -> correct.
+   (Validated: consensus-hom slope predicts the informative-marker slope at r=0.92, so the
+   gate transfers reliably even though the exact magnitude does not -- see open question 1.)
+4. Magnitude: do NOT apply the consensus slope 1:1 to informative markers (it over-predicts
+   on clean, under-predicts on dirty). Once gated in, estimate the per-marker correction
+   slope ON the informative donor-hom markers themselves (host-allele frac ~ a + b*n_carriers,
+   weighted), pooled across the patient's serial timepoints to beat per-sample noise. Subtract
+   b * n_carriers * depth (dose part only) from each donor-hom host-allele count.
 
 This replaces the hardcoded magnitude with a per-run empirical estimate plus a statistical
 significance test. The only remaining knob is the significance level (e.g. p<0.05) and a
 minimum effect size worth correcting, both principled rather than tuned to one dataset. A
-clean flowcell self-selects out; a dirty one self-calibrates its own correction.
+clean flowcell self-selects out; a dirty one self-calibrates its own correction. Division of
+labour: consensus-hom = the gate and the run-level contamination level; informative-marker
+regression = the per-marker correction magnitude.
 
 This is a natural extension of the existing per-patient error table (#23): same joint-call
 inputs, but adds the per-carrier contamination-dose model across the whole flowcell, and a
@@ -78,14 +86,26 @@ go/no-go significance gate.
 
 ## Open questions / validation before implementing
 
-1. Marker-class transfer. The flowcell table is calibrated on consensus-hom sites but
-   applied to informative donor-hom markers. The SLOPE should transfer; the FLOOR does not
-   (informative markers carry a ~0.15% intrinsic mapping floor that consensus-hom sites
-   lack), which is why the naive consensus-hom subtraction over-corrected in the prototype.
-   Subtracting only the dose part (slope * n) and leaving the floor to the error model is
-   the intended fix; confirm the consensus-hom slope matches the informative-marker slope
-   per flowcell before trusting it. (The within-sample/pool-slope estimate from informative
-   markers worked; the consensus-hom slope needs this transfer check.)
+1. Marker-class transfer -- TESTED (`output/figure_review/step30_slope_transfer.py`).
+   Per mixture, the per-carrier contamination slope from consensus-hom sites vs from the
+   informative donor-hom markers (at the true-0% endpoint), carrier-COUNT dose:
+   Pearson r = 0.92, median info/cons ratio = 1.00 (unbiased on average). Allele-copies
+   dose was worse (r = 0.86), so carrier COUNT is the dose to use. CAVEAT: per-mixture
+   ratios span 0.35-1.75 and the deviation is systematic, not just noise -- on CLEAN
+   mixtures consensus OVER-predicts the informative slope (ratio ~0.4 -> over-correction),
+   on CONTAMINATED mixtures it UNDER-predicts (ratio ~1.5-1.75 -> under-correction). This
+   is exactly the pattern that made the naive consensus-hom subtraction over-correct clean
+   mixtures in the prototype. Interpretation:
+   - The GATE transfers well: r=0.92 means a significant consensus-hom slope reliably flags
+     real informative-marker contamination, so the per-flowcell significance gate is sound.
+   - The MAGNITUDE does not transfer 1:1: do NOT apply the raw consensus slope to the
+     informative markers. Use consensus-hom for the GATE + run-level contamination level,
+     and calibrate the actual per-marker correction magnitude on the informative markers
+     themselves (within-sample regression, pooled across the patient's serial timepoints to
+     beat per-sample noise; deployment-valid since it needs no endpoint).
+   The FLOOR also differs by marker class (informative markers carry a ~0.15% mapping floor
+   consensus-hom sites lack); subtracting only the dose part (slope * n) and leaving the
+   floor to the error model handles that.
 2. Deployment without co-pooled genotypes. In a cohort the carrier counts are known
    directly. In deployment the co-pooled genotypes may not be visible; the dose-response is
    still estimable from the run's own consensus-hom sites, and serial monitoring (>=3

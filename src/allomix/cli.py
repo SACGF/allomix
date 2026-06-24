@@ -15,7 +15,6 @@ from allomix.bias import (
     load_bias_table,
     save_bias_table,
 )
-from allomix.chimerism import PanelCalibration
 from allomix.constants import (
     DEFAULT_ERROR_RATE,
     DEFAULT_MIN_DP,
@@ -28,6 +27,7 @@ from allomix.error_rates import (
     save_error_table,
 )
 from allomix.genotype import parse_vcf
+from allomix.likelihood import PanelCalibration
 from allomix.relatedness import VALID_DECLARATIONS
 from allomix.report import timeline_json, to_json, to_tsv
 from allomix.runmeta import RunUnitInfo, read_run_units

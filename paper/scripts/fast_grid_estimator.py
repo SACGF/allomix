@@ -37,13 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from allomix.chimerism import (  # noqa: E402
     _RHO_MAX,
     MIN_CLASS_MARKERS,
-    W_EPS,
-    PanelCalibration,
     _donor_het_mask,
-    _ll_from_p_alt,
-    _MarkerArrays,
-    _p_alt_for_f,
-    _precompute_marker_arrays,
     _profile_rho_at_f,
     _two_rho_profile_ll,
 )
@@ -53,6 +47,14 @@ from allomix.constants import (  # noqa: E402
     N_OTHER_BASES,
 )
 from allomix.genotype import InformativeMarker  # noqa: E402
+from allomix.likelihood import (  # noqa: E402
+    W_EPS,
+    PanelCalibration,
+    _ll_from_p_alt,
+    _MarkerArrays,
+    _p_alt_for_f,
+    _precompute_marker_arrays,
+)
 
 
 @dataclass

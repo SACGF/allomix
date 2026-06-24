@@ -6,12 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from allomix.chimerism import (
-    PanelCalibration,
-    estimate_single_donor_bb,
-    log_likelihood_marker_bb,
-    total_log_likelihood_bb,
-)
+from allomix.chimerism import estimate_single_donor_bb
 from allomix.cli import main
 from allomix.error_rates import (
     DEFAULT_ERROR_FLOOR,
@@ -23,6 +18,11 @@ from allomix.error_rates import (
     save_error_table,
 )
 from allomix.genotype import InformativeMarker, MarkerData
+from allomix.likelihood import (
+    PanelCalibration,
+    log_likelihood_marker_bb,
+    total_log_likelihood_bb,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -9,7 +9,7 @@ contamination estimator (tested separately in ``test_contamination.py``).
 import math
 
 from allomix.analysis import _floor_detection_limits
-from allomix.chimerism import ChimerismResult, MultiDonorResult
+from allomix.results import ChimerismResult, MultiDonorResult
 
 
 def _single_result(lob: float, lod: float) -> ChimerismResult:

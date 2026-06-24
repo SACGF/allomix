@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 
 from scipy.stats import chi2
 
-from allomix.chimerism import ChimerismResult, MarkerResult
 from allomix.constants import N_OTHER_BASES
 from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
@@ -22,6 +21,7 @@ from allomix.relatedness import (
     RelatednessResult,
     evaluate_expected,
 )
+from allomix.results import ChimerismResult, MarkerResult
 from allomix.runmeta import RunUnitInfo
 
 # Thresholds for the optional REVIEW warning when the host-presence detector

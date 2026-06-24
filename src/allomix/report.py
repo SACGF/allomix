@@ -8,11 +8,11 @@ import math
 from pathlib import Path
 from typing import TextIO
 
-from allomix.chimerism import ChimerismResult, MultiDonorResult
 from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
 from allomix.qc import QCReport
 from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.results import ChimerismResult, MultiDonorResult
 from allomix.runmeta import RunUnitInfo
 
 # Sentinel for the host-presence cells when the detector did not run (e.g.

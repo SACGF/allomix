@@ -14,23 +14,19 @@ input conventions differ) and it does not print. Callers own I/O and messaging.
 
 from dataclasses import dataclass
 
-from allomix.chimerism import (
-    ChimerismResult,
-    MultiDonorResult,
-    PanelCalibration,
-    estimate_multi_donor,
-    estimate_single_donor_bb,
-)
+from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
 from allomix.constants import ROBUST_K_DEFAULT
 from allomix.contamination import estimate_contamination
 from allomix.detect import DonorHomMarker, donor_hom_markers, host_presence_test
 from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
+from allomix.likelihood import PanelCalibration
 from allomix.qc import QCReport, assess_quality
 from allomix.relatedness import (
     RelatednessResult,
     admix_consistency,
     relatedness_coefficient,
 )
+from allomix.results import ChimerismResult, MultiDonorResult
 from allomix.runmeta import RunUnitInfo
 
 
@@ -119,7 +115,7 @@ def analyse_sample(
         min_gq: Minimum host/donor genotype quality.
         error_rate: Global symmetric sequencing error rate.
         calibration: Optional per-marker bias and error tables (see
-            ``allomix.chimerism.PanelCalibration``).
+            ``allomix.likelihood.PanelCalibration``).
         run_host_presence: Run the host-presence detector and select the
             donor-homozygous markers. When False, ``result.host_presence`` is
             left unset and ``donor_hom_markers`` is empty.

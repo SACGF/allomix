@@ -13,11 +13,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from allomix.chimerism import (
+from allomix.chimerism import estimate_single_donor_bb
+from allomix.likelihood import (
     PanelCalibration,
     _p_alt_for_f,
     _precompute_marker_arrays,
-    estimate_single_donor_bb,
 )
 from allomix.simulate import generate_marker_biases_realistic
 

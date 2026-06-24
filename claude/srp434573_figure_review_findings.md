@@ -228,9 +228,30 @@ reads); at the high-contam endpoints that inflation is the floor, and Step 30 re
 Caveats / what is not yet proven: (1) the pool slope was estimated from the true-0% endpoint, which
 deployment lacks; the within-sample regression is deployment-valid and serial monitoring (>=3
 timepoints/patient) gives the data to pool the slope per patient and beat the per-sample noise. (2)
-Only donor-hom types 0/1 corrected; donor-het left alone. (3) Validated on 3 mixtures; needs the
-full set + the synthetic ladder + a no-harm check across all clean mixtures before productionizing.
-This is now a justified implementation, not a speculation: scripts in `output/figure_review/`.
+Only donor-hom types 0/1 corrected; donor-het left alone.
+
+### No-harm sweep across ALL 10 mixtures (`output/figure_review/step30_sweep.py`)
+
+The 3-mixture result was too optimistic. Pool-slope Step 30 on every mixture (MAE over 1-10%):
+| | endpoint floor | dilution MAE |
+|---|---|---|
+| removed -> 0.000% | 10/10 | -- |
+| HELP (5): F1->F3, M3->F1, M3->F2, M3->F3, M3->M4 | | e.g. M3->F2 0.449->0.325 |
+| neutral (2): F2->F1, F3->F2 | | flat |
+| HARM (3): F2->M1, F2->M2, M1->M2 | | +0.03-0.05pp worse |
+
+The 3 HARM cases all have tiny slopes (0.013-0.018%/carrier) and ~no endpoint floor: they are
+clean/low-contamination mixtures where the (noise-level) slope subtracts a little signal and
+slightly worsens MAE. The HELP cases have slope >= 0.04% or a real endpoint floor. So:
+
+CONCLUSION: Step 30 ALWAYS removes the zero-host floor (10/10), and HELPS contaminated mixtures,
+but applied UNCONDITIONALLY it slightly HARMS clean mixtures. It needs a CONTAMINATION-SIGNIFICANCE
+GATE: only apply the correction when the dose-response slope (or endpoint floor) is significant
+(a threshold near slope ~0.03-0.04%/carrier separates the HELP/neutral from the HARM cases here).
+With that gate it is net positive (removes floors + fixes contaminated mixtures, leaves clean ones
+alone). This is the key finding the no-harm sweep added beyond the 3-mixture test.
+
+This is now a justified, gated implementation, not a speculation: scripts in `output/figure_review/`.
 
 ## Cross-cutting takeaway
 Q1 and Q3 point to the SAME root cause: co-pooled contamination landing specifically on

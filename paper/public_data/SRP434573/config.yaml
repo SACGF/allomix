@@ -16,22 +16,19 @@
 # panel) into the `bam_dir` the CSVs point at. See README.md "Alignment".
 
 # This is the per-RUN config for SRP434573 (issue #30 split). Per-machine tool
-# paths and resources come from pipeline/tools.yaml, which the Snakefile loads
-# automatically. The one tool override below is bwa -> bwa-mem2, which this
-# amplicon dataset requires (see the Phase 0 note); set the rest in tools.yaml.
+# paths and resources (including the aligner) come from pipeline/tools.yaml,
+# which the Snakefile loads automatically; set them there, not here.
 
 ref: "/path/to/hg38.fa"   # build must match the panel BED below (see README)
 samples_csv_dir: "paper/public_data/SRP434573/sample_csvs"
 output_dir: "output/genotypes/SRP434573"
 
-# Phase 0 — align the ENA FASTQs to BAMs with bwa-mem2.
-# Overrides the default aligner (bwa) in tools.yaml: this dataset needs bwa-mem2.
+# Phase 0 — align the ENA FASTQs to BAMs with bwa mem (the bwa executable is
+# set in tools.yaml).
 # Aligns <fastq_dir>/<run>.<fastq_suffix> -> <bam_dir>/<run>.<bam_suffix>, which
 # must match the bam_filename paths the CSVs reference (the make_sample_csvs.py
-# defaults). The reference must be indexed first with the matching aligner
-# (`bwa-mem2 index <ref>`; bwa-mem2 uses its own index files, not `bwa index`).
-# Reads are single-end (pear-merged ~96 bp). BAMs are NOT duplicate-marked.
-bwa: "bwa-mem2"
+# defaults). The reference must be bwa-indexed first (`bwa index <ref>`). Reads
+# are single-end (pear-merged ~96 bp). BAMs are NOT duplicate-marked.
 fastq_dir: "/tau/data/chimerism/SRP434573"
 fastq_suffix: "fastq.gz"
 bam_dir: "/tau/data/chimerism/SRP434573/bam"

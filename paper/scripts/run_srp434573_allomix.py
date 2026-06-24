@@ -29,6 +29,7 @@ unless a freshly joint-called ``output/genotypes/SRP434573`` is present (full
 from-scratch reproduction), which takes precedence. Writes nothing to /tau.
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,11 @@ from srp434573_common import (
 GEN = resolve_srp434573_genotypes_dir()
 OUT = Path("output")
 ALLOMIX = [shutil.which("allomix") or ".venv/bin/allomix", "monitor"]
+
+# Opt-in per-marker-type overdispersion (issue #33). Off by default so the paper
+# build stays byte-identical; set ALLOMIX_MARKER_TYPE_OVERDISPERSION=1 to add the
+# CLI flag to every monitor invocation (used for the Stage 2 ladder validation).
+MARKER_TYPE_OVERDISPERSION = os.environ.get("ALLOMIX_MARKER_TYPE_OVERDISPERSION") == "1"
 
 # name -> (host = minor, [donors = major(s)]); two-person first, three-person last
 MIXES = {
@@ -153,6 +159,8 @@ def run_mix(
         "--host-sample", host,
         "--format", "tsv",
     ]
+    if MARKER_TYPE_OVERDISPERSION:
+        cmd += ["--marker-type-overdispersion"]
     # Per-patient empirical error table (issue #23). When the committed snapshot
     # carries one (built TAU-side by the pipeline's phase-1b reference pileup),
     # pass it so the host-presence background is data-derived per site instead of

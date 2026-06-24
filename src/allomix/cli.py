@@ -151,6 +151,15 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Robust residual cut in robust SDs (median/MAD) for --robust "
              f"(default: {ROBUST_K_DEFAULT})",
     )
+    parser.add_argument(
+        "--marker-type-overdispersion",
+        action="store_true",
+        help="Fit a separate beta-binomial concentration (rho) for the "
+             "donor-homozygous and donor-heterozygous marker classes instead of "
+             "one shared rho (single-donor only). Removes the sub-0.5%% MLE "
+             "floor (issue #33). Off by default; falls back to shared rho (with "
+             "a QC warning) when a class has too few markers.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Include per-marker detail")
     parser.add_argument(
         "--bias-table",
@@ -250,6 +259,7 @@ def _run_single_sample(
     artifact_filter: bool = True,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
+    marker_type_overdispersion: bool = False,
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
@@ -279,6 +289,7 @@ def _run_single_sample(
         sample_name=admix_sample,
         robust=robust,
         robust_k=robust_k,
+        marker_type_overdispersion=marker_type_overdispersion,
         expected_relatedness=expected_relatedness,
         relatedness_tolerance=relatedness_tolerance,
         run_unit=run_unit,
@@ -386,6 +397,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
                 artifact_filter=not args.no_artifact_filter,
                 robust=args.robust,
                 robust_k=args.robust_k,
+                marker_type_overdispersion=args.marker_type_overdispersion,
                 expected_relatedness=args.expected_relatedness,
                 relatedness_tolerance=args.relatedness_tolerance,
                 run_unit=run_units.get(sample_name),
@@ -438,6 +450,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             artifact_filter=not args.no_artifact_filter,
             robust=args.robust,
             robust_k=args.robust_k,
+            marker_type_overdispersion=args.marker_type_overdispersion,
             expected_relatedness=args.expected_relatedness,
             relatedness_tolerance=args.relatedness_tolerance,
             run_unit=run_units.get(sample_name),

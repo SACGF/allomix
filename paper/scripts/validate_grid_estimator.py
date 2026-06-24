@@ -79,7 +79,7 @@ def _build_error_table(markers, rng: random.Random):
     return errors
 
 
-def run_battery(quick: bool, workdir: Path) -> None:
+def run_battery(quick: bool, workdir: Path, marker_type_overdispersion: bool = False) -> None:
     depths = DEPTHS[:2] if quick else DEPTHS
     fractions = TRUE_FRACTIONS if not quick else [0.0, 0.005, 0.01, 0.05, 0.1]
     panels = PANEL_SIZES if not quick else [50, 100, 200]
@@ -87,9 +87,11 @@ def run_battery(quick: bool, workdir: Path) -> None:
     max_markers = max(panels)
 
     devs_pp: list[float] = []
+    devs_pp_sub05: list[float] = []  # sub-0.5% regime, where the grid is coarsest
     exact_time = 0.0
     grid_time = 0.0
     n_calls = 0
+    n_two_rho_engaged = 0
     worst = (0.0, None)
 
     for rel in relatedness_levels:
@@ -160,20 +162,26 @@ def run_battery(quick: bool, workdir: Path) -> None:
                             re = estimate_single_donor_bb(
                                 genos.informative, error_rate=ERROR_RATE,
                                 grid_steps=ESTIMATOR_GRID_STEPS, calibration=cal,
+                                marker_type_overdispersion=marker_type_overdispersion,
                             )
                             t1 = time.perf_counter()
                             rg = estimate_single_donor_bb_grid(
                                 genos.informative, error_rate=ERROR_RATE,
                                 calibration=cal,
+                                marker_type_overdispersion=marker_type_overdispersion,
                             )
                             t2 = time.perf_counter()
 
                             exact_time += t1 - t0
                             grid_time += t2 - t1
                             n_calls += 1
+                            if getattr(re, "rho_hom", None) is not None:
+                                n_two_rho_engaged += 1
 
                             dev = abs(re.donor_fraction - rg.donor_fraction) * 100.0
                             devs_pp.append(dev)
+                            if frac < 0.005:
+                                devs_pp_sub05.append(dev)
                             if dev > worst[0]:
                                 worst = (dev, {
                                     "rel": rel, "bias": bias_on, "error": error_on,
@@ -182,13 +190,25 @@ def run_battery(quick: bool, workdir: Path) -> None:
                                     "exact": re.donor_fraction, "grid": rg.donor_fraction,
                                 })
 
-    print(f"\nBattery: {n_calls} estimator calls")
+    mode = "two-rho (per-marker-type)" if marker_type_overdispersion else "single-rho"
+    print(f"\nBattery: {n_calls} estimator calls ({mode})")
+    if marker_type_overdispersion:
+        print(f"  two-rho engaged in {n_two_rho_engaged}/{n_calls} cells "
+              f"(rest fell back to shared rho, both estimators)")
     print(f"  max  |f_grid - f_exact|  = {max(devs_pp):.6f} pp")
     print(f"  median |f_grid - f_exact| = {statistics.median(devs_pp):.6f} pp")
+    if devs_pp_sub05:
+        print(f"  max  |f_grid - f_exact|  (sub-0.5%) = {max(devs_pp_sub05):.6f} pp "
+              f"({len(devs_pp_sub05)} cells)")
     print(f"  exact total time = {exact_time:.2f}s  ({exact_time / n_calls * 1000:.2f} ms/call)")
     print(f"  grid  total time = {grid_time:.2f}s  ({grid_time / n_calls * 1000:.2f} ms/call)")
     print(f"  per-call speedup = {exact_time / grid_time:.1f}x")
-    tol = 0.01
+    # Single-rho holds the tighter 0.01 pp contract it has always met. The two-rho
+    # path's target is the plan's fraction < 1e-3 (0.1 pp) over the LoD/ladder
+    # regime (issue #33, step 21 plan), since the het-class rho sits near the
+    # grid's coarsest bound; the sub-0.5% max above is the cell that actually
+    # matters and it stays far under that.
+    tol = 0.1 if marker_type_overdispersion else 0.01
     print(f"  tolerance {tol} pp: {'PASS' if max(devs_pp) < tol else 'FAIL'}")
     if worst[1] is not None:
         print(f"  worst case: {worst[0]:.6f} pp at {worst[1]}")
@@ -197,10 +217,16 @@ def run_battery(quick: bool, workdir: Path) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--quick", action="store_true", help="Smaller battery.")
+    parser.add_argument(
+        "--marker-type-overdispersion",
+        action="store_true",
+        help="Validate the two-rho path (issue #33) instead of single-rho: run "
+             "both estimators with per-marker-type overdispersion on.",
+    )
     args = parser.parse_args(argv)
 
     with tempfile.TemporaryDirectory(prefix="grid_validate_") as d:
-        run_battery(args.quick, Path(d))
+        run_battery(args.quick, Path(d), marker_type_overdispersion=args.marker_type_overdispersion)
     return 0
 
 

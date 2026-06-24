@@ -33,6 +33,7 @@ from fast_grid_estimator import (  # noqa: E402
 from tests.test_chimerism import (  # noqa: E402
     _make_markers_for_fraction,
     _make_markers_overdispersed,
+    _make_mixed_class_markers,
 )
 
 
@@ -73,3 +74,50 @@ class TestGridEstimator:
         for i, f in enumerate(f_grid):
             scalar = _p_alt_for_f(arr, float(f), 0.01)
             np.testing.assert_allclose(grid_pa[i], scalar, rtol=0, atol=1e-12)
+
+
+class TestGridTwoRho:
+    """The fast grid two-rho path must match the exact two-rho MLE (issue #33)."""
+
+    @pytest.mark.parametrize("f_host", [0.0, 0.001, 0.005, 0.05])
+    def test_grid_two_rho_matches_exact_two_rho(self, f_host: float) -> None:
+        # Panel-sized mixed-class set with injected het overdispersion.
+        markers = _make_mixed_class_markers(
+            f_host=f_host, n_hom=150, n_het=100, dp=2000, het_overdisp_rho=71, seed=9
+        )
+        exact = estimate_single_donor_bb(
+            markers, error_rate=0.01, grid_steps=201, marker_type_overdispersion=True
+        )
+        grid = estimate_single_donor_bb_grid(
+            markers, error_rate=0.01, marker_type_overdispersion=True
+        )
+        # The two-rho path engaged (both classes ample) and matches to < 1e-3.
+        assert exact.rho_hom is not None and grid.rho_hom is not None
+        assert abs(grid.donor_fraction - exact.donor_fraction) < 1e-3
+
+    def test_grid_two_rho_default_unchanged(self) -> None:
+        # With the flag off, the grid result is identical to today's path.
+        markers = _make_markers_overdispersed(0.02, n_markers=120, dp=1000, seed=3)
+        base = estimate_single_donor_bb_grid(markers, error_rate=0.01)
+        flag_off = estimate_single_donor_bb_grid(
+            markers, error_rate=0.01, marker_type_overdispersion=False
+        )
+        assert flag_off.donor_fraction == base.donor_fraction
+        assert flag_off.donor_fraction_ci == base.donor_fraction_ci
+        assert flag_off.log_likelihood == base.log_likelihood
+        assert flag_off.rho == base.rho
+        assert flag_off.rho_hom is None and flag_off.rho_het is None
+
+    def test_grid_two_rho_sparse_falls_back(self) -> None:
+        # Too few het markers: the grid falls back to the single-rho path and
+        # records the reason, matching the single-rho grid fraction.
+        markers = _make_mixed_class_markers(
+            f_host=0.0, n_hom=120, n_het=10, dp=2000, het_overdisp_rho=71, seed=13
+        )
+        single = estimate_single_donor_bb_grid(markers, error_rate=0.01)
+        req = estimate_single_donor_bb_grid(
+            markers, error_rate=0.01, marker_type_overdispersion=True
+        )
+        assert req.donor_fraction == single.donor_fraction
+        assert req.rho_hom is None and req.rho_het is None
+        assert req.marker_type_overdispersion_fallback is not None

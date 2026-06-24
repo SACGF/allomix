@@ -12,14 +12,14 @@ from allomix.bias import (
     load_bias_table,
     save_bias_table,
 )
-from allomix.chimerism import (
+from allomix.chimerism import estimate_single_donor_bb
+from allomix.genotype import InformativeMarker, MarkerData
+from allomix.likelihood import (
     PanelCalibration,
-    estimate_single_donor_bb,
     expected_weight,
     inject_bias,
     total_log_likelihood_bb,
 )
-from allomix.genotype import InformativeMarker, MarkerData
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -308,7 +308,7 @@ class TestExpectedWeightWithBias:
         the estimator's bias-corrected model expects, so simulation and
         estimation stay self-consistent.
         """
-        from allomix.chimerism import apply_bias
+        from allomix.likelihood import apply_bias
 
         for w_true in (0.05, 0.3, 0.5, 0.7, 0.95):
             for bias in (-0.04, 0.0, 0.03):

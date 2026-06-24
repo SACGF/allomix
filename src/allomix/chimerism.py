@@ -9,8 +9,7 @@ This module is the optimisation layer: the grid search, Nelder-Mead refinement,
 profile-likelihood CIs, Fisher-information detection limits, and the optional
 robust refit. The beta-binomial likelihood and expected-weight model it
 optimises live in ``allomix.likelihood``; the result data types it returns live
-in ``allomix.results``. Both are re-exported here for backward compatibility, so
-existing ``from allomix.chimerism import X`` call sites keep working.
+in ``allomix.results``. Import those names from their own modules, not from here.
 
 The in silico CI-coverage and point-estimate accuracy across depths and noise
 conditions are reported in the paper's depth and bias-correction validations.
@@ -31,7 +30,6 @@ from allomix.constants import (
 )
 from allomix.genotype import InformativeMarker
 from allomix.likelihood import (
-    W_EPS,  # noqa: F401  re-export (moved to allomix.likelihood)
     PanelCalibration,
     _ll_from_p_alt,
     _MarkerArrays,
@@ -39,12 +37,8 @@ from allomix.likelihood import (
     _precompute_marker_arrays,
     _total_ll_vec,
     alt_read_probability,
-    apply_bias,  # noqa: F401  re-export (moved to allomix.likelihood)
     expected_weight,
     expected_weight_multi,
-    inject_bias,  # noqa: F401  re-export (moved to allomix.likelihood)
-    log_likelihood_marker_bb,  # noqa: F401  re-export (moved to allomix.likelihood)
-    total_log_likelihood_bb,  # noqa: F401  re-export (moved to allomix.likelihood)
     total_log_likelihood_multi_bb,
 )
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult

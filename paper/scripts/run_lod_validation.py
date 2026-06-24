@@ -66,8 +66,9 @@ from scipy.optimize import curve_fit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import PanelCalibration, estimate_single_donor_bb  # noqa: E402
+from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
+from allomix.likelihood import PanelCalibration  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
     generate_marker_biases_realistic,

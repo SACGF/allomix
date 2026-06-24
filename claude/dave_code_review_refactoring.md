@@ -135,10 +135,47 @@ In `_estimate_single_donor_bb_core`, the rho-profiling bounds
 them to a local computed once before the loop (a per-call local is fine, it does
 not need to be a module constant; it just must be out of the hot loop).
 
-While there: the grid loop uses an upper rho bound of `10000.0` but the
-profile-CI search and Nelder-Mead use `_RHO_MAX = 50000.0`. Confirm whether that
-asymmetry is intentional and add a one-line comment either way. Leave the values
-unchanged for now (changing them would move fixtures).
+While there: the grid loop uses an upper rho bound of `10000.0` while the
+Nelder-Mead refinement and the profile-CI search use `_RHO_MAX = 50000.0`.
+History (blame) settles this: the `10000` literal is the original (2026-04-08,
+3e71b1a9); `_RHO_MAX = 50000` was extracted later (2026-06-03, 22832a42) and the
+Nelder-Mead and profile-CI sites were migrated to the constant, but the grid
+site was missed. So it is drift, not a deliberate asymmetry.
+
+It does not need a value change, and changing it is mildly risky:
+
+- The grid only produces the Nelder-Mead **starting point** (`x0 = [best_f,
+  log(best_rho)]`). Nelder-Mead is then free to climb rho up to `_RHO_MAX`, so
+  the final `rho_mle` and CI width are unaffected by the grid's lower cap.
+- rho is the beta-binomial concentration; by rho ~ 1000+ the likelihood is on
+  the near-binomial plateau, so the LL difference between 10000 and 50000 is
+  tiny and the grid's `best_f` ranking is essentially unchanged.
+- Switching `10000` to `_RHO_MAX` would shift the NM starting point, which could
+  perturb the fixture-locked low-fraction outputs at the ~0.1% level the file
+  warns about (chimerism.py:907-908).
+
+Action: leave the value at `10000.0` but give it a descriptive name rather than
+a long comment. Define it next to `_RHO_MIN` / `_RHO_MAX` so it reads as a
+sibling:
+
+```python
+_RHO_MIN = 0.5
+_RHO_MAX = 50000.0
+# Upper rho cap for the initial grid search only. Lower than _RHO_MAX on
+# purpose: the grid just seeds Nelder-Mead, which then refines rho up to _RHO_MAX.
+_RHO_SEED_MAX = 10000.0
+```
+
+and use it at the grid bound:
+
+```python
+bounds=(math.log(1.0), math.log(_RHO_SEED_MAX)),
+```
+
+The name carries the meaning at the use site, so no inline comment is needed
+there. This pairs with hoisting the log-bounds to a local computed once before
+the grid loop (a per-call local is fine, it just must be out of the hot loop).
+The value is unchanged, so fixtures do not move.
 
 ### 2.4 report.py rounding constant
 

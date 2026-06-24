@@ -99,6 +99,7 @@ def analyse_sample(
     sample_name: str | None = None,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
+    marker_type_overdispersion: bool = False,
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
@@ -132,6 +133,9 @@ def analyse_sample(
             see ``estimate_single_donor_bb``). Drops host copy-number/LoH-
             inconsistent markers and refits; "auto" is the recommended policy.
         robust_k: Robust residual cut (robust SDs) for the refit.
+        marker_type_overdispersion: Fit a separate beta-binomial rho per marker
+            class (donor-hom vs donor-het) in single-donor estimation (issue #33).
+            Off by default. Ignored for multi-donor (later phase).
         expected_relatedness: Optional declared relationship per donor (one entry
             per ``donors`` list, value in ``allomix.relatedness.VALID_DECLARATIONS``
             or "NA"/None for no expectation). Compared against the estimated
@@ -157,6 +161,7 @@ def analyse_sample(
             calibration=cal,
             robust=robust,
             robust_k=robust_k,
+            marker_type_overdispersion=marker_type_overdispersion,
         )
     else:
         result = estimate_multi_donor(

@@ -462,6 +462,14 @@ def assess_quality(
                 f"f_host_est={hp.f_host_mle:.4%}, mle_host={mle_host:.4%})"
             )
 
+    # Per-marker-type overdispersion fell back to shared rho (sparse class).
+    # Inform the user in the structured output; stderr is lost when allomix runs
+    # as a subprocess. A plain warning, not a REVIEW promotion: the shared-rho
+    # estimate is the validated default, just not the mode that was asked for.
+    fb = getattr(result, "marker_type_overdispersion_fallback", None)
+    if fb:
+        warnings.append(fb)
+
     # Robust refit exclusions: a few dropped markers is routine, but a large
     # fraction signals host copy-number / LoH (or genotyping error) and means the
     # trimmed fit should not be trusted blindly.

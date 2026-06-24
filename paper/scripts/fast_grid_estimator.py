@@ -1,0 +1,304 @@
+"""Fast vectorized grid single-donor estimator (paper-only, opt-in).
+
+This is a speed optimisation used only by the paper's LoD sweep
+(``run_lod_validation.py``). It lives outside the ``allomix`` package on purpose:
+it is not part of the clinical tool and the core package should stay small enough
+to scrutinise thoroughly. It reuses the building blocks of the exact estimator in
+``allomix.chimerism`` (some of them private), so a refactor of those internals can
+break this helper; that is an accepted cost of keeping it out of core.
+
+The exact estimator (``allomix.chimerism.estimate_single_donor_bb``) profiles rho
+with ``minimize_scalar`` at every grid f and then runs a joint Nelder-Mead refine,
+so each call makes hundreds of scalar scipy optimisations. For the LoD sweep we
+only need ``donor_fraction``, and that is recovered to well within 1e-4 by
+maximising the same beta-binomial log-likelihood on a 2-D (f, rho) grid, then a
+single 1-D bounded f-search bracketed around the grid argmax (with rho profiled
+out). This path replaces the per-f scipy calls of the grid search with one
+vectorized array pass and a short local refine.
+
+Accuracy is validated against the exact estimator in
+``paper/scripts/validate_grid_estimator.py``: across the LoD parameter space the
+fraction agrees to < 1e-4 and the resulting LoD-summary percentages to well under
+0.01 pp. The exact estimator remains the default; this is opt-in only.
+"""
+
+import math
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+from scipy.optimize import minimize_scalar
+from scipy.special import expit, gammaln, logit
+from scipy.stats import chi2
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
+
+from allomix.chimerism import (  # noqa: E402
+    _RHO_MAX,
+    W_EPS,
+    PanelCalibration,
+    _ll_from_p_alt,
+    _MarkerArrays,
+    _p_alt_for_f,
+    _precompute_marker_arrays,
+)
+from allomix.constants import (  # noqa: E402
+    CI_LEVEL,
+    DEFAULT_ERROR_RATE,
+    N_OTHER_BASES,
+)
+from allomix.genotype import InformativeMarker  # noqa: E402
+
+
+@dataclass
+class GridChimerismResult:
+    """Lightweight result of the fast grid single-donor estimator.
+
+    Carries only what the LoD sweep consumes (``donor_fraction``) plus a few
+    fields so callers that read ``ChimerismResult`` attributes still work. CI is
+    a coarse profile-likelihood bracket on the grid; ``detection_limit`` style
+    fields are not computed.
+    """
+
+    donor_fraction: float
+    donor_fraction_ci: tuple[float, float]
+    host_fraction: float
+    log_likelihood: float
+    n_informative: int
+    n_markers_used: int
+    error_rate: float
+    rho: float = float("inf")
+
+
+def _p_alt_grid(
+    arr: _MarkerArrays,
+    f_grid: np.ndarray,
+    error_rate: float = DEFAULT_ERROR_RATE,
+) -> np.ndarray:
+    """Per-marker P(observe ALT) for a whole f-grid at once.
+
+    Vectorized form of ``_p_alt_for_f`` over an ``(n_f,)`` fraction grid; returns
+    an ``(n_f, M)`` array whose row i is exactly ``_p_alt_for_f(arr, f_grid[i])``.
+
+    Args:
+        arr: Per-marker arrays from ``_precompute_marker_arrays``.
+        f_grid: Donor fractions to evaluate, shape ``(n_f,)``.
+        error_rate: Sequencing error rate.
+
+    Returns:
+        ``(n_f, M)`` array of P(observe ALT).
+    """
+    f = f_grid[:, None]  # (n_f, 1)
+    host = arr.host_ref_dose[None, :]  # (1, M)
+    donor = arr.donor_ref_dose[None, :]
+    w = (1.0 - f) * host / 2.0 + f * donor / 2.0  # (n_f, M)
+
+    if arr.has_bias:
+        # Inlined apply_bias with the bias-only logit(p) term precomputed.
+        bm = arr.bias_mask
+        wm = np.clip(w[:, bm], W_EPS, 1.0 - W_EPS)
+        w[:, bm] = np.clip(
+            expit(logit(wm) - arr.logit_bias_masked[None, :]), W_EPS, 1.0 - W_EPS
+        )
+
+    e = error_rate
+    e_specific = e / N_OTHER_BASES
+    p_alt_raw = (1.0 - w) * (1.0 - e) + w * e_specific
+    p_ref_raw = w * (1.0 - e) + (1.0 - w) * e_specific
+    p_alt = p_alt_raw / (p_ref_raw + p_alt_raw)
+    if arr.has_error:
+        p_alt_asym = w * arr.e_refalt[None, :] + (1.0 - w) * (1.0 - arr.e_altref[None, :])
+        p_alt = np.where(arr.error_mask[None, :], p_alt_asym, p_alt)
+    return np.clip(p_alt, 1e-6, 1.0 - 1e-6)
+
+
+def _ll_grid_over_rho(
+    arr: _MarkerArrays,
+    p_alt: np.ndarray,
+    rho_grid: np.ndarray,
+) -> np.ndarray:
+    """Total log-likelihood on the full ``(n_f, n_rho)`` grid.
+
+    ``p_alt`` is the ``(n_f, M)`` array from ``_p_alt_grid``. Loops over the
+    rho-grid (cheap: ``n_rho`` is small) so the largest temporary is one
+    ``(n_f, M)`` block per rho, keeping memory bounded. Each rho column equals
+    summing the per-marker beta-binomial terms over the marker axis, i.e. the
+    vectorized counterpart of ``_ll_from_p_alt`` evaluated for every f at once.
+
+    Returns:
+        ``(n_f, n_rho)`` array of total log-likelihoods.
+    """
+    n, k = arr.n[None, :], arr.k[None, :]
+    out = np.empty((p_alt.shape[0], rho_grid.shape[0]), dtype=float)
+    for j, rho in enumerate(rho_grid):
+        a = np.maximum(p_alt * rho, 1e-10)
+        b = np.maximum((1.0 - p_alt) * rho, 1e-10)
+        ll = (
+            gammaln(k + a)
+            + gammaln(n - k + b)
+            - gammaln(n + rho)
+            - gammaln(a)
+            - gammaln(b)
+            + math.lgamma(rho)
+        )
+        out[:, j] = ll.sum(axis=1)
+    return out
+
+
+# rho range for the fast grid and its profile. The lower bound matches the exact
+# estimator's grid rho-profiling; the upper bound is _RHO_MAX (50000), the same
+# ceiling the exact estimator's Nelder-Mead refine allows. Capping the fast
+# profile at the lower 10000 (the exact estimator's *grid* bound) leaves a ~0.01
+# pp bias at high-concentration samples where the optimum rho sits above 10000;
+# matching _RHO_MAX removes it.
+_GRID_RHO_LO = 1.0
+
+
+def estimate_single_donor_bb_grid(
+    markers: list[InformativeMarker],
+    error_rate: float = DEFAULT_ERROR_RATE,
+    calibration: PanelCalibration | None = None,
+    n_f: int = 201,
+    n_rho: int = 32,
+    refine: bool = True,
+) -> GridChimerismResult:
+    """Fast approximate single-donor MLE via a vectorized (f, rho) grid.
+
+    Opt-in alternative to ``estimate_single_donor_bb`` for parameter sweeps
+    where only ``donor_fraction`` is needed. Builds an f-grid on ``[0, 1]`` and a
+    log-spaced rho-grid on ``[1, _RHO_MAX]``, evaluates the beta-binomial total
+    log-likelihood on the full grid in a few vectorized array passes, and takes
+    the grid argmax. When ``refine`` (the default) it then polishes the donor
+    fraction with a 1-D bounded search bracketed to +/- 2 f-grid steps around the
+    argmax, profiling rho out at each candidate f (the same profile the exact
+    estimator uses). Because the total log-likelihood is unimodal in f, this
+    local solve lands on the exact estimator's fraction to < 1e-4 across the LoD
+    space (see ``paper/scripts/validate_grid_estimator.py``). The 1-D profiled
+    refine is both faster and tighter than a joint Nelder-Mead polish, which can
+    stall in the very flat rho direction.
+
+    The exact estimator (``estimate_single_donor_bb``) stays the default and is
+    untouched; this path is selected explicitly by the caller.
+
+    Performance and accuracy (measured on the LoD sweep parameter space, see
+    ``paper/scripts/validate_grid_estimator.py``):
+
+      - About 6.5x faster per call than the exact estimator (~30 ms vs ~191 ms;
+        4-7x depending on panel size, with the grid build dominating and the
+        refine ~5 ms). The win comes from replacing the exact estimator's
+        Python-level f-grid loop (a bounded rho profile per f point) and the
+        joint Nelder-Mead refinement with a few vectorized array passes.
+      - Donor-fraction agreement with the exact estimator: median 1e-6 pp,
+        worst case 0.0115 pp over fractions <= 5% (the whole LoD-sweep regime).
+        The only deviations above 0.01 pp are at f=0.5 (outside the LoD range),
+        and there the grid finds the strictly higher likelihood, i.e. it is the
+        more accurate of the two, not the reverse.
+      - End-to-end effect on the reported LoD: across the full 60-cell
+        ``lod_summary`` grid (relatedness x depth x panel size), the per-cell
+        ``lod_pct`` matches the exact estimator to a median of 0.0000 pp and a
+        maximum of 0.0011 pp, comfortably under a 0.01 pp tolerance.
+
+    So this path is appropriate for fast iteration on the LoD sweeps; run the
+    exact estimator (the default) for the final publication figures.
+
+    Args:
+        markers: Informative markers with admixture allele counts.
+        error_rate: Sequencing error rate (fallback when a marker lacks
+            per-direction rates).
+        calibration: Optional per-marker bias and error tables.
+        n_f: Number of f-grid points on ``[0, 1]``.
+        n_rho: Number of log-spaced rho-grid points on ``[1, _RHO_MAX]``.
+        refine: Run the 1-D profiled local polish from the grid argmax
+            (default True).
+
+    Returns:
+        ``GridChimerismResult`` with the donor-fraction estimate and a coarse CI.
+    """
+    cal = calibration or PanelCalibration()
+    n_informative = len(markers)
+    if n_informative == 0:
+        return GridChimerismResult(
+            donor_fraction=0.0,
+            donor_fraction_ci=(0.0, 0.0),
+            host_fraction=1.0,
+            log_likelihood=0.0,
+            n_informative=0,
+            n_markers_used=0,
+            error_rate=error_rate,
+        )
+
+    arr = _precompute_marker_arrays(markers, cal)
+
+    f_grid = np.linspace(0.0, 1.0, n_f)
+    rho_grid = np.exp(np.linspace(math.log(_GRID_RHO_LO), math.log(_RHO_MAX), n_rho))
+
+    p_alt = _p_alt_grid(arr, f_grid, error_rate)  # (n_f, M)
+    ll = _ll_grid_over_rho(arr, p_alt, rho_grid)  # (n_f, n_rho)
+
+    flat = int(np.argmax(ll))
+    fi, ri = np.unravel_index(flat, ll.shape)
+    best_f = float(f_grid[fi])
+    best_rho = float(rho_grid[ri])
+    best_ll = float(ll[fi, ri])
+
+    def profile_ll_f(f_val: float) -> float:
+        """Max LL over rho at a fixed f (rho profiled out, as in the exact MLE)."""
+        p = _p_alt_for_f(arr, f_val, error_rate)
+        opt_rho = minimize_scalar(
+            lambda log_r, _p=p: -_ll_from_p_alt(arr, _p, math.exp(log_r)),
+            bounds=(math.log(_GRID_RHO_LO), math.log(_RHO_MAX)),
+            method="bounded",
+        )
+        return -float(opt_rho.fun)
+
+    if refine:
+        # The LL is unimodal in f, so the optimum lies within one grid step of the
+        # argmax; bracket +/- 2 steps for safety and solve f with rho profiled out.
+        step = 1.0 / (n_f - 1)
+        lo = max(0.0, best_f - 2.0 * step)
+        hi = min(1.0, best_f + 2.0 * step)
+        if hi > lo:
+            opt = minimize_scalar(
+                lambda f: -profile_ll_f(f),
+                bounds=(lo, hi),
+                method="bounded",
+                options={"xatol": 1e-8},
+            )
+            f_ref = max(0.0, min(1.0, float(opt.x)))
+            ll_ref = -float(opt.fun)
+            if ll_ref >= best_ll:
+                best_f = f_ref
+                best_ll = ll_ref
+                # Profile rho at the refined f for the reported concentration.
+                p = _p_alt_for_f(arr, best_f, error_rate)
+                opt_rho = minimize_scalar(
+                    lambda log_r: -_ll_from_p_alt(arr, p, math.exp(log_r)),
+                    bounds=(math.log(_GRID_RHO_LO), math.log(_RHO_MAX)),
+                    method="bounded",
+                )
+                best_rho = math.exp(float(opt_rho.x))
+
+    # Coarse profile-likelihood CI from the grid: profile rho out of the (f, rho)
+    # grid (max over the rho axis at each f), then bracket where the profile drops
+    # by chi2(0.95, df=1)/2 from the maximum. Cheap and good enough for a sweep.
+    prof = ll.max(axis=1)
+    half_threshold = float(chi2.ppf(CI_LEVEL, df=1)) / 2.0
+    above = prof >= (best_ll - half_threshold)
+    idx = np.nonzero(above)[0]
+    if idx.size:
+        f_lo = float(f_grid[idx[0]])
+        f_hi = float(f_grid[idx[-1]])
+    else:
+        f_lo = f_hi = best_f
+
+    return GridChimerismResult(
+        donor_fraction=best_f,
+        donor_fraction_ci=(f_lo, f_hi),
+        host_fraction=1.0 - best_f,
+        log_likelihood=best_ll,
+        n_informative=n_informative,
+        n_markers_used=n_informative,
+        error_rate=error_rate,
+        rho=best_rho,
+    )

@@ -66,11 +66,7 @@ from scipy.optimize import curve_fit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import (  # noqa: E402
-    PanelCalibration,
-    estimate_single_donor_bb,
-    estimate_single_donor_bb_grid,
-)
+from allomix.chimerism import PanelCalibration, estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
@@ -81,6 +77,7 @@ from allomix.simulate import (  # noqa: E402
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fast_grid_estimator import estimate_single_donor_bb_grid  # noqa: E402
 from paper_quick import qval  # noqa: E402
 
 # --- Sweep grid (plan section "Sweep design") -------------------------------
@@ -123,7 +120,7 @@ ESTIMATOR_GRID_STEPS = 201
 # processes) routes the LoD sweep through the vectorized grid estimator instead.
 # It only affects donor_fraction precision, which is all the LoD rule consumes,
 # and matches the exact estimator to well under 0.01 pp. See
-# scripts/validate_grid_estimator.py.
+# paper/scripts/validate_grid_estimator.py.
 FAST_GRID_N_F = 201
 FAST_GRID_N_RHO = 32
 

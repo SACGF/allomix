@@ -563,6 +563,25 @@ PAPER_SECTIONS = [
     "paper/supplementary.md",
 ]
 
+rule paper_test:
+    # Paper-glue tests: the parsers/helpers in paper/scripts (and the
+    # semisynthetic generator in scripts/) that the runners depend on. These do
+    # not exercise the src/allomix tool (the core `pytest` suite does that), but
+    # a regression here, e.g. a fraction-label parser mislabelling every LoD
+    # point, would silently ship a wrong paper. Run them as a build gate. Re-runs
+    # when a test or one of the scripts it imports changes.
+    input:
+        "paper/tests/test_lod_validation.py",
+        "paper/tests/test_semisynthetic_srp434573.py",
+        "paper/scripts/run_lod_validation.py",
+        "paper/scripts/run_srp434573_allomix.py",
+        "scripts/make_semisynthetic_srp434573.py",
+    output:
+        touch("output/.paper_tests_passed"),
+    shell:
+        "pytest paper/tests -q"
+
+
 rule paper:
     # Renders DOCX + Markdown, plus a PDF when weasyprint's system libraries
     # (pango/cairo/gdk-pixbuf) are present. --pdf-if-available skips the PDF
@@ -574,6 +593,7 @@ rule paper:
         ALL_FIGS,
         "paper.toml",
         PAPER_SECTIONS,
+        "output/.paper_tests_passed",
     output:
         touch("output/.paper_built"),
     shell:
@@ -587,6 +607,7 @@ rule clean:
         """
         rm -rf output/facts/ output/depth_validation/ output/relatedness_validation/
         rm -rf output/bias_comparison/ output/timeline/ output/lod_validation/ output/.paper_built
+        rm -f output/.paper_tests_passed
         rm -rf output/cnv_loh_validation/
         rm -rf build/
         """

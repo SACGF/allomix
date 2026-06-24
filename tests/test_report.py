@@ -122,11 +122,12 @@ class TestTsvOutput:
         assert float(fields[3]) == pytest.approx(13.71, abs=0.01)
         assert float(fields[4]) == pytest.approx(0.21, abs=0.01)  # lob_pct
         assert float(fields[5]) == pytest.approx(0.45, abs=0.01)  # lod_pct
-        assert int(fields[6]) == 10
-        assert int(fields[7]) == 10
-        assert float(fields[8]) == pytest.approx(1500, abs=1)
-        assert float(fields[9]) == pytest.approx(0.45, abs=0.01)
-        assert fields[10] == "PASS"
+        assert int(fields[6]) == 76  # n_total_markers
+        assert int(fields[7]) == 10  # n_informative
+        assert int(fields[8]) == 10  # n_used
+        assert float(fields[9]) == pytest.approx(1500, abs=1)
+        assert float(fields[10]) == pytest.approx(0.45, abs=0.01)
+        assert fields[11] == "PASS"
 
     def test_tsv_fail_status(self):
         result = _make_chimerism_result()
@@ -135,7 +136,7 @@ class TestTsvOutput:
         to_tsv(result, qc, buf)
         lines = buf.getvalue().strip().split("\n")
         fields = lines[1].split("\t")
-        assert fields[10] == "FAIL"
+        assert fields[11] == "FAIL"
 
     def test_tsv_review_status(self):
         result = _make_chimerism_result()
@@ -144,7 +145,7 @@ class TestTsvOutput:
         to_tsv(result, qc, buf)
         lines = buf.getvalue().strip().split("\n")
         fields = lines[1].split("\t")
-        assert fields[10] == "REVIEW"
+        assert fields[11] == "REVIEW"
 
     def test_tsv_warnings_column(self):
         result = _make_chimerism_result()
@@ -152,8 +153,8 @@ class TestTsvOutput:
         buf = io.StringIO()
         to_tsv(result, qc, buf)
         lines = buf.getvalue().splitlines()
-        assert lines[0].split("\t")[11] == "qc_warnings"
-        assert lines[1].split("\t")[11] == "Insufficient informative markers: 1 < 3; Low depth"
+        assert lines[0].split("\t")[12] == "qc_warnings"
+        assert lines[1].split("\t")[12] == "Insufficient informative markers: 1 < 3; Low depth"
 
     def test_tsv_warnings_column_empty_when_clean(self):
         result = _make_chimerism_result()
@@ -161,7 +162,7 @@ class TestTsvOutput:
         buf = io.StringIO()
         to_tsv(result, qc, buf)
         # Trailing empty cell: line ends with a tab then nothing.
-        assert buf.getvalue().splitlines()[1].split("\t")[11] == ""
+        assert buf.getvalue().splitlines()[1].split("\t")[12] == ""
 
     def test_tsv_gof_na(self):
         result = _make_chimerism_result()
@@ -170,7 +171,7 @@ class TestTsvOutput:
         to_tsv(result, qc, buf)
         lines = buf.getvalue().strip().split("\n")
         fields = lines[1].split("\t")
-        assert fields[9] == "NA"
+        assert fields[10] == "NA"
 
 
 class TestTsvVerbose:

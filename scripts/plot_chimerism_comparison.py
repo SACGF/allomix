@@ -122,6 +122,10 @@ def read_batch(path: Path, flow_column: str | None, donor_column: str = "Donor")
                 "ci_lo": float(row["ci_lo"]),
                 "ci_hi": float(row["ci_hi"]),
                 "n_informative": int(row.get("n_informative", 0) or 0),
+                # n_total_markers is present only on batch.tsv files produced after
+                # the total-marker-count change; 0 means "not recorded" and the
+                # label falls back to showing the informative count alone.
+                "n_total_markers": int(row.get("n_total_markers", 0) or 0),
                 "mean_depth": float(row.get("mean_depth", 0) or 0),
                 "qc_status": _qc_status(row, gof),
                 "donor": (row.get(donor_column) or "").strip(),
@@ -150,6 +154,25 @@ def read_batch(path: Path, flow_column: str | None, donor_column: str = "Donor")
 def host(donor_pct: float) -> float:
     """Convert a donor percentage to host percentage."""
     return 100.0 - donor_pct
+
+
+def _marker_count(rec: dict) -> str:
+    """Format a run's marker count as informative/total for the x-axis label.
+
+    The total marker count is one of the things that changes between runs (panel
+    coverage, locus dropout), so showing the informative count as a fraction of
+    the total makes the panel difference legible. Older batch.tsv files without a
+    total fall back to the informative count alone.
+
+    Args:
+        rec: One run's batch row.
+
+    Returns:
+        e.g. "34/76" when a total is recorded, else "34".
+    """
+    n_inf = rec["n_informative"]
+    n_total = rec.get("n_total_markers", 0)
+    return f"{n_inf}/{n_total}" if n_total else f"{n_inf}"
 
 
 def short_label(name: str, field: int | None, code: bool) -> str:
@@ -210,7 +233,7 @@ def plot(
     of donor% would compress everything near 100% where the low-level signal
     lives; this keeps that region readable while labelling the axis in donor %.
 
-    Each x-axis label row carries the informative-marker count so the panel
+    Each x-axis label row carries the informative/total marker count so the panel
     difference between runs is visible at a glance.
 
     Args:
@@ -390,7 +413,7 @@ def plot(
         code = code_for(i, s)
         for k, run in enumerate(runs):
             rec = run.get(s)
-            md = f"M:{rec['n_informative']} D:{rec['mean_depth']:.0f}x" if rec else "NA"
+            md = f"M:{_marker_count(rec)} D:{rec['mean_depth']:.0f}x" if rec else "NA"
             is_primary = k == n_runs - 1
             if is_primary:
                 # Flag explicit-donor samples with a star on the code (keyed in
@@ -441,7 +464,7 @@ def plot(
             )
 
     # Key for the tick-label format, below the rows.
-    xlabel = "Sample: M = informative markers, D = mean depth"
+    xlabel = "Sample: M = informative/total markers, D = mean depth"
     if has_presence:
         xlabel += "   |   p = host-presence test (green = host detected, grey = not)"
     ax.text((n - 1) / 2.0, xlabel_y, xlabel, transform=trans, ha="center", va="top", fontsize=9)

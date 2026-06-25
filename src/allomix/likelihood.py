@@ -26,6 +26,7 @@ from scipy.special import expit, gammaln, logit
 from allomix.constants import DEFAULT_ERROR_RATE, N_OTHER_BASES, PLOIDY
 from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey
+from allomix.marker_contamination import ContaminationCorrection
 
 
 @dataclass(frozen=True)
@@ -40,13 +41,19 @@ class PanelCalibration:
       ``allomix.error_rates``). Used for the asymmetric REF/ALT-only likelihood
       where both directions are known.
 
-    Both default to empty, so an uncalibrated run is ``PanelCalibration()``.
+    - ``contamination_correction``: optional per-marker co-pooled contamination
+      correction (Step 30, see ``allomix.marker_contamination``). Applied by
+      ``allomix.chimerism.estimate_single_donor_bb`` before the MLE. None (the
+      default) and a gated-out table both leave estimation byte-identical.
+
+    Both tables default to empty, so an uncalibrated run is ``PanelCalibration()``.
     Markers absent from a table fall through to the uncorrected weight (bias 0)
     or the symmetric global ``error_rate`` (errors).
     """
 
     biases: dict[MarkerKey, float] = field(default_factory=dict)
     errors: dict[MarkerKey, MarkerErrorRates] = field(default_factory=dict)
+    contamination_correction: ContaminationCorrection | None = None
 
     def __post_init__(self) -> None:
         # Treat an explicit ``None`` (a caller's "no table" sentinel) the same as

@@ -124,3 +124,40 @@ is the deeper fix that corrects the MLE number itself (the upward inflation at l
 dilutions, not just the zero-host display). Ship the presence gate now if the floor display
 is the immediate concern; pursue Step 30 (gated, per-flowcell) for sub-1% accuracy on
 co-pooled panels.
+
+## Implementation status (issue #30, behind a flag, off by default)
+
+Implemented in `src/allomix/marker_contamination.py` and wired through the estimator:
+
+- `ContaminationCorrection` (carrier counts + slope + gate decision) is carried on
+  `PanelCalibration.contamination_correction` and applied in
+  `estimate_single_donor_bb` before the MLE. When the field is None or the table gated
+  out, `apply_contamination_correction` returns the marker list unchanged, so the default
+  path is byte-identical (guarded by a unit test, like the #33 opt-out).
+- `estimate_contamination_table` builds the table: carrier counts from the cohort
+  genotypes, the per-flowcell gate from the consensus-hom dose response, and the
+  per-patient magnitude from the informative donor-hom slope. Both slopes are fit by a
+  shared-slope / per-timepoint-intercept weighted regression (`_grouped_slope_fit`), which
+  pools a patient's serial timepoints without letting their differing host levels leak into
+  the slope. This per-timepoint centering matters: pooling raw fractions under one intercept
+  inflated the magnitude on moderately-contaminated pairs and caused over-correction.
+- CLI: `allomix build-contamination-table` writes the table; `--contamination-table` plus
+  `--contamination-correction` (BooleanOptionalAction, default OFF) apply it.
+
+No-harm sweep reproduced with the package (`output/figure_review/step30_package_sweep.py`,
+the prototype as oracle; SRP434573, all 10 mixtures):
+
+- The contaminated mixtures are fixed: M3->F2 zero-host floor 0.165%->0.047% with dilution
+  MAE 0.449%->0.394%; F3->F2 floor 0.101%->0.042%. 6/10 mixtures HELP, all 10 floors driven
+  toward 0.
+- The required clean pairs are preserved: F2->M1 and F2->M2 are exact no-ops (their
+  informative slope is <=0 and clamps to 0); M1->M2 is within +/-0.008pp (noise level) with
+  an improved floor. The clean pairs are preserved by the per-patient MAGNITUDE clamping to
+  ~0, not by the gate: SRP434573 is one co-pooled (contaminated) flowcell, so the
+  per-flowcell consensus gate correctly fires for every pair on it. A genuinely clean
+  flowcell gives a flat consensus slope and gates out (unit-tested).
+
+Open / deferred: donor-het markers are still not corrected (smaller, near-balanced effect);
+multi-donor estimation does not apply the correction yet; the gate's `min_slope` effect-size
+knob defaults to 0 (significance-only) since the magnitude self-clamps the low-contamination
+pairs on this data.

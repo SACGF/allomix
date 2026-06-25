@@ -41,6 +41,7 @@ from allomix.likelihood import (
     expected_weight_multi,
     total_log_likelihood_multi_bb,
 )
+from allomix.marker_contamination import apply_contamination_correction
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 
 # Robust-refit tuning. The residual cut itself (ROBUST_K_DEFAULT) lives in
@@ -833,6 +834,13 @@ def estimate_single_donor_bb(
         raise ValueError(f"robust must be one of {ROBUST_MODES}, got {robust!r}")
 
     cal = calibration or PanelCalibration()
+
+    # Step 30 (issue #30): subtract dose-predicted co-pooled contamination from
+    # donor-hom host-allele counts before the MLE. A no-op (returns the same
+    # list) when no correction is set or the flowcell gated out, so the default
+    # path is byte-identical. Applied here so the corrected counts flow through
+    # the estimate, residuals, CI, and robust refit uniformly.
+    markers = apply_contamination_correction(markers, cal.contamination_correction)
 
     def core(mk: list[InformativeMarker]) -> ChimerismResult:
         return _estimate_single_donor_bb_core(

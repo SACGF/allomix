@@ -28,6 +28,14 @@ from allomix.error_rates import (
 )
 from allomix.genotype import parse_vcf
 from allomix.likelihood import PanelCalibration
+from allomix.marker_contamination import (
+    DEFAULT_DOSE_CAP,
+    DEFAULT_GATE_ALPHA,
+    DEFAULT_GATE_MIN_SLOPE,
+    estimate_contamination_table,
+    load_contamination_table,
+    save_contamination_table,
+)
 from allomix.relatedness import VALID_DECLARATIONS
 from allomix.report import timeline_json, to_json, to_tsv
 from allomix.runmeta import RunUnitInfo, read_run_units
@@ -204,6 +212,23 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
              "table is provided",
     )
     parser.add_argument(
+        "--contamination-table",
+        default=None,
+        help="Per-marker co-pooled contamination table TSV (from "
+             "`allomix build-contamination-table`). Used only when "
+             "--contamination-correction is set (Step 30, issue #30).",
+    )
+    parser.add_argument(
+        "--contamination-correction",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Subtract dose-predicted co-pooled contamination from "
+             "donor-homozygous host-allele counts before the MLE, using "
+             "--contamination-table (Step 30, issue #30). OFF by default. A "
+             "table built on a clean flowcell gates itself out, so this is a "
+             "no-op there even when enabled.",
+    )
+    parser.add_argument(
         "--no-host-presence",
         action="store_true",
         help="Disable the host-presence detection test (see "
@@ -353,7 +378,18 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
         if args.error_table and not args.no_error_correction
         else {}
     )
-    return PanelCalibration(biases=biases, errors=errors)
+    contamination_correction = None
+    if getattr(args, "contamination_correction", False):
+        if not args.contamination_table:
+            raise SystemExit(
+                "--contamination-correction requires --contamination-table"
+            )
+        contamination_correction = load_contamination_table(args.contamination_table)
+    return PanelCalibration(
+        biases=biases,
+        errors=errors,
+        contamination_correction=contamination_correction,
+    )
 
 
 def cmd_monitor(args: argparse.Namespace) -> int:
@@ -595,6 +631,59 @@ def cmd_estimate_errors(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_build_contamination_table(args: argparse.Namespace) -> int:
+    """Run the build-contamination-table subcommand (Step 30, issue #30).
+
+    Builds a per-marker co-pooled contamination correction for one patient on a
+    flowcell: carrier counts from the cohort genotypes, a per-flowcell gate from
+    the consensus-hom dose response, and a correction slope calibrated on the
+    patient's informative donor-hom markers pooled across the supplied timepoints.
+    """
+    _validate_sample_names(args.vcf, [args.host_sample, *args.donor_sample])
+    _validate_sample_names(args.admix_vcf, args.sample)
+
+    # Host and donors with the same panel-side miscall guard the analysis uses.
+    host = parse_vcf(args.vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True)
+    donors = [
+        parse_vcf(args.vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
+        for d in args.donor_sample
+    ]
+
+    admix_lists = [parse_vcf(args.admix_vcf, sample=s, min_dp=0) for s in args.sample]
+
+    # Cohort genotypes for carrier counts: the co-pooled flowcell individuals.
+    # Default to every sample in --vcf (which should include host and donors).
+    cohort_samples = args.cohort_samples or list(VCF(args.vcf).samples)
+    cohort_genotypes = [
+        parse_vcf(args.vcf, sample=s, min_gq=args.min_gq, gt_ad_consistency=True)
+        for s in cohort_samples
+    ]
+
+    correction = estimate_contamination_table(
+        host,
+        donors,
+        admix_lists,
+        cohort_genotypes,
+        min_dp=args.min_dp,
+        min_gq=args.min_gq,
+        dose_cap=args.dose_cap,
+        alpha=args.alpha,
+        min_slope=args.min_slope,
+    )
+    save_contamination_table(correction, args.output)
+
+    verdict = "gated IN (correcting)" if correction.gated else "gated OUT (no-op)"
+    print(
+        f"Built contamination table from {len(args.sample)} timepoint(s), "
+        f"{len(cohort_samples)} cohort sample(s), {len(correction.carriers)} markers: "
+        f"{verdict}; consensus slope {correction.gate_slope * 100:.4f}%/carrier "
+        f"(p={correction.gate_p_value:.2e}), correction slope "
+        f"{correction.slope * 100:.4f}%/carrier -> {args.output}",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the allomix CLI."""
     parser = argparse.ArgumentParser(
@@ -756,6 +845,89 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Minimum GQ for training calls (default: {DEFAULT_MIN_GQ})",
     )
 
+    contam_parser = subparsers.add_parser(
+        "build-contamination-table",
+        help="Build a per-marker co-pooled contamination table (Step 30, issue #30)",
+    )
+    contam_parser.add_argument(
+        "--vcf",
+        required=True,
+        metavar="VCF",
+        help="Joint-called genotype VCF with the host, donor(s), and co-pooled "
+             "cohort samples (the flowcell's joint call)",
+    )
+    contam_parser.add_argument(
+        "--host-sample", required=True, help="Host sample name in --vcf",
+    )
+    contam_parser.add_argument(
+        "--donor-sample",
+        action="append",
+        default=[],
+        required=True,
+        metavar="SAMPLE_NAME",
+        help="Donor sample name in --vcf (repeat for multi-donor)",
+    )
+    contam_parser.add_argument(
+        "--admix-vcf",
+        required=True,
+        metavar="VCF",
+        help="Admix VCF holding this patient's serial timepoints (forced "
+             "pileup AD)",
+    )
+    contam_parser.add_argument(
+        "--sample",
+        nargs="+",
+        required=True,
+        metavar="SAMPLE_NAME",
+        help="Admix timepoint sample names in --admix-vcf to pool over",
+    )
+    contam_parser.add_argument(
+        "--cohort-samples",
+        nargs="+",
+        default=None,
+        metavar="SAMPLE_NAME",
+        help="Co-pooled cohort sample names in --vcf for carrier counts "
+             "(default: all samples in --vcf)",
+    )
+    contam_parser.add_argument(
+        "--output",
+        "-o",
+        default="contamination_table.tsv",
+        help="Output contamination table TSV (default: contamination_table.tsv)",
+    )
+    contam_parser.add_argument(
+        "--dose-cap",
+        type=int,
+        default=DEFAULT_DOSE_CAP,
+        help=f"Maximum co-pooled carrier dose (default: {DEFAULT_DOSE_CAP})",
+    )
+    contam_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=DEFAULT_GATE_ALPHA,
+        help="Significance level for the consensus-hom slope gate "
+             f"(default: {DEFAULT_GATE_ALPHA})",
+    )
+    contam_parser.add_argument(
+        "--min-slope",
+        type=float,
+        default=DEFAULT_GATE_MIN_SLOPE,
+        help="Minimum consensus-hom slope per carrier worth correcting "
+             f"(fraction of depth; default: {DEFAULT_GATE_MIN_SLOPE})",
+    )
+    contam_parser.add_argument(
+        "--min-dp",
+        type=int,
+        default=DEFAULT_MIN_DP,
+        help=f"Minimum admix depth per marker (default: {DEFAULT_MIN_DP})",
+    )
+    contam_parser.add_argument(
+        "--min-gq",
+        type=int,
+        default=DEFAULT_MIN_GQ,
+        help=f"Minimum host/donor GQ (default: {DEFAULT_MIN_GQ})",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -770,6 +942,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_estimate_bias(args)
     if args.command == "estimate-errors":
         return cmd_estimate_errors(args)
+    if args.command == "build-contamination-table":
+        return cmd_build_contamination_table(args)
     parser.print_help()
     return 1
 

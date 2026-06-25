@@ -253,18 +253,18 @@ def contamination_facts(two: list[dict], two_base: list[dict] | None) -> dict:
             if corr.gated:
                 gated += 1
                 slopes.append(corr.slope * 100)
-        facts["step30_n_mixtures"] = str(len(tables))
-        facts["step30_n_gated"] = str(gated)
+        facts["correction_n_mixtures"] = str(len(tables))
+        facts["correction_n_gated"] = str(gated)
         if slopes:
-            facts["step30_slope_min_pct"] = f"{min(slopes):.3f}"
-            facts["step30_slope_max_pct"] = f"{max(slopes):.3f}"
+            facts["correction_slope_min_pct"] = f"{min(slopes):.3f}"
+            facts["correction_slope_max_pct"] = f"{max(slopes):.3f}"
 
     # Zero-host endpoint floor, before vs after Step 30: the headline of the
     # correction (the floating MLE at true 0% host pulled toward 0).
     s30_floor = _endpoint_floors(two)
     if s30_floor:
-        facts["endpoint_floor_max_step30_pct"] = f"{max(s30_floor):.3f}"
-        facts["endpoint_floor_median_step30_pct"] = f"{np.median(s30_floor):.3f}"
+        facts["endpoint_floor_max_corrected_pct"] = f"{max(s30_floor):.3f}"
+        facts["endpoint_floor_median_corrected_pct"] = f"{np.median(s30_floor):.3f}"
     if two_base is not None:
         base_floor = _endpoint_floors(two_base)
         if base_floor:

@@ -35,7 +35,11 @@ from matplotlib.ticker import FuncFormatter  # noqa: E402
 OUT = Path("output")
 FACTS_DIR = OUT / "facts"
 TWO_TSV = OUT / "srp434573_two_person.tsv"
+# Baseline (no Step 30) two-person results, written by run_srp434573_allomix.py
+# alongside the headline (Step 30) TSV, for the before/after contamination facts.
+TWO_BASELINE_TSV = OUT / "srp434573_two_person_baseline.tsv"
 THREE_TSV = OUT / "srp434573_three_person.tsv"
+CONTAM_TABLE_DIR = OUT / "contam_tables"
 PANEL_BED = Path("paper/public_data/SRP434573/SRP434573.bed")
 
 # Fractions at and above which the ~0.2% co-pooled contamination floor is
@@ -191,6 +195,96 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     return facts
 
 
+def _endpoint_floors(rows: list[dict]) -> list[float]:
+    """MLE host % at the true-0%-host endpoints (pure-donor samples).
+
+    Those rows carry no titration known fraction (``known_pct`` blank) and a
+    near-zero estimate; the pure-host endpoint (~100%) is excluded by the < 50%
+    cut. These are the floating floors Step 30 targets.
+    """
+    out = []
+    for r in rows:
+        if _f(r["known_pct"]) is not None:
+            continue
+        m = _f(r.get("mle_pct"))
+        if m is not None and m < 50.0:
+            out.append(m)
+    return out
+
+
+def contamination_facts(two: list[dict], two_base: list[dict] | None) -> dict:
+    """Contamination-line and Step 30 before/after facts.
+
+    ``two`` is the headline (Step 30) run, ``two_base`` the baseline (no
+    correction) run; ``two_base`` may be None (then before/after keys are
+    omitted). The contamination level is Step-30-independent (consensus-hom
+    markers), so it is read off the headline run.
+    """
+    facts: dict[str, str] = {}
+
+    # In-data contamination level (median per-site minor fraction over the error
+    # floor), read off the headline run; identical under the correction.
+    contam = [(_f(r.get("contamination_frac")) or 0.0) * 100 for r in two]
+    contam = [c for c in contam if c > 0]
+    if contam:
+        facts["contam_floor_median_pct"] = f"{np.median(contam):.2f}"
+        facts["contam_floor_max_pct"] = f"{np.max(contam):.2f}"
+
+    # Per-mixture contamination level (median across that mixture's timepoints):
+    # the height of each line in Figure S12.
+    by_mix: dict[str, list[float]] = {}
+    for r in two:
+        c = _f(r.get("contamination_frac"))
+        if c is not None and c > 0:
+            by_mix.setdefault(r["mixture"], []).append(c * 100)
+    if by_mix:
+        per_mix = {m: float(np.median(v)) for m, v in by_mix.items()}
+        facts["contam_line_min_pct"] = f"{min(per_mix.values()):.2f}"
+        facts["contam_line_max_pct"] = f"{max(per_mix.values()):.2f}"
+
+    # Step 30 gate outcome and slope range, read from the saved per-mixture tables.
+    if CONTAM_TABLE_DIR.exists():
+        from allomix.marker_contamination import load_contamination_table
+
+        gated, slopes = 0, []
+        tables = sorted(CONTAM_TABLE_DIR.glob("*.contam.tsv"))
+        for t in tables:
+            corr = load_contamination_table(t)
+            if corr.gated:
+                gated += 1
+                slopes.append(corr.slope * 100)
+        facts["step30_n_mixtures"] = str(len(tables))
+        facts["step30_n_gated"] = str(gated)
+        if slopes:
+            facts["step30_slope_min_pct"] = f"{min(slopes):.3f}"
+            facts["step30_slope_max_pct"] = f"{max(slopes):.3f}"
+
+    # Zero-host endpoint floor, before vs after Step 30: the headline of the
+    # correction (the floating MLE at true 0% host pulled toward 0).
+    s30_floor = _endpoint_floors(two)
+    if s30_floor:
+        facts["endpoint_floor_max_step30_pct"] = f"{max(s30_floor):.3f}"
+        facts["endpoint_floor_median_step30_pct"] = f"{np.median(s30_floor):.3f}"
+    if two_base is not None:
+        base_floor = _endpoint_floors(two_base)
+        if base_floor:
+            facts["endpoint_floor_max_baseline_pct"] = f"{max(base_floor):.3f}"
+            facts["endpoint_floor_median_baseline_pct"] = f"{np.median(base_floor):.3f}"
+        # 0.5% and 1% before/after means, on the titration rungs only.
+        base = [r for r in two_base if _f(r["known_pct"]) is not None]
+        bk = np.array([_f(r["known_pct"]) for r in base])
+        bm = np.array([(_f(r["mle_pct"]) or 0.0) for r in base])
+        if bk.size:
+            lo = np.isclose(bk, 0.5)
+            if lo.any():
+                facts["mle_lowest_mean_baseline_pct"] = f"{np.mean(bm[lo]):.2f}"
+            rel = bk >= RELIABLE_MIN_PCT
+            if rel.any():
+                facts["mae_reliable_baseline_pct"] = f"{np.mean(np.abs(bm[rel] - bk[rel])):.2f}"
+
+    return facts
+
+
 def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
     fig, (axA, axB) = plt.subplots(1, 2, figsize=(12.5, 5.4))
 
@@ -309,7 +403,10 @@ def main() -> int:
     two = _read(TWO_TSV)
     three = _read(THREE_TSV)
 
+    two_base = _read(TWO_BASELINE_TSV) if TWO_BASELINE_TSV.exists() else None
+
     facts = compute_facts(two, three)
+    facts.update(contamination_facts(two, two_base))
     path = FACTS_DIR / "srp434573.csv"
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(facts.keys()))

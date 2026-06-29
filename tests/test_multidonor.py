@@ -395,7 +395,8 @@ class TestMultiDonorIntegration:
     """Integration tests using pre-generated 3-brothers VCFs."""
 
     @pytest.fixture(scope="class")
-    def genotype_data(self):
+    @staticmethod
+    def genotype_data():
         host = parse_vcf(MULTIDONOR_DIR / "host.vcf", min_dp=0, min_gq=0)
         d1 = parse_vcf(MULTIDONOR_DIR / "donor1.vcf", min_dp=0, min_gq=0)
         d2 = parse_vcf(MULTIDONOR_DIR / "donor2.vcf", min_dp=0, min_gq=0)
@@ -528,10 +529,8 @@ class TestMultiDonorCLI:
                 "DONOR2",
                 "--sample",
                 "D1_25_D2_25",
-                "--output",
+                "--json",
                 str(out),
-                "--format",
-                "json",
                 "--min-dp",
                 "0",
                 "--min-gq",
@@ -539,7 +538,7 @@ class TestMultiDonorCLI:
             ]
         )
         assert rc == 0
-        data = json.loads(out.read_text())
+        data = json.loads(out.read_text())["analysis"]
         assert "donors" in data
         assert len(data["donors"]) == 2
 
@@ -560,7 +559,7 @@ class TestMultiDonorCLI:
                 "DONOR2",
                 "--sample",
                 "D1_30_D2_10",
-                "--output",
+                "--tsv",
                 str(out),
                 "--min-dp",
                 "0",
@@ -591,7 +590,7 @@ class TestMultiDonorCLI:
                 "D1_10_D2_10",
                 "--sample",
                 "D1_25_D2_25",
-                "--output",
+                "--json",
                 str(out),
                 "--min-dp",
                 "0",
@@ -619,10 +618,8 @@ class TestMultiDonorCLI:
                 "DONOR1",
                 "--sample",
                 "D1_20_D2_0",
-                "--output",
+                "--json",
                 str(out),
-                "--format",
-                "json",
                 "--min-dp",
                 "0",
                 "--min-gq",
@@ -630,7 +627,7 @@ class TestMultiDonorCLI:
             ]
         )
         assert rc == 0
-        data = json.loads(out.read_text())
+        data = json.loads(out.read_text())["analysis"]
         # Single-donor result should have donor_pct, not donors[]
         assert "donor_pct" in data
         assert "donors" not in data

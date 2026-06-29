@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>allomix chimerism report: 1_199_F2-M1_v1</title>
+<style>
+/*
+ * allomix HTML report styles.
+ *
+ * Clinical, neutral aesthetic: a sans body font, generous whitespace, clear
+ * section headings, no decorative chrome. Status colours are always paired with
+ * a glyph/text in the markup so they survive greyscale. Numbers are right-aligned
+ * in tables. The print stylesheet sets A4 page size, avoids splitting sections
+ * across pages, and hides interactive-only controls.
+ *
+ * This file is inlined verbatim into the report's <style> block (it is not parsed
+ * as a Jinja template), so a lab can override it via --template with no
+ * restriction on the characters it may contain. Edit freely to restyle.
+ */
+:root {
+  --fg: #1a1a1a;
+  --muted: #5c6670;
+  --line: #d7dce1;
+  --bg-soft: #f6f8fa;
+  --pass-fg: #1a7f37; --pass-bg: #e6f4ea;
+  --review-fg: #8a5a00; --review-bg: #fff5dd;
+  --fail-fg: #b3261e; --fail-bg: #fce8e6;
+  --accent: #1f3a5f;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--fg);
+  background: #eef1f4;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.report {
+  max-width: 900px;
+  margin: 24px auto;
+  background: #fff;
+  padding: 32px 40px 48px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+h1 { font-size: 22px; margin: 0 0 2px; color: var(--accent); }
+h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--line);
+  color: var(--accent);
+}
+.section { margin-top: 32px; }
+h3.subhead {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 20px 0 6px;
+}
+.qc-verdict { margin-bottom: 8px; font-weight: 600; }
+.qc-breakdown { margin: 4px 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+/* Header band */
+.header-band { border-bottom: 3px solid var(--accent); padding-bottom: 16px; }
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 4px 32px;
+  margin-top: 14px;
+}
+.meta-item { font-size: 14px; }
+.meta-label { color: var(--muted); margin-right: 6px; }
+.meta-value { font-weight: 600; }
+
+/* Headline */
+.headline-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 16px;
+}
+.figure-card {
+  flex: 1 1 200px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 16px 18px;
+}
+.figure-card.verdict {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.figure-label {
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.figure-value { font-size: 30px; font-weight: 700; line-height: 1.1; margin: 4px 0; }
+.figure-ci { font-size: 13px; color: var(--muted); }
+.sensitivity-line { margin-top: 14px; font-size: 13px; color: var(--muted); }
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge-glyph { font-weight: 700; }
+.badge-pass { color: var(--pass-fg); background: var(--pass-bg); border-color: var(--pass-fg); }
+.badge-review {
+  color: var(--review-fg);
+  background: var(--review-bg);
+  border-color: var(--review-fg);
+}
+.badge-fail { color: var(--fail-fg); background: var(--fail-bg); border-color: var(--fail-fg); }
+.badge-neutral { color: var(--muted); background: var(--bg-soft); border-color: var(--line); }
+.badge-lg { font-size: 16px; padding: 6px 14px; }
+
+/* Callouts */
+.callout {
+  border: 1px solid var(--line);
+  border-left-width: 5px;
+  border-radius: 4px;
+  padding: 12px 16px;
+}
+.callout-amber { border-left-color: var(--review-fg); background: var(--review-bg); }
+.callout-neutral { border-left-color: var(--muted); background: var(--bg-soft); }
+.callout-title { font-weight: 700; margin-bottom: 4px; }
+
+/* Tables */
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+thead th { background: var(--bg-soft); border-bottom: 2px solid var(--line); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.row-review td { background: var(--review-bg); }
+tr.row-fail td { background: var(--fail-bg); }
+.status-cell { white-space: nowrap; }
+
+/* Sortable headers (timeline timepoints table) */
+table.sortable thead th { cursor: pointer; user-select: none; }
+table.sortable thead th::after { content: ""; }
+table.sortable thead th.sort-asc::after { content: " \25B2"; font-size: 10px; }
+table.sortable thead th.sort-desc::after { content: " \25BC"; font-size: 10px; }
+
+/* Charts */
+.chart img { max-width: 100%; height: auto; display: block; }
+
+/* Expandable method help */
+details.help { margin: 10px 0 0; font-size: 13px; }
+details.help > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+  list-style: none;
+}
+details.help > summary::-webkit-details-marker { display: none; }
+details.help > summary::before { content: "\24D8\00A0"; }
+details.help[open] > summary { margin-bottom: 6px; }
+details.help .help-body { color: var(--muted); }
+details.help .help-body p { margin: 4px 0; }
+
+/* Warnings list */
+.warnings { margin: 8px 0 0; padding-left: 20px; }
+.warnings li { margin-bottom: 4px; }
+
+/* Footer */
+.footer {
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.footer dt { font-weight: 600; color: var(--fg); margin-top: 8px; }
+.footer dd { margin: 0 0 2px; }
+
+@media print {
+  body { background: #fff; }
+  .report { border: none; border-radius: 0; margin: 0; max-width: none; padding: 0; }
+  .no-print { display: none !important; }
+  .section, .figure-card, .callout, table, tr { break-inside: avoid; }
+}
+@page { size: A4; margin: 16mm; }
+
+</style>
+</head>
+<body>
+<main class="report">
+<header class="header-band">
+<h1>Chimerism report</h1>
+<div class="meta-grid">
+<div class="meta-item"><span class="meta-label">Recipient ID:</span><span class="meta-value">SRP434573 demo (F2 into M1)</span></div>
+<div class="meta-item"><span class="meta-label">Sample:</span><span class="meta-value">1_199_F2-M1_v1</span></div>
+<div class="meta-item"><span class="meta-label">Transplant type:</span><span class="meta-value">HSCT</span></div>
+<div class="meta-item"><span class="meta-label">Donor 1:</span><span class="meta-value">M1 (unrelated)</span></div>
+<div class="meta-item"><span class="meta-label">allomix version:</span><span class="meta-value">0.1.0</span></div>
+<div class="meta-item"><span class="meta-label">Report generated:</span><span class="meta-value">2026-06-29 00:00:00 (example build)</span></div>
+</div>
+</header>
+
+
+<section class="section headline">
+<h2>Result</h2>
+<div class="headline-grid">
+<div class="figure-card verdict">
+<div class="figure-label">QC verdict</div>
+<div><span class="badge badge-review badge-lg"><span class="badge-glyph">!</span> REVIEW</span></div>
+</div>
+<div class="figure-card">
+<div class="figure-label">Donor fraction</div>
+<div class="figure-value">99.72%</div>
+<div class="figure-ci">(95% CI 99.6 to 99.8)</div>
+</div>
+
+<div class="figure-card">
+<div class="figure-label">Host (recipient)</div>
+<div class="figure-value">0.28%</div>
+<div class="figure-ci">(95% CI 0.2 to 0.4)</div>
+</div>
+
+</div>
+<div class="sensitivity-line">Sample sensitivity (as a donor fraction): limit of blank 0.06%, limit of detection 0.12%.</div>
+<details class="help"><summary>How the donor and host fractions are estimated</summary>
+<div class="help-body"><p>The donor fraction is a maximum-likelihood estimate from the alternate and
+reference read depths at informative markers (loci where the host and donor
+genotypes differ), following Crysup and Woerner (2022). The host (recipient)
+fraction is the remainder. The 95% confidence interval reflects sampling at the
+sequenced depth.</p>
+<p>Limit of blank is the highest donor fraction expected from a true-zero sample
+at this sample's depth and marker set; limit of detection is the lowest fraction
+reliably distinguished from blank. Both are specific to this sample.</p>
+</div>
+</details>
+</section>
+
+<section class="section">
+<h2>Host-presence detection</h2>
+<div class="callout callout-amber">
+<div class="callout-title">Low-level host signal detected</div>
+<div>Detection p-value (LRT): <strong>&lt;0.001</strong>; pooled-Poisson p-value: &lt;0.001.</div>
+<div>Estimated host fraction: 0.278% (95% CI 0.3 to 0.3).</div>
+<div class="small muted">Markers used: 349; error-rate source: per-site; artifact-filtered: 3.</div>
+</div>
+<details class="help"><summary>How host-presence detection works</summary>
+<div class="help-body"><p>At markers where every donor is homozygous for the same allele and the host
+carries the other allele, that donor-absent allele appears only at the
+sequencing-error background in a pure-donor sample. A one-sided test (a
+likelihood ratio, with a pooled-Poisson cross-check) asks whether the observed
+donor-absent reads exceed that background, that is, whether any host signal is
+present.</p>
+<p>This answers "is the host detectable?" directly, separately from the size of
+the donor fraction estimated above, and is most informative near the detection
+limit.</p>
+</div>
+</details>
+</section>
+
+<section class="section">
+<h2>Quality control</h2>
+<div class="qc-verdict">Overall verdict: <span class="badge badge-review"><span class="badge-glyph">!</span> REVIEW</span></div>
+<p class="qc-breakdown">590 of 1058 input markers were informative; 501 used in the fit (excluded: 89 outliers, 1 low-depth).</p>
+<p class="qc-breakdown">2 QC checks flagged (listed below).</p>
+
+<h3 class="subhead">Markers</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Total markers (input)</td><td class="num">1058</td><td class="muted small"></td></tr>
+<tr><td>Shared across samples</td><td class="num">872</td><td class="muted small"></td></tr>
+<tr><td>Informative</td><td class="num">590</td><td class="muted small"></td></tr>
+<tr><td>Used in fit</td><td class="num">501</td><td class="muted small"></td></tr>
+<tr><td>Excluded: low depth</td><td class="num">1</td><td class="muted small"></td></tr>
+<tr><td>Excluded: quality</td><td class="num">0</td><td class="muted small"></td></tr>
+<tr><td>Excluded: outlier</td><td class="num">89</td><td class="muted small"></td></tr>
+<tr><td>Robust refit dropped</td><td class="num">15%</td><td class="muted small">review if &gt; 15%</td></tr>
+</tbody>
+</table>
+
+<h3 class="subhead">Sequencing depth (admixture)</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Mean depth</td><td class="num">19765x</td><td class="muted small">warn if &lt; 100x</td></tr>
+<tr><td>Median depth</td><td class="num">15796x</td><td class="muted small"></td></tr>
+<tr><td>Minimum depth</td><td class="num">147x</td><td class="muted small"></td></tr>
+</tbody>
+</table>
+
+<h3 class="subhead">Model fit</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Goodness-of-fit p</td><td class="num">0.997</td><td class="muted small">review if &lt; 0.01</td></tr>
+<tr><td>Goodness-of-fit p (pre-trim)</td><td class="num">&lt;0.001</td><td class="muted small"></td></tr>
+</tbody>
+</table>
+
+<h3 class="subhead">Contamination</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Contamination fraction</td><td class="num">0.060%</td><td class="muted small">review if &gt; 1%</td></tr>
+<tr><td>Contamination p</td><td class="num">&lt;0.001</td><td class="muted small"></td></tr>
+<tr><td>Contamination markers</td><td class="num">90</td><td class="muted small"></td></tr>
+</tbody>
+</table>
+
+<h3 class="subhead">Sample-swap</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Swap discordant fraction</td><td class="num">0.00%</td><td class="muted small"></td></tr>
+<tr><td>Swap p</td><td class="num">1.000</td><td class="muted small">review if &lt; 0.001</td></tr>
+<tr><td>Consensus-homozygous markers</td><td class="num">90</td><td class="muted small"></td></tr>
+</tbody>
+</table>
+
+
+<h3 class="subhead">Reference-sample relatedness</h3>
+<table class="metrics">
+<thead><tr><th>Pair</th><th class="num">Coefficient</th><th class="num">95% CI</th><th>Relationship</th><th>Confidence</th><th class="num">Markers</th></tr></thead>
+<tbody>
+<tr><td>host vs donor</td><td class="num">-0.142</td><td class="num">(95% CI -0.142 to -0.142)</td><td>unrelated</td><td>high</td><td class="num">853</td></tr>
+</tbody>
+</table>
+
+<details class="help"><summary>How the quality-control checks work</summary>
+<div class="help-body"><p><strong>Goodness-of-fit</strong> compares the observed allele depths to those
+predicted by the fitted fraction; a low p-value means the single-fraction model
+fits poorly (an unexpected marker, an extra contributor, or a genotyping error).</p>
+<p><strong>Contamination</strong> measures third-party DNA at markers where the
+host and every donor share the same homozygote: minor-allele reads there cannot
+come from either contributor, so their excess over the sequencing-error floor
+estimates contamination (for example index hopping or cross-contamination).</p>
+<p><strong>Sample-swap</strong> counts those same shared-homozygote sites where
+the minor allele is individually significant; many such sites indicate a whole
+extra genome (a swap or wrong-patient VCF).</p>
+<p><strong>Relatedness</strong> is a kinship coefficient between the reference
+samples, compared against the declared relationship to catch mislabelled or
+unexpectedly related inputs.</p>
+<p>The <strong>robust refit</strong> re-fits after dropping markers whose
+residuals are large outliers; dropping a large fraction is itself flagged, since
+it points at host copy-number change or a genotyping problem.</p>
+</div>
+</details>
+
+<h3 class="subhead">Warnings</h3>
+<ul class="warnings">
+<li>Poor model fit on the full marker set (pre-trim goodness-of-fit p=1.1e-07 &lt; 0.01) that the robust trim masks — possible genotyping error, CNV, or, at low host fraction, trimmed host signal</li>
+<li>Robust refit excluded 89 marker(s) (15%) as residual outliers (possible host copy-number/LoH or genotyping error)</li>
+</ul>
+</section>
+
+<footer class="footer section">
+<h2>Methods and provenance</h2>
+<dl>
+<dt>allomix version</dt><dd>0.1.0</dd>
+<dt>Input files</dt><dd>Panel VCF: mix_F2_into_M1.SRP434573.vcf.gz; Admixture VCF: mix_F2_into_M1.admix.vcf.gz; Error table: mix_F2_into_M1.error_table.tsv</dd>
+<dt>Minimum depth</dt><dd>100</dd>
+<dt>Minimum GQ</dt><dd>20</dd>
+<dt>Error-rate model</dt><dd>table (mix_F2_into_M1.error_table.tsv)</dd>
+<dt>Bias correction</dt><dd>none</dd>
+<dt>Robust refit</dt><dd>auto (k=3.5)</dd>
+<dt>Overdispersion</dt><dd>per marker type</dd>
+<dt>Host-presence detection</dt><dd>on</dd>
+<dt>Artifact filter</dt><dd>on</dd>
+<dt>Contamination correction</dt><dd>off</dd>
+<dt>Sex chromosomes</dt><dd>excluded (autosomes only)</dd>
+<dt>Method</dt><dd>Maximum-likelihood mixture estimation following Crysup and Woerner (2022), Forensic Science International: Genetics.</dd>
+<dt>Report generated</dt><dd>2026-06-29 00:00:00 (example build)</dd>
+</dl>
+</footer>
+
+</main>
+<script>
+/*
+ * Progressive enhancement only: the timeline timepoints table already arrives
+ * sorted server-side, so a reader with JS off loses nothing. Clicking a header
+ * sorts by that column, numeric-aware (strips %, commas, and the NA glyph),
+ * toggling ascending / descending. Rows are reordered within tbody; any
+ * excluded-row styling rides on the row class and is preserved.
+ *
+ * Inlined verbatim into the report's <script> block (not parsed as a Jinja
+ * template), so it may contain any characters.
+ */
+(function () {
+  "use strict";
+  function cellValue(row, idx) {
+    var cell = row.children[idx];
+    return cell ? cell.textContent.trim() : "";
+  }
+  function asNumber(s) {
+    var cleaned = s.replace(/[%,\s]/g, "").replace("—", "");
+    if (cleaned === "" || cleaned === "<0.001") {
+      return cleaned === "<0.001" ? 0.0005 : NaN;
+    }
+    var v = parseFloat(cleaned);
+    return isNaN(v) ? NaN : v;
+  }
+  function columnIsNumeric(rows, idx) {
+    var seen = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var t = cellValue(rows[i], idx);
+      if (t === "" || t === "—") continue;
+      if (isNaN(asNumber(t))) return false;
+      seen++;
+    }
+    return seen > 0;
+  }
+  function sortTable(table, idx, th) {
+    var tbody = table.tBodies[0];
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.rows);
+    var numeric = columnIsNumeric(rows, idx);
+    var asc = !th.classList.contains("sort-asc");
+    var headers = th.parentNode.children;
+    for (var h = 0; h < headers.length; h++) {
+      headers[h].classList.remove("sort-asc", "sort-desc");
+    }
+    th.classList.add(asc ? "sort-asc" : "sort-desc");
+    rows.sort(function (a, b) {
+      var av = cellValue(a, idx), bv = cellValue(b, idx);
+      var cmp;
+      if (numeric) {
+        var an = asNumber(av), bn = asNumber(bv);
+        if (isNaN(an)) an = Infinity;
+        if (isNaN(bn)) bn = Infinity;
+        cmp = an - bn;
+      } else {
+        cmp = av.localeCompare(bv);
+      }
+      return asc ? cmp : -cmp;
+    });
+    for (var r = 0; r < rows.length; r++) tbody.appendChild(rows[r]);
+  }
+  document.querySelectorAll("table.sortable").forEach(function (table) {
+    var ths = table.tHead ? table.tHead.rows[0].children : [];
+    for (var i = 0; i < ths.length; i++) {
+      (function (idx, th) {
+        th.addEventListener("click", function () { sortTable(table, idx, th); });
+      })(i, ths[i]);
+    }
+  });
+})();
+
+</script>
+</body>
+</html>

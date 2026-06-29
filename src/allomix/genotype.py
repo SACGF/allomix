@@ -6,6 +6,7 @@ non-informative based on host vs donor genotype comparison.
 """
 
 from dataclasses import dataclass, field
+from enum import IntEnum
 from pathlib import Path
 
 from cyvcf2 import VCF
@@ -16,6 +17,65 @@ from allomix.constants import (
     HOM_ALT_MIN_VAF,
     HOM_REF_MAX_VAF,
 )
+
+
+class MarkerType(IntEnum):
+    """Informative marker class from the host vs (first) donor genotype pair.
+
+    This is the single definition of the Vynck et al. classification used across
+    allomix. Each member's integer value is the type code stored on results and
+    written to serialized output, so a ``MarkerType`` compares and serialises as
+    its code (it is an ``int``). The codes pair the host and donor genotypes:
+
+        ``HOST_HOMREF_DONOR_HOMALT`` (0):  host 0/0, donor 1/1, fully informative
+        ``HOST_HOMALT_DONOR_HOMREF`` (1):  host 1/1, donor 0/0, fully informative
+        ``HOST_HET_DONOR_HOMREF``   (10):  host 0/1, donor 0/0, partly informative
+        ``HOST_HET_DONOR_HOMALT``   (11):  host 0/1, donor 1/1, partly informative
+        ``HOST_HOMREF_DONOR_HET``   (20):  host 0/0, donor 0/1, partly informative
+        ``HOST_HOMALT_DONOR_HET``   (21):  host 1/1, donor 0/1, partly informative
+
+    Reference: Vynck et al., classification of bi-allelic markers by host/donor
+    genotype contrast for chimerism estimation.
+    """
+
+    HOST_HOMREF_DONOR_HOMALT = 0
+    HOST_HOMALT_DONOR_HOMREF = 1
+    HOST_HET_DONOR_HOMREF = 10
+    HOST_HET_DONOR_HOMALT = 11
+    HOST_HOMREF_DONOR_HET = 20
+    HOST_HOMALT_DONOR_HET = 21
+
+    @property
+    def label(self) -> str:
+        """Readable ``host G/G, donor G/G`` genotype label for this type."""
+        return _MARKER_TYPE_LABELS[int(self)]
+
+
+# Readable host/donor genotype label per type code. Keyed by the bare ``int`` so
+# both ``MarkerType.label`` and ``marker_type_label`` (which may receive a plain
+# int from deserialized output) share one mapping.
+_MARKER_TYPE_LABELS: dict[int, str] = {
+    MarkerType.HOST_HOMREF_DONOR_HOMALT: "host 0/0, donor 1/1",
+    MarkerType.HOST_HOMALT_DONOR_HOMREF: "host 1/1, donor 0/0",
+    MarkerType.HOST_HET_DONOR_HOMREF: "host 0/1, donor 0/0",
+    MarkerType.HOST_HET_DONOR_HOMALT: "host 0/1, donor 1/1",
+    MarkerType.HOST_HOMREF_DONOR_HET: "host 0/0, donor 0/1",
+    MarkerType.HOST_HOMALT_DONOR_HET: "host 1/1, donor 0/1",
+}
+
+
+def marker_type_label(code: int) -> str:
+    """Readable host/donor genotype label for a marker-type code.
+
+    Args:
+        code: A ``MarkerType`` code (or its bare integer, as found in serialized
+            output).
+
+    Returns:
+        The ``host G/G, donor G/G`` label, or the raw integer as a string for an
+        unrecognised code (so output never breaks on an unexpected value).
+    """
+    return _MARKER_TYPE_LABELS.get(code, str(code))
 
 
 @dataclass
@@ -288,20 +348,14 @@ def _alt_dose(gt: tuple[int, int]) -> int:
     return gt[0] + gt[1]
 
 
-def marker_type(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> int | None:
-    """Classify marker informativeness using Vynck et al. types.
+def marker_type(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> MarkerType | None:
+    """Classify marker informativeness from the host and donor genotypes.
 
-    Types:
-        0:  host hom-ref (0/0), donor hom-alt (1/1) — fully informative
-        1:  host hom-alt (1/1), donor hom-ref (0/0) — fully informative
-        10: host het (0/1), donor hom-ref (0/0) — partially informative
-        11: host het (0/1), donor hom-alt (1/1) — partially informative
-        20: host hom-ref (0/0), donor het (0/1) — partially informative
-        21: host hom-alt (1/1), donor het (0/1) — partially informative
+    See ``MarkerType`` for the class definitions and codes.
 
     Returns:
-        Integer type code, or None if the marker is non-informative
-        (same genotype in host and donor).
+        The ``MarkerType`` for this host/donor pair, or None if the marker is
+        non-informative (same genotype in host and donor).
     """
     h_dose = _alt_dose(host_gt)
     d_dose = _alt_dose(donor_gt)
@@ -310,17 +364,17 @@ def marker_type(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> int | No
         return None  # non-informative
 
     if h_dose == 0 and d_dose == 2:
-        return 0
+        return MarkerType.HOST_HOMREF_DONOR_HOMALT
     if h_dose == 2 and d_dose == 0:
-        return 1
+        return MarkerType.HOST_HOMALT_DONOR_HOMREF
     if h_dose == 1 and d_dose == 0:
-        return 10
+        return MarkerType.HOST_HET_DONOR_HOMREF
     if h_dose == 1 and d_dose == 2:
-        return 11
+        return MarkerType.HOST_HET_DONOR_HOMALT
     if h_dose == 0 and d_dose == 1:
-        return 20
+        return MarkerType.HOST_HOMREF_DONOR_HET
     if h_dose == 2 and d_dose == 1:
-        return 21
+        return MarkerType.HOST_HOMALT_DONOR_HET
 
     return None  # shouldn't reach here for biallelic diploid
 

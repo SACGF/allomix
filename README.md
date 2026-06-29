@@ -53,10 +53,13 @@ uv pip install -e ".[dev]"
                          GenotypeGVCFs → one joint-called VCF
 
 5. allomix monitor       Calculate chimerism for each sample
-                           → per-sample TSV or JSON
+                           → TSV / JSON / HTML report
 
    allomix timeline      Track chimerism across timepoints
-                           → multi-timepoint JSON
+                           → multi-timepoint JSON / HTML report
+
+   allomix report        Render an HTML report from a saved
+                           monitor/timeline JSON
 ```
 
 **Two-VCF input.** allomix takes a panel VCF (host/donor genotypes, typically from GATK joint calling of the reference samples) and a separate admix VCF (per-timepoint AD counts, typically from forced `bcftools mpileup` at the panel sites). Joint calling of HOST + DONOR ensures ALT alleles discovered in the donor are propagated to the panel even when one sample is hom-ref. Pileup of the ADMIX samples preserves raw per-allele counts at the panel sites, which is essential for detecting host fractions below ~5% (GATK's GVCF mode strips minority ALT reads at hom-ref blocks).
@@ -68,14 +71,14 @@ When a new timepoint arrives, re-run the admix-only pileup for it (the panel doe
 ## Usage
 
 ```bash
-# Calculate chimerism for a single timepoint
+# Calculate chimerism for a single timepoint (TSV to stdout by default)
 allomix monitor \
     --panel-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
     --sample TP1_20240101 \
-    --output results.tsv
+    --tsv results.tsv
 
 # Multi-donor (2 donors)
 allomix monitor \
@@ -85,19 +88,33 @@ allomix monitor \
     --donor-sample DONOR1_001 \
     --donor-sample DONOR2_001 \
     --sample TP1_20240101 \
-    --output results.tsv
+    --tsv results.tsv
 
-# JSON output with per-marker detail
+# Structured JSON (the artifact the HTML report is rendered from)
 allomix monitor \
     --panel-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
     --sample TP1_20240101 \
-    --format json --verbose \
-    --output results.json
+    --json results.json
 
-# Timeline across multiple timepoints (always JSON)
+# Structured JSON and the HTML report in one run, plus the per-marker CSV
+# (bioinformatician-facing detail the report omits). Any output flags combine.
+allomix monitor \
+    --panel-vcf patient001_panel.vcf.gz \
+    --admix-vcf patient001_admix.vcf.gz \
+    --host-sample HOST_001 \
+    --donor-sample DONOR_001 \
+    --sample TP1_20240101 \
+    --json report.json \
+    --html report.html \
+    --marker-csv report.markers.csv
+
+# Or render the HTML report later from the saved JSON
+allomix report report.json --output report.html
+
+# Timeline across multiple timepoints (JSON by default, --html for a trend chart)
 allomix timeline \
     --panel-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
@@ -106,7 +123,7 @@ allomix timeline \
     --sample TP1_20240101 \
     --sample TP2_20240201 \
     --sample TP3_20240301 \
-    --output timeline.json
+    --json timeline.json
 
 # Estimate bias from per-sample VCFs
 allomix estimate-bias \
@@ -127,7 +144,7 @@ allomix monitor \
     --donor-sample DONOR_001 \
     --sample TP1_20240101 \
     --bias-table bias_table.tsv \
-    --output results.tsv
+    --tsv results.tsv
 ```
 
 If you do not yet have enough donor VCFs to train a bias table, `estimate-bias` can also be driven from archived BAMs on the same panel via a joint-calling pipeline plus sample-level QC. See [Building a training cohort from BAMs](doc/estimate_bias.md#building-a-training-cohort-from-bams) in the bias guide.
@@ -145,7 +162,7 @@ Both `monitor` and `timeline` accept these additional options:
 | `--no-bias-correction` | off | Disable bias correction even when a bias table is provided |
 | `--verbose` | off | Include per-marker detail in output |
 
-`monitor` also accepts `--format tsv|json` (default: tsv). `timeline` always outputs JSON.
+Output is selected by per-artifact flags that can be combined in one run: `monitor` accepts `--tsv PATH`, `--json PATH`, and `--html PATH` (plus `--marker-csv PATH`); `timeline` accepts `--json PATH` and `--html PATH`. Each accepts `-` for stdout. With no output flag, `monitor` writes TSV and `timeline` writes JSON, both to stdout. The JSON is the structured artifact the HTML report is rendered from, so `allomix report saved.json --output report.html` regenerates the report later (or on another machine) from the saved data.
 
 ## Input / Output
 
@@ -165,11 +182,30 @@ The tool works with VCFs from any variant calling pipeline that supports joint c
 |---|---|
 | % chimerism | Estimated fraction of donor cells (per donor if multi-donor) |
 | Confidence interval | 95% CI on the chimerism estimate |
-| Per-marker details | Allele depths, expected vs observed VAF, and informativeness flag for each marker |
 | QC metrics | Number of informative markers used, mean depth, markers excluded and why, goodness-of-fit |
+| Per-marker detail | Allele depths, expected vs observed VAF, residual, and the include flag for each marker (per-marker CSV, or the verbose TSV / JSON) |
 | Timeline report | Chimerism trend across serial timepoints for a patient |
 
-Output formats: TSV (machine-readable), JSON (for programmatic consumption), and optionally a summary plot.
+Output formats: TSV (machine-readable), JSON (the structured artifact, for programmatic consumption and as the report source), and a self-contained HTML report (`--html`).
+
+### Structured data and the HTML report
+
+The `--json` output is the canonical structured artifact: a self-describing envelope carrying the chimerism estimate, the full QC accounting, every sub-analysis (host presence, relatedness, contamination, swap check, run unit), the per-marker rows, and the report provenance (recipient metadata, analysis parameters, version, timestamp). Bioinformaticians can process it, store it, or upload it elsewhere. The HTML report is rendered from exactly this structure and nothing else, so the report and the data always agree, and `allomix report saved.json` regenerates the report from saved data without re-running the analysis.
+
+`--html` writes a single self-contained HTML file (all CSS and JavaScript inlined, no network access needed) suitable for review or attaching to a record. It is written for the clinician: the headline chimerism fractions with CIs, the host-presence callout, a plain-language QC breakdown (informative-marker accounting and the number of QC flags), the QC panel, and a methods/provenance footer. It does not include the per-marker table; that detail is for bioinformaticians and is written separately with `--marker-csv PATH` (one row per marker per sample: allele depths, observed vs expected VAF, residual, and the include flag).
+
+`allomix timeline --html` adds a trend chart across timepoints; it needs matplotlib, installed with the `report` extra:
+
+```bash
+pip install 'allomix[report]'
+```
+
+Worked examples built from the public SRP434573 mixtures (a public-data demonstration, not patient data):
+
+- [Single-sample report](docs/examples/srp434573_single_sample.html) (the common case): the 0.5% titration `1_199_F2-M1`, with its [per-marker CSV](docs/examples/srp434573_single_sample.markers.csv). The titrated minor contributor (F2) is the host, so the monitored 0.5% is the host fraction. The MLE reads slightly low because of a donor-homozygous contamination background in this public dataset; the host-presence test still detects the residual host signal.
+- [Dilution series timeline](docs/examples/srp434573_dilution_series.html) (secondary): the whole F2-into-M1 titration ladder fed to the timeline mode to show the trend chart. These are a titration series, not serial timepoints from one patient.
+
+Both regenerate deterministically with `scripts/gen_example_report.sh` (which shows the exact `allomix monitor` / `allomix timeline` command lines).
 
 ## Comparison with Commercial Products
 
@@ -260,4 +296,4 @@ sudo apt-get install -y libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 l
 
 ## License
 
-MIT
+allomix is distributed under the MIT licence, and comes with no warranty. Results are highly panel specific: do your own validation.

@@ -26,6 +26,7 @@ dependencies = [
     "cyvcf2>=0.30",
     "numpy>=1.24",
     "scipy>=1.10",
+    "jinja2>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,13 @@ dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.4",
+    "matplotlib>=3.7",  # for the HTML timeline report tests (see the report extra)
+]
+# The HTML timeline report (allomix timeline --format html) renders its trend
+# chart with matplotlib. The single-sample HTML report needs nothing beyond the
+# base runtime deps; only the timeline trend chart pulls this in.
+report = [
+    "matplotlib>=3.7",
 ]
 # User-facing helper scripts (joint-calling prep, QC, diagnosis) run on the
 # base runtime deps. Only the plotting/visualisation scripts need matplotlib;
@@ -57,6 +65,11 @@ Homepage = "https://github.com/SACGF/allomix"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Ship the HTML report templates and inlined CSS/JS as package data so the
+# Jinja PackageLoader finds them in an installed (non-editable) build.
+[tool.setuptools.package-data]
+allomix = ["html/templates/*.html", "html/templates/*.css", "html/templates/*.js"]
 
 [tool.ruff]
 line-length = 100

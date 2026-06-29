@@ -1,0 +1,53 @@
+{#
+  Longitudinal (timeline) chimerism report. Reads the render context built by
+  allomix.html.timeline._timeline_context. The most recent timepoint supplies the
+  headline and the detailed host-presence / QC sections (reusing macros.html);
+  all timepoints feed the trend chart and the table.
+#}
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block body %}
+{{ m.header(header_rows) }}
+
+<section class="section headline">
+<h2>Latest result</h2>
+<div class="headline-grid">
+<div class="figure-card verdict">
+<div class="figure-label">Latest QC verdict</div>
+<div>{{ badge(headline.status, large=True) }}</div>
+</div>
+{{ m.figure_card("Donor fraction (latest)", headline.latest_pct | pct_value, ci(headline.latest_ci_lo, headline.latest_ci_hi, as_pct=False)) }}
+{% if headline.has_prev %}
+{{ m.figure_card("Previous", headline.prev_pct | pct_value) }}
+{% if headline.delta %}
+{{ m.figure_card("Change", headline.delta) }}
+{% endif %}
+{% endif %}
+</div>
+</section>
+
+<section class="section">
+<h2>Trend</h2>
+{% if chart_uri %}
+<div class="chart"><img alt="Chimerism trend across timepoints" src="{{ chart_uri }}"></div>
+{% elif chart_note %}
+<p class="muted small">{{ chart_note }}</p>
+{% endif %}
+</section>
+
+<section class="section">
+<h2>Timepoints</h2>
+<table class="sortable">
+<thead><tr><th>Timepoint</th><th class="num">Donor %</th><th class="num">95% CI</th><th class="num">Mean depth</th><th class="num">GoF p</th><th>QC</th></tr></thead>
+<tbody>
+{% for row in table_rows %}
+<tr><td>{{ row.label }}</td><td class="num">{{ row.donor_pct | pct_value }}</td><td class="num">{{ ci(row.ci_lo, row.ci_hi, 2, as_pct=False) }}</td><td class="num">{{ (row.depth | num(0)) ~ "x" if row.depth is not none else NA }}</td><td class="num">{{ row.gof | pval }}</td><td class="status-cell">{{ badge(row.status) }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</section>
+
+{{ m.host_presence(host_presence.hp, host_presence.detected) }}
+{{ m.qc_panel(qc) }}
+{{ m.footer(version, params, citation, timestamp) }}
+{% endblock %}

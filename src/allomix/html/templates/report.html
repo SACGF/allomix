@@ -1,0 +1,47 @@
+{#
+  Single-sample chimerism report. Reads the render context built by
+  allomix.html.context.single_context. To restyle for a lab, override styles.css;
+  to restructure, override this file (and macros.html) via --template.
+#}
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block body %}
+{{ m.header(header_rows) }}
+
+<section class="section headline">
+<h2>Result</h2>
+<div class="headline-grid">
+<div class="figure-card verdict">
+<div class="figure-label">QC verdict</div>
+<div>{{ badge(analysis.qc_status, large=True) }}</div>
+</div>
+{% if "donors" in analysis %}
+{% for d in analysis.donors %}
+{{ m.figure_card("Donor " ~ loop.index ~ " fraction", d.donor_pct | pct_value, ci(d.ci_lo, d.ci_hi, as_pct=False)) }}
+{% endfor %}
+{{ m.figure_card("Combined donor", analysis.total_donor_pct | pct_value) }}
+{{ m.figure_card("Host (recipient)", analysis.host_pct | pct_value) }}
+{% else %}
+{{ m.figure_card("Donor fraction", analysis.donor_pct | pct_value, ci(analysis.ci_lo, analysis.ci_hi, as_pct=False)) }}
+{{ m.figure_card("Host (recipient)", analysis.host_pct | pct_value, ci(host_ci_lo, host_ci_hi, as_pct=False)) }}
+{% endif %}
+</div>
+{% if "donors" not in analysis %}
+<div class="sensitivity-line">Sample sensitivity (as a donor fraction): limit of blank {{ analysis.lob_pct | pct_value }}, limit of detection {{ analysis.lod_pct | pct_value }}.</div>
+{% endif %}
+{% call m.help("How the donor and host fractions are estimated") %}
+<p>The donor fraction is a maximum-likelihood estimate from the alternate and
+reference read depths at informative markers (loci where the host and donor
+genotypes differ), following Crysup and Woerner (2022). The host (recipient)
+fraction is the remainder. The 95% confidence interval reflects sampling at the
+sequenced depth.</p>
+<p>Limit of blank is the highest donor fraction expected from a true-zero sample
+at this sample's depth and marker set; limit of detection is the lowest fraction
+reliably distinguished from blank. Both are specific to this sample.</p>
+{% endcall %}
+</section>
+
+{{ m.host_presence(host_presence.hp, host_presence.detected) }}
+{{ m.qc_panel(qc) }}
+{{ m.footer(version, params, citation, timestamp) }}
+{% endblock %}

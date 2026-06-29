@@ -174,7 +174,7 @@ class TestCLIIntegration:
                 "DONOR",
                 "--sample",
                 "ADMIX_F0.10",
-                "--output",
+                "--tsv",
                 str(out),
                 "--min-dp",
                 "0",
@@ -192,15 +192,23 @@ class TestCLIIntegration:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf", str(JOINT_VCF),
-                "--admix-vcf", str(JOINT_VCF),
-                "--host-sample", "HOST",
-                "--donor-sample", "DONOR",
-                "--sample", "ADMIX_F0.10",
+                "--panel-vcf",
+                str(JOINT_VCF),
+                "--admix-vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.10",
                 "--estimate-bias",
-                "--output", str(out),
-                "--min-dp", "0",
-                "--min-gq", "0",
+                "--tsv",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
             ]
         )
         assert rc == 0
@@ -213,11 +221,16 @@ class TestCLIIntegration:
             [
                 "estimate-bias",
                 "--both-het",
-                "--vcf", str(JOINT_VCF),
-                "--host-sample", "HOST",
-                "--donor-sample", "DONOR",
-                "--admix-vcfs", str(JOINT_VCF),
-                "--output", str(out),
+                "--vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--admix-vcfs",
+                str(JOINT_VCF),
+                "--output",
+                str(out),
             ]
         )
         assert rc == 0
@@ -238,15 +251,23 @@ class TestCLIIntegration:
             main(
                 [
                     "monitor",
-                    "--panel-vcf", str(JOINT_VCF),
-                    "--admix-vcf", str(JOINT_VCF),
-                    "--host-sample", "HOST",
-                    "--donor-sample", "DONOR",
-                    "--sample", "ADMIX_F0.10",
+                    "--panel-vcf",
+                    str(JOINT_VCF),
+                    "--admix-vcf",
+                    str(JOINT_VCF),
+                    "--host-sample",
+                    "HOST",
+                    "--donor-sample",
+                    "DONOR",
+                    "--sample",
+                    "ADMIX_F0.10",
                     "--estimate-bias",
-                    "--bias-table", str(table),
-                    "--min-dp", "0",
-                    "--min-gq", "0",
+                    "--bias-table",
+                    str(table),
+                    "--min-dp",
+                    "0",
+                    "--min-gq",
+                    "0",
                 ]
             )
 
@@ -265,10 +286,8 @@ class TestCLIIntegration:
                 "DONOR",
                 "--sample",
                 "ADMIX_F0.10",
-                "--output",
+                "--json",
                 str(out),
-                "--format",
-                "json",
                 "--min-dp",
                 "0",
                 "--min-gq",
@@ -277,7 +296,9 @@ class TestCLIIntegration:
         )
         assert rc == 0
         data = json.loads(out.read_text())
-        assert "donor_pct" in data
+        # monitor --json writes the report envelope; the per-sample analysis is
+        # nested under "analysis".
+        assert "donor_pct" in data["analysis"]
 
     def test_timeline(self, tmp_path):
         out = tmp_path / "timeline.json"
@@ -296,7 +317,7 @@ class TestCLIIntegration:
                 "ADMIX_F0.00",
                 "--sample",
                 "ADMIX_F0.10",
-                "--output",
+                "--json",
                 str(out),
                 "--min-dp",
                 "0",
@@ -328,7 +349,7 @@ class TestCLIIntegration:
                 "ADMIX_F0.10",
                 "--sample",
                 "ADMIX_F0.50",
-                "--output",
+                "--tsv",
                 str(out),
                 "--min-dp",
                 "0",
@@ -390,7 +411,7 @@ class TestHostPresenceCli:
                 "DONOR",
                 "--sample",
                 "ADMIX_F0.10",
-                "--output",
+                "--tsv",
                 str(out),
                 "--min-dp",
                 "0",
@@ -437,9 +458,7 @@ class TestHostPresenceCli:
                 "DONOR",
                 "--sample",
                 "ADMIX_F0.10",
-                "--format",
-                "json",
-                "--output",
+                "--json",
                 str(out),
                 "--min-dp",
                 "0",
@@ -448,7 +467,7 @@ class TestHostPresenceCli:
             ]
         )
         assert rc == 0
-        data = json.loads(out.read_text())
+        data = json.loads(out.read_text())["analysis"]
         assert "host_presence" in data
         hp = data["host_presence"]
         assert hp is not None
@@ -493,7 +512,7 @@ class TestDynamicJointVcf:
                 "D",
                 "--sample",
                 "TP1",
-                "--output",
+                "--tsv",
                 str(out),
                 "--min-dp",
                 "0",

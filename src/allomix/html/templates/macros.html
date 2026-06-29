@@ -1,0 +1,239 @@
+{#
+  Reusable section fragments shared by the single-sample (report.html) and
+  longitudinal (timeline.html) reports. Each macro only places already-formatted,
+  HTML-safe values from the render context (see allomix.html.context); the number
+  formatting comes from the registered Jinja filters/globals (pct, pval, ci,
+  count, badge, ...). No analysis happens here.
+
+  A lab can override this file via --template to restructure or reword any
+  section while keeping the rest of the built-in report.
+#}
+
+{# A small, collapsed "how this works" disclosure. Body supplied by the caller. #}
+{% macro help(summary) %}
+<details class="help"><summary>{{ summary }}</summary>
+<div class="help-body">{{ caller() }}</div>
+</details>
+{% endmacro %}
+
+{# One headline figure card (label, big value, optional CI line). #}
+{% macro figure_card(label, value, ci_str="") %}
+<div class="figure-card">
+<div class="figure-label">{{ label }}</div>
+<div class="figure-value">{{ value }}</div>
+<div class="figure-ci">{{ ci_str }}</div>
+</div>
+{% endmacro %}
+
+{# Header identification band. `rows` is a list of (label, value) pairs. #}
+{% macro header(rows) %}
+<header class="header-band">
+<h1>Chimerism report</h1>
+<div class="meta-grid">
+{% for label, value in rows %}
+<div class="meta-item"><span class="meta-label">{{ label }}:</span><span class="meta-value">{{ value }}</span></div>
+{% endfor %}
+</div>
+</header>
+{% endmacro %}
+
+{# Host-presence detection callout. `hp` is the detector sub-object (or none);
+   `detected` is the precomputed verdict. Never silently omitted. #}
+{% macro host_presence(hp, detected) %}
+<section class="section">
+<h2>Host-presence detection</h2>
+{% if hp is none %}
+<div class="callout callout-neutral">
+<div class="callout-title">Detection disabled</div>
+<div>The dedicated host-presence detector was not run for this sample.</div>
+</div>
+{% elif (hp.n_markers or 0) == 0 %}
+<div class="callout callout-neutral">
+<div class="callout-title">Not assessable</div>
+<div>No donor-homozygous markers were available to test for a host signal (artifact-filtered: {{ hp.n_artifact_filtered | count }}).</div>
+</div>
+{% else %}
+<div class="callout {{ 'callout-amber' if detected else 'callout-neutral' }}">
+<div class="callout-title">{{ 'Low-level host signal detected' if detected else 'No host signal above background' }}</div>
+<div>Detection p-value (LRT): <strong>{{ hp.lrt_pval | pval }}</strong>; pooled-Poisson p-value: {{ hp.poisson_pval | pval }}.</div>
+<div>Estimated host fraction: {{ hp.f_host_mle | pct(3) }} {{ ci(hp.f_host_ci_lo, hp.f_host_ci_hi) }}.</div>
+<div class="small muted">Markers used: {{ hp.n_markers | count }}; error-rate source: {{ hp.error_rate_source }}; artifact-filtered: {{ hp.n_artifact_filtered | count }}.</div>
+</div>
+{% endif %}
+{% call help("How host-presence detection works") %}
+<p>At markers where every donor is homozygous for the same allele and the host
+carries the other allele, that donor-absent allele appears only at the
+sequencing-error background in a pure-donor sample. A one-sided test (a
+likelihood ratio, with a pooled-Poisson cross-check) asks whether the observed
+donor-absent reads exceed that background, that is, whether any host signal is
+present.</p>
+<p>This answers "is the host detectable?" directly, separately from the size of
+the donor fraction estimated above, and is most informative near the detection
+limit.</p>
+{% endcall %}
+</section>
+{% endmacro %}
+
+{# A (Check, Value, Reference) metrics table. `rows` is a list of
+   (label, value, reference) triples; value/reference are already safe text. #}
+{% macro metrics(rows) %}
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+{% for label, value, ref in rows %}
+<tr><td>{{ label }}</td><td class="num">{{ value }}</td><td class="muted small">{{ ref }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% endmacro %}
+
+{# Quality-control panel. `ctx` carries the analysis dict, the two clinician
+   summary lines, and the reference-threshold strings. #}
+{% macro qc_panel(ctx) %}
+{% set a = ctx.analysis %}
+{% set refs = ctx.refs %}
+<section class="section">
+<h2>Quality control</h2>
+<div class="qc-verdict">Overall verdict: {{ badge(a.qc_status) }}</div>
+<p class="qc-breakdown">{{ ctx.marker_accounting }}</p>
+<p class="qc-breakdown">{{ ctx.flag_summary }}</p>
+
+<h3 class="subhead">Markers</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Total markers (input)</td><td class="num">{{ a.n_total_markers | count }}</td><td class="muted small"></td></tr>
+<tr><td>Shared across samples</td><td class="num">{{ a.n_shared_markers | count }}</td><td class="muted small"></td></tr>
+<tr><td>Informative</td><td class="num">{{ a.n_informative | count }}</td><td class="muted small"></td></tr>
+<tr><td>Used in fit</td><td class="num">{{ a.n_used | count }}</td><td class="muted small"></td></tr>
+{% if a.per_donor_n_informative %}
+<tr><td>Informative per donor</td><td class="num">{% for n in a.per_donor_n_informative %}donor {{ loop.index }}: {{ n }}{{ ", " if not loop.last else "" }}{% endfor %}</td><td class="muted small"></td></tr>
+{% endif %}
+<tr><td>Excluded: low depth</td><td class="num">{{ a.n_excluded_depth | count }}</td><td class="muted small"></td></tr>
+<tr><td>Excluded: quality</td><td class="num">{{ a.n_excluded_quality | count }}</td><td class="muted small"></td></tr>
+<tr><td>Excluded: outlier</td><td class="num">{{ a.n_excluded_outlier | count }}</td><td class="muted small"></td></tr>
+<tr><td>Robust refit dropped</td><td class="num">{{ (a.robust_drop_fraction or 0.0) | pct(0) }}</td><td class="muted small">{{ refs.robust }}</td></tr>
+</tbody>
+</table>
+
+<h3 class="subhead">Sequencing depth (admixture)</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Mean depth</td><td class="num">{{ a.mean_depth | num(0) }}x</td><td class="muted small">{{ refs.depth }}</td></tr>
+<tr><td>Median depth</td><td class="num">{{ a.median_depth | num(0) }}x</td><td class="muted small"></td></tr>
+<tr><td>Minimum depth</td><td class="num">{{ a.min_depth | count }}x</td><td class="muted small"></td></tr>
+</tbody>
+</table>
+
+<h3 class="subhead">Model fit</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Goodness-of-fit p</td><td class="num">{{ a.gof_pval | pval }}</td><td class="muted small">{{ refs.gof }}</td></tr>
+{% if a.gof_pval_pretrim is not none %}
+<tr><td>Goodness-of-fit p (pre-trim)</td><td class="num">{{ a.gof_pval_pretrim | pval }}</td><td class="muted small"></td></tr>
+{% endif %}
+</tbody>
+</table>
+
+<h3 class="subhead">Contamination</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+{% if a.contamination is none %}
+<tr><td>Contamination</td><td class="num">not assessed</td><td class="muted small"></td></tr>
+{% else %}
+<tr><td>Contamination fraction</td><td class="num">{{ a.contamination.contamination_fraction | pct(3) }}</td><td class="muted small">{{ refs.contamination }}</td></tr>
+<tr><td>Contamination p</td><td class="num">{{ a.contamination.p_value | pval }}</td><td class="muted small"></td></tr>
+<tr><td>Contamination markers</td><td class="num">{{ a.contamination.n_markers | count }}</td><td class="muted small"></td></tr>
+{% endif %}
+</tbody>
+</table>
+
+<h3 class="subhead">Sample-swap</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+{% if a.admix_consistency is none %}
+<tr><td>Sample-swap check</td><td class="num">not assessed</td><td class="muted small"></td></tr>
+{% else %}
+<tr><td>Swap discordant fraction</td><td class="num">{{ a.admix_consistency.discordant_fraction | pct(2) }}</td><td class="muted small"></td></tr>
+<tr><td>Swap p</td><td class="num">{{ a.admix_consistency.swap_pval | pval }}</td><td class="muted small">{{ refs.swap }}</td></tr>
+<tr><td>Consensus-homozygous markers</td><td class="num">{{ a.admix_consistency.n_consensus_hom | count }}</td><td class="muted small"></td></tr>
+{% endif %}
+</tbody>
+</table>
+
+{% if a.run_unit is not none %}
+{% set shares = a.run_unit.shares_run_with_host %}
+<h3 class="subhead">Run provenance</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Run unit</td><td class="num">{{ a.run_unit.run_unit if a.run_unit.run_unit else NA }}</td><td class="muted small"></td></tr>
+<tr><td>Run-unit source</td><td class="num">{{ a.run_unit.source if a.run_unit.source else NA }}</td><td class="muted small"></td></tr>
+<tr><td>Shares run with host</td><td class="num">{{ NA if shares is none else ("yes" if shares else "no") }}</td><td class="muted small">index-hopping risk if yes</td></tr>
+</tbody>
+</table>
+{% endif %}
+
+{% if a.relatedness %}
+<h3 class="subhead">Reference-sample relatedness</h3>
+<table class="metrics">
+<thead><tr><th>Pair</th><th class="num">Coefficient</th><th class="num">95% CI</th><th>Relationship</th><th>Confidence</th><th class="num">Markers</th></tr></thead>
+<tbody>
+{% for r in a.relatedness %}
+<tr><td>{{ r.a_name }} vs {{ r.b_name }}</td><td class="num">{{ r.coefficient | num(3) }}</td><td class="num">{{ ci(r.ci_low, r.ci_high, 3, as_pct=False) }}</td><td>{{ r.relationship }}</td><td>{{ r.confidence }}</td><td class="num">{{ r.n_sites | count }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% endif %}
+
+{% call help("How the quality-control checks work") %}
+<p><strong>Goodness-of-fit</strong> compares the observed allele depths to those
+predicted by the fitted fraction; a low p-value means the single-fraction model
+fits poorly (an unexpected marker, an extra contributor, or a genotyping error).</p>
+<p><strong>Contamination</strong> measures third-party DNA at markers where the
+host and every donor share the same homozygote: minor-allele reads there cannot
+come from either contributor, so their excess over the sequencing-error floor
+estimates contamination (for example index hopping or cross-contamination).</p>
+<p><strong>Sample-swap</strong> counts those same shared-homozygote sites where
+the minor allele is individually significant; many such sites indicate a whole
+extra genome (a swap or wrong-patient VCF).</p>
+<p><strong>Relatedness</strong> is a kinship coefficient between the reference
+samples, compared against the declared relationship to catch mislabelled or
+unexpectedly related inputs.</p>
+<p>The <strong>robust refit</strong> re-fits after dropping markers whose
+residuals are large outliers; dropping a large fraction is itself flagged, since
+it points at host copy-number change or a genotyping problem.</p>
+{% endcall %}
+
+{% if a.warnings %}
+<h3 class="subhead">Warnings</h3>
+<ul class="warnings">
+{% for w in a.warnings %}
+<li>{{ w }}</li>
+{% endfor %}
+</ul>
+{% else %}
+<p class="muted small">No QC warnings raised.</p>
+{% endif %}
+</section>
+{% endmacro %}
+
+{# Methods / provenance footer. #}
+{% macro footer(version, params, citation, timestamp) %}
+<footer class="footer section">
+<h2>Methods and provenance</h2>
+<dl>
+<dt>allomix version</dt><dd>{{ version }}</dd>
+<dt>Input files</dt><dd>{% if params.input_files %}{% for label, name in params.input_files %}{{ label }}: {{ name }}{{ "; " if not loop.last else "" }}{% endfor %}{% else %}{{ NA }}{% endif %}</dd>
+{% for label, value in params.param_lines %}
+<dt>{{ label }}</dt><dd>{{ value }}</dd>
+{% endfor %}
+<dt>Method</dt><dd>{{ citation }}</dd>
+<dt>Report generated</dt><dd>{{ timestamp if timestamp else NA }}</dd>
+</dl>
+</footer>
+{% endmacro %}

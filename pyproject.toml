@@ -35,9 +35,11 @@ dev = [
     "ruff>=0.4",
 ]
 # User-facing helper scripts (joint-calling prep, QC, diagnosis) run on the
-# base runtime deps. Only the plotting/visualisation scripts need matplotlib.
+# base runtime deps. Only the plotting/visualisation scripts need matplotlib;
+# the karyogram also pulls chromosome lengths per genome build from bioutils.
 scripts = [
     "matplotlib>=3.7",
+    "bioutils>=0.5",
 ]
 # snakemake >=8 requires Python 3.11+, so the paper build needs a 3.11 venv
 # (`uv venv --python 3.11`) even though the core tool supports 3.10. See README.

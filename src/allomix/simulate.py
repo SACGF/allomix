@@ -14,7 +14,6 @@ from pathlib import Path
 
 import numpy as np
 
-from allomix.chimerism import inject_bias
 from allomix.constants import (
     DEFAULT_ERROR_RATE,
     HOM_ALT_MIN_VAF,
@@ -22,6 +21,7 @@ from allomix.constants import (
     N_OTHER_BASES,
 )
 from allomix.genotype import InformativeMarker, MarkerData
+from allomix.likelihood import inject_bias
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -696,7 +696,7 @@ def generate_marker_biases(
     Bias is expressed in het-site VAF units: a bias of +0.02 shifts the
     observed ALT VAF of a true heterozygote to 0.52 (ALT preferentially
     captured). It is injected multiplicatively in logit space (see
-    ``allomix.chimerism.inject_bias``), so away from VAF 0.5 the shift is a
+    ``allomix.likelihood.inject_bias``), so away from VAF 0.5 the shift is a
     proportional nudge rather than a flat additive offset, matching how the
     estimator corrects for it (issue #20).
 

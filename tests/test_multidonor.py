@@ -17,17 +17,17 @@ from pathlib import Path
 
 import pytest
 
-from allomix.chimerism import (
-    MultiDonorResult,
-    estimate_multi_donor,
+from allomix.chimerism import estimate_multi_donor
+from allomix.cli import main
+from allomix.genotype import InformativeMarker, classify_markers, marker_type, parse_vcf
+from allomix.likelihood import (
     expected_weight,
     expected_weight_multi,
     total_log_likelihood_multi_bb,
 )
-from allomix.cli import main
-from allomix.genotype import InformativeMarker, classify_markers, marker_type, parse_vcf
 from allomix.qc import assess_quality
 from allomix.report import timeline_json, to_json, to_tsv
+from allomix.results import MultiDonorResult
 from allomix.simulate import (
     _mendelian_child,
     alt_dose,

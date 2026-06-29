@@ -14,23 +14,19 @@ input conventions differ) and it does not print. Callers own I/O and messaging.
 
 from dataclasses import dataclass
 
-from allomix.chimerism import (
-    ChimerismResult,
-    MultiDonorResult,
-    PanelCalibration,
-    estimate_multi_donor,
-    estimate_single_donor_bb,
-)
+from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
 from allomix.constants import ROBUST_K_DEFAULT
 from allomix.contamination import estimate_contamination
 from allomix.detect import DonorHomMarker, donor_hom_markers, host_presence_test
 from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
+from allomix.likelihood import PanelCalibration
 from allomix.qc import QCReport, assess_quality
 from allomix.relatedness import (
     RelatednessResult,
     admix_consistency,
     relatedness_coefficient,
 )
+from allomix.results import ChimerismResult, MultiDonorResult
 from allomix.runmeta import RunUnitInfo
 
 
@@ -99,6 +95,7 @@ def analyse_sample(
     sample_name: str | None = None,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
+    marker_type_overdispersion: bool = True,
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
@@ -118,7 +115,7 @@ def analyse_sample(
         min_gq: Minimum host/donor genotype quality.
         error_rate: Global symmetric sequencing error rate.
         calibration: Optional per-marker bias and error tables (see
-            ``allomix.chimerism.PanelCalibration``).
+            ``allomix.likelihood.PanelCalibration``).
         run_host_presence: Run the host-presence detector and select the
             donor-homozygous markers. When False, ``result.host_presence`` is
             left unset and ``donor_hom_markers`` is empty.
@@ -132,6 +129,10 @@ def analyse_sample(
             see ``estimate_single_donor_bb``). Drops host copy-number/LoH-
             inconsistent markers and refits; "auto" is the recommended policy.
         robust_k: Robust residual cut (robust SDs) for the refit.
+        marker_type_overdispersion: Fit a separate beta-binomial rho per marker
+            class (donor-hom vs donor-het) in single-donor estimation (issue #33).
+            On by default; set False for the legacy shared-rho path. Ignored for
+            multi-donor (later phase).
         expected_relatedness: Optional declared relationship per donor (one entry
             per ``donors`` list, value in ``allomix.relatedness.VALID_DECLARATIONS``
             or "NA"/None for no expectation). Compared against the estimated
@@ -157,6 +158,7 @@ def analyse_sample(
             calibration=cal,
             robust=robust,
             robust_k=robust_k,
+            marker_type_overdispersion=marker_type_overdispersion,
         )
     else:
         result = estimate_multi_donor(

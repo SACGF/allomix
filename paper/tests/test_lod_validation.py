@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-# Make the paper/scripts module importable.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "paper" / "scripts"))
+# Make the paper/scripts module importable (this file lives in paper/tests/).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import run_lod_validation as lod  # noqa: E402
 
@@ -156,8 +156,7 @@ def test_summarise_cell_median_and_band() -> None:
 def test_summarise_cell_drops_failed_fits() -> None:
     pairs = [
         {"lod": 0.002, "lob": 0.0007, "mean_n_informative": 42, "note": ""},
-        {"lod": float("nan"), "lob": float("nan"), "mean_n_informative": 5,
-         "note": "fit_failed"},
+        {"lod": float("nan"), "lob": float("nan"), "mean_n_informative": 5, "note": "fit_failed"},
     ]
     s = lod.summarise_cell("sibling", 1000, 50, pairs, n_seq_reps=30)
     assert s["n_pairs"] == 2
@@ -170,8 +169,12 @@ def test_summarise_cell_clamps_all_detected_pair() -> None:
     # A pair that detects everything (LoD below probed range) is clamped to the
     # floor before the median, so it pulls the cell LoD down but stays finite.
     pairs = [
-        {"lod": lod.LOD_BELOW_RANGE, "lob": 0.0002, "mean_n_informative": 120,
-         "note": "all_detected"},
+        {
+            "lod": lod.LOD_BELOW_RANGE,
+            "lob": 0.0002,
+            "mean_n_informative": 120,
+            "note": "all_detected",
+        },
         {"lod": 0.002, "lob": 0.0007, "mean_n_informative": 122, "note": ""},
     ]
     s = lod.summarise_cell("unrelated", 2000, 200, pairs, n_seq_reps=30)

@@ -8,19 +8,24 @@ import pytest
 
 from allomix import chimerism
 from allomix.chimerism import (
-    ChimerismResult,
-    MarkerResult,
-    PanelCalibration,
-    _precompute_marker_arrays,
-    _total_ll_vec,
+    MIN_CLASS_MARKERS,
+    _donor_het_mask,
+    _two_rho_profile_ll,
     detection_limit,
     estimate_multi_donor,
     estimate_single_donor_bb,
-    expected_weight,
     fraction_se,
+)
+from allomix.genotype import InformativeMarker, MarkerGenotypes
+from allomix.likelihood import (
+    PanelCalibration,
+    _precompute_marker_arrays,
+    _total_ll_vec,
+    expected_weight,
     log_likelihood_marker_bb,
 )
-from allomix.genotype import InformativeMarker
+from allomix.qc import assess_quality
+from allomix.results import ChimerismResult, MarkerResult
 from allomix.simulate import (
     expected_vaf,
     generate_marker_biases_realistic,
@@ -649,3 +654,246 @@ class TestRobustRefit:
             chimerism.ROBUST_ONE_SIDED = saved
         assert rob.n_robust_excluded == 8
         assert rob.donor_fraction == pytest.approx(0.3, abs=0.02)
+
+
+# ---------------------------------------------------------------------------
+# Tests: per-marker-type overdispersion (two-rho mode, issue #33)
+# ---------------------------------------------------------------------------
+
+
+def _make_mixed_class_markers(
+    f_host: float,
+    n_hom: int,
+    n_het: int,
+    dp: int,
+    het_overdisp_rho: float,
+    seed: int,
+) -> list[InformativeMarker]:
+    """Build a mixed donor-hom + donor-het marker set at a known host fraction.
+
+    Donor-hom markers (host 1/1, donor 0/0) carry the one-sided host signal:
+    their expected ALT VAF equals ``f_host`` and they are sampled with the
+    sequencing-error floor (so they are not perfectly noiseless). Donor-het
+    markers sit at background ALT VAF ~0.5 with symmetric beta-binomial scatter
+    at ``het_overdisp_rho``; their host genotype alternates 0/0 and 1/1 so a
+    positive host fraction pushes their predicted VAF to opposite tails of 0.5.
+    That is the rectification the over-dispersed het class drives into a false
+    positive host fraction (the sub-0.5% floor) under a single shared rho.
+    """
+    err = chimerism.DEFAULT_ERROR_RATE
+    rng = random.Random(seed)
+    f_donor = 1.0 - f_host
+    markers: list[InformativeMarker] = []
+    for i in range(n_hom):
+        vaf = expected_vaf((1, 1), (0, 0), f_donor)  # = f_host
+        ref, alt = sample_allele_counts(vaf, dp, rng, error_rate=err)
+        markers.append(
+            _make_marker((1, 1), (0, 0), ref, alt, marker_type=1, chrom=f"chrH{i}", pos=1000 + i)
+        )
+    for j in range(n_het):
+        # Alternate host hom-ref / hom-alt so a positive f splits the predicted
+        # het VAF above and below 0.5 (the rectification driver).
+        h_gt = (0, 0) if j % 2 == 0 else (1, 1)
+        vaf = expected_vaf(h_gt, (0, 1), f_donor)  # ~0.5 at low f_host
+        ref, alt = sample_allele_counts(vaf, dp, rng, error_rate=err, rho=het_overdisp_rho)
+        markers.append(
+            _make_marker(h_gt, (0, 1), ref, alt, marker_type=0, chrom=f"chrE{j}", pos=2000 + j)
+        )
+    return markers
+
+
+def _make_qc_genotypes() -> MarkerGenotypes:
+    """Minimal MarkerGenotypes shell for driving assess_quality in these tests."""
+    return MarkerGenotypes(
+        informative=[],
+        non_informative=[],
+        n_total=100,
+        n_shared=80,
+        n_filtered=0,
+        sample_name="syn",
+    )
+
+
+class TestMarkerTypeOverdispersion:
+    """Two-rho mode: separate beta-binomial rho per marker class (issue #33)."""
+
+    def test_shared_rho_path_byte_identical(self) -> None:
+        """The opt-out shared-rho path is bit-identical to the pre-#33 estimator.
+
+        Fixture-safety guard: ``marker_type_overdispersion=False`` must reproduce
+        the legacy shared-rho values exactly. On this hom-only fixture the default
+        (two-rho on) also falls back to shared rho, so it matches too.
+        """
+        markers = _make_markers_overdispersed(0.20, n_markers=60, dp=2000, seed=42)
+        r = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
+        # Values captured from the shared-rho estimator before the two-rho change.
+        assert r.donor_fraction == 0.1987291290208436
+        assert r.donor_fraction_ci == (0.1938503158157703, 0.20376169046929146)
+        assert r.log_likelihood == -64885.513825790265
+        assert r.rho == 563.5448641013647
+        assert r.rho_hom is None
+        assert r.rho_het is None
+        assert r.marker_type_overdispersion_fallback is None
+        # The default (two-rho on) on a hom-only panel falls back to the same fit.
+        d = estimate_single_donor_bb(markers)
+        assert d.donor_fraction == r.donor_fraction
+        assert d.donor_fraction_ci == r.donor_fraction_ci
+        assert d.log_likelihood == r.log_likelihood
+        assert d.rho == r.rho
+        assert d.rho_hom is None and d.rho_het is None
+
+    def test_partition_mask(self) -> None:
+        """_donor_het_mask is True only for donor (0,1)/(1,0), False for homs."""
+        markers = [
+            _make_marker((0, 0), (0, 1), 500, 500),  # donor het
+            _make_marker((1, 1), (1, 0), 500, 500),  # donor het (1,0)
+            _make_marker((1, 1), (0, 0), 1000, 0),  # donor hom-ref
+            _make_marker((0, 0), (1, 1), 0, 1000),  # donor hom-alt
+        ]
+        mask = _donor_het_mask(markers)
+        assert mask.tolist() == [True, True, False, False]
+
+    def test_two_rho_removes_het_floor(self) -> None:
+        """At true host 0, shared rho shows the floor; two-rho removes it."""
+        markers = _make_mixed_class_markers(
+            f_host=0.0, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=70, seed=11
+        )
+        shared = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
+        two_rho = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
+        shared_host = shared.host_fraction
+        two_host = two_rho.host_fraction
+        # Shared rho rectifies the symmetric het scatter into a positive offset.
+        assert shared_host > 0.0015
+        # Two-rho down-weights the het class and removes most of the offset.
+        assert two_host < 0.1 * shared_host
+        assert two_host < 0.0015
+
+    def test_two_rho_recovers_signal_at_higher_fraction(self) -> None:
+        """At host 5%, two-rho tracks truth with CI no wider than hom-only.
+
+        The het markers regain weight as the host signal pushes their VAF off
+        0.5, so the two-rho CI is no wider than dropping them (the precision
+        recovery a hard hom-only switch would forfeit).
+        """
+        markers = _make_mixed_class_markers(
+            f_host=0.05, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=200, seed=23
+        )
+        two_rho = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
+        assert abs(two_rho.host_fraction - 0.05) < 0.01
+        # Hom-only estimate (drop the het class entirely).
+        hom_only_markers = [m for m, h in zip(markers, _donor_het_mask(markers)) if not h]
+        hom_only = estimate_single_donor_bb(hom_only_markers)
+        two_width = two_rho.donor_fraction_ci[1] - two_rho.donor_fraction_ci[0]
+        hom_width = hom_only.donor_fraction_ci[1] - hom_only.donor_fraction_ci[0]
+        assert two_width <= hom_width + 1e-9
+
+    def test_sparse_class_falls_back(self) -> None:
+        """With too few het markers, the request returns the shared-rho result."""
+        markers = _make_mixed_class_markers(
+            f_host=0.0, n_hom=60, n_het=MIN_CLASS_MARKERS - 1, dp=2000,
+            het_overdisp_rho=70, seed=31,
+        )
+        shared = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
+        requested = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
+        # Identical estimate (shared-rho path) and the fallback reason recorded.
+        assert requested.donor_fraction == shared.donor_fraction
+        assert requested.donor_fraction_ci == shared.donor_fraction_ci
+        assert requested.rho == shared.rho
+        assert requested.rho_hom is None and requested.rho_het is None
+        assert requested.marker_type_overdispersion_fallback is not None
+        assert "shared rho" in requested.marker_type_overdispersion_fallback
+
+    def test_rho_fields_populated(self) -> None:
+        """Two-rho result has non-None rho_hom/rho_het and rho == rho_het."""
+        markers = _make_mixed_class_markers(
+            f_host=0.0, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=70, seed=41
+        )
+        two_rho = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
+        assert two_rho.rho_hom is not None
+        assert two_rho.rho_het is not None
+        assert two_rho.rho == two_rho.rho_het
+        assert two_rho.marker_type_overdispersion_fallback is None
+        # The opt-out shared-rho result leaves them None.
+        shared = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
+        assert shared.rho_hom is None and shared.rho_het is None
+
+    def test_default_engages_two_rho(self) -> None:
+        """Two-rho is the default: an ample mixed set engages it without the flag."""
+        markers = _make_mixed_class_markers(
+            f_host=0.0, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=70, seed=47
+        )
+        result = estimate_single_donor_bb(markers)  # no flag -> default on
+        assert result.rho_hom is not None
+        assert result.rho_het is not None
+        assert result.rho == result.rho_het
+        assert result.marker_type_overdispersion_fallback is None
+        # The default matches an explicit request, and removes the floor.
+        explicit = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
+        assert result.donor_fraction == explicit.donor_fraction
+        assert result.host_fraction < 0.0015
+
+    def test_ci_monotone_and_contains_mle(self) -> None:
+        """profile_ll is maximized at f_mle and the CI is well-formed."""
+        markers = _make_mixed_class_markers(
+            f_host=0.02, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=120, seed=53
+        )
+        two_rho = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
+        f_lo, f_hi = two_rho.donor_fraction_ci
+        f_mle = two_rho.donor_fraction
+        assert 0.0 <= f_lo <= f_mle <= f_hi <= 1.0
+        # Reconstruct the profiled LL and check f_mle is the maximizer.
+        mask = _donor_het_mask(markers)
+        arr_hom = _precompute_marker_arrays(
+            [m for m, h in zip(markers, mask) if not h], PanelCalibration()
+        )
+        arr_het = _precompute_marker_arrays(
+            [m for m, h in zip(markers, mask) if h], PanelCalibration()
+        )
+        ll_at_mle = _two_rho_profile_ll(arr_hom, arr_het, f_mle, two_rho.error_rate)
+        for f in (max(0.0, f_mle - 0.02), min(1.0, f_mle + 0.02)):
+            assert _two_rho_profile_ll(arr_hom, arr_het, f, two_rho.error_rate) <= ll_at_mle + 1e-6
+
+    def test_detection_limit_per_class_rho(self) -> None:
+        """fraction_se per-class rho: consistency and het down-weighting."""
+        markers = _make_mixed_class_markers(
+            f_host=0.02, n_hom=40, n_het=40, dp=2000, het_overdisp_rho=100, seed=67
+        )
+        R = 300.0
+        scalar = fraction_se(markers, 0.02, rho=R)
+        per_class_equal = fraction_se(markers, 0.02, rho=R, rho_hom=R, rho_het=R)
+        # Both classes at the same rho reproduces the scalar SE exactly.
+        assert per_class_equal == pytest.approx(scalar, rel=1e-12)
+        # Down-weighting the het class (smaller rho) inflates the SE.
+        het_down = fraction_se(markers, 0.02, rho=R, rho_hom=R, rho_het=50.0)
+        all_hom = fraction_se(markers, 0.02, rho=R, rho_hom=R, rho_het=R)
+        assert het_down > all_hom
+
+    def test_fallback_is_diagnostic_not_a_qc_warning(self) -> None:
+        """Sparse-class fallback sets the diagnostic field but does NOT warn.
+
+        Two-rho is the default estimator, so a sparse marker class is routine and
+        must not spam the QC warnings (which would fire on every hom-dominated
+        sample). The reason is recorded on the result for diagnostics only.
+        """
+        markers = _make_mixed_class_markers(
+            f_host=0.0, n_hom=60, n_het=MIN_CLASS_MARKERS - 1, dp=2000,
+            het_overdisp_rho=70, seed=71,
+        )
+        result = estimate_single_donor_bb(markers)  # default on; het class sparse
+        assert result.marker_type_overdispersion_fallback is not None
+        assert result.rho_hom is None and result.rho_het is None
+        qc = assess_quality(result, _make_qc_genotypes())
+        assert result.marker_type_overdispersion_fallback not in qc.warnings
+        assert not any("sparse" in w for w in qc.warnings)
+
+    def test_robust_auto_with_two_rho_converges(self) -> None:
+        """Two-rho mode and --robust auto together run and stay sane (Open risk)."""
+        markers = _make_mixed_class_markers(
+            f_host=0.02, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=120, seed=83
+        )
+        result = estimate_single_donor_bb(
+            markers, robust="auto", marker_type_overdispersion=True
+        )
+        assert 0.0 <= result.donor_fraction <= 1.0
+        f_lo, f_hi = result.donor_fraction_ci
+        assert 0.0 <= f_lo <= result.donor_fraction <= f_hi <= 1.0

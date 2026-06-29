@@ -38,12 +38,23 @@ Outputs:
 Usage:
     python paper/scripts/run_lod_validation.py
     python paper/scripts/run_lod_validation.py --n-pairs 5 --n-seq-reps 10 --n-workers 8
+
+    # Opt in to the fast vectorized grid estimator (~6.5x faster, max lod_pct
+    # deviation 0.0011 pp vs the exact default; see estimate_single_donor_bb_grid).
+    # Use for fast iteration; OMIT for the final publication run.
+    python paper/scripts/run_lod_validation.py --fast-grid
+    ALLOMIX_FAST_GRID=1 python paper/scripts/run_lod_validation.py
+
+    # Composes with quick mode (ALLOMIX_PAPER_QUICK / --config quick=1): quick
+    # shrinks the grid, fast-grid swaps the estimator.
+    ALLOMIX_PAPER_QUICK=1 ALLOMIX_FAST_GRID=1 python paper/scripts/run_lod_validation.py
 """
 
 import argparse
 import csv
 import hashlib
 import math
+import os
 import random
 import sys
 from collections import defaultdict
@@ -55,8 +66,9 @@ from scipy.optimize import curve_fit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import PanelCalibration, estimate_single_donor_bb  # noqa: E402
+from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
+from allomix.likelihood import PanelCalibration  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
     generate_marker_biases_realistic,
@@ -66,6 +78,7 @@ from allomix.simulate import (  # noqa: E402
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fast_grid_estimator import estimate_single_donor_bb_grid  # noqa: E402
 from paper_quick import qval  # noqa: E402
 
 # --- Sweep grid (plan section "Sweep design") -------------------------------
@@ -101,6 +114,45 @@ DEPTH_CV = 0.43
 # coarser grid is fine and gives a ~5x speedup. Nelder-Mead still refines from
 # the grid maximum, so f-estimates remain accurate to <1e-3.
 ESTIMATOR_GRID_STEPS = 201
+
+# Opt-in fast grid estimator. The exact estimator (estimate_single_donor_bb) is
+# the default and is used for the published full-accuracy pass. Setting the env
+# var ALLOMIX_FAST_GRID=1 (or passing --fast-grid, which sets it for the worker
+# processes) routes the LoD sweep through the vectorized grid estimator instead.
+# It only affects donor_fraction precision, which is all the LoD rule consumes,
+# and matches the exact estimator to well under 0.01 pp. See
+# paper/scripts/validate_grid_estimator.py.
+FAST_GRID_N_F = 201
+FAST_GRID_N_RHO = 32
+
+
+def _fast_grid_enabled() -> bool:
+    """True if the opt-in fast grid estimator is requested via env var."""
+    return os.environ.get("ALLOMIX_FAST_GRID", "") not in ("", "0", "false", "False")
+
+
+def estimate_fraction(genos_informative, bias_dict):
+    """Run the configured single-donor estimator and return the fitted result.
+
+    Routes through the fast vectorized grid estimator when ALLOMIX_FAST_GRID is
+    set, otherwise the exact (default) estimator. Both expose ``donor_fraction``
+    and ``donor_fraction_ci``, which is all the LoD computation reads.
+    """
+    cal = PanelCalibration(biases=bias_dict)
+    if _fast_grid_enabled():
+        return estimate_single_donor_bb_grid(
+            genos_informative,
+            error_rate=ERROR_RATE,
+            calibration=cal,
+            n_f=FAST_GRID_N_F,
+            n_rho=FAST_GRID_N_RHO,
+        )
+    return estimate_single_donor_bb(
+        genos_informative,
+        error_rate=ERROR_RATE,
+        grid_steps=ESTIMATOR_GRID_STEPS,
+        calibration=cal,
+    )
 
 FACTS_DIR = Path("output/facts")
 WORK_DIR = Path("output/lod_validation")
@@ -328,6 +380,15 @@ def run_pair(
                     if blend.marker_biases is not None
                     else None
                 )
+                # NOTE on where the time goes (do not "optimise" this away):
+                # this write_vcf + parse_vcf round-trip looks wasteful but
+                # profiling the inner loop puts it at ~0.2% of wall time. The
+                # cost is ~99% in estimate_single_donor_bb below (the rho
+                # profiling and Nelder-Mead refinement inside the MLE). Replacing
+                # the round-trip with blend_vcfs(return_markers=True) saves
+                # nothing measurable. If you want this sweep faster, optimise the
+                # estimator hot path (chimerism._ll_from_p_alt / the grid+NM
+                # search), not the simulation or IO.
                 write_vcf(blend, admix_path)
                 admix_md_full = parse_vcf(str(admix_path), min_dp=0, min_gq=0)
 
@@ -358,11 +419,7 @@ def run_pair(
                         })
                         continue
 
-                    result = estimate_single_donor_bb(
-                        genos.informative, error_rate=ERROR_RATE,
-                        grid_steps=ESTIMATOR_GRID_STEPS,
-                        calibration=PanelCalibration(biases=bias_dict),
-                    )
+                    result = estimate_fraction(genos.informative, bias_dict)
                     rows.append({
                         "relatedness": relatedness,
                         "depth": depth,
@@ -640,7 +697,16 @@ def main(argv: list[str] | None = None) -> int:
              "run BOTH sweeps at the same error rate: the presence test is far more "
              "error-sensitive, so comparing them at mismatched rates is misleading.",
     )
+    parser.add_argument(
+        "--fast-grid", action="store_true",
+        help="Opt in to the fast vectorized grid estimator (sets ALLOMIX_FAST_GRID=1 "
+             "for the worker processes). The exact estimator is the default; use the "
+             "fast path for quick sweep iteration, not the published full-accuracy pass.",
+    )
     args = parser.parse_args(argv)
+
+    if args.fast_grid:
+        os.environ["ALLOMIX_FAST_GRID"] = "1"
 
     if args.depths is not None:
         DEPTHS = sorted(args.depths)

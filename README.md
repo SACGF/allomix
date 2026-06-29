@@ -200,12 +200,15 @@ The `--json` output is the canonical structured artifact: a self-describing enve
 pip install 'allomix[report]'
 ```
 
-Worked examples built from the public SRP434573 mixtures (a public-data demonstration, not patient data):
+Worked examples built from the public SRP434573 mixtures (a public-data demonstration, not patient data). The titrated minor contributor (F2) is assigned the host role, so the monitored quantity is the host fraction:
 
-- [Single-sample report](docs/examples/srp434573_single_sample.html) (the common case): the 0.5% titration `1_199_F2-M1`, with its [per-marker CSV](docs/examples/srp434573_single_sample.markers.csv). The titrated minor contributor (F2) is the host, so the monitored 0.5% is the host fraction. The MLE reads slightly low because of a donor-homozygous contamination background in this public dataset; the host-presence test still detects the residual host signal.
-- [Dilution series timeline](docs/examples/srp434573_dilution_series.html) (secondary): the whole F2-into-M1 titration ladder fed to the timeline mode to show the trend chart. These are a titration series, not serial timepoints from one patient.
+- [Single-sample report, 1%](docs/examples/srp434573_single_sample_1pct.html) (the headline example): the 1% titration `1_99_F2-M1`, with its [per-marker CSV](docs/examples/srp434573_single_sample_1pct.markers.csv). The estimate recovers the 1% host fraction cleanly.
+- [Single-sample report, 0.5%](docs/examples/srp434573_single_sample.html) (near the panel's contamination floor): the 0.5% titration `1_199_F2-M1`, with its [per-marker CSV](docs/examples/srp434573_single_sample.markers.csv). The MLE reads slightly low because of a donor-homozygous contamination background in this public dataset; the host-presence test still detects the residual host signal.
+- [Dilution series timeline](docs/examples/srp434573_dilution_series.html): the whole F2-into-M1 titration ladder fed to the timeline mode to show the trend chart. These are a titration series, not serial timepoints from one patient.
 
-Both regenerate deterministically with `scripts/gen_example_report.sh` (which shows the exact `allomix monitor` / `allomix timeline` command lines).
+All regenerate deterministically with `scripts/gen_example_report.sh` (which shows the exact `allomix monitor` / `allomix timeline` command lines).
+
+The report layout and styling can be customised for your own laboratory (logo, colours, headers, wording) by supplying your own templates with `--template`; see the [custom report template guide](doc/custom_report_template.md).
 
 ## Comparison with Commercial Products
 

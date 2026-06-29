@@ -46,13 +46,31 @@ PANEL="$DATA/mix_F2_into_M1.SRP434573.vcf.gz"
 ADMIX="$DATA/mix_F2_into_M1.admix.vcf.gz"
 ERRORS="$DATA/mix_F2_into_M1.error_table.tsv"
 
+SINGLE_1PCT_OUT="$OUT_DIR/srp434573_single_sample_1pct.html"
+SINGLE_1PCT_CSV="$OUT_DIR/srp434573_single_sample_1pct.markers.csv"
 SINGLE_OUT="$OUT_DIR/srp434573_single_sample.html"
 SINGLE_CSV="$OUT_DIR/srp434573_single_sample.markers.csv"
 TIMELINE_OUT="$OUT_DIR/srp434573_dilution_series.html"
 
 mkdir -p "$OUT_DIR"
 
-# 1. Single-sample report (+ the bioinformatician-facing per-marker CSV).
+# 1a. Single-sample report at 1% (the headline example): the 1_99 rung, where
+#     the titrated host sits at 1% and the estimate recovers it cleanly.
+allomix monitor \
+  --panel-vcf "$PANEL" \
+  --admix-vcf "$ADMIX" \
+  --error-table "$ERRORS" \
+  --host-sample F2 \
+  --donor-sample M1 \
+  --sample 1_99_F2-M1_v1 \
+  --html "$SINGLE_1PCT_OUT" \
+  --marker-csv "$SINGLE_1PCT_CSV" \
+  --recipient-id "SRP434573 demo (F2 into M1, 1%)" \
+  --donor-relationship unrelated \
+  --report-timestamp "$TIMESTAMP"
+
+# 1b. Single-sample report at 0.5% (near the panel's contamination floor): the
+#     1_199 rung, kept to show the low-end behaviour and host-presence gating.
 allomix monitor \
   --panel-vcf "$PANEL" \
   --admix-vcf "$ADMIX" \
@@ -84,7 +102,7 @@ allomix timeline \
   --recipient-id "SRP434573 dilution series (F2 into M1)" \
   --report-timestamp "$TIMESTAMP"
 
-for f in "$SINGLE_OUT" "$SINGLE_CSV" "$TIMELINE_OUT"; do
+for f in "$SINGLE_1PCT_OUT" "$SINGLE_1PCT_CSV" "$SINGLE_OUT" "$SINGLE_CSV" "$TIMELINE_OUT"; do
   echo "wrote ${f#"$REPO_ROOT"/}"
 done
 

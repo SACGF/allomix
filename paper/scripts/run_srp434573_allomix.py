@@ -29,6 +29,7 @@ unless a freshly joint-called ``output/genotypes/SRP434573`` is present (full
 from-scratch reproduction), which takes precedence. Writes nothing to /tau.
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -40,9 +41,32 @@ from srp434573_common import (
     resolve_srp434573_synthetic_dir,
 )
 
+from allomix.genotype import parse_vcf
+from allomix.marker_contamination import (
+    estimate_contamination_table,
+    save_contamination_table,
+)
+
 GEN = resolve_srp434573_genotypes_dir()
 OUT = Path("output")
 ALLOMIX = [shutil.which("allomix") or ".venv/bin/allomix", "monitor"]
+# Per-marker contamination correction (Step 30, issue #30). On this co-pooled
+# flowcell the consensus-hom dose-response gate fires, so the correction is
+# applied for the headline two-person figures; a baseline (uncorrected) run is
+# kept alongside for the before/after comparison. Set ALLOMIX_NO_STEP30=1 to skip
+# building the tables (baseline only).
+NO_STEP30 = os.environ.get("ALLOMIX_NO_STEP30") == "1"
+CONTAM_TABLE_DIR = OUT / "contam_tables"
+# The seven co-pooled individuals whose genotypes give the carrier-dose counts
+# (Step 30). Each per-mixture panel VCF holds only its own host/donor pair, so
+# the cohort is pooled across all panel VCFs (first occurrence per individual).
+COHORT_INDIV = ["F1", "F2", "F3", "M1", "M2", "M3", "M4"]
+
+# Per-marker-type overdispersion (issue #33) is the estimator default, so every
+# monitor invocation uses it. Set ALLOMIX_NO_MARKER_TYPE_OVERDISPERSION=1 to pass
+# --no-marker-type-overdispersion instead, recovering the legacy shared-rho
+# baseline (used to regenerate the pre-#33 ladder numbers for comparison).
+NO_MARKER_TYPE_OVERDISPERSION = os.environ.get("ALLOMIX_NO_MARKER_TYPE_OVERDISPERSION") == "1"
 
 # name -> (host = minor, [donors = major(s)]); two-person first, three-person last
 MIXES = {
@@ -120,6 +144,47 @@ def admix_samples(vcf: Path) -> list[str]:
     return list(VCF(str(vcf)).samples)
 
 
+def cohort_genotypes() -> list[list]:
+    """One parsed marker list per co-pooled individual, pooled across panel VCFs.
+
+    Gives the carrier-dose counts the Step 30 contamination table needs. Each
+    individual is read from the first panel VCF that contains it.
+    """
+    seen: dict[str, list] = {}
+    for panel in sorted(GEN.glob("*.SRP434573.vcf.gz")):
+        for s in VCF(str(panel)).samples:
+            if s in COHORT_INDIV and s not in seen:
+                seen[s] = parse_vcf(panel, sample=s, min_gq=20, gt_ad_consistency=True)
+    return list(seen.values())
+
+
+def build_contam_table(name: str, host: str, donors: list[str], cohort: list[list]) -> Path | None:
+    """Build and save a per-mixture Step 30 contamination table.
+
+    Pools the mixture's serial timepoints (the gate and the per-patient
+    correction slope are estimated across them; see ``estimate_contamination_table``).
+    Two-person mixtures only (single-donor correction). Returns the saved path, or
+    None when Step 30 is disabled or the mixture is multi-donor.
+    """
+    if NO_STEP30 or len(donors) != 1:
+        return None
+    panel = GEN / f"{name}.SRP434573.vcf.gz"
+    admix = GEN / f"{name}.admix.vcf.gz"
+    host_mk = parse_vcf(panel, sample=host, min_gq=20, gt_ad_consistency=True)
+    donor_mk = parse_vcf(panel, sample=donors[0], min_gq=20, gt_ad_consistency=True)
+    admix_lists = [parse_vcf(admix, sample=s, min_dp=0) for s in admix_samples(admix)]
+    correction = estimate_contamination_table(host_mk, [donor_mk], admix_lists, cohort)
+    CONTAM_TABLE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CONTAM_TABLE_DIR / f"{name}.contam.tsv"
+    save_contamination_table(correction, path)
+    sys.stderr.write(
+        f"[{name}] Step 30 table: {'gated IN' if correction.gated else 'gated OUT'}, "
+        f"slope {correction.slope * 100:.4f}%/carrier "
+        f"(consensus p={correction.gate_p_value:.1e})\n"
+    )
+    return path
+
+
 def run_mix(
     name: str,
     host: str,
@@ -127,6 +192,7 @@ def run_mix(
     panel: Path | None = None,
     admix: Path | None = None,
     error_table: Path | None = None,
+    contam_table: Path | None = None,
 ) -> list[dict]:
     """Run allomix monitor (TSV) and return one parsed dict per admix sample.
 
@@ -139,6 +205,9 @@ def run_mix(
         error_table: Per-patient error table (defaults to ``GEN/<name>.error_table.tsv``
             when present). Pass an explicit path to reuse the real table for the
             semi-synthetic run (the host/donor individuals are unchanged).
+        contam_table: Per-mixture Step 30 contamination table. When given, monitor
+            runs with ``--contamination-correction`` (the table self-gates, so a
+            clean run is still a no-op).
     """
     if panel is None:
         panel = GEN / f"{name}.SRP434573.vcf.gz"
@@ -153,6 +222,10 @@ def run_mix(
         "--host-sample", host,
         "--format", "tsv",
     ]
+    if contam_table is not None:
+        cmd += ["--contamination-table", str(contam_table), "--contamination-correction"]
+    if NO_MARKER_TYPE_OVERDISPERSION:
+        cmd += ["--no-marker-type-overdispersion"]
     # Per-patient empirical error table (issue #23). When the committed snapshot
     # carries one (built TAU-side by the pipeline's phase-1b reference pileup),
     # pass it so the host-presence background is data-derived per site instead of
@@ -228,6 +301,9 @@ def two_person_row(name: str, host: str, donor: str, known: float | None, rec: d
         "presence_ci_hi": phi * 100 if phi is not None else None,
         "presence_p": fnum(rec.get("host_present_p")),
         "presence_markers": rec.get("host_detect_markers"),
+        # In-data contamination level at consensus-hom markers (Step-30-independent;
+        # the figS12 contamination line and the above-floor verdict read it).
+        "contamination_frac": fnum(rec.get("contamination_frac")),
         "n_used": rec.get("n_used"),
         "mean_depth": rec.get("mean_depth"),
         "gof_pval": rec.get("gof_pval"),
@@ -316,10 +392,17 @@ def run_synthetic_three(syn_dir: Path) -> list[dict]:
     return rows
 
 
-def main() -> int:
+def collect(step30: bool, cohort: list[list]) -> tuple[list[dict], list[dict]]:
+    """Run every mixture and return (two-person rows, three-person rows).
+
+    With ``step30`` the two-person mixtures use the per-mixture contamination
+    table (the table self-gates). The three-person mixture is multi-donor, which
+    the correction does not touch, so it is identical either way.
+    """
     two, three = [], []
     for name, (host, donors) in MIXES.items():
-        recs = run_mix(name, host, donors)
+        contam_table = build_contam_table(name, host, donors, cohort) if step30 else None
+        recs = run_mix(name, host, donors, contam_table=contam_table)
         if len(donors) == 1:
             donor = donors[0]
             for rec in recs:
@@ -337,30 +420,40 @@ def main() -> int:
             ]
             for indiv, role, est, lo, hi in comps:
                 known = THREE_PERSON_KNOWN.get(indiv)
-                three.append(
-                    {
-                        "mixture": name,
-                        "sample": rec.get("sample"),
-                        "component": indiv,
-                        "role": role,
-                        "known_pct": known,
-                        "est_pct": est,
-                        "ci_lo": lo,
-                        "ci_hi": hi,
-                        "qc": rec.get("qc_status"),
-                    }
-                )
+                three.append({
+                    "mixture": name, "sample": rec.get("sample"), "component": indiv,
+                    "role": role, "known_pct": known, "est_pct": est, "ci_lo": lo,
+                    "ci_hi": hi, "qc": rec.get("qc_status"),
+                })
+    return two, three
 
+
+def main() -> int:
     two_cols = ["mixture", "sample", "host", "donor", "known_pct", "mle_pct",
                 "mle_ci_lo", "mle_ci_hi", "presence_pct", "presence_ci_lo",
-                "presence_ci_hi", "presence_p", "presence_markers", "n_used",
-                "mean_depth", "gof_pval", "qc"]
+                "presence_ci_hi", "presence_p", "presence_markers",
+                "contamination_frac", "n_used", "mean_depth", "gof_pval", "qc"]
     three_cols = ["mixture", "sample", "component", "role", "known_pct",
                   "est_pct", "ci_lo", "ci_hi", "qc"]
+
+    cohort = [] if NO_STEP30 else cohort_genotypes()
+
+    # Headline run: Step 30 applied (the contamination table self-gates per
+    # mixture). The three-person rows come from this run unchanged.
+    two, three = collect(step30=not NO_STEP30, cohort=cohort)
     write_tsv(OUT / "srp434573_two_person.tsv", two_cols, two)
     write_tsv(OUT / "srp434573_three_person.tsv", three_cols, three)
+
+    # Baseline run (no correction), kept alongside for the before/after comparison
+    # in the facts and prose. Skipped when Step 30 is disabled (then the headline
+    # run is already the baseline).
+    if not NO_STEP30:
+        two_base, _ = collect(step30=False, cohort=cohort)
+        write_tsv(OUT / "srp434573_two_person_baseline.tsv", two_cols, two_base)
+
     sys.stderr.write(
-        f"Wrote {len(two)} two-person rows and {len(three)} three-person rows.\n"
+        f"Wrote {len(two)} two-person rows and {len(three)} three-person rows"
+        f"{'' if NO_STEP30 else ' (+ baseline)'}.\n"
     )
 
     # Semi-synthetic sub-0.5% mixtures (issue #5), written to a separate TSV so

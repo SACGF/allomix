@@ -8,11 +8,11 @@ import math
 from pathlib import Path
 from typing import TextIO
 
-from allomix.chimerism import ChimerismResult, MultiDonorResult
 from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
 from allomix.qc import QCReport
 from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.results import ChimerismResult, MultiDonorResult
 from allomix.runmeta import RunUnitInfo
 
 # Sentinel for the host-presence cells when the detector did not run (e.g.
@@ -304,6 +304,7 @@ def _write_tsv(
         "ci_hi",
         "lob_pct",
         "lod_pct",
+        "n_total_markers",
         "n_informative",
         "n_used",
         "mean_depth",
@@ -330,6 +331,7 @@ def _write_tsv(
         f"{ci_hi * 100:.2f}",
         lob_str,
         lod_str,
+        str(qc.n_total_markers),
         str(result.n_informative),
         str(qc.n_used),
         f"{qc.mean_depth:.0f}",
@@ -399,6 +401,7 @@ def _write_tsv_multi(
     cols.extend(
         [
             "host_pct",
+            "n_total_markers",
             "n_informative",
             "n_used",
             "mean_depth",
@@ -430,6 +433,7 @@ def _write_tsv_multi(
     vals.extend(
         [
             f"{result.host_fraction * 100:.2f}",
+            str(qc.n_total_markers),
             str(result.n_informative),
             str(qc.n_used),
             f"{qc.mean_depth:.0f}",
@@ -531,6 +535,7 @@ def to_json(
             "host_pct": round(result.host_fraction * 100, 4),
             "donors": donors,
             "total_donor_pct": round(sum(result.donor_fractions) * 100, 4),
+            "n_total_markers": qc.n_total_markers,
             "n_informative": result.n_informative,
             "n_used": qc.n_used,
             "n_robust_excluded": getattr(result, "n_robust_excluded", 0),
@@ -568,6 +573,7 @@ def to_json(
             "lod_pct": round(result.lod_fraction * 100, 4)
             if math.isfinite(result.lod_fraction)
             else None,
+            "n_total_markers": qc.n_total_markers,
             "n_informative": result.n_informative,
             "n_used": qc.n_used,
             "n_robust_excluded": getattr(result, "n_robust_excluded", 0),
@@ -617,6 +623,7 @@ def timeline_json(
                 "sample": sample_name,
                 "host_pct": round(result.host_fraction * 100, 4),
                 "donors": [],
+                "n_total_markers": qc.n_total_markers,
                 "n_informative": result.n_informative,
                 "n_used": qc.n_used,
                 "mean_depth": round(qc.mean_depth, 1),
@@ -655,6 +662,7 @@ def timeline_json(
                     "donor_pct": round(result.donor_fraction * 100, 4),
                     "ci_lo": round(ci_lo * 100, 4),
                     "ci_hi": round(ci_hi * 100, 4),
+                    "n_total_markers": qc.n_total_markers,
                     "n_informative": result.n_informative,
                     "n_used": qc.n_used,
                     "mean_depth": round(qc.mean_depth, 1),

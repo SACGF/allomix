@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 
 from scipy.stats import chi2
 
-from allomix.chimerism import ChimerismResult, MarkerResult
 from allomix.constants import N_OTHER_BASES
 from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
@@ -22,6 +21,7 @@ from allomix.relatedness import (
     RelatednessResult,
     evaluate_expected,
 )
+from allomix.results import ChimerismResult, MarkerResult
 from allomix.runmeta import RunUnitInfo
 
 # Thresholds for the optional REVIEW warning when the host-presence detector
@@ -461,6 +461,12 @@ def assess_quality(
                 f"resolution (host_present_p={hp.lrt_pval:.2e}, "
                 f"f_host_est={hp.f_host_mle:.4%}, mle_host={mle_host:.4%})"
             )
+
+    # Note: a per-marker-type-overdispersion fallback to shared rho (recorded on
+    # ``result.marker_type_overdispersion_fallback``) is NOT surfaced as a QC
+    # warning. Two-rho is the default estimator, and a sparse marker class is
+    # routine for small or hom-dominated panels; the shared-rho fit it falls back
+    # to is the validated baseline, so the fallback stays a diagnostic field only.
 
     # Robust refit exclusions: a few dropped markers is routine, but a large
     # fraction signals host copy-number / LoH (or genotyping error) and means the

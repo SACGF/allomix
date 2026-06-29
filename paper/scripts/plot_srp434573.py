@@ -22,6 +22,7 @@ red, dpi 150.
 
 import csv
 from pathlib import Path
+from statistics import median
 
 import matplotlib
 
@@ -138,9 +139,10 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
             if known is not None:
                 ax.plot(x_known, known, marker="D", markersize=6, color="0.45",
                         zorder=2)
-            # MLE: filled circle + CI. Not detected (est 0) -> the same circle at
-            # the log-axis floor (a stand-in 0), so the shape still reads as MLE.
-            if est is not None and est > 0:
+            # MLE: filled circle + CI. Not detected (est 0), or an estimate at or
+            # below the log-axis floor stand-in (sub-YFLOOR, effectively 0 on this
+            # axis) -> draw the circle on the floor row so it reads as not detected.
+            if est is not None and est > YFLOOR:
                 ax.errorbar(x_mle, est,
                             yerr=[[est - lo if lo is not None else 0.0],
                                   [hi - est if hi is not None else 0.0]],
@@ -157,8 +159,8 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
                 ax.plot(x_mle, y_mle, marker="o", markersize=12, markerfacecolor="none",
                         markeredgecolor="red", markeredgewidth=1.2, zorder=4)
                 any_review = True
-            # Presence: open square + CI. Not detected -> the same square at the floor.
-            if pest is not None and pest > 0:
+            # Presence: open square + CI. Not detected (or sub-floor) -> the floor row.
+            if pest is not None and pest > YFLOOR:
                 ax.errorbar(x_pres, pest,
                             yerr=[[pest - plo if plo is not None else 0.0],
                                   [phi - pest if phi is not None else 0.0]],
@@ -174,7 +176,12 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
         group_span[m] = (start, x - 1.4)
         x += 1.2  # gap between mixtures
 
-    # Alternating background shading + group labels.
+    # Alternating background shading + group labels + the independent contamination
+    # line. The line is the in-data contamination level (median across the
+    # mixture's timepoints) measured at consensus-homozygous markers, a marker
+    # class the MLE never reads, so it is an independent floor: an MLE point below
+    # its mixture's line is within contamination noise, not a resolved host signal.
+    any_contam = False
     for gi, m in enumerate(mixes):
         lo_x, hi_x = group_span[m]
         if gi % 2 == 1:
@@ -182,6 +189,13 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
         ax.text((lo_x + hi_x) / 2, 0.0145, _label(m), ha="center", va="bottom",
                 fontsize=9, rotation=0, transform=ax.get_xaxis_transform(),
                 fontweight="bold", color=colors[m])
+        cfracs = [_f(r.get("contamination_frac")) for r in by_mix[m]]
+        cfracs = [c * 100 for c in cfracs if c is not None]
+        if cfracs:
+            y = max(float(median(cfracs)), YFLOOR)
+            ax.plot([lo_x - 0.55, hi_x + 0.55], [y, y], color=colors[m], linewidth=1.8,
+                    linestyle="--", zorder=4)
+            any_contam = True
 
     ax.set_yscale("log")
     ax.set_ylim(0.008, 13)
@@ -211,6 +225,9 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
         Line2D([0], [0], marker="D", color="0.45", linestyle="none", markersize=7,
                label="known fraction"),
     ]
+    if any_contam:
+        handles.append(Line2D([0], [0], color="0.3", linestyle="--", linewidth=1.8,
+                              label="contamination level (consensus-hom)"))
     if any_review:
         handles.append(Line2D([0], [0], marker="o", color="none", markersize=11,
                               markerfacecolor="none", markeredgecolor="red",

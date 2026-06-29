@@ -1,172 +1,48 @@
-"""Core MLE chimerism estimation from informative markers.
+"""MLE chimerism estimation from informative markers.
 
 Implements maximum-likelihood estimation of donor chimerism fraction using
 allele counts at informative SNP markers with known host/donor genotypes.
 Based on the mixture genotype likelihood of Crysup & Woerner (2022),
 Formula 5, simplified for the case of known contributor genotypes.
 
-Uses a beta-binomial likelihood to handle overdispersion from per-marker
-amplification bias and depth variability. A standard binomial model
-assumes all variance comes from random sampling; in practice, systematic
-effects produce extra-binomial variance that causes binomial CIs to
-undercover. The beta-binomial adds a shared concentration parameter rho
-that is jointly estimated from the data, naturally widening CIs when
-overdispersion is present, with the largest improvement in CI coverage at
-low donor fractions where accurate CIs matter most clinically. Per-marker
-amplification bias (het-site VAF deviation, SD ~0.02 empirically) is
-corrected multiplicatively in logit space (see ``apply_bias``). The in
-silico CI-coverage and point-estimate accuracy across depths and noise
-conditions are reported in the paper's depth and bias-correction
-validations.
+This module is the optimisation layer: the grid search, Nelder-Mead refinement,
+profile-likelihood CIs, Fisher-information detection limits, and the optional
+robust refit. The beta-binomial likelihood and expected-weight model it
+optimises live in ``allomix.likelihood``; the result data types it returns live
+in ``allomix.results``. Import those names from their own modules, not from here.
+
+The in silico CI-coverage and point-estimate accuracy across depths and noise
+conditions are reported in the paper's depth and bias-correction validations.
 """
 
 import math
-from dataclasses import dataclass, field, replace
-from math import lgamma
+from dataclasses import replace
 
 import numpy as np
 from scipy.optimize import brentq, minimize, minimize_scalar
-from scipy.special import expit, gammaln, logit
 from scipy.stats import chi2, norm
 
 from allomix.constants import (
     CI_LEVEL,
     DEFAULT_ERROR_RATE,
-    N_OTHER_BASES,
+    PLOIDY,
     ROBUST_K_DEFAULT,
 )
-from allomix.contamination import ContaminationResult
-from allomix.detect import HostPresenceResult
-from allomix.error_rates import MarkerErrorRates
-from allomix.genotype import InformativeMarker, MarkerKey
-from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
-from allomix.runmeta import RunUnitInfo
-
-
-@dataclass(frozen=True)
-class PanelCalibration:
-    """Per-marker calibration applied during chimerism estimation.
-
-    Bundles the two optional per-marker tables the estimators consume:
-
-    - ``biases``: amplification bias per marker (see ``allomix.bias``). A
-      positive value means the ALT allele is preferentially captured.
-    - ``errors``: per-direction empirical substitution rates per marker (see
-      ``allomix.error_rates``). Used for the asymmetric REF/ALT-only likelihood
-      where both directions are known.
-
-    Both default to empty, so an uncalibrated run is ``PanelCalibration()``.
-    Markers absent from a table fall through to the uncorrected weight (bias 0)
-    or the symmetric global ``error_rate`` (errors).
-    """
-
-    biases: dict[MarkerKey, float] = field(default_factory=dict)
-    errors: dict[MarkerKey, MarkerErrorRates] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        # Treat an explicit ``None`` (a caller's "no table" sentinel) the same as
-        # an omitted argument, so callers can pass an optional dict straight
-        # through without a local ``or {}`` guard.
-        if self.biases is None:
-            object.__setattr__(self, "biases", {})
-        if self.errors is None:
-            object.__setattr__(self, "errors", {})
-
-    def bias_for(self, m: InformativeMarker) -> float:
-        """Amplification bias for a marker, or 0.0 if it is not in the table."""
-        return self.biases.get((m.chrom, m.pos, m.ref, m.alt), 0.0)
-
-    def error_for(self, m: InformativeMarker) -> MarkerErrorRates | None:
-        """Per-direction rates for a marker, or ``None`` if not in the table."""
-        return self.errors.get((m.chrom, m.pos, m.ref, m.alt))
-
-
-# ---------------------------------------------------------------------------
-# Result types
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class MarkerResult:
-    """Per-marker contribution to the chimerism estimate."""
-
-    chrom: str
-    pos: int
-    marker_type: int
-    expected_vaf: float
-    observed_vaf: float
-    residual: float
-    ad_ref: int
-    ad_alt: int
-    dp: int
-    included: bool  # False if outlier-excluded
-
-
-@dataclass
-class ChimerismResult:
-    """Result of single-donor chimerism estimation."""
-
-    donor_fraction: float  # MLE point estimate (0.0-1.0)
-    donor_fraction_ci: tuple[float, float]  # 95% CI
-    host_fraction: float  # 1 - donor_fraction
-    log_likelihood: float  # at MLE
-    n_informative: int
-    n_markers_used: int  # after outlier exclusion
-    per_marker: list[MarkerResult]
-    error_rate: float
-    rho: float = float("inf")  # beta-binomial concentration; inf = no overdispersion
-    # Per-sample analytical detection limits (donor fractions, 0.0-1.0), computed
-    # from the Fisher information of this sample's own markers. inf = nothing detectable.
-    lob_fraction: float = float("inf")  # limit of blank
-    lod_fraction: float = float("inf")  # limit of detection
-    # Host-presence detector output (see ``allomix.detect``). None when the
-    # caller disabled the detector or when there were no donor-homozygous
-    # markers to run it on.
-    host_presence: HostPresenceResult | None = None
-    # Robust-refit accounting (see ``estimate_single_donor_bb`` robust mode).
-    # n_robust_excluded is the count of markers dropped as residual outliers and
-    # excluded from the final fit; robust_drop_fraction is that count over
-    # n_informative. Both are 0 when robust mode is off or nothing was dropped.
-    n_robust_excluded: int = 0
-    robust_drop_fraction: float = 0.0
-    # Identity QC (see ``allomix.relatedness``), attached by ``analyse_sample``.
-    # relatedness holds one entry per reference-sample pair (host vs each donor);
-    # admix_consistency is the consensus-homozygote swap check. None when the
-    # caller did not compute them.
-    relatedness: list[RelatednessResult] | None = None
-    admix_consistency: AdmixConsistencyResult | None = None
-    # In-data contamination estimate (see ``allomix.contamination``), attached by
-    # ``analyse_sample``. None when the caller did not compute it.
-    contamination: ContaminationResult | None = None
-    # Sequencing run-unit metadata for this admix sample, read from the admix VCF
-    # header (see ``allomix.runmeta``). None when the VCF carried no run metadata.
-    run_unit: RunUnitInfo | None = None
-
-
-@dataclass
-class MultiDonorResult:
-    """Result of multi-donor chimerism estimation."""
-
-    donor_fractions: list[float]  # [f_donor1, f_donor2, ...]
-    donor_fraction_cis: list[tuple[float, float]]  # [(lo, hi), ...] per donor
-    host_fraction: float  # 1 - sum(donor_fractions)
-    log_likelihood: float
-    n_informative: int
-    n_markers_used: int
-    per_marker: list[MarkerResult]
-    error_rate: float
-    per_donor_n_informative: list[int] | None = None  # informative markers per donor
-    rho: float = float("inf")  # beta-binomial concentration; inf = no overdispersion
-    host_presence: HostPresenceResult | None = None
-    n_robust_excluded: int = 0
-    robust_drop_fraction: float = 0.0
-    # Identity QC; see ChimerismResult above. For multi-donor, relatedness also
-    # includes donor-vs-donor pairs.
-    relatedness: list[RelatednessResult] | None = None
-    admix_consistency: AdmixConsistencyResult | None = None
-    contamination: ContaminationResult | None = None
-    run_unit: RunUnitInfo | None = None
-
+from allomix.genotype import InformativeMarker
+from allomix.likelihood import (
+    PanelCalibration,
+    _ll_from_p_alt,
+    _MarkerArrays,
+    _p_alt_for_f,
+    _precompute_marker_arrays,
+    _total_ll_vec,
+    alt_read_probability,
+    expected_weight,
+    expected_weight_multi,
+    total_log_likelihood_multi_bb,
+)
+from allomix.marker_contamination import apply_contamination_correction
+from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 
 # Robust-refit tuning. The residual cut itself (ROBUST_K_DEFAULT) lives in
 # allomix.constants since it is also the CLI/analysis default. The refit floors
@@ -202,431 +78,6 @@ OUTLIER_SD_THRESHOLD = 3.0
 # genuine copy-number / LoH clusters clear the bar. "force" uses a trigger of 1.
 ROBUST_TRIGGER_FRAC = 0.03
 ROBUST_TRIGGER_MIN = 3
-
-
-# ---------------------------------------------------------------------------
-# Core likelihood functions
-# ---------------------------------------------------------------------------
-
-
-# Clamp keeping expected weights off the 0/1 boundary (log-likelihood needs p > 0).
-W_EPS = 1e-6
-
-
-def apply_bias(w: float | np.ndarray, bias: float | np.ndarray) -> float | np.ndarray:
-    """Correct an expected REF weight for per-marker amplification bias.
-
-    ``bias`` is the het-site convention used throughout: ``median(observed het
-    ALT VAF) - 0.5`` (positive = ALT preferentially captured). It is estimated
-    at heterozygous sites, where the expected REF weight is 0.5. Applying it as
-    a flat additive shift (``w - bias``) is only valid near 0.5; at informative
-    markers whose expected VAF is near 0 or 1 (the norm at low chimerism) it
-    overcorrects badly (issue #20). Instead apply it multiplicatively, in logit
-    space, where it is valid at any expected VAF:
-
-        w_corrected = expit(logit(w) - logit(0.5 + bias))
-
-    At a het site (w = 0.5) this reduces to ``0.5 - bias`` (ALT VAF 0.5 + bias),
-    matching the estimate; at an extreme expected VAF it is only a small
-    multiplicative nudge rather than a large additive jump. Works for scalars
-    and numpy arrays. The result is clamped to ``[W_EPS, 1 - W_EPS]``.
-
-    Args:
-        w: Expected reference allele weight(s) before correction.
-        bias: Per-marker bias(es) in het-site VAF units.
-
-    Returns:
-        Bias-corrected reference allele weight(s).
-    """
-    p = np.clip(0.5 + bias, W_EPS, 1.0 - W_EPS)  # observed het ALT-favouring as a probability
-    w_clamped = np.clip(w, W_EPS, 1.0 - W_EPS)
-    return np.clip(expit(logit(w_clamped) - logit(p)), W_EPS, 1.0 - W_EPS)
-
-
-def inject_bias(alt_vaf: float | np.ndarray, bias: float | np.ndarray) -> float | np.ndarray:
-    """Shift a true ALT VAF by a het-site bias, the simulator-side counterpart
-    of ``apply_bias``.
-
-    Used by the simulator to inject per-marker amplification bias the same way
-    the estimator corrects for it, so simulation and estimation stay
-    self-consistent: at the true parameters the injected ALT VAF equals the
-    estimator's expected biased ALT VAF, ``1 - apply_bias(w_true, bias)``.
-    Equivalent to ``expit(logit(alt_vaf) + logit(0.5 + bias))``; at a het site
-    (true VAF 0.5) the observed VAF becomes ``0.5 + bias``. (Note this is not an
-    algebraic inverse of ``apply_bias``: both shift in the same direction, so
-    composing them would double-correct.)
-
-    Args:
-        alt_vaf: True ALT-allele VAF(s) before bias.
-        bias: Per-marker bias(es) in het-site VAF units.
-
-    Returns:
-        Biased ALT VAF(s), clamped to ``[W_EPS, 1 - W_EPS]``.
-    """
-    return 1.0 - apply_bias(1.0 - np.asarray(alt_vaf, dtype=float), bias)
-
-
-def expected_weight(
-    host_gt: tuple[int, int],
-    donor_gt: tuple[int, int],
-    f_donor: float,
-    bias: float = 0.0,
-) -> float:
-    """Expected reference allele weight for a given chimerism fraction.
-
-    w = (1 - f) * host_ref_dose / 2 + f * donor_ref_dose / 2
-
-    where ref_dose = 2 - alt_dose.
-
-    When ``bias`` is non-zero, the weight is corrected for per-marker
-    amplification bias in logit space (see ``apply_bias``).
-
-    Args:
-        host_gt: Host diploid genotype, e.g. (0, 0), (0, 1), (1, 1).
-        donor_gt: Donor diploid genotype.
-        f_donor: Donor fraction (0.0 to 1.0).
-        bias: Per-marker amplification bias (default 0.0 = no correction).
-
-    Returns:
-        Expected reference allele weight (0.0 to 1.0).
-    """
-    host_ref_dose = 2 - (host_gt[0] + host_gt[1])
-    donor_ref_dose = 2 - (donor_gt[0] + donor_gt[1])
-    w = (1.0 - f_donor) * host_ref_dose / 2.0 + f_donor * donor_ref_dose / 2.0
-    if bias != 0.0:
-        w = float(apply_bias(w, bias))
-    return w
-
-
-def alt_read_probability(w: float, error_rate: float = DEFAULT_ERROR_RATE) -> float:
-    """Probability an observed read is ALT, given expected REF weight ``w``.
-
-    Under the 4-state error model a read is observed as ALT if it comes from a
-    true ALT allele and is called correctly (probability ``1 - e``), or from a
-    true REF allele miscalled to the ALT base (probability ``e / 3``). The two
-    raw probabilities are renormalised so they condition on the read being
-    called REF or ALT rather than one of the other two bases.
-
-    Args:
-        w: Expected reference allele weight (fraction of REF alleles).
-        error_rate: Per-base sequencing error rate ``e``.
-
-    Returns:
-        P(observe ALT | w), between 0 and 1.
-    """
-    e = error_rate
-    e_specific = e / N_OTHER_BASES
-    p_alt = (1.0 - w) * (1.0 - e) + w * e_specific
-    p_ref = w * (1.0 - e) + (1.0 - w) * e_specific
-    return p_alt / (p_ref + p_alt)
-
-
-def log_likelihood_marker_bb(
-    ad_ref: int,
-    ad_alt: int,
-    w: float,
-    error_rate: float = DEFAULT_ERROR_RATE,
-    rho: float = 100.0,
-    e_refalt: float | None = None,
-    e_altref: float | None = None,
-) -> float:
-    """Per-marker log-likelihood under a beta-binomial model.
-
-    When ``e_refalt`` and ``e_altref`` are both supplied, uses the asymmetric
-    REF/ALT-only error model
-
-        p_alt = w * e_refalt + (1 - w) * (1 - e_altref)
-
-    where the rates are per-direction empirical substitution probabilities
-    (typically from ``error_rates.estimate_error_rates``). Either rate may be
-    ``None`` individually; in that case the legacy 4-state symmetric model
-    with rate ``error_rate`` is used, matching the prior behaviour.
-
-    When rho -> inf this converges to the binomial log-likelihood.
-
-    Args:
-        ad_ref: Reference allele read count.
-        ad_alt: Alternative allele read count.
-        w: Expected reference allele weight.
-        error_rate: Symmetric 4-state rate, used only when asymmetric rates
-            are not both provided (default 0.01).
-        rho: Beta-binomial concentration parameter. Larger = less
-            overdispersion. Typical empirical values: 50-500.
-        e_refalt: ``P(observe ALT | true REF)`` for this marker.
-        e_altref: ``P(observe REF | true ALT)`` for this marker.
-
-    Returns:
-        Log-likelihood contribution from this marker.
-    """
-    if e_refalt is not None and e_altref is not None:
-        # Asymmetric REF/ALT-only model. p_alt + p_ref = 1 by construction.
-        p_alt = w * e_refalt + (1.0 - w) * (1.0 - e_altref)
-    else:
-        p_alt = alt_read_probability(w, error_rate)
-    p_alt = max(1e-6, min(1.0 - 1e-6, p_alt))
-
-    n = ad_ref + ad_alt
-    k = ad_alt
-
-    if n == 0:
-        return 0.0
-
-    a = p_alt * rho
-    b = (1.0 - p_alt) * rho
-
-    # Clamp to avoid lgamma(0) = inf
-    a = max(a, 1e-10)
-    b = max(b, 1e-10)
-
-    # log P(k | n, a, b) dropping the constant log C(n,k)
-    ll = lgamma(k + a) + lgamma(n - k + b) - lgamma(n + rho) - lgamma(a) - lgamma(b) + lgamma(rho)
-    return ll
-
-
-def total_log_likelihood_bb(
-    markers: list[InformativeMarker],
-    f_donor: float,
-    error_rate: float = DEFAULT_ERROR_RATE,
-    rho: float = 100.0,
-    calibration: PanelCalibration | None = None,
-) -> float:
-    """Sum of per-marker beta-binomial log-likelihoods.
-
-    Args:
-        markers: List of informative markers with admixture allele counts.
-        f_donor: Donor fraction to evaluate.
-        error_rate: Sequencing error rate (used as the fallback when a marker
-            is missing from ``calibration.errors`` or only one direction is
-            known).
-        rho: Beta-binomial concentration parameter.
-        calibration: Optional per-marker bias and error tables. A marker's
-            per-direction rates are used (asymmetric model) only when both are
-            known; otherwise the symmetric ``error_rate`` model applies.
-
-    Returns:
-        Total log-likelihood.
-    """
-    if not markers:
-        return 0.0
-    arr = _precompute_marker_arrays(markers, calibration or PanelCalibration())
-    return _total_ll_vec(arr, f_donor, error_rate, rho)
-
-
-@dataclass(frozen=True)
-class _MarkerArrays:
-    """Per-marker quantities that do not depend on (f_donor, rho).
-
-    Precomputed once per marker set so the likelihood can be evaluated as a
-    single vectorized expression for any (f_donor, rho).
-    """
-
-    host_ref_dose: np.ndarray  # 2 - host alt dose, float
-    donor_ref_dose: np.ndarray  # 2 - donor[0] alt dose, float
-    n: np.ndarray  # ad_ref + ad_alt, float
-    k: np.ndarray  # ad_alt, float
-    bias: np.ndarray  # per-marker bias, float (0.0 where none)
-    bias_mask: np.ndarray  # bias != 0.0, bool
-    # Per-marker asymmetric error rates. NaN where the asymmetric model does
-    # not apply (either rate missing); the vectorised LL falls back to the
-    # symmetric 4-state model at those markers via ``error_mask``.
-    e_refalt: np.ndarray
-    e_altref: np.ndarray
-    error_mask: np.ndarray  # True where both per-direction rates are known
-
-
-def _precompute_marker_arrays(
-    markers: list[InformativeMarker],
-    calibration: PanelCalibration,
-) -> _MarkerArrays:
-    """Build the (f, rho)-independent per-marker arrays for the vectorized LL.
-
-    Uses the first donor genotype (single-donor model), matching
-    ``total_log_likelihood_bb``.
-
-    Args:
-        markers: List of informative markers with admixture allele counts.
-        calibration: Per-marker bias and error tables (empty tables = no
-            correction).
-
-    Returns:
-        Precomputed per-marker arrays for ``_total_ll_vec``.
-    """
-    n_markers = len(markers)
-    host_ref_dose = np.fromiter(
-        (2 - (m.host_gt[0] + m.host_gt[1]) for m in markers),
-        dtype=float,
-        count=n_markers,
-    )
-    donor_ref_dose = np.fromiter(
-        (2 - (m.donor_gts[0][0] + m.donor_gts[0][1]) for m in markers),
-        dtype=float,
-        count=n_markers,
-    )
-    ad_ref = np.fromiter((m.admix_ad_ref for m in markers), dtype=float, count=n_markers)
-    ad_alt = np.fromiter((m.admix_ad_alt for m in markers), dtype=float, count=n_markers)
-    if calibration.biases:
-        bias = np.fromiter(
-            (calibration.bias_for(m) for m in markers),
-            dtype=float,
-            count=n_markers,
-        )
-    else:
-        bias = np.zeros(n_markers, dtype=float)
-
-    e_refalt = np.full(n_markers, np.nan, dtype=float)
-    e_altref = np.full(n_markers, np.nan, dtype=float)
-    if calibration.errors:
-        for i, m in enumerate(markers):
-            entry = calibration.error_for(m)
-            if entry is None:
-                continue
-            # Both directions required for the asymmetric path. Storing one
-            # only would leave the other side of the likelihood underspecified
-            # at hets and at the opposite-homozygous endpoint.
-            if entry.e_refalt is None or entry.e_altref is None:
-                continue
-            e_refalt[i] = entry.e_refalt
-            e_altref[i] = entry.e_altref
-    error_mask = ~np.isnan(e_refalt)
-
-    return _MarkerArrays(
-        host_ref_dose=host_ref_dose,
-        donor_ref_dose=donor_ref_dose,
-        n=ad_ref + ad_alt,
-        k=ad_alt,
-        bias=bias,
-        bias_mask=bias != 0.0,
-        e_refalt=e_refalt,
-        e_altref=e_altref,
-        error_mask=error_mask,
-    )
-
-
-def _total_ll_vec(
-    arr: _MarkerArrays,
-    f_donor: float,
-    error_rate: float = DEFAULT_ERROR_RATE,
-    rho: float = 100.0,
-) -> float:
-    """Vectorized single-donor beta-binomial total log-likelihood.
-
-    Numerically equivalent to ``total_log_likelihood_bb`` (differences only at
-    the ``gammaln`` vs ``math.lgamma`` rounding level, ~1e-9). Markers with
-    ``n == 0`` contribute 0 automatically.
-
-    Args:
-        arr: Per-marker arrays from ``_precompute_marker_arrays``.
-        f_donor: Donor fraction to evaluate.
-        error_rate: Sequencing error rate.
-        rho: Beta-binomial concentration parameter.
-
-    Returns:
-        Total log-likelihood.
-    """
-    # Expected reference-allele weight, with the conditional logit-space bias
-    # correction (see apply_bias) applied only at markers that have an estimate.
-    w = (1.0 - f_donor) * arr.host_ref_dose / 2.0 + f_donor * arr.donor_ref_dose / 2.0
-    if arr.bias_mask.any():
-        w[arr.bias_mask] = apply_bias(w[arr.bias_mask], arr.bias[arr.bias_mask])
-
-    # P(observe ALT | w). Default is the 4-state symmetric model with the
-    # global ``error_rate``; per-marker asymmetric rates (where supplied) use
-    # the REF/ALT-only form ``p_alt = w * e_refalt + (1 - w) * (1 - e_altref)``.
-    e = error_rate
-    e_specific = e / N_OTHER_BASES
-    p_alt_raw = (1.0 - w) * (1.0 - e) + w * e_specific
-    p_ref_raw = w * (1.0 - e) + (1.0 - w) * e_specific
-    p_alt = p_alt_raw / (p_ref_raw + p_alt_raw)
-    if arr.error_mask.any():
-        # Sub in the asymmetric per-marker rates at the masked positions.
-        p_alt_asym = w * arr.e_refalt + (1.0 - w) * (1.0 - arr.e_altref)
-        p_alt = np.where(arr.error_mask, p_alt_asym, p_alt)
-    p_alt = np.clip(p_alt, 1e-6, 1.0 - 1e-6)
-
-    a = np.maximum(p_alt * rho, 1e-10)
-    b = np.maximum((1.0 - p_alt) * rho, 1e-10)
-    n, k = arr.n, arr.k
-
-    ll = (
-        gammaln(k + a)
-        + gammaln(n - k + b)
-        - gammaln(n + rho)
-        - gammaln(a)
-        - gammaln(b)
-        + gammaln(rho)
-    )
-    return float(ll.sum())
-
-
-def total_log_likelihood_multi_bb(
-    markers: list[InformativeMarker],
-    donor_fractions: list[float],
-    error_rate: float = DEFAULT_ERROR_RATE,
-    rho: float = 100.0,
-    calibration: PanelCalibration | None = None,
-) -> float:
-    """Sum of per-marker beta-binomial log-likelihoods for multi-donor model.
-
-    Args:
-        markers: Informative markers (for at least one donor).
-        donor_fractions: [f_donor1, f_donor2, ...].
-        error_rate: Sequencing error rate (fallback when a marker's
-            per-direction rate is missing).
-        rho: Beta-binomial concentration parameter.
-        calibration: Optional per-marker bias and error tables
-            (see ``total_log_likelihood_bb``).
-
-    Returns:
-        Total log-likelihood.
-    """
-    cal = calibration or PanelCalibration()
-    ll = 0.0
-    for m in markers:
-        bias = cal.bias_for(m)
-        entry = cal.error_for(m)
-        e_ra = entry.e_refalt if entry is not None else None
-        e_ar = entry.e_altref if entry is not None else None
-        w = expected_weight_multi(m.host_gt, m.donor_gts, donor_fractions, bias=bias)
-        ll += log_likelihood_marker_bb(
-            m.admix_ad_ref,
-            m.admix_ad_alt,
-            w,
-            error_rate=error_rate,
-            rho=rho,
-            e_refalt=e_ra,
-            e_altref=e_ar,
-        )
-    return ll
-
-
-def expected_weight_multi(
-    host_gt: tuple[int, int],
-    donor_gts: list[tuple[int, int]],
-    donor_fractions: list[float],
-    bias: float = 0.0,
-) -> float:
-    """Expected reference allele weight for multi-donor chimerism.
-
-    w = (1 - f1 - f2) * host_ref_dose/2 + f1 * d1_ref_dose/2 + f2 * d2_ref_dose/2
-
-    Args:
-        host_gt: Host diploid genotype.
-        donor_gts: List of donor diploid genotypes.
-        donor_fractions: List of donor fractions (sum <= 1.0).
-        bias: Per-marker amplification bias.
-
-    Returns:
-        Expected reference allele weight (0.0 to 1.0).
-    """
-    host_ref_dose = 2 - (host_gt[0] + host_gt[1])
-    f_host = 1.0 - sum(donor_fractions)
-    w = f_host * host_ref_dose / 2.0
-    for dgt, f in zip(donor_gts, donor_fractions):
-        d_ref_dose = 2 - (dgt[0] + dgt[1])
-        w += f * d_ref_dose / 2.0
-    if bias != 0.0:
-        w = float(apply_bias(w, bias))
-    return w
 
 
 # ---------------------------------------------------------------------------
@@ -713,7 +164,102 @@ _MAD_TO_SD = 1.4826
 # so Nelder-Mead stays in-bounds without a hard constraint.
 _RHO_MIN = 0.5
 _RHO_MAX = 50000.0
+# Upper rho cap for the initial grid search only. Lower than _RHO_MAX on
+# purpose: the grid just seeds Nelder-Mead, which then refines rho up to _RHO_MAX.
+_RHO_SEED_MAX = 10000.0
 _INFEASIBLE_PENALTY = 1e30
+
+# Per-marker-type overdispersion (issue #33). Below this many informative markers
+# a class's rho is not identifiable, so the two-rho mode falls back to shared rho.
+MIN_CLASS_MARKERS = 30
+
+
+def _donor_het_mask(markers: list[InformativeMarker]) -> np.ndarray:
+    """Boolean mask, True where the (single) donor genotype is heterozygous.
+
+    Donor-het markers sit at background VAF ~0.5 (symmetric amplification
+    scatter); donor-hom markers sit near 0/1 (one-sided host signal). The two
+    classes carry different overdispersion, which is what the per-marker-type
+    mode fits separately (issue #33).
+
+    Args:
+        markers: Informative markers (first donor genotype is used).
+
+    Returns:
+        Boolean array, one entry per marker, True at donor-het markers.
+    """
+    return np.fromiter(
+        ((m.donor_gts[0][0] + m.donor_gts[0][1]) == 1 for m in markers),
+        dtype=bool,
+        count=len(markers),
+    )
+
+
+def _donor_het_mask_multi(markers: list[InformativeMarker], n_donors: int) -> np.ndarray:
+    """Multi-donor analogue of ``_donor_het_mask`` (phase 2 stub, issue #33).
+
+    True where the combined donor background ALT balance is intermediate (not
+    near 0 or 1), the multi-donor counterpart of donor-het: a marker whose pooled
+    donor background sits near VAF 0.5 carries the symmetric overdispersion the
+    two-rho mode separates out. To be wired into ``_estimate_multi_donor_core``
+    when per-marker-type overdispersion is extended to multi-donor; single-donor
+    ships first.
+
+    Args:
+        markers: Informative markers.
+        n_donors: Number of donors.
+
+    Returns:
+        Boolean array, one entry per marker.
+
+    Raises:
+        NotImplementedError: Always; multi-donor is a later phase.
+    """
+    raise NotImplementedError(
+        "per-marker-type overdispersion is single-donor only in this phase (issue #33)"
+    )
+
+
+def _profile_rho_at_f(arr: _MarkerArrays, f: float, error_rate: float) -> tuple[float, float]:
+    """Max LL over rho in [1, _RHO_MAX] at fixed f for one marker class.
+
+    Mirrors the single-rho profile already used in the grid search and CI, so the
+    per-class arithmetic is identical to the shared-rho path's.
+
+    Args:
+        arr: Per-marker arrays for one class (from ``_precompute_marker_arrays``).
+        f: Donor fraction to hold fixed.
+        error_rate: Sequencing error rate.
+
+    Returns:
+        ``(ll_max, rho_at_max)``.
+    """
+    p_alt = _p_alt_for_f(arr, f, error_rate)
+    opt = minimize_scalar(
+        lambda log_r: -_ll_from_p_alt(arr, p_alt, math.exp(log_r)),
+        bounds=(math.log(1.0), math.log(_RHO_MAX)),
+        method="bounded",
+    )
+    return -float(opt.fun), math.exp(float(opt.x))
+
+
+def _two_rho_profile_ll(
+    arr_hom: _MarkerArrays, arr_het: _MarkerArrays, f: float, error_rate: float
+) -> float:
+    """Total profiled LL at fixed f: ``max_rho_hom LL(hom) + max_rho_het LL(het)``.
+
+    Args:
+        arr_hom: Donor-hom class arrays.
+        arr_het: Donor-het class arrays.
+        f: Donor fraction to hold fixed.
+        error_rate: Sequencing error rate.
+
+    Returns:
+        Sum of the two per-class profiled log-likelihoods.
+    """
+    ll_hom, _ = _profile_rho_at_f(arr_hom, f, error_rate)
+    ll_het, _ = _profile_rho_at_f(arr_het, f, error_rate)
+    return ll_hom + ll_het
 
 
 def fraction_se(
@@ -722,6 +268,8 @@ def fraction_se(
     error_rate: float = DEFAULT_ERROR_RATE,
     rho: float = float("inf"),
     calibration: PanelCalibration | None = None,
+    rho_hom: float | None = None,
+    rho_het: float | None = None,
 ) -> float:
     """Standard error of the donor-fraction estimate at a given fraction.
 
@@ -740,11 +288,16 @@ def fraction_se(
         rho: Beta-binomial concentration (inf = pure binomial).
         calibration: Optional per-marker bias and error tables (only biases
             are used here).
+        rho_hom: Donor-hom class concentration. When both ``rho_hom`` and
+            ``rho_het`` are given, each marker uses its class rho instead of the
+            scalar ``rho`` (per-marker-type overdispersion, issue #33).
+        rho_het: Donor-het class concentration (see ``rho_hom``).
 
     Returns:
         Standard error of the donor fraction. inf if no marker is informative.
     """
     cal = calibration or PanelCalibration()
+    per_class_rho = rho_hom is not None and rho_het is not None
     # P(observe ALT) is linear in the REF weight w, so its slope dp_alt/dw is
     # constant and equals the change across the full weight range w: 0 -> 1.
     dpalt_dw = alt_read_probability(1.0, error_rate) - alt_read_probability(0.0, error_rate)
@@ -753,9 +306,9 @@ def fraction_se(
     for m in markers:
         bias = cal.bias_for(m)
 
-        host_ref_dose = 2 - (m.host_gt[0] + m.host_gt[1])
-        donor_ref_dose = 2 - (m.donor_gts[0][0] + m.donor_gts[0][1])
-        dw_df = (donor_ref_dose - host_ref_dose) / 2.0
+        host_ref_dose = PLOIDY - (m.host_gt[0] + m.host_gt[1])
+        donor_ref_dose = PLOIDY - (m.donor_gts[0][0] + m.donor_gts[0][1])
+        dw_df = (donor_ref_dose - host_ref_dose) / PLOIDY
         if dw_df == 0.0:
             continue
 
@@ -767,7 +320,12 @@ def fraction_se(
         p_alt = alt_read_probability(w, error_rate)
         p_alt = max(_PROB_EPS, min(1.0 - _PROB_EPS, p_alt))
 
-        overdispersion = 1.0 if math.isinf(rho) else 1.0 + (n - 1.0) / (rho + 1.0)
+        if per_class_rho:
+            donor_alt_dose = m.donor_gts[0][0] + m.donor_gts[0][1]
+            m_rho = rho_het if donor_alt_dose == 1 else rho_hom
+        else:
+            m_rho = rho
+        overdispersion = 1.0 if math.isinf(m_rho) else 1.0 + (n - 1.0) / (m_rho + 1.0)
         var_vaf = p_alt * (1.0 - p_alt) / n * overdispersion
         if var_vaf <= 0.0:
             continue
@@ -785,6 +343,8 @@ def detection_limit(
     error_rate: float = DEFAULT_ERROR_RATE,
     rho: float = float("inf"),
     calibration: PanelCalibration | None = None,
+    rho_hom: float | None = None,
+    rho_het: float | None = None,
 ) -> tuple[float, float]:
     """Per-sample limit of blank and limit of detection (donor fractions).
 
@@ -810,16 +370,21 @@ def detection_limit(
         rho: Beta-binomial concentration from the fit (inf = pure binomial).
         calibration: Optional per-marker bias and error tables (only biases
             are used here).
+        rho_hom: Donor-hom class concentration. When both ``rho_hom`` and
+            ``rho_het`` are given, each marker uses its class rho instead of the
+            scalar ``rho`` (per-marker-type overdispersion, issue #33). Forwarded
+            to both ``fraction_se`` calls.
+        rho_het: Donor-het class concentration (see ``rho_hom``).
 
     Returns:
         ``(lob, lod)`` as donor fractions (0.0-1.0). ``(inf, inf)`` if no
         marker is informative.
     """
-    se0 = fraction_se(markers, 0.0, error_rate, rho, calibration)
+    se0 = fraction_se(markers, 0.0, error_rate, rho, calibration, rho_hom, rho_het)
     if math.isinf(se0):
         return float("inf"), float("inf")
     lob = _Z95 * se0
-    se_lob = fraction_se(markers, lob, error_rate, rho, calibration)
+    se_lob = fraction_se(markers, lob, error_rate, rho, calibration, rho_hom, rho_het)
     if math.isinf(se_lob):
         se_lob = se0
     lod = lob + _Z95 * se_lob
@@ -831,11 +396,19 @@ def _estimate_single_donor_bb_core(
     error_rate: float = DEFAULT_ERROR_RATE,
     grid_steps: int = 1001,
     calibration: PanelCalibration | None = None,
+    marker_type_overdispersion: bool = True,
 ) -> ChimerismResult:
     """Single-donor beta-binomial MLE over the given marker set (no robust trim).
 
     This is the unguarded estimator; ``estimate_single_donor_bb`` wraps it with
-    the optional robust refit. Args/returns as in that wrapper.
+    the optional robust refit. Args/returns as in that wrapper, plus
+    ``marker_type_overdispersion`` (issue #33): when True (the default), fit a
+    separate rho for the donor-hom and donor-het marker classes instead of one
+    shared rho, which removes the sub-0.5% MLE floor. Set False to recover the
+    legacy shared-rho path (byte-identical to the pre-#33 estimator). When a
+    marker class has fewer than ``MIN_CLASS_MARKERS`` markers the per-class rho
+    is not identifiable, so the estimator falls back to shared rho for that
+    sample and records the reason on the result (diagnostic only, not a warning).
     """
     cal = calibration or PanelCalibration()
     n_informative = len(markers)
@@ -852,6 +425,34 @@ def _estimate_single_donor_bb_core(
             error_rate=error_rate,
         )
 
+    if marker_type_overdispersion:
+        het_mask = _donor_het_mask(markers)
+        n_het = int(het_mask.sum())
+        n_hom = n_informative - n_het
+        if n_het >= MIN_CLASS_MARKERS and n_hom >= MIN_CLASS_MARKERS:
+            return _estimate_single_donor_two_rho(markers, het_mask, error_rate, grid_steps, cal)
+        # Sparse class: its per-class rho is not identifiable, so fall through to
+        # the shared-rho path for this sample and record the reason on the result.
+        # This is routine for small or hom-dominated panels and is a diagnostic
+        # field only, not a QC warning (two-rho is the default, not a request).
+        fell_back: str | None = (
+            f"a marker class is sparse (hom={n_hom}, het={n_het}, "
+            f"min={MIN_CLASS_MARKERS}); used shared rho for this sample"
+        )
+    else:
+        fell_back = None
+
+    # This function is the hot path of every validation sweep in the paper (LoD,
+    # relatedness, depth, overdispersion all bottom out here, millions of calls).
+    # Per profiling it is ~99% of those builds; simulation and VCF IO are noise.
+    # The cost lives in the two scipy searches below (grid rho-profiling and the
+    # Nelder-Mead refinement) hammering _ll_from_p_alt. Optimise here, exactly:
+    # the f-invariant work (w/bias/p_alt via _p_alt_for_f) is already hoisted out
+    # of the rho loops, and the per-call-constant terms are precomputed in
+    # _precompute_marker_arrays. Keep any further change bit-identical (this
+    # estimator's output is validated against fixtures; ~0.1% drift matters at
+    # the low-fraction limit of detection).
+
     # Precompute the (f, rho)-independent per-marker arrays once and reuse them
     # across the grid search, Nelder-Mead refinement, and profile-likelihood CI.
     arr = _precompute_marker_arrays(markers, cal)
@@ -862,11 +463,16 @@ def _estimate_single_donor_bb_core(
     best_f = 0.0
     best_rho = 100.0
 
+    # Hoisted out of the grid loop: the rho-profiling bounds are the same at
+    # every grid point.
+    grid_rho_bounds = (math.log(1.0), math.log(_RHO_SEED_MAX))
     for f in grid:
-        # Optimise rho for this f
+        # p_alt depends on f only, so compute it once and reuse it across the
+        # rho profiling (was recomputed at every rho evaluation).
+        p_alt_f = _p_alt_for_f(arr, f, error_rate)
         opt_rho = minimize_scalar(
-            lambda log_r, _f=f: -_total_ll_vec(arr, _f, error_rate, math.exp(log_r)),
-            bounds=(math.log(1.0), math.log(10000.0)),
+            lambda log_r, _p=p_alt_f: -_ll_from_p_alt(arr, _p, math.exp(log_r)),
+            bounds=grid_rho_bounds,
             method="bounded",
         )
         rho_cand = math.exp(float(opt_rho.x))
@@ -904,8 +510,9 @@ def _estimate_single_donor_bb_core(
 
     def profile_ll_f(f_val: float) -> float:
         """Max LL over rho at a given f."""
+        p_alt_f = _p_alt_for_f(arr, f_val, error_rate)
         opt_rho = minimize_scalar(
-            lambda log_r: -_total_ll_vec(arr, f_val, error_rate, math.exp(log_r)),
+            lambda log_r: -_ll_from_p_alt(arr, p_alt_f, math.exp(log_r)),
             bounds=(math.log(1.0), math.log(_RHO_MAX)),
             method="bounded",
         )
@@ -947,6 +554,138 @@ def _estimate_single_donor_bb_core(
         per_marker=per_marker,
         error_rate=error_rate,
         rho=rho_mle,
+        marker_type_overdispersion_fallback=fell_back,
+        lob_fraction=lob,
+        lod_fraction=lod,
+    )
+
+
+def _estimate_single_donor_two_rho(
+    markers: list[InformativeMarker],
+    het_mask: np.ndarray,
+    error_rate: float,
+    grid_steps: int,
+    cal: PanelCalibration,
+) -> ChimerismResult:
+    """Single-donor MLE with a separate rho per marker class (issue #33).
+
+    Fits the donor fraction f jointly with two independent concentration
+    parameters, one for the donor-hom markers and one for the donor-het markers,
+    profiling each rho out at every f. This down-weights the over-dispersed
+    donor-het class (background VAF ~0.5) at low fraction, where its symmetric
+    amplification scatter otherwise rectifies into a small positive host
+    fraction (the sub-0.5% floor). The structure mirrors the shared-rho core: a
+    grid search over f, a Nelder-Mead refinement, a profile-likelihood CI, then
+    per-marker residuals over the full marker set and per-class detection limits.
+
+    Args:
+        markers: Informative markers (single donor).
+        het_mask: Boolean mask from ``_donor_het_mask`` (True at donor-het).
+        error_rate: Sequencing error rate.
+        grid_steps: Number of f grid points for the initial search.
+        cal: Per-marker calibration.
+
+    Returns:
+        ChimerismResult with ``rho`` set to the het-class rho and ``rho_hom`` /
+        ``rho_het`` populated.
+    """
+    hom_markers = [m for m, h in zip(markers, het_mask) if not h]
+    het_markers = [m for m, h in zip(markers, het_mask) if h]
+    arr_hom = _precompute_marker_arrays(hom_markers, cal)
+    arr_het = _precompute_marker_arrays(het_markers, cal)
+
+    # Step 1: grid over f, both rhos profiled out at each grid point.
+    grid = np.linspace(0.0, 1.0, grid_steps)
+    best_ll = -math.inf
+    best_f = 0.0
+    best_rho_hom = 100.0
+    best_rho_het = 100.0
+    for f in grid:
+        ll_hom, r_hom = _profile_rho_at_f(arr_hom, f, error_rate)
+        ll_het, r_het = _profile_rho_at_f(arr_het, f, error_rate)
+        ll = ll_hom + ll_het
+        if ll > best_ll:
+            best_ll = ll
+            best_f = float(f)
+            best_rho_hom = r_hom
+            best_rho_het = r_het
+
+    # Step 2: Nelder-Mead refinement over (f, log_rho_hom, log_rho_het).
+    def neg_ll_joint(x):
+        f_val, lr_hom, lr_het = x
+        if f_val < 0.0 or f_val > 1.0:
+            return _INFEASIBLE_PENALTY
+        r_hom = math.exp(lr_hom)
+        r_het = math.exp(lr_het)
+        if not (_RHO_MIN <= r_hom <= _RHO_MAX) or not (_RHO_MIN <= r_het <= _RHO_MAX):
+            return _INFEASIBLE_PENALTY
+        return -(
+            _total_ll_vec(arr_hom, f_val, error_rate, r_hom)
+            + _total_ll_vec(arr_het, f_val, error_rate, r_het)
+        )
+
+    opt = minimize(
+        neg_ll_joint,
+        x0=[best_f, math.log(best_rho_hom), math.log(best_rho_het)],
+        method="Nelder-Mead",
+        options={"xatol": 1e-6, "fatol": 1e-10, "maxiter": 5000},
+    )
+    f_mle = max(0.0, min(1.0, float(opt.x[0])))
+    rho_hom_mle = math.exp(float(opt.x[1]))
+    rho_het_mle = math.exp(float(opt.x[2]))
+
+    # Step 3: profile-likelihood CI for f, both rhos profiled out at each f.
+    threshold = chi2.ppf(CI_LEVEL, df=1)
+    half_threshold = threshold / 2.0
+
+    def profile_ll_f(f_val: float) -> float:
+        return _two_rho_profile_ll(arr_hom, arr_het, f_val, error_rate)
+
+    # Re-derive ll_max from the profile at f_mle so the CI reference is
+    # consistent with profile_ll_f across the search interval.
+    ll_max = profile_ll_f(f_mle)
+
+    def ci_func(f_val: float) -> float:
+        return ll_max - profile_ll_f(f_val) - half_threshold
+
+    if f_mle <= 0.0 or ci_func(0.0) <= 0.0:
+        f_lo = 0.0
+    else:
+        f_lo = brentq(ci_func, 0.0, f_mle, xtol=1e-5)
+
+    if f_mle >= 1.0 or ci_func(1.0) <= 0.0:
+        f_hi = 1.0
+    else:
+        f_hi = brentq(ci_func, f_mle, 1.0, xtol=1e-5)
+
+    # Step 4: per-marker residuals over the full marker set at the single f_mle,
+    # so per-marker output, residuals and the robust-refit interaction are
+    # unchanged in shape; only the f they are evaluated at moves.
+    per_marker = _compute_per_marker_results(markers, f_mle, cal)
+    n_markers_used = sum(1 for mr in per_marker if mr.included)
+
+    # Step 5: per-sample detection limits under the per-class rhos.
+    lob, lod = detection_limit(
+        markers,
+        error_rate,
+        rho=rho_het_mle,
+        calibration=cal,
+        rho_hom=rho_hom_mle,
+        rho_het=rho_het_mle,
+    )
+
+    return ChimerismResult(
+        donor_fraction=f_mle,
+        donor_fraction_ci=(f_lo, f_hi),
+        host_fraction=1.0 - f_mle,
+        log_likelihood=ll_max,
+        n_informative=len(markers),
+        n_markers_used=n_markers_used,
+        per_marker=per_marker,
+        error_rate=error_rate,
+        rho=rho_het_mle,  # headline rho = het class (governs the floor and low-f CI)
+        rho_hom=rho_hom_mle,
+        rho_het=rho_het_mle,
         lob_fraction=lob,
         lod_fraction=lod,
     )
@@ -1010,15 +749,15 @@ def _robust_refit(
         if ROBUST_ONE_SIDED:
             # Protect markers whose residual deviates toward host presence.
             # Increasing the host weight moves a marker's expected ALT VAF toward
-            # the host's own ALT dose (host_alt / 2), so the host-present
-            # direction at the current fit is sign(host_alt / 2 - expected_vaf).
+            # the host's own ALT dose (host_alt / PLOIDY), so the host-present
+            # direction at the current fit is sign(host_alt / PLOIDY - expected_vaf).
             # A residual deviating that way is under-fit host signal, not an
             # artifact, and must not be trimmed. ``current`` and
             # ``result.per_marker`` are in the same order (the core estimator
             # builds per-marker results by iterating the marker list).
             host_alt = np.array([m.host_gt[0] + m.host_gt[1] for m in current], dtype=float)
             exp_vaf = np.array([mr.expected_vaf for mr in result.per_marker], dtype=float)
-            host_dir = np.sign(host_alt / 2.0 - exp_vaf)
+            host_dir = np.sign(host_alt / PLOIDY - exp_vaf)
             points_to_host = (host_dir != 0.0) & (np.sign(deviation) == host_dir)
             keep_mask = keep_mask | points_to_host
         n_keep = int(keep_mask.sum())
@@ -1057,6 +796,7 @@ def estimate_single_donor_bb(
     calibration: PanelCalibration | None = None,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
+    marker_type_overdispersion: bool = True,
 ) -> ChimerismResult:
     """Estimate single-donor chimerism with beta-binomial likelihood.
 
@@ -1080,6 +820,12 @@ def estimate_single_donor_bb(
             is the same but trims down to ``ROBUST_HARD_MIN`` (for experiments).
             On clean data the trim is a no-op and the result is unchanged.
         robust_k: Residual cut in robust SDs for the refit.
+        marker_type_overdispersion: Fit a separate beta-binomial concentration
+            for the donor-hom and donor-het marker classes instead of one shared
+            rho (issue #33). On by default; removes the sub-0.5% MLE floor. Set
+            False for the legacy shared-rho path (byte-identical to the pre-#33
+            estimator). Falls back to shared rho for a sample when a class has
+            fewer than ``MIN_CLASS_MARKERS`` markers.
 
     Returns:
         ChimerismResult with MLE estimate and beta-binomial CIs.
@@ -1089,8 +835,17 @@ def estimate_single_donor_bb(
 
     cal = calibration or PanelCalibration()
 
+    # Step 30 (issue #30): subtract dose-predicted co-pooled contamination from
+    # donor-hom host-allele counts before the MLE. A no-op (returns the same
+    # list) when no correction is set or the flowcell gated out, so the default
+    # path is byte-identical. Applied here so the corrected counts flow through
+    # the estimate, residuals, CI, and robust refit uniformly.
+    markers = apply_contamination_correction(markers, cal.contamination_correction)
+
     def core(mk: list[InformativeMarker]) -> ChimerismResult:
-        return _estimate_single_donor_bb_core(mk, error_rate, grid_steps, cal)
+        return _estimate_single_donor_bb_core(
+            mk, error_rate, grid_steps, cal, marker_type_overdispersion
+        )
 
     if robust == "off" or len(markers) == 0:
         return core(markers)
@@ -1320,7 +1075,10 @@ def _profile_likelihood_cis_multi(
     cis: list[tuple[float, float]] = []
 
     for donor_idx in range(n_donors):
-        other_idx = 1 - donor_idx  # works for 2 donors
+        # The estimator is capped at two donors (enforced in
+        # _estimate_multi_donor_core), so profiling one donor leaves exactly one
+        # "other" donor: the remaining index.
+        other_idx = next(j for j in range(n_donors) if j != donor_idx)
 
         def profile_ll(fi: float, _other=other_idx, _didx=donor_idx) -> float:
             """Max LL over the other donor and rho, with donor_idx fixed at fi."""

@@ -1,8 +1,11 @@
 """Command-line interface for allomix."""
 
 import argparse
+import datetime
+import importlib.util
 import json
 import sys
+from pathlib import Path
 
 from cyvcf2 import VCF
 
@@ -27,6 +30,7 @@ from allomix.error_rates import (
     save_error_table,
 )
 from allomix.genotype import parse_vcf
+from allomix.html.render import render_single
 from allomix.likelihood import PanelCalibration
 from allomix.marker_contamination import (
     DEFAULT_DOSE_CAP,
@@ -37,7 +41,14 @@ from allomix.marker_contamination import (
     save_contamination_table,
 )
 from allomix.relatedness import VALID_DECLARATIONS
-from allomix.report import timeline_json, to_json, to_tsv
+from allomix.report import (
+    DonorMeta,
+    ReportMeta,
+    report_data,
+    timeline_report_data,
+    to_marker_csv,
+    to_tsv,
+)
 from allomix.runmeta import RunUnitInfo, read_run_units
 
 
@@ -74,7 +85,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--panel-vcf",
         required=True,
         help="Panel VCF with host/donor genotypes (typically GATK joint-called; "
-             "see doc/joint_calling.md)",
+        "see doc/joint_calling.md)",
     )
     parser.add_argument(
         "--admix-vcf",
@@ -95,18 +106,18 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         metavar="RELATIONSHIP",
         type=_expected_relatedness_value,
         help="Declared host-vs-donor relationship for the QC relatedness check, "
-             "one per --donor-sample in the same order (repeat to match). One of "
-             f"{', '.join(VALID_DECLARATIONS)} or NA (no expectation). A declared "
-             "relationship that crosses the related/unrelated boundary fails QC. "
-             "'identical' is rejected: an identical-twin (syngeneic) donor cannot "
-             "be monitored by genotype.",
+        "one per --donor-sample in the same order (repeat to match). One of "
+        f"{', '.join(VALID_DECLARATIONS)} or NA (no expectation). A declared "
+        "relationship that crosses the related/unrelated boundary fails QC. "
+        "'identical' is rejected: an identical-twin (syngeneic) donor cannot "
+        "be monitored by genotype.",
     )
     parser.add_argument(
         "--relatedness-tolerance",
         type=int,
         default=1,
         help="Allowed degree distance before a declared-vs-detected relatedness "
-             "mismatch is flagged for review (default: 1)",
+        "mismatch is flagged for review (default: 1)",
     )
     parser.add_argument(
         "--sample",
@@ -115,7 +126,16 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         metavar="SAMPLE_NAME",
         help="Admixture sample name in VCF (repeat for multiple timepoints)",
     )
-    parser.add_argument("--output", "-o", default="-", help="Output file (default: stdout)")
+    parser.add_argument(
+        "--marker-csv",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Also write per-marker detail (allele depths, observed vs expected "
+        "VAF, residual, include flag) to this CSV. This is the "
+        "bioinformatician-facing detail that the clinician HTML report omits; "
+        "one row per marker per sample, with a leading sample column.",
+    )
     parser.add_argument(
         "--min-dp",
         type=int,
@@ -132,9 +152,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--use-sex-chroms",
         action="store_true",
         help="Include sex / mitochondrial contigs (X/Y/M). Off by default: in "
-             "sex-mismatched transplants the host/donor dosage on chrX/chrY is "
-             "wrong. Enable per run only once host and donor sex are known to "
-             "match. The informative sex-chrom markers dropped are reported.",
+        "sex-mismatched transplants the host/donor dosage on chrX/chrY is "
+        "wrong. Enable per run only once host and donor sex are known to "
+        "match. The informative sex-chrom markers dropped are reported.",
     )
     parser.add_argument(
         "--error-rate",
@@ -147,28 +167,28 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         choices=["off", "auto", "force"],
         default="auto",
         help="Robust refit: iteratively drop residual-outlier markers "
-             "(host copy-number / LoH, genotyping errors) and refit. 'auto' "
-             "(default) keeps a marker floor and is a no-op on clean data; "
-             "'force' trims further; 'off' disables. A large exclusion is "
-             "flagged for REVIEW.",
+        "(host copy-number / LoH, genotyping errors) and refit. 'auto' "
+        "(default) keeps a marker floor and is a no-op on clean data; "
+        "'force' trims further; 'off' disables. A large exclusion is "
+        "flagged for REVIEW.",
     )
     parser.add_argument(
         "--robust-k",
         type=float,
         default=ROBUST_K_DEFAULT,
         help="Robust residual cut in robust SDs (median/MAD) for --robust "
-             f"(default: {ROBUST_K_DEFAULT})",
+        f"(default: {ROBUST_K_DEFAULT})",
     )
     parser.add_argument(
         "--marker-type-overdispersion",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Fit a separate beta-binomial concentration (rho) for the "
-             "donor-homozygous and donor-heterozygous marker classes instead of "
-             "one shared rho (single-donor only). Removes the sub-0.5%% MLE "
-             "floor (issue #33). On by default; use --no-marker-type-overdispersion "
-             "for the legacy shared-rho estimator. Falls back to shared rho for a "
-             "sample when a class has too few markers.",
+        "donor-homozygous and donor-heterozygous marker classes instead of "
+        "one shared rho (single-donor only). Removes the sub-0.5%% MLE "
+        "floor (issue #33). On by default; use --no-marker-type-overdispersion "
+        "for the legacy shared-rho estimator. Falls back to shared rho for a "
+        "sample when a class has too few markers.",
     )
     parser.add_argument("--verbose", action="store_true", help="Include per-marker detail")
     parser.add_argument(
@@ -185,62 +205,161 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--estimate-bias",
         action="store_true",
         help="Estimate per-marker bias inline from all samples in --panel-vcf, "
-             "held in memory (no separate `estimate-bias` step or table file). "
-             "Mutually exclusive with --bias-table. Estimate from data called "
-             "the same way as the admix; works best when the panel VCF holds "
-             "many samples.",
+        "held in memory (no separate `estimate-bias` step or table file). "
+        "Mutually exclusive with --bias-table. Estimate from data called "
+        "the same way as the admix; works best when the panel VCF holds "
+        "many samples.",
     )
     parser.add_argument(
         "--estimate-bias-min-het",
         type=int,
         default=1,
-        help="Minimum het observations per marker for inline --estimate-bias "
-             "(default: 1).",
+        help="Minimum het observations per marker for inline --estimate-bias (default: 1).",
     )
     parser.add_argument(
         "--error-table",
         default=None,
         help="Per-site empirical error-rate table TSV (from "
-             "`allomix estimate-errors`). Sites with per-direction rates "
-             "override --error-rate; missing sites or missing directions "
-             "fall back to --error-rate.",
+        "`allomix estimate-errors`). Sites with per-direction rates "
+        "override --error-rate; missing sites or missing directions "
+        "fall back to --error-rate.",
     )
     parser.add_argument(
         "--no-error-correction",
         action="store_true",
-        help="Disable empirical error-rate correction even when an error "
-             "table is provided",
+        help="Disable empirical error-rate correction even when an error table is provided",
     )
     parser.add_argument(
         "--contamination-table",
         default=None,
         help="Per-marker co-pooled contamination table TSV (from "
-             "`allomix build-contamination-table`). Used only when "
-             "--contamination-correction is set (Step 30, issue #30).",
+        "`allomix build-contamination-table`). Used only when "
+        "--contamination-correction is set (Step 30, issue #30).",
     )
     parser.add_argument(
         "--contamination-correction",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Subtract dose-predicted co-pooled contamination from "
-             "donor-homozygous host-allele counts before the MLE, using "
-             "--contamination-table (Step 30, issue #30). OFF by default. A "
-             "table built on a clean flowcell gates itself out, so this is a "
-             "no-op there even when enabled.",
+        "donor-homozygous host-allele counts before the MLE, using "
+        "--contamination-table (Step 30, issue #30). OFF by default. A "
+        "table built on a clean flowcell gates itself out, so this is a "
+        "no-op there even when enabled.",
     )
     parser.add_argument(
         "--no-host-presence",
         action="store_true",
         help="Disable the host-presence detection test (see "
-             "`allomix.detect`). On by default; cheap to run.",
+        "`allomix.detect`). On by default; cheap to run.",
     )
     parser.add_argument(
         "--no-artifact-filter",
         action="store_true",
         help="Disable the read-level artifact filter in the host-presence "
-             "test (strand/soft-clip/read-position bias). On by default; "
-             "drops alignment-artifact markers (see `allomix.detect`).",
+        "test (strand/soft-clip/read-position bias). On by default; "
+        "drops alignment-artifact markers (see `allomix.detect`).",
     )
+
+
+def _add_report_meta_args(parser: argparse.ArgumentParser) -> None:
+    """Add the optional HTML-report metadata flags.
+
+    Every flag is optional; the HTML report renders cleanly without them. They
+    only populate the header band and are ignored by the tsv/json formats.
+    """
+    group = parser.add_argument_group("HTML report metadata (optional)")
+    group.add_argument("--recipient-id", help="Recipient identifier for the report header")
+    group.add_argument("--recipient-name", help="Recipient display name")
+    group.add_argument("--recipient-sex", help="Recipient sex (shown verbatim)")
+    group.add_argument("--recipient-dob", help="Recipient date of birth (shown verbatim)")
+    group.add_argument(
+        "--transplant-type",
+        default="HSCT",
+        help="Transplant type label (default: HSCT)",
+    )
+    group.add_argument(
+        "--transplant-date",
+        help="Transplant date, ISO (YYYY-MM-DD) for the days-post-transplant derivation",
+    )
+    group.add_argument(
+        "--donor-relationship",
+        action="append",
+        metavar="RELATIONSHIP",
+        help="Declared donor relationship shown in the header, one per "
+        "--donor-sample in the same order (free text, e.g. 'unrelated', "
+        "'sibling'). Separate from --expected-relatedness, which drives QC.",
+    )
+    group.add_argument(
+        "--sample-date",
+        action="append",
+        metavar="DATE",
+        help="Sample collection date, one per --sample in the same order, ISO "
+        "(YYYY-MM-DD) for the days-post-transplant derivation and timeline "
+        "x-axis.",
+    )
+    group.add_argument(
+        "--report-timestamp",
+        help="Override the report generation time shown in the header / footer "
+        "(any string). Defaults to the current local time. Pin it for "
+        "byte-reproducible report output.",
+    )
+
+
+def _build_report_meta(args: argparse.Namespace) -> ReportMeta:
+    """Assemble a ReportMeta from the optional CLI metadata flags."""
+    rels = args.donor_relationship or []
+    donors = [
+        DonorMeta(donor_id=d, relationship=rels[i] if i < len(rels) else None)
+        for i, d in enumerate(args.donor_sample)
+    ]
+    dates = args.sample_date or []
+    sample_dates = {s: dates[i] for i, s in enumerate(args.sample) if i < len(dates)}
+    return ReportMeta(
+        recipient_id=args.recipient_id,
+        recipient_name=args.recipient_name,
+        sex=args.recipient_sex,
+        dob=args.recipient_dob,
+        transplant_type=args.transplant_type,
+        transplant_date=args.transplant_date,
+        donors=donors,
+        sample_dates=sample_dates,
+    )
+
+
+def _build_report_params(args: argparse.Namespace) -> dict:
+    """Collect the analysis parameters shown in the HTML report footer."""
+    return {
+        "panel_vcf": args.panel_vcf,
+        "admix_vcf": args.admix_vcf,
+        "error_table": args.error_table,
+        "bias_table": args.bias_table,
+        "contamination_table": args.contamination_table,
+        "min_dp": args.min_dp,
+        "min_gq": args.min_gq,
+        "error_rate": args.error_rate,
+        "robust": args.robust,
+        "robust_k": args.robust_k,
+        "marker_type_overdispersion": args.marker_type_overdispersion,
+        "no_bias_correction": args.no_bias_correction,
+        "estimate_bias": args.estimate_bias,
+        "no_error_correction": args.no_error_correction,
+        "contamination_correction": args.contamination_correction,
+        "host_presence": not args.no_host_presence,
+        "artifact_filter": not args.no_artifact_filter,
+        "use_sex_chroms": args.use_sex_chroms,
+    }
+
+
+def _report_timestamp(args: argparse.Namespace) -> str:
+    """Report generation time: the --report-timestamp override, else local now.
+
+    Pinning the override makes the rendered report byte-reproducible (the only
+    other nondeterminism, the trend-chart PNG, is fixed for fixed input data).
+    """
+    override = getattr(args, "report_timestamp", None)
+    if override:
+        return override
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _validate_expected_relatedness(args: argparse.Namespace) -> None:
@@ -339,6 +458,50 @@ def _open_output(path: str):
     return open(path, "w", encoding="utf-8")
 
 
+def _add_output_args(parser: argparse.ArgumentParser, *, allow_tsv: bool) -> None:
+    """Add the per-artifact output flags shared by monitor and timeline.
+
+    Each flag names where one artifact is written; any combination may be given
+    in a single run (for example ``--json r.json --html r.html``). ``-`` writes
+    to stdout. When no output flag is given the command falls back to its default
+    (TSV for monitor, JSON for timeline), written to stdout.
+    """
+    parser.add_argument(
+        "--json",
+        metavar="PATH",
+        help="Write the structured report JSON (the canonical artifact the HTML "
+        "report is rendered from) to PATH ('-' for stdout).",
+    )
+    parser.add_argument(
+        "--html",
+        metavar="PATH",
+        help="Write the self-contained HTML report to PATH ('-' for stdout).",
+    )
+    parser.add_argument(
+        "--template",
+        metavar="DIR",
+        help="Directory of HTML report template overrides, searched ahead of the "
+        "built-in templates. Drop in a styles.css to restyle, or a report.html / "
+        "timeline.html / macros.html to restructure; anything absent falls back to "
+        "the built-in. See src/allomix/html/templates/ for the files to override.",
+    )
+    if allow_tsv:
+        parser.add_argument(
+            "--tsv",
+            metavar="PATH",
+            help="Write the TSV summary to PATH ('-' for stdout). The default "
+            "when no output flag is given.",
+        )
+
+
+def _write_text(path: str, text: str) -> None:
+    """Write text to a file, or to stdout when ``path`` is ``-``."""
+    if path == "-":
+        sys.stdout.write(text)
+    else:
+        Path(path).write_text(text, encoding="utf-8")
+
+
 def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     """Build the per-marker calibration from the CLI table options.
 
@@ -359,9 +522,7 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
 
     if estimate_bias and not args.no_bias_correction:
         samples = list(VCF(args.panel_vcf).samples)
-        marker_lists = [
-            parse_vcf(args.panel_vcf, sample=s, min_dp=0, min_gq=0) for s in samples
-        ]
+        marker_lists = [parse_vcf(args.panel_vcf, sample=s, min_dp=0, min_gq=0) for s in samples]
         biases = biases_to_simple_dict(
             estimate_biases(marker_lists, min_het=args.estimate_bias_min_het)
         )
@@ -381,9 +542,7 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     contamination_correction = None
     if getattr(args, "contamination_correction", False):
         if not args.contamination_table:
-            raise SystemExit(
-                "--contamination-correction requires --contamination-table"
-            )
+            raise SystemExit("--contamination-correction requires --contamination-table")
         contamination_correction = load_contamination_table(args.contamination_table)
     return PanelCalibration(
         biases=biases,
@@ -397,6 +556,24 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     _validate_expected_relatedness(args)
     _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
+
+    # Resolve which artifacts to write. With no output flag, default to TSV on
+    # stdout (preserving the historical default).
+    want_json = args.json is not None
+    want_html = args.html is not None
+    want_tsv = args.tsv is not None
+    want_csv = args.marker_csv is not None
+    if not (want_json or want_html or want_tsv or want_csv):
+        want_tsv = True
+        args.tsv = "-"
+
+    # The single-sample report covers one admixture sample. Multiple timepoints
+    # belong in the timeline report (which adds the trend chart).
+    if (want_json or want_html) and len(args.sample) != 1:
+        raise SystemExit(
+            "monitor --json/--html produce one report for a single --sample; got "
+            f"{len(args.sample)}. Use 'allomix timeline' for multiple timepoints."
+        )
 
     calibration = _load_calibration(args)
 
@@ -418,43 +595,77 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     # (index-hopping check, issue #12). Empty when the VCF carries none.
     run_units = read_run_units(args.admix_vcf)
 
-    out = _open_output(args.output)
-    try:
-        for sample_name in args.sample:
-            result, qc, genotypes = _run_single_sample(
-                host,
-                donors,
-                args.admix_vcf,
-                sample_name,
-                args.min_dp,
-                args.min_gq,
-                args.error_rate,
-                calibration=calibration,
-                run_host_presence=not args.no_host_presence,
-                use_sex_chroms=args.use_sex_chroms,
-                artifact_filter=not args.no_artifact_filter,
-                robust=args.robust,
-                robust_k=args.robust_k,
-                marker_type_overdispersion=args.marker_type_overdispersion,
-                expected_relatedness=args.expected_relatedness,
-                relatedness_tolerance=args.relatedness_tolerance,
-                run_unit=run_units.get(sample_name),
-            )
+    # (sample_name, result, qc) per sample; plus the per-marker CSV rows.
+    results: list[tuple[str, object, object]] = []
+    marker_rows: list[tuple[str, object]] = []
+    for sample_name in args.sample:
+        result, qc, genotypes = _run_single_sample(
+            host,
+            donors,
+            args.admix_vcf,
+            sample_name,
+            args.min_dp,
+            args.min_gq,
+            args.error_rate,
+            calibration=calibration,
+            run_host_presence=not args.no_host_presence,
+            use_sex_chroms=args.use_sex_chroms,
+            artifact_filter=not args.no_artifact_filter,
+            robust=args.robust,
+            robust_k=args.robust_k,
+            marker_type_overdispersion=args.marker_type_overdispersion,
+            expected_relatedness=args.expected_relatedness,
+            relatedness_tolerance=args.relatedness_tolerance,
+            run_unit=run_units.get(sample_name),
+        )
+        results.append((genotypes.sample_name, result, qc))
+        marker_rows.append((genotypes.sample_name, result))
 
-            if args.format == "json":
-                data = to_json(result, qc, sample_name=genotypes.sample_name)
-                out.write(json.dumps(data, indent=2) + "\n")
-            else:
-                to_tsv(result, qc, out, verbose=args.verbose, sample_name=genotypes.sample_name)
-    finally:
-        if out is not sys.stdout:
-            out.close()
+    # The structured envelope is the single source for the JSON and the HTML, so
+    # the two always agree. Single-sample only (enforced above).
+    if want_json or want_html:
+        name, result, qc = results[0]
+        data = report_data(
+            result,
+            qc,
+            sample_name=name,
+            meta=_build_report_meta(args),
+            params=_build_report_params(args),
+            timestamp=_report_timestamp(args),
+        )
+        if want_json:
+            _write_text(args.json, json.dumps(data, indent=2) + "\n")
+        if want_html:
+            _write_text(args.html, render_single(data, template_dir=args.template))
+
+    if want_tsv:
+        out = _open_output(args.tsv)
+        try:
+            for name, result, qc in results:
+                to_tsv(result, qc, out, verbose=args.verbose, sample_name=name)
+        finally:
+            if out is not sys.stdout:
+                out.close()
+
+    if want_csv:
+        to_marker_csv(marker_rows, args.marker_csv)
 
     return 0
 
 
 def cmd_timeline(args: argparse.Namespace) -> int:
     """Run the timeline subcommand."""
+    want_json = args.json is not None
+    want_html = args.html is not None
+    want_csv = args.marker_csv is not None
+    if not (want_json or want_html or want_csv):
+        want_json = True
+        args.json = "-"
+
+    if want_html and importlib.util.find_spec("matplotlib") is None:
+        raise SystemExit(
+            "timeline --html needs matplotlib for the trend chart: pip install 'allomix[report]'"
+        )
     _validate_expected_relatedness(args)
     _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
@@ -495,15 +706,60 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         )
         results.append((genotypes.sample_name, result, qc))
 
-    data = timeline_json(results)
+    if want_json or want_html:
+        data = timeline_report_data(
+            results,
+            meta=_build_report_meta(args),
+            params=_build_report_params(args),
+            timestamp=_report_timestamp(args),
+        )
+        if want_json:
+            _write_text(args.json, json.dumps(data, indent=2) + "\n")
+        if want_html:
+            # Deferred import: the trend chart needs matplotlib (the optional
+            # `report` extra), and timeline.py imports it at module top. Keeping
+            # this import after the capability check leaves the json path working
+            # on the base runtime deps alone.
+            from allomix.html.timeline import render_timeline
 
-    out = _open_output(args.output)
-    try:
-        out.write(json.dumps(data, indent=2) + "\n")
-    finally:
-        if out is not sys.stdout:
-            out.close()
+            _write_text(
+                args.html,
+                render_timeline(data, log_scale=args.log_scale, template_dir=args.template),
+            )
 
+    if want_csv:
+        to_marker_csv([(name, result) for name, result, _ in results], args.marker_csv)
+
+    return 0
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    """Render an HTML report from a saved report-data JSON file.
+
+    Reads the structured envelope written by ``monitor --json`` or
+    ``timeline --json`` and renders the same HTML the analysis step would have,
+    so report generation can be separated from analysis (or re-run after the data
+    is processed or moved). Single-sample and timeline envelopes are detected
+    from the ``kind`` field.
+    """
+    raw = sys.stdin.read() if args.input == "-" else Path(args.input).read_text(encoding="utf-8")
+    data = json.loads(raw)
+
+    is_timeline = data.get("kind") == "timeline" or "timepoints" in data
+    if is_timeline:
+        if importlib.util.find_spec("matplotlib") is None:
+            raise SystemExit(
+                "rendering a timeline report needs matplotlib for the trend "
+                "chart: pip install 'allomix[report]'"
+            )
+        # Deferred import: keeps the single-sample path matplotlib-free.
+        from allomix.html.timeline import render_timeline
+
+        html = render_timeline(data, log_scale=args.log_scale, template_dir=args.template)
+    else:
+        html = render_single(data, template_dir=args.template)
+
+    _write_text(args.output, html)
     return 0
 
 
@@ -624,8 +880,7 @@ def cmd_estimate_errors(args: argparse.Namespace) -> int:
     )
     save_error_table(errors, args.output)
     print(
-        f"Estimated error rates for {len(errors)} sites from {n_source} "
-        f"-> {args.output}",
+        f"Estimated error rates for {len(errors)} sites from {n_source} -> {args.output}",
         file=sys.stderr,
     )
     return 0
@@ -699,18 +954,48 @@ def main(argv: list[str] | None = None) -> int:
         help="Calculate chimerism for one or more samples",
     )
     _add_common_args(monitor_parser)
-    monitor_parser.add_argument(
-        "--format",
-        choices=["tsv", "json"],
-        default="tsv",
-        help="Output format (default: tsv)",
-    )
+    _add_report_meta_args(monitor_parser)
+    _add_output_args(monitor_parser, allow_tsv=True)
 
     timeline_parser = subparsers.add_parser(
         "timeline",
         help="Generate chimerism timeline across timepoints",
     )
     _add_common_args(timeline_parser)
+    _add_report_meta_args(timeline_parser)
+    _add_output_args(timeline_parser, allow_tsv=False)
+    timeline_parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="Use a logarithmic y axis on the HTML trend chart.",
+    )
+
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Render an HTML report from a saved monitor/timeline JSON",
+    )
+    report_parser.add_argument(
+        "input",
+        help="Report-data JSON from 'monitor --json' or 'timeline --json' ('-' to read stdin)",
+    )
+    report_parser.add_argument(
+        "--output",
+        "-o",
+        default="-",
+        help="HTML output file (default: stdout). A timeline JSON needs the "
+        "'report' extra for the trend chart: pip install 'allomix[report]'.",
+    )
+    report_parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="Use a logarithmic y axis on the HTML trend chart (timeline JSON).",
+    )
+    report_parser.add_argument(
+        "--template",
+        metavar="DIR",
+        help="Directory of HTML report template overrides, searched ahead of the "
+        "built-in templates (see src/allomix/html/templates/).",
+    )
 
     bias_parser = subparsers.add_parser(
         "estimate-bias",
@@ -738,12 +1023,12 @@ def main(argv: list[str] | None = None) -> int:
         "--both-het",
         action="store_true",
         help="Both-het mode: estimate bias from admix samples at markers where "
-             "the host and every donor are heterozygous (true VAF 0.5 regardless "
-             "of mixing). Use this when you only have admix VCFs (no mpileup'd "
-             "reference samples) and need a caller-consistent table. Requires "
-             "--vcf (genotypes), --host-sample, --donor-sample, and --admix-vcfs. "
-             "A pair's both-het markers are non-informative for that same pair, "
-             "so build the table from a cohort and apply it to other patients.",
+        "the host and every donor are heterozygous (true VAF 0.5 regardless "
+        "of mixing). Use this when you only have admix VCFs (no mpileup'd "
+        "reference samples) and need a caller-consistent table. Requires "
+        "--vcf (genotypes), --host-sample, --donor-sample, and --admix-vcfs. "
+        "A pair's both-het markers are non-informative for that same pair, "
+        "so build the table from a cohort and apply it to other patients.",
     )
     bias_parser.add_argument(
         "--host-sample",
@@ -761,7 +1046,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="+",
         metavar="VCF",
         help="Admix VCFs whose samples supply the both-het observations "
-             "(both-het mode); all samples in each are pooled",
+        "(both-het mode); all samples in each are pooled",
     )
     bias_parser.add_argument(
         "--output",
@@ -804,12 +1089,12 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         metavar="VCF",
         help="VCF(s) of force-called hom-ref background positions for the SAME "
-             "samples (raw bcftools mpileup, e.g. at amplicon midpoints, NOT "
-             "GATK, which strips the minority ALT reads being measured). The "
-             "stray ALT reads at these hom-ref calls supply the ref->alt error "
-             "background, which a variant-only joint call cannot (it emits no "
-             "all-hom-ref sites). Folded into the same estimate. Requires "
-             "--samples and uses the same sample names as --vcf/--vcfs.",
+        "samples (raw bcftools mpileup, e.g. at amplicon midpoints, NOT "
+        "GATK, which strips the minority ALT reads being measured). The "
+        "stray ALT reads at these hom-ref calls supply the ref->alt error "
+        "background, which a variant-only joint call cannot (it emits no "
+        "all-hom-ref sites). Folded into the same estimate. Requires "
+        "--samples and uses the same sample names as --vcf/--vcfs.",
     )
     err_parser.add_argument(
         "--output",
@@ -821,22 +1106,19 @@ def main(argv: list[str] | None = None) -> int:
         "--min-reads",
         type=int,
         default=1000,
-        help="Minimum total reads per direction to retain a site's estimate "
-             "(default: 1000)",
+        help="Minimum total reads per direction to retain a site's estimate (default: 1000)",
     )
     err_parser.add_argument(
         "--max-vaf-homref",
         type=float,
         default=0.10,
-        help="Drop hom-ref training observations with vaf > this "
-             "(default: 0.10)",
+        help="Drop hom-ref training observations with vaf > this (default: 0.10)",
     )
     err_parser.add_argument(
         "--min-vaf-homalt",
         type=float,
         default=0.90,
-        help="Drop hom-alt training observations with vaf < this "
-             "(default: 0.90)",
+        help="Drop hom-alt training observations with vaf < this (default: 0.90)",
     )
     err_parser.add_argument(
         "--min-gq",
@@ -854,10 +1136,12 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         metavar="VCF",
         help="Joint-called genotype VCF with the host, donor(s), and co-pooled "
-             "cohort samples (the flowcell's joint call)",
+        "cohort samples (the flowcell's joint call)",
     )
     contam_parser.add_argument(
-        "--host-sample", required=True, help="Host sample name in --vcf",
+        "--host-sample",
+        required=True,
+        help="Host sample name in --vcf",
     )
     contam_parser.add_argument(
         "--donor-sample",
@@ -871,8 +1155,7 @@ def main(argv: list[str] | None = None) -> int:
         "--admix-vcf",
         required=True,
         metavar="VCF",
-        help="Admix VCF holding this patient's serial timepoints (forced "
-             "pileup AD)",
+        help="Admix VCF holding this patient's serial timepoints (forced pileup AD)",
     )
     contam_parser.add_argument(
         "--sample",
@@ -887,7 +1170,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         metavar="SAMPLE_NAME",
         help="Co-pooled cohort sample names in --vcf for carrier counts "
-             "(default: all samples in --vcf)",
+        "(default: all samples in --vcf)",
     )
     contam_parser.add_argument(
         "--output",
@@ -905,15 +1188,14 @@ def main(argv: list[str] | None = None) -> int:
         "--alpha",
         type=float,
         default=DEFAULT_GATE_ALPHA,
-        help="Significance level for the consensus-hom slope gate "
-             f"(default: {DEFAULT_GATE_ALPHA})",
+        help=f"Significance level for the consensus-hom slope gate (default: {DEFAULT_GATE_ALPHA})",
     )
     contam_parser.add_argument(
         "--min-slope",
         type=float,
         default=DEFAULT_GATE_MIN_SLOPE,
         help="Minimum consensus-hom slope per carrier worth correcting "
-             f"(fraction of depth; default: {DEFAULT_GATE_MIN_SLOPE})",
+        f"(fraction of depth; default: {DEFAULT_GATE_MIN_SLOPE})",
     )
     contam_parser.add_argument(
         "--min-dp",
@@ -938,6 +1220,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_monitor(args)
     if args.command == "timeline":
         return cmd_timeline(args)
+    if args.command == "report":
+        return cmd_report(args)
     if args.command == "estimate-bias":
         return cmd_estimate_bias(args)
     if args.command == "estimate-errors":

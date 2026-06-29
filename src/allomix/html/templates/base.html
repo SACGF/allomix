@@ -1,0 +1,26 @@
+{#
+  Page shell for every report. The report is a single self-contained file: the
+  CSS and JS are inlined (passed in as the safe `css` / `js` context values, read
+  from styles.css and report.js), so the document renders correctly opened from
+  disk with no network access and survives being emailed as one attachment.
+
+  Child templates (report.html, timeline.html) fill the `body` block.
+#}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+{{ css }}
+</style>
+</head>
+<body>
+<main class="report">
+{% block body %}{% endblock %}
+</main>
+<script>
+{{ js }}
+</script>
+</body>
+</html>

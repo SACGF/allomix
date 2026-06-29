@@ -220,7 +220,7 @@ def run_mix(
         "--panel-vcf", str(panel),
         "--admix-vcf", str(admix),
         "--host-sample", host,
-        "--format", "tsv",
+        "--tsv", "-",
     ]
     if contam_table is not None:
         cmd += ["--contamination-table", str(contam_table), "--contamination-correction"]

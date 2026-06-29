@@ -1,0 +1,189 @@
+/*
+ * allomix HTML report styles.
+ *
+ * Clinical, neutral aesthetic: a sans body font, generous whitespace, clear
+ * section headings, no decorative chrome. Status colours are always paired with
+ * a glyph/text in the markup so they survive greyscale. Numbers are right-aligned
+ * in tables. The print stylesheet sets A4 page size, avoids splitting sections
+ * across pages, and hides interactive-only controls.
+ *
+ * This file is inlined verbatim into the report's <style> block (it is not parsed
+ * as a Jinja template), so a lab can override it via --template with no
+ * restriction on the characters it may contain. Edit freely to restyle.
+ */
+:root {
+  --fg: #1a1a1a;
+  --muted: #5c6670;
+  --line: #d7dce1;
+  --bg-soft: #f6f8fa;
+  --pass-fg: #1a7f37; --pass-bg: #e6f4ea;
+  --review-fg: #8a5a00; --review-bg: #fff5dd;
+  --fail-fg: #b3261e; --fail-bg: #fce8e6;
+  --accent: #1f3a5f;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--fg);
+  background: #eef1f4;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.report {
+  max-width: 900px;
+  margin: 24px auto;
+  background: #fff;
+  padding: 32px 40px 48px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+h1 { font-size: 22px; margin: 0 0 2px; color: var(--accent); }
+h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--line);
+  color: var(--accent);
+}
+.section { margin-top: 32px; }
+h3.subhead {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 20px 0 6px;
+}
+.qc-verdict { margin-bottom: 8px; font-weight: 600; }
+.qc-breakdown { margin: 4px 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+/* Header band */
+.header-band { border-bottom: 3px solid var(--accent); padding-bottom: 16px; }
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 4px 32px;
+  margin-top: 14px;
+}
+.meta-item { font-size: 14px; }
+.meta-label { color: var(--muted); margin-right: 6px; }
+.meta-value { font-weight: 600; }
+
+/* Headline */
+.headline-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 16px;
+}
+.figure-card {
+  flex: 1 1 200px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 16px 18px;
+}
+.figure-card.verdict {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.figure-label {
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.figure-value { font-size: 30px; font-weight: 700; line-height: 1.1; margin: 4px 0; }
+.figure-ci { font-size: 13px; color: var(--muted); }
+.sensitivity-line { margin-top: 14px; font-size: 13px; color: var(--muted); }
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge-glyph { font-weight: 700; }
+.badge-pass { color: var(--pass-fg); background: var(--pass-bg); border-color: var(--pass-fg); }
+.badge-review {
+  color: var(--review-fg);
+  background: var(--review-bg);
+  border-color: var(--review-fg);
+}
+.badge-fail { color: var(--fail-fg); background: var(--fail-bg); border-color: var(--fail-fg); }
+.badge-neutral { color: var(--muted); background: var(--bg-soft); border-color: var(--line); }
+.badge-lg { font-size: 16px; padding: 6px 14px; }
+
+/* Callouts */
+.callout {
+  border: 1px solid var(--line);
+  border-left-width: 5px;
+  border-radius: 4px;
+  padding: 12px 16px;
+}
+.callout-amber { border-left-color: var(--review-fg); background: var(--review-bg); }
+.callout-neutral { border-left-color: var(--muted); background: var(--bg-soft); }
+.callout-title { font-weight: 700; margin-bottom: 4px; }
+
+/* Tables */
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+thead th { background: var(--bg-soft); border-bottom: 2px solid var(--line); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.row-review td { background: var(--review-bg); }
+tr.row-fail td { background: var(--fail-bg); }
+.status-cell { white-space: nowrap; }
+
+/* Sortable headers (timeline timepoints table) */
+table.sortable thead th { cursor: pointer; user-select: none; }
+table.sortable thead th::after { content: ""; }
+table.sortable thead th.sort-asc::after { content: " \25B2"; font-size: 10px; }
+table.sortable thead th.sort-desc::after { content: " \25BC"; font-size: 10px; }
+
+/* Charts */
+.chart img { max-width: 100%; height: auto; display: block; }
+
+/* Expandable method help */
+details.help { margin: 10px 0 0; font-size: 13px; }
+details.help > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+  list-style: none;
+}
+details.help > summary::-webkit-details-marker { display: none; }
+details.help > summary::before { content: "\24D8\00A0"; }
+details.help[open] > summary { margin-bottom: 6px; }
+details.help .help-body { color: var(--muted); }
+details.help .help-body p { margin: 4px 0; }
+
+/* Warnings list */
+.warnings { margin: 8px 0 0; padding-left: 20px; }
+.warnings li { margin-bottom: 4px; }
+
+/* Footer */
+.footer {
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.footer dt { font-weight: 600; color: var(--fg); margin-top: 8px; }
+.footer dd { margin: 0 0 2px; }
+
+@media print {
+  body { background: #fff; }
+  .report { border: none; border-radius: 0; margin: 0; max-width: none; padding: 0; }
+  .no-print { display: none !important; }
+  .section, .figure-card, .callout, table, tr { break-inside: avoid; }
+}
+@page { size: A4; margin: 16mm; }

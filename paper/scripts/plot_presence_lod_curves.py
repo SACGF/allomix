@@ -3,7 +3,7 @@
 
 Reads ``presence_lod_curve_summary.csv`` from
 ``run_presence_lod_validation.py`` and draws a two-facet figure (unrelated,
-sibling) parallel to the MLE Figure 1 (``plot_lod_curves.py``): LoD (%) vs panel
+sibling) parallel to the MLE Figure 1 (``plot_lod_grid.py``): LoD (%) vs panel
 size on log-log axes, one curve per sequencing depth, the 10th-90th percentile
 band across donor/host pairs shaded, dashed reference lines at 0.5% and 1%.
 
@@ -94,7 +94,7 @@ def plot(summary_path: Path, out_path: Path) -> None:
     depths = sorted(depths_seen)
     nmarkers = sorted(nmarkers_seen)
     # viridis_r cropped to [0.35, 1.0]: deepest depth -> dark purple, shallowest
-    # -> green-teal (matches plot_lod_curves.py).
+    # -> green-teal (matches plot_lod_grid.py).
     cmap = plt.get_cmap("viridis_r")
     if len(depths) > 1:
         colors = {d: cmap(0.35 + 0.65 * i / (len(depths) - 1)) for i, d in enumerate(depths)}

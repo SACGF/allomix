@@ -4,7 +4,8 @@ The detector is calibrated by construction when the simulator's symmetric
 error rate ``e`` is mirrored by ``e_i = e/3`` on the detector side; these
 tests exploit that by building ``InformativeMarker`` lists directly with
 binomially-sampled donor-absent counts. The realistic-bias / overdispersion
-path is exercised by the prototype in ``paper/scripts/run_presence_lod.py``.
+path is exercised by the simulated presence-LoD sweep in
+``paper/scripts/run_presence_lod_validation.py``.
 """
 
 import math
@@ -222,8 +223,9 @@ class TestFalsePositiveRate:
     def test_calibrated_across_replicates(self):
         """FP rate at alpha=0.05 should be in the Wald 95% band for n=200.
 
-        Mirrors the prototype's gate-1 check (LRT FP rate ~ 0.05 across cells)
-        but at a single cell with enough replicates to keep the test fast and
+        Mirrors acceptance gate 1 from
+        ``claude/20_host_presence_detection_plan.md`` (LRT FP rate ~ 0.05 across
+        cells) but at a single cell with enough replicates to keep the test fast and
         the band wide enough to absorb sampling noise.
         """
         rng = random.Random(1234)

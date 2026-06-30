@@ -4,7 +4,7 @@
 Reads output/facts/cnv_loh_summary.csv and draws a 2-row grid (one row per
 detection direction) x 3 columns (aberration kind). The y axis is the LoD of the
 minor component as a %, log-scaled with percent ticks, the same style as the
-depth x markers LoD curves (plot_lod_curves.py). Standard (solid) vs robust
+depth x markers LoD curves (plot_lod_grid.py). Standard (solid) vs robust
 refit (dashed), one colour per relatedness, baseline (no aberration) at burden 0.
 
 The two rows are the two low-fraction detection tasks:

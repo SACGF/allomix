@@ -20,7 +20,7 @@ values including 0:
           est_frac > LoB, from a logistic fit of P(detected) vs log10(f).
 
 The LoD is plotted on a log donor-% axis (0.3, 0.5, 1, 2, 5, 10, 20 %), matching
-the depth x markers LoD curves (plot_lod_curves.py). Both standard and robust
+the depth x markers LoD curves (plot_lod_grid.py). Both standard and robust
 (``--robust auto``) are computed per cell, so the figure shows the LoD inflation
 from host CNV/LoH and the robust recovery. Genotypes and biases are fixed per
 (relatedness, replicate).
@@ -95,7 +95,7 @@ CLONAL_FRACTIONS = [1.0]
 TRUE_FRACTIONS = [0.0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
 MAX_PROBED = 0.2
 
-# Depth and panel-size grids, swept like run_lod_validation.py / plot_lod_curves.py.
+# Depth and panel-size grids, swept like run_lod_validation.py / plot_lod_grid.py.
 # Defaults are a single operating point (100 markers, 1000x) so the Snakefile / CI
 # build stays cheap and reproducible. To produce the full depth x markers curve
 # (the heavy run; do it on a dedicated machine), pass e.g.

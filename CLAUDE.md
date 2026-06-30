@@ -43,8 +43,6 @@ Our specific deployment uses the 76 Sample ID SNPs from the IDT rhAmpSeq panel i
 
 - allomix is MIT licensed.
 - The MLE chimerism estimation methodology is based on Crysup & Woerner (2022) — cite this paper.
-- Code is independently reimplemented. Do NOT copy code from AGPL (Demixtify), non-commercial (Conpair, chimerism_smmip), or unlicensed repos. The math is published science and freely reimplementable.
-- MIT-licensed repos (All-FIT, FABCASE, somalier) can be referenced/adapted.
 
 ## Validation Strategy
 
@@ -53,7 +51,6 @@ In silico validation comes first: synthetic chimeric VCFs with realistic noise m
 ## Background Materials
 
 - `claude/` — Planning documents, decision records, and reference tool analysis
-- Commercial product evaluations (CareDx AlloSeq HCT, Thermo Fisher Devyser) were reviewed during planning; specs are captured in `claude/step4_reference_tool_analysis.md` and the README comparison table
 
 ## Development
 
@@ -126,7 +123,7 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 ### Building the Paper
 
-**Do NOT run the full paper build (`snakemake -s paper/Snakefile ...` for the `all` or `paper` target) without the user's express permission.** A full build runs the heavy validation simulations (LoD sweeps, presence sweep, subsample LoD, real-data runs, calibration batches) and takes 6+ hours. When you only need to validate new code, build the single rule or run the single script that produces the facts/figure you changed, and confirm those outputs in isolation. Leave the full render to the user, who runs it on a machine with more cores.
+**Do NOT run the full paper build (`snakemake -s paper/Snakefile ...` for the `all` or `paper` target) without the user's express direction.** A full build runs the heavy validation simulations (LoD sweeps, presence sweep, subsample LoD, real-data runs, calibration batches) and takes 6+ hours. When you only need to validate new code, build the single rule or run the single script that produces the facts/figure you changed, and confirm those outputs in isolation. Leave the full render to the user, who runs it on a machine with more cores.
 
 The paper build uses Snakemake (`Snakefile` in repo root). All 7 validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
@@ -151,6 +148,3 @@ snakemake -s paper/Snakefile --cores $(nproc) --config fast_grid=1            # 
 snakemake -s paper/Snakefile --cores $(nproc) --config quick=1 fast_grid=1    # quick + fast (fastest, not for publication)
 ```
 
-### Versioning
-
-Version is defined in both `pyproject.toml` and `src/allomix/__init__.py`. Keep them in sync.

@@ -231,6 +231,8 @@ Validation follows a two-phase approach:
 
 This project is under active development. The repository is currently private; an empty package has been published to [PyPI](https://pypi.org/project/allomix/) to reserve the name.
 
+See the [Changelog](CHANGELOG.md) for release history.
+
 Single-donor and multi-donor (up to 2 donors) chimerism estimation is implemented and validated (in silico):
 
 - MLE-based estimation using Crysup & Woerner (2023) likelihood framework with known genotypes

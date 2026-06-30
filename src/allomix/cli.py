@@ -82,7 +82,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--panel-vcf",
         required=True,
         help="Panel VCF with host/donor genotypes (typically GATK joint-called; "
-        "see doc/joint_calling.md)",
+        "see docs/joint_calling.md)",
     )
     parser.add_argument(
         "--admix-vcf",

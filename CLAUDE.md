@@ -32,7 +32,7 @@ Our specific deployment uses the 76 Sample ID SNPs from the IDT rhAmpSeq panel i
 ## Input Requirements
 
 - **VCF-first**: allomix takes VCFs as input (not BAMs). Minimum required FORMAT fields: GT, AD, DP.
-- **Two-phase upstream**: Host/donor `GT` should come from GATK joint calling of those reference samples. Admix sample `AD` should come from forced `bcftools mpileup` at the panel sites, not from GATK — `HaplotypeCaller -ERC GVCF` strips minority ALT reads at hom-ref blocks, which is exactly the low-fraction signal we need. See `doc/joint_calling.md` for the full rationale (including the empirical check and why a somatic caller is also not the right answer).
+- **Two-phase upstream**: Host/donor `GT` should come from GATK joint calling of those reference samples. Admix sample `AD` should come from forced `bcftools mpileup` at the panel sites, not from GATK — `HaplotypeCaller -ERC GVCF` strips minority ALT reads at hom-ref blocks, which is exactly the low-fraction signal we need. See `docs/joint_calling.md` for the full rationale (including the empirical check and why a somatic caller is also not the right answer).
 
 ## Data Access
 

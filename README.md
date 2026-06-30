@@ -42,7 +42,7 @@ allomix monitor \
     --html report.html
 ```
 
-See the [CLI usage guide](doc/cli.md) for multi-donor runs, timelines, bias correction, output options, and input/output reference.
+See the [CLI usage guide](docs/cli.md) for multi-donor runs, timelines, bias correction, output options, and input/output reference.
 
 ## Workflow
 
@@ -65,18 +65,18 @@ See the [CLI usage guide](doc/cli.md) for multi-donor runs, timelines, bias corr
    allomix report        Render HTML from a saved monitor/timeline JSON
 ```
 
-Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even when one sample is hom-ref; pileup of the admix samples preserves raw per-allele counts needed for host fractions below ~5%. See the [Joint Calling Guide](doc/joint_calling.md) for the full rationale.
+Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even when one sample is hom-ref; pileup of the admix samples preserves raw per-allele counts needed for host fractions below ~5%. See the [Joint Calling Guide](docs/joint_calling.md) for the full rationale.
 
 ## Documentation
 
-- [CLI usage](doc/cli.md) — all subcommands, options, and input/output reference
-- [Reports and structured output](doc/reports.md) — the JSON envelope, HTML report, and worked examples
-- [Joint Calling Guide](doc/joint_calling.md) — two-phase upstream pipeline and rationale
-- [Bias Estimation Guide](doc/estimate_bias.md) — per-marker bias tables (and building a training cohort from BAMs)
-- [Custom report templates](doc/custom_report_template.md) — branding the HTML report for your lab
-- [Architecture](doc/architecture.md) — module-by-module code map and data flow
-- [Scripts](doc/scripts.md) — developer and validation utilities
-- [Building the paper](doc/paper.md) — Snakemake validation and figure build
+- [CLI usage](docs/cli.md) — all subcommands, options, and input/output reference
+- [Reports and structured output](docs/reports.md) — the JSON envelope, HTML report, and worked examples
+- [Joint Calling Guide](docs/joint_calling.md) — two-phase upstream pipeline and rationale
+- [Bias Estimation Guide](docs/estimate_bias.md) — per-marker bias tables (and building a training cohort from BAMs)
+- [Custom report templates](docs/custom_report_template.md) — branding the HTML report for your lab
+- [Architecture](docs/architecture.md) — module-by-module code map and data flow
+- [Scripts](docs/scripts.md) — developer and validation utilities
+- [Building the paper](docs/paper.md) — Snakemake validation and figure build
 
 ## Comparison with commercial products
 
@@ -113,7 +113,7 @@ tests/                # pytest tests
 data/                 # De-identified example VCFs
 ```
 
-`src/allomix/` is everything a user gets from `pip install allomix`: the core library (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point. `scripts/` and `paper/scripts/` are developer-facing and not part of the installed package. See the [Architecture Guide](doc/architecture.md), [Scripts Guide](doc/scripts.md), and [paper build guide](doc/paper.md).
+`src/allomix/` is everything a user gets from `pip install allomix`: the core library (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point. `scripts/` and `paper/scripts/` are developer-facing and not part of the installed package. See the [Architecture Guide](docs/architecture.md), [Scripts Guide](docs/scripts.md), and [paper build guide](docs/paper.md).
 
 ## License
 

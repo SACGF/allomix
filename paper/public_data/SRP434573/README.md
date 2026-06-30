@@ -275,7 +275,7 @@ because, with no per-site error table, the detector falls back to the flat
 (root cause in issue #22). The committed genotype VCFs cannot supply a clean
 ref->alt background: GATK joint calling emitted variant sites only, so there are
 no all-hom-ref sites, and GATK strips the minority ALT reads at hom-ref blocks
-anyway (`doc/joint_calling.md`).
+anyway (`docs/joint_calling.md`).
 
 The fix is the pipeline's phase 1b: a raw `bcftools mpileup` of the HOST/DONOR
 BAMs at the panel sites plus the amplicon midpoints (`SRP434573.midpoints.bed`),
@@ -306,4 +306,4 @@ On real lab BAMs (with PU tags or Illumina read names) the flowcell resolves and
 the flag is meaningful. Inspect it with `bcftools view -h <patient>.admix.vcf.gz
 | grep allomixRunUnit`.
 
-See `doc/joint_calling.md` for the two-phase rationale.
+See `docs/joint_calling.md` for the two-phase rationale.

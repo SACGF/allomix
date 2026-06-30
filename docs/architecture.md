@@ -4,7 +4,7 @@ A reading guide for the `src/allomix/` package. The goal is to let a reviewer
 walk the code in dependency order and know what each module owns before opening
 it. For the project history and the rationale behind each design decision, see
 `claude/allomix_overall_plan.md`; for the upstream pipeline rationale, see
-`doc/joint_calling.md`.
+`docs/joint_calling.md`.
 
 ## What the tool does
 
@@ -87,4 +87,4 @@ data-generation tools (not part of the installed package). The host-presence
 plots (`plot_host_presence_per_marker.py`, `host_presence_manhattan.py`) consume
 `analysis.analyse_sample` and the public `detect.donor_hom_markers`, so the
 markers and pooled lines they draw match the `monitor` batch exactly, including
-the sex-chromosome and artifact-filter handling. See `doc/scripts.md`.
+the sex-chromosome and artifact-filter handling. See `docs/scripts.md`.

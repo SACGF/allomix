@@ -11,7 +11,7 @@ snapshot in ``paper/public_data/SRP434573/genotypes``, or a freshly joint-called
 The minor (titrated) contributor is mapped to HOST, so the reported quantity is the host
 fraction and the dilution series (10% down to 0.5%) reads as a declining-chimerism /
 relapse-monitoring series. See ``paper/public_data/SRP434573/README.md`` and
-``doc/joint_calling.md``.
+``docs/joint_calling.md``.
 """
 
 import csv

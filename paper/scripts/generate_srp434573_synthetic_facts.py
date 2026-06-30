@@ -262,7 +262,7 @@ def make_figure(syn: list[dict], two: list[dict], syn3: list[dict],
     if not syn and not syn3:
         fig, ax = plt.subplots(figsize=(6.6, 5.6))
         ax.text(0.5, 0.5, "No semi-synthetic mixtures generated yet.\n"
-                "Run scripts/make_semisynthetic_srp434573.py (TAU-side),\n"
+                "Run paper/scripts/make_semisynthetic_srp434573.py (TAU-side),\n"
                 "then rebuild.", ha="center", va="center", fontsize=11,
                 transform=ax.transAxes, color="0.4")
         ax.set_axis_off()

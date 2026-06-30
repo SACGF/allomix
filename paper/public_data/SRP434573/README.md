@@ -151,7 +151,7 @@ the committed snapshot:
 
 ```bash
 # 1. Subsample+merge the pure reference BAMs and write the synthetic sample CSVs.
-python scripts/make_semisynthetic_srp434573.py \
+python paper/scripts/make_semisynthetic_srp434573.py \
     --bam-dir /tau/data/chimerism/SRP434573/synthetic_bam
 # (run with --dry-run first to inspect the mix_bams commands without touching BAMs)
 

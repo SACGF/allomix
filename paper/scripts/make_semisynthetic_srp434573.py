@@ -37,12 +37,12 @@ that snapshot (see ``paper/scripts/run_srp434573_allomix.py``).
 
 Usage (TAU-side, where the BAMs are):
 
-    python scripts/make_semisynthetic_srp434573.py \
+    python paper/scripts/make_semisynthetic_srp434573.py \
         --bam-dir /tau/data/chimerism/SRP434573/synthetic_bam
 
 Inspect without touching any BAM:
 
-    python scripts/make_semisynthetic_srp434573.py --dry-run
+    python paper/scripts/make_semisynthetic_srp434573.py --dry-run
 """
 
 import argparse
@@ -51,7 +51,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CSV_DIR = REPO / "paper/public_data/SRP434573/sample_csvs"
 DEFAULT_OUT_CSV_DIR = REPO / "output/semisynthetic_csv"
 DEFAULT_BAM_DIR = REPO / "output/semisynthetic_bam"

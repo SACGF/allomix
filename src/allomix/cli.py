@@ -25,6 +25,14 @@ from allomix.constants import (
     DEFAULT_MIN_GQ,
     ROBUST_K_DEFAULT,
 )
+from allomix.contamination_table import (
+    DEFAULT_DOSE_CAP,
+    DEFAULT_GATE_ALPHA,
+    DEFAULT_GATE_MIN_SLOPE,
+    estimate_contamination_table,
+    load_contamination_table,
+    save_contamination_table,
+)
 from allomix.error_rates import (
     estimate_error_rates,
     load_error_table,
@@ -33,14 +41,6 @@ from allomix.error_rates import (
 from allomix.genotype import parse_vcf
 from allomix.html.render import render_single
 from allomix.likelihood import PanelCalibration
-from allomix.marker_contamination import (
-    DEFAULT_DOSE_CAP,
-    DEFAULT_GATE_ALPHA,
-    DEFAULT_GATE_MIN_SLOPE,
-    estimate_contamination_table,
-    load_contamination_table,
-    save_contamination_table,
-)
 from allomix.relatedness import Relatedness
 from allomix.report import (
     DonorMeta,
@@ -260,7 +260,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--host-presence",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Run the host-presence detection test (see `allomix.detect`). On by "
+        help="Run the host-presence detection test (see `allomix.host_presence`). On by "
         "default and cheap to run; use --no-host-presence to skip it",
     )
     parser.add_argument(
@@ -269,7 +269,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=True,
         help="Apply the read-level artifact filter in the host-presence test "
         "(strand/soft-clip/read-position bias), dropping alignment-artifact "
-        "markers (see `allomix.detect`). On by default; use --no-artifact-filter "
+        "markers (see `allomix.host_presence`). On by default; use --no-artifact-filter "
         "to disable it",
     )
 

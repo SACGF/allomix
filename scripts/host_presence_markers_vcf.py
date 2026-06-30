@@ -37,8 +37,8 @@ from pathlib import Path
 
 from scipy.stats import binom
 
-from allomix.detect import host_presence_test, select_donor_hom_markers
 from allomix.genotype import classify_markers, parse_vcf
+from allomix.host_presence import host_presence_test, select_donor_hom_markers
 
 ALPHA = 0.05
 

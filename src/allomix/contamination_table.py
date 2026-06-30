@@ -3,7 +3,7 @@
 On co-pooled panels (index hopping on a patterned flowcell) a donor-homozygous
 marker carries extra reads on the host (donor-absent) allele from co-pooled
 genomes that happen to carry that allele. The per-sample contamination scalar
-(``allomix.contamination``) does not localize this: it taxes every donor-absent
+(``allomix.sample_contamination``) does not localize this: it taxes every donor-absent
 marker by the average, while the inflation actually lands only on the markers a
 co-pooled genome carries, scaling with how many co-pooled individuals carry the
 host allele there. Left uncorrected this puts a positive floor under the MLE at

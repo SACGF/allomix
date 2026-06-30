@@ -15,13 +15,13 @@ from pathlib import Path
 import pytest
 
 from allomix.cli import main
-from allomix.contamination import ContaminationResult
-from allomix.detect import HostPresenceResult
+from allomix.host_presence import HostPresenceResult
 from allomix.qc import QCReport
 from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
 from allomix.report import DonorMeta, ReportMeta, to_html
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 from allomix.runmeta import RunUnitInfo
+from allomix.sample_contamination import ContaminationResult
 
 TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 JOINT_VCF = TEST_DATA_DIR / "joint_single_donor.vcf"

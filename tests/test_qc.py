@@ -6,7 +6,6 @@ import random
 import pytest
 
 from allomix.chimerism import estimate_single_donor_bb
-from allomix.contamination import ContaminationResult
 from allomix.genotype import InformativeMarker, MarkerCounts, MarkerGenotypes
 from allomix.qc import (
     ChimerismResult,
@@ -21,6 +20,7 @@ from allomix.relatedness import (
     RelatednessResult,
 )
 from allomix.runmeta import RunUnitInfo
+from allomix.sample_contamination import ContaminationResult
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -14,7 +14,7 @@ ground truth:
     noise model, then apply the production flooring rule
     (``analysis._floor_detection_limits``) with a 0.2% scalar and confirm the
     reported LoD lands at or above the floor. The floor logic is what is under
-    test, not the in-data estimator (that is covered in ``test_contamination``).
+    test, not the in-data estimator (that is covered in ``test_sample_contamination``).
 
   Part B (raised presence background, the Observation 6 gate): run on clean,
     uncontaminated high-depth blends through the real pipeline. The in-data
@@ -41,10 +41,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from allomix.analysis import _floor_detection_limits  # noqa: E402
 from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
-from allomix.contamination import estimate_contamination  # noqa: E402
-from allomix.detect import host_presence_test  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
+from allomix.host_presence import host_presence_test  # noqa: E402
 from allomix.likelihood import PanelCalibration  # noqa: E402
+from allomix.sample_contamination import estimate_contamination  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
     generate_marker_biases_realistic,

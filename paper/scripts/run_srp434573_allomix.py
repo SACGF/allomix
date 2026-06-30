@@ -41,11 +41,11 @@ from srp434573_common import (
     resolve_srp434573_synthetic_dir,
 )
 
-from allomix.genotype import parse_vcf
-from allomix.marker_contamination import (
+from allomix.contamination_table import (
     estimate_contamination_table,
     save_contamination_table,
 )
+from allomix.genotype import parse_vcf
 
 GEN = resolve_srp434573_genotypes_dir()
 OUT = Path("output")

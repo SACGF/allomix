@@ -29,7 +29,7 @@ runs a separate detection test for whether the host is present at all.
                     |                                              |
         +-----------+-----------+                                  |
         |                       |                                  |
-  chimerism.estimate_*    detect.host_presence_test          detect.donor_hom_markers
+  chimerism.estimate_*    host_presence.host_presence_test          host_presence.donor_hom_markers
   (donor fraction MLE)    (is host present at all?)          (per-marker detail,
         |                       |                             artifact-flagged)
         +-----------+-----------+                                  |
@@ -51,7 +51,7 @@ classify -> estimate -> presence -> select path is defined in exactly one place.
 | `chimerism.py` | The donor-fraction MLE: beta-binomial likelihood, grid + Brent (single donor) / Nelder-Mead (multi), profile-likelihood CIs. | `estimate_single_donor_bb`, `estimate_multi_donor`, `ChimerismResult`, `MultiDonorResult`, `detection_limit` |
 | `bias.py` | Per-marker amplification-bias table (median het-VAF deviation), used to shift the expected REF weight in the MLE. | `estimate_biases`, `save_bias_table`, `load_bias_table` |
 | `error_rates.py` | Per-site, per-direction empirical error table (panel of normals). Same key shape as `bias`. | `estimate_error_rates`, `save_error_table`, `load_error_table` |
-| `detect.py` | Host-presence detection at donor-homozygous markers, plus the read-level artifact filter. Independent of the fraction MLE. | `host_presence_test`, `donor_hom_markers`, `DonorHomMarker`, `HostPresenceResult`, `ArtifactThresholds` |
+| `host_presence.py` | Host-presence detection at donor-homozygous markers, plus the read-level artifact filter. Independent of the fraction MLE. | `host_presence_test`, `donor_hom_markers`, `DonorHomMarker`, `HostPresenceResult`, `ArtifactThresholds` |
 | `qc.py` | Quality verdict: marker counts, beta-binomial goodness-of-fit, PASS/REVIEW/FAIL with reasons. | `assess_quality`, `QCReport` |
 | `analysis.py` | The shared single-sample pipeline that ties classify -> estimate -> presence -> QC together. | `analyse_sample`, `SampleAnalysis` |
 | `report.py` | Output formatting (TSV, JSON, timeline JSON) for single- and multi-donor results. | `to_tsv`, `to_json`, `timeline_json` |
@@ -66,7 +66,7 @@ allomix answers two different questions, kept deliberately separate:
    `estimate_multi_donor` fit the donor fraction by maximum likelihood over all
    informative markers (beta-binomial, with optional bias and per-site error
    tables). This is the headline `donor_pct`.
-2. **Is the host present at all?** `detect.host_presence_test` is a one-sided
+2. **Is the host present at all?** `host_presence.host_presence_test` is a one-sided
    detection test at the markers where every donor is homozygous and the host
    carries the donor-absent allele. That allele sits at the sequencing-error
    background in a pure-donor sample, so its pooled read counts give a p-value
@@ -77,7 +77,7 @@ allomix answers two different questions, kept deliberately separate:
 
 Every marker is keyed by `(chrom, pos, ref, alt)`. This shape is defined once as
 `genotype.MarkerKey` (built by `genotype.marker_key`) and imported by `bias`,
-`error_rates`, and `detect`, so the bias table, the error table, and the
+`error_rates`, and `host_presence`, so the bias table, the error table, and the
 detector all join on the same key.
 
 ## Diagnostics in `scripts/`
@@ -85,6 +85,6 @@ detector all join on the same key.
 The `scripts/` directory holds standalone, regenerable diagnostic and
 data-generation tools (not part of the installed package). The host-presence
 plots (`plot_host_presence_per_marker.py`, `host_presence_manhattan.py`) consume
-`analysis.analyse_sample` and the public `detect.donor_hom_markers`, so the
+`analysis.analyse_sample` and the public `host_presence.donor_hom_markers`, so the
 markers and pooled lines they draw match the `detect` batch exactly, including
 the sex-chromosome and artifact-filter handling. See `docs/scripts.md`.

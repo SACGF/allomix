@@ -1,9 +1,8 @@
-"""Tests for allomix.contamination_table — Step 30 per-marker contamination."""
+"""Tests for allomix.calibration.contamination_table — Step 30 per-marker contamination."""
 
 import math
 
-from allomix.chimerism import estimate_single_donor_bb
-from allomix.contamination_table import (
+from allomix.calibration.contamination_table import (
     ContaminationCorrection,
     apply_contamination_correction,
     estimate_carrier_counts,
@@ -11,8 +10,9 @@ from allomix.contamination_table import (
     load_contamination_table,
     save_contamination_table,
 )
+from allomix.estimate.chimerism import estimate_single_donor_bb
+from allomix.estimate.likelihood import PanelCalibration
 from allomix.genotype import InformativeMarker, MarkerData
-from allomix.likelihood import PanelCalibration
 
 
 def _im(

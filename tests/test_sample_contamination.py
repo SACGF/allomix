@@ -1,7 +1,7 @@
-"""Tests for allomix.sample_contamination — in-data third-party contamination estimate."""
+"""Tests for allomix.qc.sample_contamination — in-data third-party contamination estimate."""
 
 from allomix.genotype import MarkerData
-from allomix.sample_contamination import (
+from allomix.qc.sample_contamination import (
     DEFAULT_MAX_SITE_FRAC,
     ContaminationResult,
     estimate_contamination,

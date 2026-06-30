@@ -2,7 +2,7 @@
 
 The estimator lives in ``paper/scripts/fast_grid_estimator.py`` (outside the
 ``allomix`` package, since it is a paper-build speed optimisation, not part of the
-clinical tool). These tests pin it to the exact estimator in ``allomix.chimerism``
+clinical tool). These tests pin it to the exact estimator in ``allomix.estimate.chimerism``
 so the LoD sweep stays trustworthy.
 """
 
@@ -13,9 +13,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from allomix.chimerism import estimate_single_donor_bb
-from allomix.error_rates import MarkerErrorRates
-from allomix.likelihood import (
+from allomix.calibration.error_rates import MarkerErrorRates
+from allomix.estimate.chimerism import estimate_single_donor_bb
+from allomix.estimate.likelihood import (
     PanelCalibration,
     _p_alt_for_f,
     _precompute_marker_arrays,

@@ -17,11 +17,11 @@ reads; the run flag says whether index hopping is a plausible mechanism.
 
 Relationship to the existing checks:
 
-  - ``allomix.relatedness.admix_consistency`` is a gross-swap detector on the same
+  - ``allomix.qc.relatedness.admix_consistency`` is a gross-swap detector on the same
     marker set: it counts sites where the minor allele is *individually*
     significant (a whole third genome near 50%). It does not fire on a ~0.2% floor
     spread across every site, which this estimator targets.
-  - ``allomix.host_presence.host_presence_test`` works on donor-homozygous markers where
+  - ``allomix.qc.host_presence.host_presence_test`` works on donor-homozygous markers where
     the *host* carries the minor allele, so it measures host, not third parties.
 
 The headline estimate is the background-subtracted *median* per-site minor
@@ -38,10 +38,10 @@ from dataclasses import dataclass
 
 from scipy.stats import poisson
 
+from allomix.calibration.error_rates import MarkerErrorRates
 from allomix.constants import DEFAULT_ERROR_RATE, N_OTHER_BASES
-from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import MarkerData, MarkerKey, is_sex_chrom, marker_key
-from allomix.host_presence import ErrorRateSource
+from allomix.qc.host_presence import ErrorRateSource
 
 # Consensus-hom markers whose admix minor-allele fraction exceeds this are not
 # low-level contamination: genotype miscalls, mapping artifacts, or (en masse) a
@@ -88,7 +88,7 @@ class ContaminationResult:
         n_excluded_high: Consensus-hom markers dropped above ``max_site_frac``.
         used_per_site_error: True when at least one marker used a per-site rate.
         error_rate_source: "per-site", "global-fallback", "mixed", or "none", as
-            in ``allomix.host_presence``. The rates used for the test background, not the
+            in ``allomix.qc.host_presence``. The rates used for the test background, not the
             subtracted floor (see ``floor_empirical``).
     """
 
@@ -199,7 +199,7 @@ def estimate_contamination(
         donors: One parsed marker list per donor.
         admix: Parsed admixture markers (raw allele depths).
         marker_errors: Optional per-site, per-direction error table (see
-            ``allomix.error_rates.load_error_table``). Each marker uses its
+            ``allomix.calibration.error_rates.load_error_table``). Each marker uses its
             per-direction rate; markers missing from the table fall back to
             ``error_rate / N_OTHER_BASES``.
         error_rate: Global symmetric sequencing error rate; the per-direction

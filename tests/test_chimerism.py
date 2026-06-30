@@ -1,4 +1,4 @@
-"""Tests for allomix.chimerism — MLE chimerism estimation."""
+"""Tests for allomix.estimate.chimerism — MLE chimerism estimation."""
 
 import math
 import random
@@ -6,8 +6,8 @@ import random
 import numpy as np
 import pytest
 
-from allomix import chimerism
-from allomix.chimerism import (
+from allomix.estimate import chimerism
+from allomix.estimate.chimerism import (
     MIN_CLASS_MARKERS,
     _donor_het_mask,
     _two_rho_profile_ll,
@@ -16,15 +16,15 @@ from allomix.chimerism import (
     estimate_single_donor_bb,
     fraction_se,
 )
-from allomix.genotype import InformativeMarker, MarkerGenotypes
-from allomix.likelihood import (
+from allomix.estimate.likelihood import (
     PanelCalibration,
     _precompute_marker_arrays,
     _total_ll_vec,
     expected_weight,
     log_likelihood_marker_bb,
 )
-from allomix.qc import assess_quality
+from allomix.genotype import InformativeMarker, MarkerGenotypes
+from allomix.qc.qc import assess_quality
 from allomix.results import ChimerismResult, MarkerResult
 from allomix.simulate import (
     expected_vaf,

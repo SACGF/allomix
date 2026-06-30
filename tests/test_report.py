@@ -1,4 +1,4 @@
-"""Tests for allomix.report — TSV and JSON output formatting."""
+"""Tests for allomix.report.report — TSV and JSON output formatting."""
 
 import inspect
 import io
@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from allomix.qc import ChimerismResult, MarkerResult, QCReport
-from allomix.report import timeline_json, to_json, to_tsv
+from allomix.qc.qc import ChimerismResult, MarkerResult, QCReport
+from allomix.report.report import timeline_json, to_json, to_tsv
 
 # ---------------------------------------------------------------------------
 # Helpers

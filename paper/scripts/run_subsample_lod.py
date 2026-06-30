@@ -69,9 +69,9 @@ from cyvcf2 import VCF
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.estimate.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import DEFAULT_MIN_DP, classify_markers, parse_vcf  # noqa: E402
-from allomix.host_presence import host_presence_test  # noqa: E402
+from allomix.qc.host_presence import host_presence_test  # noqa: E402
 from allomix.simulate import thin_informative_markers  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

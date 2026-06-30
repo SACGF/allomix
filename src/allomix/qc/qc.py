@@ -12,17 +12,17 @@ from scipy.stats import chi2
 
 from allomix.constants import N_OTHER_BASES
 from allomix.genotype import MarkerGenotypes
-from allomix.host_presence import HostPresenceResult
-from allomix.relatedness import (
+from allomix.qc.host_presence import HostPresenceResult
+from allomix.qc.relatedness import (
     MIN_CONSENSUS,
     AdmixConsistencyResult,
     Relatedness,
     RelatednessResult,
     evaluate_expected,
 )
+from allomix.qc.runmeta import RunUnitInfo
+from allomix.qc.sample_contamination import ContaminationResult
 from allomix.results import ChimerismResult, MarkerResult
-from allomix.runmeta import RunUnitInfo
-from allomix.sample_contamination import ContaminationResult
 
 # Warn when the host-presence detector fires but the global MLE does not echo it.
 HOST_PRESENCE_REVIEW_P = 0.01
@@ -37,7 +37,7 @@ ROBUST_REVIEW_FRACTION = 0.15
 SWAP_REVIEW_P = 1e-3
 
 # In-data contamination: third-party signal at consensus-hom markers (see
-# ``allomix.sample_contamination``), the low-level floor the gross swap test misses.
+# ``allomix.qc.sample_contamination``), the low-level floor the gross swap test misses.
 # Distinct from the index-hopping provenance flag. At panel depth the pooled test
 # is significant for any real excess, so the magnitude thresholds below gate.
 CONTAMINATION_P = 0.01

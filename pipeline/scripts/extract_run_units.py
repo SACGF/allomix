@@ -5,7 +5,7 @@ is VCF-first and never opens a BAM, so the run/flowcell identity an index-hoppin
 flag needs is pulled here, in the joint-calling pipeline, and written as a VCF
 header fragment of ``##allomixRunUnit`` lines. The merge step stamps those onto
 the admixture VCF, so the metadata travels inside the VCF (no losable sidecar)
-and allomix reads it straight back from the header (``allomix.runmeta``).
+and allomix reads it straight back from the header (``allomix.qc.runmeta``).
 
 Index hopping (barcode swapping on patterned-flowcell Illumina machines) leaks
 reads between samples clustered in the same lane of the same flowcell. So the
@@ -61,7 +61,7 @@ from pathlib import Path
 # flowcell in field 3 and the lane in field 4 (instrument:run:flowcell:lane:...).
 _ILLUMINA_MIN_FIELDS = 7
 _UNKNOWN = "unknown"
-# Header key parsed by allomix.runmeta.read_run_units — keep in sync.
+# Header key parsed by allomix.qc.runmeta.read_run_units — keep in sync.
 _HEADER_KEY = "allomixRunUnit"
 
 

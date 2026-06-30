@@ -31,15 +31,15 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
-from allomix.bias import load_bias_table
-from allomix.chimerism import (
+from allomix.calibration.bias import load_bias_table
+from allomix.estimate.chimerism import (
     PanelCalibration,
     detection_limit,
     estimate_single_donor_bb,
     fraction_se,
 )
 from allomix.genotype import classify_markers, parse_vcf
-from allomix.qc import _error_adjusted_p_alt, assess_quality
+from allomix.qc.qc import _error_adjusted_p_alt, assess_quality
 
 
 def _standardized_residual(

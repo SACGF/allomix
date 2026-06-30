@@ -1,7 +1,7 @@
 """Longitudinal (timeline) HTML report.
 
 This module owns the timeline report and its trend chart. It imports
-``allomix.html.charts`` (matplotlib) at the top level, so it deliberately sits
+``allomix.report.html.charts`` (matplotlib) at the top level, so it deliberately sits
 outside the import graph of the always-loaded ``report`` / ``cli`` modules: the
 single-sample report and the tsv/json paths must keep working on the base
 runtime deps alone. The CLI imports this module only after confirming matplotlib
@@ -9,7 +9,7 @@ is installed (the ``report`` optional extra), the same way the standalone
 plotting scripts keep matplotlib out of the core package.
 
 Like the single-sample renderer, this consumes the structured timeline envelope
-(``allomix.report.timeline_report_data``), not the in-memory result/QC objects,
+(``allomix.report.report.timeline_report_data``), not the in-memory result/QC objects,
 so a timeline report can be regenerated later from a saved JSON file.
 
 The public entry point is ``timeline_html``, mirroring ``report.to_html`` for the
@@ -19,11 +19,11 @@ single-sample case.
 from pathlib import Path
 from typing import TextIO
 
-from allomix.html import charts, context
-from allomix.html.engine import load_asset, make_environment
-from allomix.html.meta import ReportMeta
-from allomix.qc import QCReport
-from allomix.report import timeline_report_data
+from allomix.qc.qc import QCReport
+from allomix.report.html import charts, context
+from allomix.report.html.engine import load_asset, make_environment
+from allomix.report.html.meta import ReportMeta
+from allomix.report.report import timeline_report_data
 from allomix.results import ChimerismResult, MultiDonorResult
 
 _TITLE_BASE = "allomix chimerism timeline"
@@ -171,7 +171,7 @@ def render_timeline(
 
     Args:
         data: A timeline report envelope (``kind == "timeline"``) from
-            ``allomix.report.timeline_report_data``.
+            ``allomix.report.report.timeline_report_data``.
         log_scale: Use a logarithmic y axis on the trend chart.
         template_dir: Optional directory of template overrides (the ``--template``
             flag), searched ahead of the built-in templates.

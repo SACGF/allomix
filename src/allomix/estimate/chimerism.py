@@ -7,7 +7,7 @@ contributor genotypes.
 
 This is the optimisation layer (grid search, Nelder-Mead refinement,
 profile-likelihood CIs, Fisher-information detection limits, optional robust
-refit). The likelihood and expected-weight model live in ``allomix.likelihood``;
+refit). The likelihood and expected-weight model live in ``allomix.estimate.likelihood``;
 the result data types in ``allomix.results``.
 """
 
@@ -18,15 +18,14 @@ import numpy as np
 from scipy.optimize import brentq, minimize, minimize_scalar
 from scipy.stats import chi2, norm
 
+from allomix.calibration.contamination_table import apply_contamination_correction
 from allomix.constants import (
     CI_LEVEL,
     DEFAULT_ERROR_RATE,
     PLOIDY,
     ROBUST_K_DEFAULT,
 )
-from allomix.contamination_table import apply_contamination_correction
-from allomix.genotype import InformativeMarker
-from allomix.likelihood import (
+from allomix.estimate.likelihood import (
     PanelCalibration,
     _ll_from_p_alt,
     _MarkerArrays,
@@ -38,6 +37,7 @@ from allomix.likelihood import (
     expected_weight_multi,
     total_log_likelihood_multi_bb,
 )
+from allomix.genotype import InformativeMarker
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 
 # Robust-refit floors: "auto" never drops below ROBUST_MIN_MARKERS, "force" never

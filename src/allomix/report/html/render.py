@@ -1,20 +1,20 @@
 """Single-sample report rendering.
 
 Fills the ``report.html`` Jinja template from the structured report envelope
-produced by ``allomix.report.report_data`` (the same JSON written by
+produced by ``allomix.report.report.report_data`` (the same JSON written by
 ``detect --json``), not the in-memory result/QC objects. Rendering therefore
 adds no analysis: every value shown comes straight from the envelope, so the HTML
 and the JSON always agree and a report can be regenerated later from a saved JSON
 file.
 
 This module is matplotlib-free so it stays importable on the base runtime; only
-the timeline path (``allomix.html.timeline``) pulls in the charting extra.
+the timeline path (``allomix.report.html.timeline``) pulls in the charting extra.
 """
 
 from pathlib import Path
 
-from allomix.html import context
-from allomix.html.engine import load_asset, make_environment
+from allomix.report.html import context
+from allomix.report.html.engine import load_asset, make_environment
 
 
 def render_single(data: dict, *, template_dir: str | Path | None = None) -> str:
@@ -22,7 +22,7 @@ def render_single(data: dict, *, template_dir: str | Path | None = None) -> str:
 
     Args:
         data: A single-sample report envelope (``kind == "single"``) from
-            ``allomix.report.report_data``: the per-sample ``analysis`` dict plus
+            ``allomix.report.report.report_data``: the per-sample ``analysis`` dict plus
             the ``meta`` / ``params`` / ``allomix_version`` / ``generated``
             provenance.
         template_dir: Optional directory of template overrides (the ``--template``

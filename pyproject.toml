@@ -72,7 +72,11 @@ where = ["src"]
 # Ship the HTML report templates and inlined CSS/JS as package data so the
 # Jinja PackageLoader finds them in an installed (non-editable) build.
 [tool.setuptools.package-data]
-allomix = ["html/templates/*.html", "html/templates/*.css", "html/templates/*.js"]
+allomix = [
+    "report/html/templates/*.html",
+    "report/html/templates/*.css",
+    "report/html/templates/*.js",
+]
 
 [tool.ruff]
 line-length = 100

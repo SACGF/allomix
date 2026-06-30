@@ -1,6 +1,6 @@
 """Render context for the HTML report.
 
-Turns the structured report envelope (``allomix.report.report_data`` /
+Turns the structured report envelope (``allomix.report.report.report_data`` /
 ``timeline_report_data``) into a flat, render-ready context dict for the Jinja
 templates. This is where the small amount of presentational derivation lives
 (days post-transplant, the host CI reflected about 100%, the methods-footer
@@ -16,8 +16,7 @@ produced in one step or later from a saved JSON file.
 import datetime
 from pathlib import Path
 
-from allomix.html.meta import ReportMeta
-from allomix.qc import (
+from allomix.qc.qc import (
     CONTAMINATION_REVIEW_FRACTION,
     GOF_REVIEW_P,
     HOST_PRESENCE_REVIEW_P,
@@ -25,6 +24,7 @@ from allomix.qc import (
     ROBUST_REVIEW_FRACTION,
     SWAP_REVIEW_P,
 )
+from allomix.report.html.meta import ReportMeta
 
 # Method citation shown in the footer (CLAUDE.md: cite Crysup & Woerner 2022).
 CITATION = (

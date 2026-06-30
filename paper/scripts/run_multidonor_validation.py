@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import estimate_multi_donor
+from allomix.estimate.chimerism import estimate_multi_donor
 from allomix.genotype import classify_markers, parse_vcf
 
 DATA_DIR = Path("tests/test_data/multidonor")

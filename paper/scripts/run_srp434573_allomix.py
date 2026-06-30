@@ -41,7 +41,7 @@ from srp434573_common import (
     resolve_srp434573_synthetic_dir,
 )
 
-from allomix.contamination_table import (
+from allomix.calibration.contamination_table import (
     estimate_contamination_table,
     save_contamination_table,
 )

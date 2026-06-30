@@ -6,7 +6,7 @@ metadata is absent and must never block on missing demographics. No values here
 feed the analysis; they are presentational only.
 
 They live in their own module (not ``report.py``) so both ``report.py`` and the
-``allomix.html`` renderer can import them without an import cycle. ``report.py``
+``allomix.report.html`` renderer can import them without an import cycle. ``report.py``
 re-exports ``ReportMeta`` and ``DonorMeta`` as the public surface.
 """
 

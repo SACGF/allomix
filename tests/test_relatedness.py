@@ -1,4 +1,4 @@
-"""Tests for allomix.relatedness — relatedness estimation and swap detection."""
+"""Tests for allomix.qc.relatedness — relatedness estimation and swap detection."""
 
 import random
 
@@ -7,7 +7,7 @@ import pytest
 from allomix.analysis import analyse_sample
 from allomix.cli import main
 from allomix.genotype import MarkerData, parse_vcf
-from allomix.relatedness import (
+from allomix.qc.relatedness import (
     MIN_CONSENSUS,
     Relatedness,
     admix_consistency,

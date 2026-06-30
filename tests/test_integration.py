@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from allomix.chimerism import estimate_single_donor_bb
 from allomix.cli import main
+from allomix.estimate.chimerism import estimate_single_donor_bb
 from allomix.genotype import classify_markers, parse_vcf
-from allomix.qc import assess_quality
-from allomix.report import timeline_json, to_json, to_tsv
+from allomix.qc.qc import assess_quality
+from allomix.report.report import timeline_json, to_json, to_tsv
 from allomix.simulate import build_joint_vcf, write_joint_vcf
 
 TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"

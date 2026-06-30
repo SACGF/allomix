@@ -1,6 +1,6 @@
 """Output data types for chimerism estimation.
 
-Result objects produced by the ``allomix.chimerism`` estimators and read (not
+Result objects produced by the ``allomix.estimate.chimerism`` estimators and read (not
 produced) by ``report.py``, ``qc.py``, and ``analysis.py``, so they live in
 their own module. They aggregate result types from the QC modules
 (``host_presence``, ``sample_contamination``, ``relatedness``, ``runmeta``), none
@@ -9,10 +9,10 @@ of which import this module, so there is no import cycle.
 
 from dataclasses import dataclass
 
-from allomix.host_presence import HostPresenceResult
-from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
-from allomix.runmeta import RunUnitInfo
-from allomix.sample_contamination import ContaminationResult
+from allomix.qc.host_presence import HostPresenceResult
+from allomix.qc.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.qc.runmeta import RunUnitInfo
+from allomix.qc.sample_contamination import ContaminationResult
 
 
 @dataclass
@@ -58,7 +58,7 @@ class ChimerismResult:
     # Fisher information of this sample's own markers. inf = nothing detectable.
     lob_fraction: float = float("inf")  # limit of blank
     lod_fraction: float = float("inf")  # limit of detection
-    # Host-presence detector output (see ``allomix.host_presence``). None when the
+    # Host-presence detector output (see ``allomix.qc.host_presence``). None when the
     # caller disabled it or there were no donor-homozygous markers to run it on.
     host_presence: HostPresenceResult | None = None
     # Robust-refit accounting (see ``estimate_single_donor_bb`` robust mode):
@@ -66,16 +66,16 @@ class ChimerismResult:
     # Both 0 when robust mode is off or nothing was dropped.
     n_robust_excluded: int = 0
     robust_drop_fraction: float = 0.0
-    # Identity QC (see ``allomix.relatedness``), attached by ``analyse_sample``.
+    # Identity QC (see ``allomix.qc.relatedness``), attached by ``analyse_sample``.
     # relatedness holds one entry per reference-sample pair (host vs each donor);
     # admix_consistency is the consensus-homozygote swap check. None when not
     # computed.
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
-    # In-data contamination estimate (see ``allomix.sample_contamination``). None when
+    # In-data contamination estimate (see ``allomix.qc.sample_contamination``). None when
     # not computed.
     contamination: ContaminationResult | None = None
-    # Run-unit metadata read from the admix VCF header (see ``allomix.runmeta``).
+    # Run-unit metadata read from the admix VCF header (see ``allomix.qc.runmeta``).
     # None when the VCF carried no run metadata.
     run_unit: RunUnitInfo | None = None
 

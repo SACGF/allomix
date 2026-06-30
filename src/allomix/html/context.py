@@ -141,14 +141,14 @@ def _params_view(params: dict) -> dict:
     ]
     input_files = [(label, Path(params[key]).name) for label, key in file_keys if params.get(key)]
 
-    if params.get("no_error_correction"):
+    if not params.get("error_correction", True):
         error_model = "disabled"
     elif params.get("error_table"):
         error_model = f"table ({Path(params['error_table']).name})"
     else:
         error_model = f"flat rate {params.get('error_rate')}"
 
-    if params.get("no_bias_correction"):
+    if not params.get("bias_correction", True):
         bias = "disabled"
     elif params.get("bias_table"):
         bias = f"table ({Path(params['bias_table']).name})"

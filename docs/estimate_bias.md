@@ -217,6 +217,8 @@ A pair's both-het markers are non-informative for that **same** pair, so a singl
 | `--admix-vcfs` | | Admixture VCFs supplying the both-het observations (`--both-het` mode) |
 | `--output` / `-o` | `bias_table.tsv` | Output path for the bias table TSV |
 | `--min-het` | 1 | Minimum heterozygous observations required to include a marker |
+| `--min-dp` | 100 | Minimum depth to use a marker |
+| `--min-gq` | 20 | Minimum genotype quality to use a marker |
 
 **`--min-het`**: Markers with fewer than this many het observations are excluded from the table. With a small training set (e.g. 5 donors), the default of 1 means a bias estimate can be based on a single observation, which is unreliable. With larger training sets, raising this to 5 or 10 filters out markers with sparse data.
 

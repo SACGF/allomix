@@ -81,15 +81,19 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--genotype-vcf",
         required=True,
+        metavar="VCF",
         help="VCF with host/donor genotypes (GT), typically GATK joint-called "
         "(see docs/joint_calling.md)",
     )
     parser.add_argument(
         "--admix-vcf",
         required=True,
+        metavar="VCF",
         help="Admix VCF with raw pileup AD (typically bcftools mpileup output)",
     )
-    parser.add_argument("--host-sample", required=True, help="Host sample name in VCF")
+    parser.add_argument(
+        "--host-sample", required=True, metavar="SAMPLE_NAME", help="Host sample name in VCF"
+    )
     parser.add_argument(
         "--donor-sample",
         required=True,
@@ -194,9 +198,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Per-marker bias table TSV (from allomix estimate-bias or simulation)",
     )
     parser.add_argument(
-        "--no-bias-correction",
-        action="store_true",
-        help="Disable bias correction even when a bias table is provided",
+        "--bias-correction",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Apply per-marker bias correction when a bias table is provided. On "
+        "by default; use --no-bias-correction to disable it even with a table",
     )
     parser.add_argument(
         "--estimate-bias",
@@ -211,7 +217,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--estimate-bias-min-het",
         type=int,
         default=1,
-        help="Minimum het observations per marker for inline --estimate-bias (default: 1).",
+        help="Minimum het observations per marker for inline --estimate-bias (default: 1)",
     )
     parser.add_argument(
         "--error-table",
@@ -222,9 +228,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "fall back to --error-rate.",
     )
     parser.add_argument(
-        "--no-error-correction",
-        action="store_true",
-        help="Disable empirical error-rate correction even when an error table is provided",
+        "--error-correction",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Apply empirical error-rate correction when an error table is "
+        "provided. On by default; use --no-error-correction to disable it even "
+        "with a table",
     )
     parser.add_argument(
         "--contamination-table",
@@ -244,17 +253,20 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "no-op there even when enabled.",
     )
     parser.add_argument(
-        "--no-host-presence",
-        action="store_true",
-        help="Disable the host-presence detection test (see "
-        "`allomix.detect`). On by default; cheap to run.",
+        "--host-presence",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run the host-presence detection test (see `allomix.detect`). On by "
+        "default and cheap to run; use --no-host-presence to skip it",
     )
     parser.add_argument(
-        "--no-artifact-filter",
-        action="store_true",
-        help="Disable the read-level artifact filter in the host-presence "
-        "test (strand/soft-clip/read-position bias). On by default; "
-        "drops alignment-artifact markers (see `allomix.detect`).",
+        "--artifact-filter",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Apply the read-level artifact filter in the host-presence test "
+        "(strand/soft-clip/read-position bias), dropping alignment-artifact "
+        "markers (see `allomix.detect`). On by default; use --no-artifact-filter "
+        "to disable it",
     )
 
 
@@ -337,12 +349,12 @@ def _build_report_params(args: argparse.Namespace) -> dict:
         "robust": args.robust,
         "robust_k": args.robust_k,
         "marker_type_overdispersion": args.marker_type_overdispersion,
-        "no_bias_correction": args.no_bias_correction,
+        "bias_correction": args.bias_correction,
         "estimate_bias": args.estimate_bias,
-        "no_error_correction": args.no_error_correction,
+        "error_correction": args.error_correction,
         "contamination_correction": args.contamination_correction,
-        "host_presence": not args.no_host_presence,
-        "artifact_filter": not args.no_artifact_filter,
+        "host_presence": args.host_presence,
+        "artifact_filter": args.artifact_filter,
         "use_sex_chroms": args.use_sex_chroms,
     }
 
@@ -496,12 +508,12 @@ def _add_output_args(parser: argparse.ArgumentParser, *, allow_tsv: bool) -> Non
         "--json",
         metavar="PATH",
         help="Write the structured report JSON (the canonical artifact the HTML "
-        "report is rendered from) to PATH ('-' for stdout).",
+        "report is rendered from) to PATH ('-' for stdout)",
     )
     parser.add_argument(
         "--html",
         metavar="PATH",
-        help="Write the self-contained HTML report to PATH ('-' for stdout).",
+        help="Write the self-contained HTML report to PATH ('-' for stdout)",
     )
     parser.add_argument(
         "--template",
@@ -541,7 +553,7 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     if estimate_bias and args.bias_table:
         raise SystemExit("Use either --bias-table or --estimate-bias, not both")
 
-    if estimate_bias and not args.no_bias_correction:
+    if estimate_bias and args.bias_correction:
         samples = list(VCF(args.genotype_vcf).samples)
         marker_lists = [parse_vcf(args.genotype_vcf, sample=s, min_dp=0, min_gq=0) for s in samples]
         biases = biases_to_simple_dict(
@@ -551,14 +563,12 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
             f"Estimated per-marker bias for {len(biases)} marker(s) from "
             f"{len(samples)} panel sample(s)\n"
         )
-    elif args.bias_table and not args.no_bias_correction:
+    elif args.bias_table and args.bias_correction:
         biases = load_bias_table(args.bias_table)
     else:
         biases = {}
     errors = (
-        load_error_table(args.error_table)
-        if args.error_table and not args.no_error_correction
-        else {}
+        load_error_table(args.error_table) if args.error_table and args.error_correction else {}
     )
     contamination_correction = None
     if getattr(args, "contamination_correction", False):
@@ -626,9 +636,9 @@ def cmd_monitor(args: argparse.Namespace) -> int:
             args.min_gq,
             args.error_rate,
             calibration=calibration,
-            run_host_presence=not args.no_host_presence,
+            run_host_presence=args.host_presence,
             use_sex_chroms=args.use_sex_chroms,
-            artifact_filter=not args.no_artifact_filter,
+            artifact_filter=args.artifact_filter,
             robust=args.robust,
             robust_k=args.robust_k,
             marker_type_overdispersion=args.marker_type_overdispersion,
@@ -711,9 +721,9 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             args.min_gq,
             args.error_rate,
             calibration=calibration,
-            run_host_presence=not args.no_host_presence,
+            run_host_presence=args.host_presence,
             use_sex_chroms=args.use_sex_chroms,
-            artifact_filter=not args.no_artifact_filter,
+            artifact_filter=args.artifact_filter,
             robust=args.robust,
             robust_k=args.robust_k,
             marker_type_overdispersion=args.marker_type_overdispersion,
@@ -789,13 +799,13 @@ def cmd_estimate_bias(args: argparse.Namespace) -> int:
         joint = _single_genotype_vcf(args.genotype_vcfs)
         _validate_sample_names(joint, samples)
         for sample in samples:
-            markers = parse_vcf(joint, sample=sample, min_dp=0, min_gq=0)
+            markers = parse_vcf(joint, sample=sample, min_dp=args.min_dp, min_gq=args.min_gq)
             marker_lists.append(markers)
         n_source = f"{len(samples)} samples from {joint}"
     else:
         # Per-sample mode: one VCF per file, first sample of each.
         for vcf_path in args.genotype_vcfs:
-            markers = parse_vcf(vcf_path, min_dp=0, min_gq=0)
+            markers = parse_vcf(vcf_path, min_dp=args.min_dp, min_gq=args.min_gq)
             marker_lists.append(markers)
         n_source = f"{len(args.genotype_vcfs)} VCFs"
 
@@ -830,13 +840,16 @@ def _cmd_estimate_bias_both_het(args: argparse.Namespace) -> int:
     genotype_vcf = _single_genotype_vcf(args.genotype_vcfs)
 
     _validate_sample_names(genotype_vcf, [args.host_sample, *args.donor_sample])
-    host = parse_vcf(genotype_vcf, sample=args.host_sample, min_dp=0, min_gq=0)
-    donors = [parse_vcf(genotype_vcf, sample=d, min_dp=0, min_gq=0) for d in args.donor_sample]
+    host = parse_vcf(genotype_vcf, sample=args.host_sample, min_dp=args.min_dp, min_gq=args.min_gq)
+    donors = [
+        parse_vcf(genotype_vcf, sample=d, min_dp=args.min_dp, min_gq=args.min_gq)
+        for d in args.donor_sample
+    ]
 
     admix_lists = []
     for vcf_path in args.admix_vcfs:
         for sample in VCF(vcf_path).samples:
-            admix_lists.append(parse_vcf(vcf_path, sample=sample, min_dp=0, min_gq=0))
+            admix_lists.append(parse_vcf(vcf_path, sample=sample, min_dp=args.min_dp, min_gq=0))
 
     biases = estimate_biases_both_het(host, donors, admix_lists, min_het=args.min_het)
     save_bias_table(biases, args.output)
@@ -861,13 +874,13 @@ def cmd_estimate_errors(args: argparse.Namespace) -> int:
         joint = _single_genotype_vcf(args.genotype_vcfs)
         _validate_sample_names(joint, samples)
         for sample in samples:
-            markers = parse_vcf(joint, sample=sample, min_dp=0, min_gq=args.min_gq)
+            markers = parse_vcf(joint, sample=sample, min_dp=args.min_dp, min_gq=args.min_gq)
             marker_lists.append(markers)
         n_source = f"{len(samples)} samples from {joint}"
     else:
         # Per-sample mode: one VCF per file, first sample of each.
         for vcf_path in args.genotype_vcfs:
-            markers = parse_vcf(vcf_path, min_dp=0, min_gq=args.min_gq)
+            markers = parse_vcf(vcf_path, min_dp=args.min_dp, min_gq=args.min_gq)
             marker_lists.append(markers)
         n_source = f"{len(args.genotype_vcfs)} VCFs"
 
@@ -878,7 +891,7 @@ def cmd_estimate_errors(args: argparse.Namespace) -> int:
     for homref_path in args.homref_vcf:
         _validate_sample_names(homref_path, samples)
         for sample in samples:
-            markers = parse_vcf(homref_path, sample=sample, min_dp=0, min_gq=args.min_gq)
+            markers = parse_vcf(homref_path, sample=sample, min_dp=args.min_dp, min_gq=args.min_gq)
             marker_lists.append(markers)
         n_source += f" + {len(samples)} hom-ref samples from {homref_path}"
 
@@ -979,7 +992,7 @@ def main(argv: list[str] | None = None) -> int:
     timeline_parser.add_argument(
         "--log-scale",
         action="store_true",
-        help="Use a logarithmic y axis on the HTML trend chart.",
+        help="Use a logarithmic y axis on the HTML trend chart",
     )
 
     report_parser = subparsers.add_parser(
@@ -993,14 +1006,17 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument(
         "--output",
         "-o",
+        "--html",
+        metavar="PATH",
         default="-",
-        help="HTML output file (default: stdout). A timeline JSON needs the "
-        "'report' extra for the trend chart: pip install 'allomix[report]'.",
+        help="HTML output file (default: stdout); --html is an alias since the "
+        "report is always HTML. A timeline JSON needs the 'report' extra for the "
+        "trend chart: pip install 'allomix[report]'",
     )
     report_parser.add_argument(
         "--log-scale",
         action="store_true",
-        help="Use a logarithmic y axis on the HTML trend chart (timeline JSON).",
+        help="Use a logarithmic y axis on the HTML trend chart (timeline JSON)",
     )
     report_parser.add_argument(
         "--template",
@@ -1050,6 +1066,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     bias_parser.add_argument(
         "--host-sample",
+        metavar="SAMPLE_NAME",
         help="Host sample name in the genotype VCF (both-het mode)",
     )
     bias_parser.add_argument(
@@ -1077,6 +1094,18 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=1,
         help="Minimum het observations per marker (default: 1)",
+    )
+    bias_parser.add_argument(
+        "--min-dp",
+        type=int,
+        default=DEFAULT_MIN_DP,
+        help=f"Minimum depth to use a marker (default: {DEFAULT_MIN_DP})",
+    )
+    bias_parser.add_argument(
+        "--min-gq",
+        type=int,
+        default=DEFAULT_MIN_GQ,
+        help=f"Minimum GQ to use a marker (default: {DEFAULT_MIN_GQ})",
     )
 
     err_parser = subparsers.add_parser(
@@ -1150,6 +1179,12 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_MIN_GQ,
         help=f"Minimum GQ for training calls (default: {DEFAULT_MIN_GQ})",
     )
+    err_parser.add_argument(
+        "--min-dp",
+        type=int,
+        default=DEFAULT_MIN_DP,
+        help=f"Minimum depth to use a site (default: {DEFAULT_MIN_DP})",
+    )
 
     contam_parser = subparsers.add_parser(
         "build-contamination-table",
@@ -1165,6 +1200,7 @@ def main(argv: list[str] | None = None) -> int:
     contam_parser.add_argument(
         "--host-sample",
         required=True,
+        metavar="SAMPLE_NAME",
         help="Host sample name in --genotype-vcf",
     )
     contam_parser.add_argument(

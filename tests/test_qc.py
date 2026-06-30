@@ -2,11 +2,9 @@
 
 import math
 import random
-import re
 
 import pytest
 
-import allomix
 from allomix.chimerism import estimate_single_donor_bb
 from allomix.contamination import ContaminationResult
 from allomix.genotype import InformativeMarker, MarkerCounts, MarkerGenotypes

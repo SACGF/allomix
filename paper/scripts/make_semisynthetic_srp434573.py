@@ -219,7 +219,6 @@ def build_mix(
 
     _write_csv(out_csv_dir / f"{patient}.synthetic.csv", rows, n_ref, dry_run)
     return len(rows) - n_ref
-    return len(rows) - 2
 
 
 def main() -> int:

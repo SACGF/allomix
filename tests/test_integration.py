@@ -332,6 +332,34 @@ class TestCLIIntegration:
         # nested under "analysis".
         assert "donor_pct" in data["analysis"]
 
+    def test_monitor_json_records_command(self, tmp_path):
+        """The report JSON records the analysis invocation, minus output flags."""
+        out = tmp_path / "cmd.json"
+        rc = main(
+            [
+                "monitor",
+                "--genotype-vcf",
+                str(JOINT_VCF),
+                "--admix-vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.10",
+                "--no-host-presence",
+                "--json",
+                str(out),
+            ]
+        )
+        assert rc == 0
+        command = json.loads(out.read_text())["params"]["command"]
+        assert command.startswith("allomix monitor ")
+        assert "--no-host-presence" in command  # analysis flag kept
+        assert "--host-sample HOST" in command
+        assert "--json" not in command  # output flag stripped (keeps it reproducible)
+
     def test_timeline(self, tmp_path):
         out = tmp_path / "timeline.json"
         rc = main(

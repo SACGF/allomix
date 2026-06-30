@@ -235,5 +235,8 @@ it points at host copy-number change or a genotyping problem.</p>
 <dt>Method</dt><dd>{{ citation }}</dd>
 <dt>Report generated</dt><dd>{{ timestamp if timestamp else NA }}</dd>
 </dl>
+{% if params.command %}
+<details class="run-command"><summary>Run command</summary><pre>{{ params.command }}</pre></details>
+{% endif %}
 </footer>
 {% endmacro %}

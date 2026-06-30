@@ -37,7 +37,7 @@ The two most commonly used scripts are documented in detail below.
 Drives `allomix monitor` across every per-patient CSV in
 `pipeline/sample_csvs/`. For each CSV it locates the matching
 `<patient>.vcf.gz` (host/donor genotypes) and `<patient>.admix.vcf.gz`
-(raw pileup AD) in `--vcf-dir`, runs `allomix monitor --panel-vcf ...
+(raw pileup AD) in `--vcf-dir`, runs `allomix monitor --genotype-vcf ...
 --admix-vcf ...` once per patient with all ADMIX timepoints, and
 concatenates the per-patient TSVs into `batch.tsv`. Patients with no
 ADMIX rows are skipped automatically.

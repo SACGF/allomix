@@ -62,7 +62,7 @@ Then run with `--template`:
 
 ```bash
 allomix monitor \
-  --panel-vcf panel.vcf.gz --admix-vcf admix.vcf.gz \
+  --genotype-vcf panel.vcf.gz --admix-vcf admix.vcf.gz \
   --host-sample HOST --donor-sample DONOR --sample S1 \
   --html report.html \
   --template mylab-template

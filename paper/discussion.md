@@ -194,7 +194,25 @@ is the tool and its analytical characterization, with one demonstration on real 
 (the SRP434573 titrated mixtures), which recovered known fractions from 10% down to 1%
 and resolved a three-person mixture. That is a co-pooled research panel with its own
 contamination floor, an independent check on reads we did not simulate rather than a
-substitute for clinical validation. Clinical validation against STR chimerism, with
+substitute for clinical validation.
+
+That SRP434573 floor is consistent with the source study's own analysis: working from
+the UMI-tagged reads, Chu identified index misassignment as a low-level cross-sample
+contamination in this dataset and controlled it with a per-sample reads-per-UMI
+threshold.[@Chu2024mipsnp] The public FASTQs carry no UMI bases, so allomix runs on raw
+depth and cannot apply that filter, which makes this dataset close to a worst case for a
+pooled panel: a patterned-flowcell instrument where index hopping is most pronounced,
+seven co-pooled individuals, and no UMI correction available. allomix instead separates
+the floor from true signal in the data, by the carrier-dose response, and reaches a
+residual floor near 0.5% host, comparable to what the UMI-based pipeline achieved for
+minor-contributor identification. This is why allomix does not require UMIs: where they
+are present they remain a useful orthogonal way to push the floor lower, but the
+index-hopping contribution can also be held down at the indexing-design level (unique
+dual indexes) or, as here, subtracted at each marker by the carrier-dose correction
+above, which estimates the per-carrier contamination rate from the run's own
+consensus-homozygous markers and removes it before the fit.
+
+Clinical validation against STR chimerism, with
 controlled cell-line dilution series, is a separate study. Because allomix is
 panel-agnostic, that validation does not transfer between panels: a laboratory adopting
 the tool validates it on its own panel and specimen types, as for any

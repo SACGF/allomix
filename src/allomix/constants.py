@@ -5,10 +5,9 @@ in a single module stay local to that module. This module imports nothing from
 the package, so anything can import it without risk of a circular import.
 """
 
-# Diploid ploidy: two alleles per genotype. Used for the allele-dose math in the
-# weight model and Fisher information (ref_dose = PLOIDY - alt_dose, weight /=
-# PLOIDY). Named so this "2" reads as ploidy, distinct from the donor-count cap
-# in the multi-donor estimator.
+# Diploid ploidy. Named so the dosage math (ref_dose = PLOIDY - alt_dose,
+# weight /= PLOIDY) reads as ploidy, not a bare 2 confusable with the
+# donor-count cap in the multi-donor estimator.
 PLOIDY = 2
 
 # A sequencing error changes the true base into one of the 3 other bases, so

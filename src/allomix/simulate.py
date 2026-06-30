@@ -56,9 +56,8 @@ class VcfRecord:
 def parse_text_vcf(path: str | Path) -> tuple[list[str], list[VcfRecord]]:
     """Read a plain-text VCF and return (header_lines, records).
 
-    The simulator's own line-based parser, kept separate from
-    ``allomix.genotype.parse_vcf`` (cyvcf2-backed) so the simulator stays
-    dependency-light and round-trips raw VCF text.
+    Kept separate from ``allomix.genotype.parse_vcf`` (cyvcf2-backed) so the
+    simulator stays dependency-light and round-trips raw VCF text.
     """
     header: list[str] = []
     records: list[VcfRecord] = []
@@ -173,16 +172,14 @@ def expected_vaf_multi(
 class HostAberration:
     """A somatic copy-number aberration carried by the host (recipient) clone.
 
-    The recipient is usually a haematological malignancy patient whose residual
-    or relapsing clone carries copy-number changes. The clone's state at a single
-    marker is a mixture: a fraction ``clonal_fraction`` (0.0-1.0) of host cells
-    carry the aberration (copy number ``cn`` with ``alt_copies`` ALT alleles), the
-    rest are normal diploid germline.
+    At one marker the host is a mixture: a fraction ``clonal_fraction`` (0.0-1.0)
+    of cells carry the aberration (copy number ``cn`` with ``alt_copies`` ALT
+    alleles), the rest are normal diploid germline.
 
-    Copy-neutral loss of heterozygosity (CN-LoH, acquired uniparental disomy) is
-    ``cn=2`` with ``alt_copies`` forced to 0 or 2 (the clone retains two copies of
-    one germline homolog). The same dataclass also expresses deletions (``cn=1``)
-    and gains (``cn=3``).
+    Copy-neutral LoH (CN-LoH, acquired uniparental disomy) is ``cn=2`` with
+    ``alt_copies`` forced to 0 or 2 (clone retains two copies of one germline
+    homolog). The same dataclass expresses deletions (``cn=1``) and gains
+    (``cn=3``).
     """
 
     cn: int
@@ -198,11 +195,10 @@ def cn_weighted_vaf(
 ) -> float:
     """Expected ALT VAF in a chimeric mixture, weighted by copy number.
 
-    The plain mixture model (``expected_vaf_multi``) divides by 2 assuming every
-    genome is diploid. A host copy-number aberration breaks that: it changes the
-    clone's allele balance, and (for non-copy-neutral changes) how much host DNA
-    the locus contributes, so the local mixing fraction differs from the
-    genome-wide fractions. This computes the copy-number-weighted average:
+    ``expected_vaf_multi`` divides by 2 assuming every genome is diploid. A host
+    copy-number aberration changes the clone's allele balance and (for
+    non-copy-neutral changes) how much host DNA the locus contributes, so the
+    local mixing fraction differs from the genome-wide fractions:
 
         VAF = sum_i (frac_i * cn_i * alt_frac_i) / sum_i (frac_i * cn_i)
 
@@ -234,18 +230,15 @@ def _clone_state(
 ) -> HostAberration | None:
     """Derive the clone's copy-number state at one marker from the germline GT.
 
-    The clone is built by mutating one randomly chosen germline homolog:
+    Mutates one randomly chosen germline homolog:
 
-      - ``cnloh``: copy-neutral LoH. The retained homolog is duplicated, so the
-        clone is homozygous (cn=2). Invisible at a homozygous germline genotype
-        (no heterozygosity to lose), so this returns None there.
-      - ``deletion``: one homolog is lost (cn=1).
-      - ``gain``: one homolog is duplicated (cn=3).
+      - ``cnloh``: copy-neutral LoH; retained homolog duplicated, clone homozygous
+        (cn=2). Invisible at a homozygous germline genotype, returns None there.
+      - ``deletion``: one homolog lost (cn=1).
+      - ``gain``: one homolog duplicated (cn=3).
 
-    Deletions and gains change the locus DNA mass, so they shift the local
-    mixing fraction even at homozygous markers and apply to any germline genotype.
-
-    Returns None when the aberration is invisible at this marker.
+    Deletions and gains change the locus DNA mass, so they shift the local mixing
+    fraction even at homozygous markers and apply to any germline genotype.
     """
     a = list(host_gt)
     if kind == "cnloh":
@@ -302,9 +295,8 @@ def assign_cnloh_aberrations(
     """Assign copy-neutral LoH aberrations to a fraction of host het markers.
 
     Thin wrapper over ``assign_cnv_aberrations`` with ``kind="cnloh"``. CN-LoH is
-    only observable at host heterozygous markers (a homozygous genotype is
-    unchanged by losing heterozygosity); an affected het marker retains one
-    germline homolog at random, so the clone becomes homozygous REF
+    only observable at host heterozygous markers; an affected het marker retains
+    one germline homolog at random, so the clone becomes homozygous REF
     (``alt_copies=0``) or homozygous ALT (``alt_copies=2``).
     """
     return assign_cnv_aberrations(
@@ -330,21 +322,20 @@ def sample_allele_counts(
 ) -> tuple[int, int]:
     """Sample (ref_count, alt_count) from a (beta-)binomial with sequencing errors.
 
-    Matches the error model in ``chimerism.log_likelihood_marker_bb()`` so
-    in-silico validation uses a consistent generative model.
+    Matches the error model in ``chimerism.log_likelihood_marker_bb()`` for a
+    consistent generative model.
 
     When ``error_rate`` > 0, reads are mis-called under the 4-state
     (trinucleotide) model: a correct read survives with probability
-    ``(1 - error_rate)``, and an error is uniform over the 3 other bases, so the
+    ``(1 - error_rate)``, an error is uniform over the 3 other bases, so the
     effective per-read REF->ALT (or ALT->REF) rate at a biallelic site is
     ``error_rate / 3``.
 
     When ``rho`` is finite, reads are beta-binomial: a per-marker ALT probability
     is drawn from Beta(p*rho, (1-p)*rho), then reads binomial given it. This
-    injects the extra-binomial overdispersion of real sequencing (PCR/capture
-    jitter); variance is inflated by ``(n+rho)/(rho+1)``, ``rho -> inf`` recovers
-    the pure binomial, and ``rho`` is the dominant control on the achievable limit
-    of detection at high depth.
+    injects the overdispersion of real sequencing (PCR/capture jitter); variance
+    is inflated by ``(n+rho)/(rho+1)``, ``rho -> inf`` recovers the pure binomial,
+    and ``rho`` is the dominant control on the achievable LoD at high depth.
 
     ``rho_marker_type`` chooses where overdispersion applies:
 
@@ -352,8 +343,8 @@ def sample_allele_counts(
       - ``"het_only"``: overdispersion only at intermediate VAF (``0.05 < vaf <
         0.95``, evaluated on the *unbiased* input before the error transform pulls
         ``p`` off the boundaries); boundary VAF stays binomial. Overdispersion is a
-        het/intermediate amplification effect; at a donor-absent allele sitting at
-        the sequencing-error background the residual variance is a binomial error
+        het/intermediate amplification effect; at a donor-absent allele at the
+        sequencing-error background the residual variance is a binomial error
         floor. This is the regime presence-detection at donor-homozygous markers
         targets (see ``claude/20_host_presence_detection_plan.md``).
     """
@@ -363,8 +354,8 @@ def sample_allele_counts(
         return (0, 0)
     p = max(0.0, min(1.0, vaf))
 
-    # Decide overdispersion applicability from the unbiased VAF, before the
-    # error-model transform shifts p off the boundary.
+    # Decide overdispersion from the unbiased VAF, before the error transform
+    # shifts p off the boundary.
     if rho_marker_type == "all":
         apply_rho = True
     elif rho_marker_type == "het_only":
@@ -373,20 +364,20 @@ def sample_allele_counts(
     else:
         raise ValueError(f"rho_marker_type must be 'all' or 'het_only', got {rho_marker_type!r}")
 
-    # 4-state error model (matching chimerism.log_likelihood_marker). The
-    # estimator allocates p_alt = p*(1-e) + (1-p)*e/3 and p_ref similarly, with
-    # p_alt + p_ref = 1 - 2e/3 (the rest goes to the 2 non-REF/ALT bases). A
-    # binomial simulator classifies every read as REF or ALT, so normalise to the
-    # conditional p_alt / (1 - 2e/3). This gives symmetric e/3 error floors and an
-    # unbiased MLE under the estimator's likelihood.
+    # 4-state error model (matching chimerism.log_likelihood_marker). Estimator
+    # allocates p_alt = p*(1-e) + (1-p)*e/3 and p_ref similarly, with
+    # p_alt + p_ref = 1 - 2e/3 (rest goes to the 2 non-REF/ALT bases). A binomial
+    # simulator classifies every read as REF or ALT, so normalise to the
+    # conditional p_alt / (1 - 2e/3): symmetric e/3 error floors and an unbiased
+    # MLE under the estimator's likelihood.
     if error_rate > 0:
         e = error_rate
         p_alt = p * (1.0 - e) + (1.0 - p) * e / N_OTHER_BASES
         p = p_alt / (1.0 - 2.0 * e / N_OTHER_BASES)
 
-    # Beta-binomial overdispersion: draw the per-marker ALT probability from a
-    # Beta with mean p and concentration rho, then sample reads binomially. At
-    # the probability boundaries (p in {0, 1}) the Beta is degenerate, so keep p.
+    # Beta-binomial: draw per-marker ALT probability from Beta(mean p,
+    # concentration rho), then sample binomially. At p in {0, 1} the Beta is
+    # degenerate, so keep p.
     if apply_rho and math.isfinite(rho) and 0.0 < p < 1.0:
         p = rng.betavariate(p * rho, (1.0 - p) * rho)
 
@@ -406,17 +397,16 @@ def thin_informative_markers(
 ) -> list[InformativeMarker]:
     """Binomially down-sample admix AD by one global keep-rate (samtools -s).
 
-    A single ``rate`` (0 < rate <= 1) is applied to every marker, so the real
-    locus-to-locus depth coefficient of variation is preserved: a deep amplicon
-    lands near ``rate`` times its original depth and a shallow one near the same
-    fraction of its own depth, so deep markers stay deeper and shallow ones drop
-    out first. This is the faithful analog of ``samtools view -s`` / ``seqtk
-    sample`` on the reads, where each read survives independently with
-    probability ``rate``, making the surviving ref/alt counts binomial draws.
+    One ``rate`` (0 < rate <= 1) applied to every marker preserves the
+    locus-to-locus depth CV: each marker lands near ``rate`` times its own depth,
+    so deep markers stay deeper and shallow ones drop out first. This is the
+    analog of ``samtools view -s`` / ``seqtk sample`` on the reads, where each
+    read survives independently with probability ``rate``, making the surviving
+    ref/alt counts binomial draws.
 
     Host/donor genotypes, marker type, and bias annotations are preserved; only
-    the admix counts are resampled. ``rate == 1.0`` is a no-op pass-through
-    (cannot upsample). Input markers are never mutated (fresh copies returned).
+    admix counts are resampled. ``rate == 1.0`` is a no-op (cannot upsample).
+    Input markers are never mutated (fresh copies returned).
 
     Raises:
         ValueError: If ``rate`` is not in (0, 1].
@@ -462,11 +452,11 @@ class BlendResult:
     num_markers: int
     num_informative: int
     marker_biases: list[tuple[str, int, str, str, float]] | None = None
-    # List of (chrom, pos, ref, alt, bias) for each shared marker, or None if no bias
+    # (chrom, pos, ref, alt, bias) per shared marker, or None if no bias
     markers: list[MarkerData] | None = None
-    # Per-marker MarkerData, populated only when blend_vcfs(return_markers=True).
-    # Identical to parse_vcf(write_vcf(result)) for the SNP panels the simulator
-    # emits, but built in memory to skip the disk write/parse round-trip.
+    # Populated only when blend_vcfs(return_markers=True). Identical to
+    # parse_vcf(write_vcf(result)) for the SNP panels the simulator emits, but
+    # built in memory to skip the disk write/parse round-trip.
 
 
 def sample_marker_depths(
@@ -498,7 +488,7 @@ def generate_marker_biases(
 
     Models the systematic REF/ALT capture efficiency difference of real
     hybridisation-capture and amplicon data (Vynck et al.). Bias is in het-site
-    VAF units: +0.02 shifts a true het's observed ALT VAF to 0.52. It is injected
+    VAF units: +0.02 shifts a true het's observed ALT VAF to 0.52. Injected
     multiplicatively in logit space (``allomix.likelihood.inject_bias``), so away
     from VAF 0.5 the shift is proportional, not additive, matching how the
     estimator corrects for it (issue #20).
@@ -523,9 +513,8 @@ def generate_marker_biases_realistic(
     The empirical bias distribution is heavy-tailed (median |bias| 0.005, 95th
     pct 0.041, max 0.10), which a simple Gaussian underestimates. Mixture:
     ``1 - outlier_frac`` of markers from N(0, sd), the rest from N(0, outlier_sd).
-    Defaults are calibrated from 71 markers across 210 joint-called VCFs on the
-    76-SNP rhAmpSeq panel, giving an overall SD ~0.018 matching the empirical
-    measurement.
+    Defaults calibrated from 71 markers across 210 joint-called VCFs on the 76-SNP
+    rhAmpSeq panel, giving overall SD ~0.018 matching the empirical measurement.
     """
     biases = []
     for _ in range(n_markers):
@@ -627,16 +616,14 @@ def generate_paired_related_genotypes(
 ) -> dict[str, list[dict]]:
     """Generate host-donor panels for several relatedness levels sharing one host.
 
-    Unlike calling :func:`generate_related_genotypes` once per relatedness level
-    with independent random draws, this generates a single host panel (allele
-    frequencies and host genotypes) and derives each level's donor from that same
-    host using the same per-marker random draws, mapped through the level's IBD
-    probabilities. The only thing that varies across levels is the IBD sharing, so
-    the informative-marker count is monotone non-increasing as relatedness rises
-    (more sharing leaves fewer markers where host and donor differ). This removes
-    the dominant pair-to-pair noise that, with independent draws, can leave a more
-    related level (e.g. first cousin) showing more informative markers than a less
-    related one (e.g. unrelated) by chance.
+    One host panel (allele frequencies and host genotypes) is generated, and each
+    level's donor is derived from it using the same per-marker random draws mapped
+    through the level's IBD probabilities. Only the IBD sharing varies across
+    levels, so the informative-marker count is monotone non-increasing as
+    relatedness rises (more sharing leaves fewer differing markers). This removes
+    the pair-to-pair noise that, with independent draws, can leave a more related
+    level (e.g. first cousin) showing more informative markers than a less related
+    one (e.g. unrelated) by chance.
 
     Each level in ``relatedness_levels`` is a key of ``RELATEDNESS_IBD``. Returns
     a dict mapping each level to its marker-dict list (same keys as
@@ -654,8 +641,7 @@ def generate_paired_related_genotypes(
         p_alt = rng.uniform(*maf_range)
         host_gt = _draw_genotype(p_alt, rng)
 
-        # Pre-draw the per-marker randomness once, shared across all levels so a
-        # given marker's donor is derived from the same draws under every level.
+        # Pre-draw per-marker randomness once, shared across all levels.
         r_ibd = rng.random()
         share_idx = rng.randint(0, 1)
         other_allele = 1 if rng.random() < p_alt else 0
@@ -851,9 +837,8 @@ def blend_vcfs(
         rho_marker_type: ``"all"`` (default) or ``"het_only"``.
         host_aberrations: Optional per-shared-marker host copy-number aberrations
             (see ``HostAberration``). Affected markers use the copy-number-weighted
-            mixture instead of the diploid model. Must align with the shared
-            markers in iteration order like ``fixed_biases``; ``None`` entries
-            leave a marker fully diploid.
+            mixture instead of the diploid model. Aligns with the shared markers in
+            iteration order like ``fixed_biases``; ``None`` entries stay diploid.
     """
     if not 0.0 <= donor_fraction <= 1.0:
         raise ValueError(f"donor_fraction must be 0.0-1.0, got {donor_fraction}")
@@ -978,8 +963,7 @@ def blend_vcfs(
         # Use the host's ALT allele; if host was ref-only, use the donor's.
         alt_allele = host_rec.alt if host_rec.alt != "." else donor_rec.alt
         if alt_allele == ".":
-            # Both hom-ref with no ALT listed. Still emit the site for
-            # completeness, but with no ALT there is no AF field.
+            # Both hom-ref, no ALT listed: still emit the site, but no AF field.
             sample_field = f"{gt}:{ref_count}:{total}:{gq}:{pl}"
             format_field = "GT:AD:DP:GQ:PL"
 
@@ -1005,9 +989,9 @@ def blend_vcfs(
         )
         out_records.append(line)
 
-        # In-memory MarkerData, matching what parse_vcf(write_vcf(...)) yields.
-        # Mirror parse_vcf's skips: drop multiallelic (never emitted here) and
-        # indels; keep alt="." sites (ad_alt reads 0, as the round-trip would).
+        # In-memory MarkerData matching parse_vcf(write_vcf(...)). Mirror
+        # parse_vcf's skips: drop multiallelic (never emitted here) and indels;
+        # keep alt="." sites (ad_alt reads 0, as the round-trip would).
         if return_markers and (
             alt_allele == "." or (len(host_rec.ref) == 1 and len(alt_allele) == 1)
         ):
@@ -1143,10 +1127,10 @@ def _simulate_genotype_sample(
     depth: int,
     rng: random.Random,
 ) -> str:
-    """Simulate a realistic FORMAT sample field for a genotyping sample.
+    """Simulate a FORMAT sample field for a genotyping sample.
 
-    Draws allele counts from a binomial distribution given the true genotype,
-    simulating what sequencing of a pure (non-admixed) sample would produce.
+    Draws allele counts binomially from the true genotype, as sequencing of a
+    pure (non-admixed) sample would produce.
     """
     vaf = alt_dose(gt) / 2.0
     ref_count, alt_count = sample_allele_counts(vaf, depth, rng, error_rate=0.01)

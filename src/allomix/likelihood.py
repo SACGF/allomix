@@ -51,9 +51,8 @@ class PanelCalibration:
     contamination_correction: ContaminationCorrection | None = None
 
     def __post_init__(self) -> None:
-        # Treat an explicit ``None`` (a caller's "no table" sentinel) the same as
-        # an omitted argument, so callers can pass an optional dict straight
-        # through without a local ``or {}`` guard.
+        # Treat an explicit ``None`` the same as an omitted argument, so callers
+        # can pass an optional dict straight through without an ``or {}`` guard.
         if self.biases is None:
             object.__setattr__(self, "biases", {})
         if self.errors is None:
@@ -99,10 +98,9 @@ def inject_bias(alt_vaf: float | np.ndarray, bias: float | np.ndarray) -> float 
     """Shift a true ALT VAF by a het-site bias, the simulator-side counterpart
     of ``apply_bias``.
 
-    Used by the simulator to inject per-marker amplification bias the same way
-    the estimator corrects for it, so simulation and estimation stay
-    self-consistent: at the true parameters the injected ALT VAF equals the
-    estimator's expected biased ALT VAF, ``1 - apply_bias(w_true, bias)``.
+    The simulator injects bias the same way the estimator corrects it, so the
+    two stay self-consistent: at the true parameters the injected ALT VAF equals
+    the estimator's expected biased ALT VAF, ``1 - apply_bias(w_true, bias)``.
     Equivalent to ``expit(logit(alt_vaf) + logit(0.5 + bias))``; at a het site
     (true VAF 0.5) the observed VAF becomes ``0.5 + bias``. Not an algebraic
     inverse of ``apply_bias``: both shift in the same direction, so composing

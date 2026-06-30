@@ -82,8 +82,6 @@ def analyse_sample(
             applied here via ``min_dp``).
         run_host_presence: When False, ``result.host_presence`` is left unset and
             ``donor_hom_markers`` is empty.
-        use_sex_chroms: Keep sex-chromosome markers (default drops them; their
-            allele dosage is wrong in sex-mismatched transplants).
         artifact_filter: Drop alignment-artifact markers from the host-presence
             test (returned ``donor_hom_markers`` still lists them, flagged).
         robust: Robust-refit mode ("off"/"auto"/"force"; see

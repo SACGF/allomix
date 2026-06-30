@@ -1,6 +1,6 @@
 # Customising the HTML report template
 
-The HTML report (`allomix monitor --html`, `allomix timeline --html`, and
+The HTML report (`allomix detect --html`, `allomix timeline --html`, and
 `allomix report`) is rendered from a small set of [Jinja2](https://jinja.palletsprojects.com/)
 templates that ship inside the package. A laboratory can override any of them to
 restyle or restructure the report (its own colours, logo, header wording, or
@@ -61,7 +61,7 @@ Edit `mylab-template/styles.css` (for example, change the accent colour):
 Then run with `--template`:
 
 ```bash
-allomix monitor \
+allomix detect \
   --genotype-vcf panel.vcf.gz --admix-vcf admix.vcf.gz \
   --host-sample HOST --donor-sample DONOR --sample S1 \
   --html report.html \
@@ -75,7 +75,7 @@ macro; to change which sections appear or their order, copy `report.html` (and
 
 ## Notes
 
-- `--template` works the same on `monitor`, `timeline`, and `report`.
+- `--template` works the same on `detect`, `timeline`, and `report`.
 - Because `report` regenerates the HTML from a saved `--json` file, you can apply
   or change a template after the analysis has run, without recomputing anything.
 - Keep your override directory under version control alongside your pipeline so

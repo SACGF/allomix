@@ -14,7 +14,7 @@ report provenance (recipient metadata, analysis parameters, version, timestamp).
 Bioinformaticians can process it, store it, or upload it elsewhere.
 
 The provenance also records the exact analysis invocation under
-`params.command`, for example `allomix monitor --genotype-vcf ... --no-host-presence`.
+`params.command`, for example `allomix detect --genotype-vcf ... --no-host-presence`.
 Output-destination and presentation flags (`--json`, `--html`, `--tsv`,
 `--marker-csv`, `--output`, `--template`, `--report-timestamp`, `--log-scale`,
 `--verbose`) are stripped, so the recorded command captures only what determined
@@ -77,4 +77,4 @@ assigned the host role, so the monitored quantity is the host fraction:
   patient.
 
 All regenerate deterministically with `scripts/gen_example_report.sh` (which
-shows the exact `allomix monitor` / `allomix timeline` command lines).
+shows the exact `allomix detect` / `allomix timeline` command lines).

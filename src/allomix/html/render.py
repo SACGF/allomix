@@ -2,7 +2,7 @@
 
 Fills the ``report.html`` Jinja template from the structured report envelope
 produced by ``allomix.report.report_data`` (the same JSON written by
-``monitor --json``), not the in-memory result/QC objects. Rendering therefore
+``detect --json``), not the in-memory result/QC objects. Rendering therefore
 adds no analysis: every value shown comes straight from the envelope, so the HTML
 and the JSON always agree and a report can be regenerated later from a saved JSON
 file.

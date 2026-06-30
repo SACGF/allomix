@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Batch allomix monitor over per-patient CSVs from the joint-calling pipeline.
+"""Batch allomix detect over per-patient CSVs from the joint-calling pipeline.
 
 For each CSV in ``samples_csv_dir`` (default ``pipeline/sample_csvs``), this
 script:
@@ -7,7 +7,7 @@ script:
   1. Reads HOST / DONOR / ADMIX sample IDs from the CSV.
   2. Locates the matching panel VCF at ``<vcf_dir>/<patient>.vcf.gz`` and
      admix VCF at ``<vcf_dir>/<patient>.admix.vcf.gz``.
-  3. Runs ``allomix monitor`` once per patient with all admix timepoints,
+  3. Runs ``allomix detect`` once per patient with all admix timepoints,
      writing ``<output_dir>/<patient>.tsv``.
   4. Concatenates per-patient outputs into ``<output_dir>/batch.tsv``.
 
@@ -36,7 +36,7 @@ def _load_patient_csv(path: str) -> tuple[list[str], list[str], list[str], list[
 
     ``donor_relatedness`` is aligned with ``donors``: the optional
     ``expected_relatedness`` value on each DONOR row, or "NA" when the column is
-    absent or blank. It feeds ``allomix monitor --expected-relatedness``.
+    absent or blank. It feeds ``allomix detect --expected-relatedness``.
     """
     hosts: list[str] = []
     donors: list[str] = []
@@ -66,7 +66,7 @@ def _load_patient_csv(path: str) -> tuple[list[str], list[str], list[str], list[
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Run allomix monitor for every patient CSV in samples-csv-dir, "
+            "Run allomix detect for every patient CSV in samples-csv-dir, "
             "using the panel + admix VCFs produced by pipeline/Snakefile."
         )
     )
@@ -106,12 +106,12 @@ def main() -> None:
     parser.add_argument(
         "--bias-table",
         default=None,
-        help="Per-marker bias table TSV (passed through to allomix monitor)",
+        help="Per-marker bias table TSV (passed through to allomix detect)",
     )
     parser.add_argument(
         "--error-table",
         default=None,
-        help="Per-site error table TSV (passed through to allomix monitor)",
+        help="Per-site error table TSV (passed through to allomix detect)",
     )
     parser.add_argument(
         "--allomix",
@@ -124,7 +124,7 @@ def main() -> None:
         default=[],
         metavar="ARG",
         help=(
-            "Extra argument forwarded verbatim to each `allomix monitor` "
+            "Extra argument forwarded verbatim to each `allomix detect` "
             "invocation. Repeat for multiple, e.g. "
             "--extra-arg --min-dp=200 --extra-arg --min-gq=30"
         ),
@@ -173,7 +173,7 @@ def main() -> None:
             output_tsv = os.path.join(args.output_dir, f"{patient}.tsv")
             cmd = [
                 args.allomix,
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 panel_vcf,
                 "--admix-vcf",
@@ -202,7 +202,7 @@ def main() -> None:
             result = subprocess.run(cmd, check=False)
             if result.returncode != 0:
                 print(
-                    f"[{patient}] allomix monitor failed (exit {result.returncode})",
+                    f"[{patient}] allomix detect failed (exit {result.returncode})",
                     file=sys.stderr,
                 )
                 n_fail += 1
@@ -219,7 +219,7 @@ def main() -> None:
                     lines = f.readlines()
                 if not lines:
                     continue
-                # allomix monitor writes a header per --sample, so a per-patient
+                # allomix detect writes a header per --sample, so a per-patient
                 # TSV with N timepoints has N header lines interleaved with data.
                 # Keep the first header globally and drop every subsequent one.
                 if header_line is None:

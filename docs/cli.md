@@ -1,6 +1,6 @@
 # CLI Usage
 
-`allomix` has four subcommands: `monitor` (single timepoint), `timeline`
+`allomix` has four subcommands: `detect` (single timepoint), `timeline`
 (serial timepoints), `report` (render HTML from a saved JSON), and
 `estimate-bias` (build a per-marker bias table).
 
@@ -25,11 +25,11 @@ rationale and how to run it. When a new timepoint arrives, re-run the admix-only
 pileup for it (the panel does not need rebuilding), then re-run allomix on the
 updated admix VCF.
 
-## monitor
+## detect
 
 ```bash
 # Calculate chimerism for a single timepoint (TSV to stdout by default)
-allomix monitor \
+allomix detect \
     --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
@@ -38,7 +38,7 @@ allomix monitor \
     --tsv results.tsv
 
 # Multi-donor (2 donors)
-allomix monitor \
+allomix detect \
     --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
@@ -48,7 +48,7 @@ allomix monitor \
     --tsv results.tsv
 
 # Structured JSON (the artifact the HTML report is rendered from)
-allomix monitor \
+allomix detect \
     --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
@@ -58,7 +58,7 @@ allomix monitor \
 
 # Structured JSON and the HTML report in one run, plus the per-marker CSV
 # (bioinformatician-facing detail the report omits). Any output flags combine.
-allomix monitor \
+allomix detect \
     --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
@@ -106,7 +106,7 @@ allomix estimate-bias \
     --output bias_table.tsv
 
 # Use bias correction during monitoring
-allomix monitor \
+allomix detect \
     --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
@@ -124,7 +124,7 @@ in the bias guide.
 
 ## Common options
 
-Both `monitor` and `timeline` accept these additional options:
+Both `detect` and `timeline` accept these additional options:
 
 | Option | Default | Description |
 |---|---|---|
@@ -136,9 +136,9 @@ Both `monitor` and `timeline` accept these additional options:
 | `--verbose` | off | Include per-marker detail in output |
 
 Output is selected by per-artifact flags that can be combined in one run:
-`monitor` accepts `--tsv PATH`, `--json PATH`, and `--html PATH` (plus
+`detect` accepts `--tsv PATH`, `--json PATH`, and `--html PATH` (plus
 `--marker-csv PATH`); `timeline` accepts `--json PATH` and `--html PATH`. Each
-accepts `-` for stdout. With no output flag, `monitor` writes TSV and `timeline`
+accepts `-` for stdout. With no output flag, `detect` writes TSV and `timeline`
 writes JSON, both to stdout.
 
 ## Inputs and outputs

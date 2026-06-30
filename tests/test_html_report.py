@@ -482,7 +482,7 @@ class TestMarkerCSV:
         csv_path = tmp_path / "markers.csv"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -625,7 +625,7 @@ class TestCLI:
         out = tmp_path / "report.html"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -660,7 +660,7 @@ class TestCLI:
     def test_report_timestamp_override_is_deterministic(self, tmp_path):
         """--report-timestamp pins the only wall-clock field, so output is stable."""
         argv = [
-            "monitor",
+            "detect",
             "--genotype-vcf",
             str(JOINT_VCF),
             "--admix-vcf",
@@ -690,7 +690,7 @@ class TestCLI:
         with pytest.raises(SystemExit):
             main(
                 [
-                    "monitor",
+                    "detect",
                     "--genotype-vcf",
                     str(JOINT_VCF),
                     "--admix-vcf",
@@ -720,7 +720,7 @@ class TestCLI:
 
 def _monitor_argv(*, sample="ADMIX_F0.10"):
     return [
-        "monitor",
+        "detect",
         "--genotype-vcf",
         str(JOINT_VCF),
         "--admix-vcf",

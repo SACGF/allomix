@@ -238,10 +238,10 @@ chr1    931279  A    G     0.008712  19
 
 ## Using the bias table
 
-Pass the bias table to `monitor` or `timeline` with `--bias-table`:
+Pass the bias table to `detect` or `timeline` with `--bias-table`:
 
 ```bash
-allomix monitor \
+allomix detect \
     --genotype-vcf patient001_joint.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \

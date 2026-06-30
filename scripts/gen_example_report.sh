@@ -60,7 +60,7 @@ mkdir -p "$OUT_DIR"
 
 # 1a. Single-sample report at 1% (the headline example): the 1_99 rung, where
 #     the titrated host sits at 1% and the estimate recovers it cleanly.
-allomix monitor \
+allomix detect \
   --genotype-vcf "$PANEL" \
   --admix-vcf "$ADMIX" \
   --error-table "$ERRORS" \
@@ -75,7 +75,7 @@ allomix monitor \
 
 # 1b. Single-sample report at 0.5% (near the panel's contamination floor): the
 #     1_199 rung, kept to show the low-end behaviour and host-presence gating.
-allomix monitor \
+allomix detect \
   --genotype-vcf "$PANEL" \
   --admix-vcf "$ADMIX" \
   --error-table "$ERRORS" \

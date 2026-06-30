@@ -691,7 +691,7 @@ def report_data(
     """Build the single-sample report envelope (``kind == "single"``).
 
     Wraps the per-sample analysis (``to_json``) with report provenance (metadata,
-    params, version, generation time). Written by ``allomix monitor --json`` and
+    params, version, generation time). Written by ``allomix detect --json`` and
     consumed by the HTML renderer, so a report can be produced in one step or later
     from the saved JSON.
     """

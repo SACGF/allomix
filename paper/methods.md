@@ -441,7 +441,7 @@ the dilution grid rather than serving as an independent wet-lab limit.
 allomix is implemented in Python with dependencies on cyvcf2, NumPy,[@Harris2020numpy]
 SciPy,[@Virtanen2020scipy] and Jinja2. It is available under the MIT license at
 https://github.com/SACGF/allomix, installable via pip (`pip install allomix`). The
-command-line interface provides `monitor` for single-sample or multi-timepoint analysis,
+command-line interface provides `detect` for single-sample or multi-timepoint analysis,
 `timeline` for consolidated multi-timepoint reporting, `estimate-bias` for panel bias
 calibration, and `estimate-errors` for per-site error calibration. The repository also
 includes a reference Snakemake[@Molder2021snakemake] workflow that runs the two-phase

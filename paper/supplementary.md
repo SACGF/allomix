@@ -10,7 +10,7 @@ For a proposed donor fraction *f*, the expected reference-allele weight at marke
 
 $$w_i(f) = (1 - f)\,\frac{g_{h,i}}{2} + f\,\frac{g_{d,i}}{2}$$
 
-Markers are informative when host and donor genotypes differ. Following De Vynck et al.,[@Vynck2023bias] each informative marker is assigned one of six types by host/donor alternative-allele dose:
+Markers are informative when host and donor genotypes differ. Following Vynck et al.,[@Vynck2023bias] each informative marker is assigned one of six types by host/donor alternative-allele dose:
 
 - **Type 0**: host 0/0, donor 1/1 (fully informative)
 - **Type 1**: host 1/1, donor 0/0 (fully informative)
@@ -27,7 +27,7 @@ To account for base substitutions and polymerase errors, the observed allele pro
 
 $$p_{alt,i} = (1 - w_i)(1 - \varepsilon) + w_i\frac{\varepsilon}{3}, \qquad p_{ref,i} = w_i(1 - \varepsilon) + (1 - w_i)\frac{\varepsilon}{3}$$
 
-where $\varepsilon$ is the per-base error rate (default 0.01) and the factor of 3 distributes error among the three non-observed bases. Because VCF allele-depth fields count only reference and alternative, the likelihood uses the conditional $\tilde{p}_i = p_{alt,i} / (p_{ref,i} + p_{alt,i})$. This is the mixture genotype likelihood of Crysup and Woerner[@CrysupWoerner2023] applied in the inverse direction (estimating the fraction from known genotypes rather than genotyping at a known fraction). The single rate $\varepsilon$ may be replaced per marker by a measured per-site, per-direction empirical rate when an error table is supplied (S7, Methods); each marker then uses its own REF-to-ALT or ALT-to-REF rate in place of $\varepsilon$, falling back to the global value where a direction was not measured.
+where $\varepsilon$ is the per-base error rate (default 0.01) and the factor of 3 distributes error among the three non-observed bases. Because VCF allele-depth fields count only reference and alternative, the likelihood uses the conditional $\tilde{p}_i = p_{alt,i} / (p_{ref,i} + p_{alt,i})$. This is the mixture genotype likelihood of Crysup and Woerner[@CrysupWoerner2022] applied in the inverse direction (estimating the fraction from known genotypes rather than genotyping at a known fraction). The single rate $\varepsilon$ may be replaced per marker by a measured per-site, per-direction empirical rate when an error table is supplied (S7, Methods); each marker then uses its own REF-to-ALT or ALT-to-REF rate in place of $\varepsilon$, falling back to the global value where a direction was not measured.
 
 ### S3. Beta-binomial likelihood and optimization
 

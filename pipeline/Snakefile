@@ -102,14 +102,14 @@ _intervals_tag = f".{os.path.splitext(os.path.basename(INTERVALS))[0]}"
 # of whatever GATK discovers in the `intervals` BED. The payoff is a marginal
 # informative marker that falls below the calling QUAL threshold in a small
 # 2-sample joint call: forced output pins its genotype back. See
-# doc/joint_calling.md. Same VCF is then used by phase 2.
+# docs/joint_calling.md. Same VCF is then used by phase 2.
 PANEL_ALLELES_VCF = config.get("panel_alleles_vcf", None)
 # GenotypeGVCFs has no --alleles option (that lives on HaplotypeCaller). The
 # tool's own mechanism for "emit a genotype at these sites even if non-variant
 # in the samples" is --force-output-intervals. It is mutually exclusive with
 # --include-non-variant-sites (the all-sites variant): force-output already
 # genotypes the given panel sites whether or not they are variant, so we use it
-# alone. See doc/joint_calling.md for why we force every panel site.
+# alone. See docs/joint_calling.md for why we force every panel site.
 GENOTYPE_GVCFS_ALLELES_ARG = (
     f"--force-output-intervals {PANEL_ALLELES_VCF}" if PANEL_ALLELES_VCF else ""
 )
@@ -133,7 +133,7 @@ PYTHON = config.get("python", sys.executable)
 # force-called background position per amplicon (the BED-interval midpoints)
 # feeds `allomix estimate-errors`, giving a per-site, both-direction error table.
 # GATK cannot supply this: its GVCF reassembly strips minority ALT reads at
-# hom-ref blocks, the exact ref->alt signal we need (see doc/joint_calling.md).
+# hom-ref blocks, the exact ref->alt signal we need (see docs/joint_calling.md).
 # Off would drop the error_table targets entirely. Needs `allomix` on PATH.
 BUILD_ERROR_TABLE = config.get("build_error_table", True)
 ALLOMIX = config.get("allomix", "allomix")
@@ -716,7 +716,7 @@ rule merge_admix:
 # Phase 1b (optional): per-patient empirical error table for the host-presence
 # background. Raw mpileup of the HOST/DONOR BAMs (never GATK, which strips the
 # minority ALT reads we are measuring) at the panel sites + amplicon midpoints,
-# then `allomix estimate-errors`. See doc/joint_calling.md.
+# then `allomix estimate-errors`. See docs/joint_calling.md.
 # ---------------------------------------------------------------------------
 
 rule midpoint_bed:

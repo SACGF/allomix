@@ -4,7 +4,7 @@
 The host-presence detector needs a per-site sequencing-error background, and the
 hardest direction to measure is ref->alt: the rate at which a true hom-ref site
 emits stray ALT reads. Variant-only joint-call VCFs contain no all-hom-ref sites,
-so that direction is unmeasurable from them (see doc/joint_calling.md and SACGF
+so that direction is unmeasurable from them (see docs/joint_calling.md and SACGF
 issue #22).
 
 The capture panel covers ~96 bp per amplicon but only one polymorphic SNP per

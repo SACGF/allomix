@@ -163,7 +163,7 @@ class TestCLIIntegration:
         out = tmp_path / "cli_out.tsv"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -191,7 +191,7 @@ class TestCLIIntegration:
         out = tmp_path / "cli_bias.tsv"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -282,7 +282,7 @@ class TestCLIIntegration:
         with pytest.raises(SystemExit):
             main(
                 [
-                    "monitor",
+                    "detect",
                     "--genotype-vcf",
                     str(JOINT_VCF),
                     "--admix-vcf",
@@ -307,7 +307,7 @@ class TestCLIIntegration:
         out = tmp_path / "cli_out.json"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -337,7 +337,7 @@ class TestCLIIntegration:
         out = tmp_path / "cmd.json"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -355,7 +355,7 @@ class TestCLIIntegration:
         )
         assert rc == 0
         command = json.loads(out.read_text())["params"]["command"]
-        assert command.startswith("allomix monitor ")
+        assert command.startswith("allomix detect ")
         assert "--no-host-presence" in command  # analysis flag kept
         assert "--host-sample HOST" in command
         assert "--json" not in command  # output flag stripped (keeps it reproducible)
@@ -394,7 +394,7 @@ class TestCLIIntegration:
         out = tmp_path / "multi.tsv"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -419,12 +419,66 @@ class TestCLIIntegration:
         )
         assert rc == 0
 
+    def test_detect_admix_samples_split_across_vcfs(self, tmp_path):
+        """--admix-vcf is repeatable; each --sample resolves to its containing VCF."""
+        from cyvcf2 import VCF, Writer
+
+        def subset(sample: str, dest):
+            src = VCF(str(JOINT_VCF))
+            src.set_samples([sample])
+            w = Writer(str(dest), src)
+            for rec in src:
+                w.write_record(rec)
+            w.close()
+            src.close()
+            return dest
+
+        vcf_a = subset("ADMIX_F0.10", tmp_path / "a.vcf")
+        vcf_b = subset("ADMIX_F0.50", tmp_path / "b.vcf")
+        out = tmp_path / "split.tsv"
+        rc = main(
+            [
+                "detect",
+                "--genotype-vcf", str(JOINT_VCF),
+                "--admix-vcf", str(vcf_a),
+                "--admix-vcf", str(vcf_b),
+                "--host-sample", "HOST",
+                "--donor-sample", "DONOR",
+                "--sample", "ADMIX_F0.10",
+                "--sample", "ADMIX_F0.50",
+                "--tsv", str(out),
+                "--min-dp", "0",
+                "--min-gq", "0",
+            ]
+        )
+        assert rc == 0
+        # Both samples resolved (one from each VCF) and were estimated.
+        content = out.read_text()
+        assert "ADMIX_F0.10" in content
+        assert "ADMIX_F0.50" in content
+
+    def test_detect_admix_sample_not_in_any_vcf(self, tmp_path):
+        """A --sample absent from every --admix-vcf is a clear error."""
+        with pytest.raises(SystemExit, match="not found in any --admix-vcf"):
+            main(
+                [
+                    "detect",
+                    "--genotype-vcf", str(JOINT_VCF),
+                    "--admix-vcf", str(JOINT_VCF),
+                    "--host-sample", "HOST",
+                    "--donor-sample", "DONOR",
+                    "--sample", "NO_SUCH_TIMEPOINT",
+                    "--min-dp", "0",
+                    "--min-gq", "0",
+                ]
+            )
+
     def test_invalid_sample_name(self):
         """CLI should fail with clear error for bad sample name."""
         with pytest.raises(SystemExit):
             main(
                 [
-                    "monitor",
+                    "detect",
                     "--genotype-vcf",
                     str(JOINT_VCF),
                     "--admix-vcf",
@@ -460,7 +514,7 @@ class TestHostPresenceCli:
         out = tmp_path / "cli_hp.tsv"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -507,7 +561,7 @@ class TestHostPresenceCli:
         out = tmp_path / "cli_hp.json"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
@@ -561,7 +615,7 @@ class TestDynamicJointVcf:
         out = tmp_path / "out.tsv"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(joint_path),
                 "--admix-vcf",

@@ -516,7 +516,7 @@ class TestMultiDonorCLI:
         out = tmp_path / "result.json"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(joint_vcf),
                 "--admix-vcf",
@@ -546,7 +546,7 @@ class TestMultiDonorCLI:
         out = tmp_path / "result.tsv"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(joint_vcf),
                 "--admix-vcf",
@@ -607,7 +607,7 @@ class TestMultiDonorCLI:
         out = tmp_path / "single.json"
         rc = main(
             [
-                "monitor",
+                "detect",
                 "--genotype-vcf",
                 str(joint_vcf),
                 "--admix-vcf",

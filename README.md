@@ -33,7 +33,7 @@ uv pip install -e ".[dev]"
 allomix takes two VCFs: a **panel VCF** with host/donor genotypes (from GATK joint calling of the reference samples) and an **admix VCF** with per-timepoint AD counts (from forced `bcftools mpileup` at the panel sites). A ready-to-use Snakemake pipeline that produces both is in `pipeline/`.
 
 ```bash
-allomix monitor \
+allomix detect \
     --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
@@ -60,9 +60,9 @@ See the [CLI usage guide](docs/cli.md) for multi-donor runs, timelines, bias cor
    (upstream)            GenotypeGVCFs) → panel VCF; pileup admix samples
                          at the panel sites → admix VCF
 
-5. allomix monitor       Chimerism for one timepoint → TSV / JSON / HTML
+5. allomix detect       Chimerism for one timepoint → TSV / JSON / HTML
    allomix timeline      Track chimerism across timepoints → JSON / HTML
-   allomix report        Render HTML from a saved monitor/timeline JSON
+   allomix report        Render HTML from a saved detect/timeline JSON
 ```
 
 Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even when one sample is hom-ref; pileup of the admix samples preserves raw per-allele counts needed for host fractions below ~5%. See the [Joint Calling Guide](docs/joint_calling.md) for the full rationale.

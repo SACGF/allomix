@@ -13,7 +13,7 @@ scripts/<name>.py`. They depend on `allomix` being installed (`pip install -e
 
 | Script | Purpose |
 |--------|---------|
-| `run_csv_batch.py` | Run `allomix monitor` for every per-patient CSV in `pipeline/sample_csvs/` against the two-VCF pipeline outputs, and combine the per-patient results into one `batch.tsv`. |
+| `run_csv_batch.py` | Run `allomix detect` for every per-patient CSV in `pipeline/sample_csvs/` against the two-VCF pipeline outputs, and combine the per-patient results into one `batch.tsv`. |
 | `plot_chimerism_comparison.py` | Plot whole-blood NGS chimerism (with CIs) against flow-sorted lineage values, optionally overlaying one or more other runs. |
 | `diagnose_sample.py` | Per-marker residuals and noise model for one admixture sample: localise a goodness-of-fit failure (CNV/LOH) by chromosome and show why a per-sample LOD is what it is (fitted overdispersion `rho`, SE, LoB, LoD). |
 | `plot_host_presence_per_marker.py` | Per-marker host-presence structure for selected admixture samples: the host fraction each donor-homozygous marker implies, with binomial CIs and the pooled MLE line, to see whether the host signal is spread evenly or carried by a few markers (a CNV/LOH clue). |
@@ -34,10 +34,10 @@ The two most commonly used scripts are documented in detail below.
 
 ## `run_csv_batch.py` — batch the joint-calling pipeline outputs
 
-Drives `allomix monitor` across every per-patient CSV in
+Drives `allomix detect` across every per-patient CSV in
 `pipeline/sample_csvs/`. For each CSV it locates the matching
 `<patient>.vcf.gz` (host/donor genotypes) and `<patient>.admix.vcf.gz`
-(raw pileup AD) in `--vcf-dir`, runs `allomix monitor --genotype-vcf ...
+(raw pileup AD) in `--vcf-dir`, runs `allomix detect --genotype-vcf ...
 --admix-vcf ...` once per patient with all ADMIX timepoints, and
 concatenates the per-patient TSVs into `batch.tsv`. Patients with no
 ADMIX rows are skipped automatically.
@@ -63,15 +63,15 @@ plus `output/validation_run2/batch.tsv`.
 | `--samples-csv-dir` | `pipeline/sample_csvs` | Directory of per-patient CSVs (one per file). |
 | `--vcf-dir` | `output/genotypes` | Directory containing `<patient>.vcf.gz` and `<patient>.admix.vcf.gz` from `pipeline/Snakefile`. |
 | `--output-dir` | `output/batch` | Where per-patient TSVs and the combined `batch.tsv` are written. |
-| `--bias-table` | none | Per-marker bias table passed through to `allomix monitor`. |
-| `--error-table` | none | Per-site error table passed through to `allomix monitor`. |
+| `--bias-table` | none | Per-marker bias table passed through to `allomix detect`. |
+| `--error-table` | none | Per-site error table passed through to `allomix detect`. |
 | `--allomix` | `allomix` | Path to the `allomix` executable. |
-| `--extra-arg ARG` | none | Forward an extra argument to every `allomix monitor` call. Repeat for multiple, e.g. `--extra-arg --min-dp=200 --extra-arg --min-gq=30`. |
+| `--extra-arg ARG` | none | Forward an extra argument to every `allomix detect` call. Repeat for multiple, e.g. `--extra-arg --min-dp=200 --extra-arg --min-gq=30`. |
 
 ### `batch.tsv` columns
 
 The combined file has one row per successfully run admix sample, with the
-columns `allomix monitor` emits:
+columns `allomix detect` emits:
 
 ```
 sample  donor_pct  ci_lo  ci_hi  lob_pct  lod_pct  n_informative  n_used

@@ -78,7 +78,7 @@ def _expected_relatedness_value(value: str) -> Relatedness | None:
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add arguments shared between monitor and timeline."""
+    """Add arguments shared between detect and timeline."""
     parser.add_argument(
         "--genotype-vcf",
         required=True,
@@ -89,8 +89,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--admix-vcf",
         required=True,
+        action="append",
         metavar="VCF",
-        help="Admix VCF with raw pileup AD (typically bcftools mpileup output)",
+        help="Admix VCF with raw pileup AD (typically bcftools mpileup output). "
+        "Repeat to spread timepoints across several VCFs; each --sample is "
+        "resolved to the one VCF that contains it.",
     )
     parser.add_argument(
         "--host-sample", required=True, metavar="SAMPLE_NAME", help="Host sample name in VCF"
@@ -341,7 +344,7 @@ def _build_report_params(args: argparse.Namespace) -> dict:
     return {
         "command": getattr(args, "command_line", None),
         "genotype_vcf": args.genotype_vcf,
-        "admix_vcf": args.admix_vcf,
+        "admix_vcf": ", ".join(args.admix_vcf),
         "error_table": args.error_table,
         "bias_table": args.bias_table,
         "contamination_table": args.contamination_table,
@@ -473,6 +476,37 @@ def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
         raise SystemExit(f"Sample(s) not found in {vcf_path}: {missing}\nAvailable: {available}")
 
 
+def _resolve_admix_samples(admix_vcfs: list[str], samples: list[str]) -> dict[str, str]:
+    """Map each admix sample name to the one ``--admix-vcf`` that contains it.
+
+    With several ``--admix-vcf`` files the timepoints may be split across them, so
+    each ``--sample`` is resolved to its containing VCF. A sample must appear in
+    exactly one: absent everywhere is a missing-sample error, present in more than
+    one is ambiguous. Returns ``{sample_name: vcf_path}``.
+    """
+    samples_by_vcf: dict[str, set[str]] = {}
+    for path in dict.fromkeys(admix_vcfs):
+        vcf = VCF(path)
+        samples_by_vcf[path] = set(vcf.samples)
+        vcf.close()
+    resolved: dict[str, str] = {}
+    for s in samples:
+        hits = [p for p, names in samples_by_vcf.items() if s in names]
+        if not hits:
+            available = sorted({n for names in samples_by_vcf.values() for n in names})
+            raise SystemExit(
+                f"Sample {s!r} not found in any --admix-vcf ({admix_vcfs})\n"
+                f"Available: {available}"
+            )
+        if len(hits) > 1:
+            raise SystemExit(
+                f"Sample {s!r} is ambiguous: present in more than one --admix-vcf ({hits}); "
+                "give the timepoints unique sample names across the VCFs"
+            )
+        resolved[s] = hits[0]
+    return resolved
+
+
 def _run_single_sample(
     host: list,
     donors: list[list],
@@ -540,11 +574,11 @@ def _open_output(path: str):
 
 
 def _add_output_args(parser: argparse.ArgumentParser, *, allow_tsv: bool) -> None:
-    """Add the per-artifact output flags shared by monitor and timeline.
+    """Add the per-artifact output flags shared by detect and timeline.
 
     Any combination may be given in one run (e.g. ``--json r.json --html r.html``);
     ``-`` writes to stdout. With no output flag the command falls back to its
-    default (TSV for monitor, JSON for timeline) on stdout.
+    default (TSV for detect, JSON for timeline) on stdout.
     """
     parser.add_argument(
         "--json",
@@ -624,11 +658,11 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     )
 
 
-def cmd_monitor(args: argparse.Namespace) -> int:
-    """Run the monitor subcommand."""
+def cmd_detect(args: argparse.Namespace) -> int:
+    """Run the detect subcommand."""
     _validate_expected_relatedness(args)
     _validate_sample_names(args.genotype_vcf, [args.host_sample] + args.donor_sample)
-    _validate_sample_names(args.admix_vcf, args.sample)
+    admix_by_sample = _resolve_admix_samples(args.admix_vcf, args.sample)
 
     # No output flag defaults to TSV on stdout (the historical default).
     want_json = args.json is not None
@@ -643,7 +677,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     # timeline report (which adds the trend chart).
     if (want_json or want_html) and len(args.sample) != 1:
         raise SystemExit(
-            "monitor --json/--html produce one report for a single --sample; got "
+            "detect --json/--html produce one report for a single --sample; got "
             f"{len(args.sample)}. Use 'allomix timeline' for multiple timepoints."
         )
 
@@ -662,9 +696,13 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         for d in args.donor_sample
     ]
 
-    # Run-unit metadata from the admix VCF header (index-hopping check, issue #12).
-    # Empty when the VCF carries none.
-    run_units = read_run_units(args.admix_vcf)
+    # Run-unit metadata from the admix VCF headers (index-hopping check, issue #12).
+    # Empty when the VCFs carry none. Merged across the supplied admix VCFs; each
+    # requested sample lives in exactly one (resolved above), so the lookup is
+    # unambiguous.
+    run_units = {}
+    for path in dict.fromkeys(admix_by_sample.values()):
+        run_units.update(read_run_units(path))
 
     results: list[tuple[str, object, object]] = []
     marker_rows: list[tuple[str, object]] = []
@@ -672,7 +710,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         result, qc, genotypes = _run_single_sample(
             host,
             donors,
-            args.admix_vcf,
+            admix_by_sample[sample_name],
             sample_name,
             args.min_dp,
             args.min_gq,
@@ -737,11 +775,11 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         )
     _validate_expected_relatedness(args)
     _validate_sample_names(args.genotype_vcf, [args.host_sample] + args.donor_sample)
-    _validate_sample_names(args.admix_vcf, args.sample)
+    admix_by_sample = _resolve_admix_samples(args.admix_vcf, args.sample)
 
     calibration = _load_calibration(args)
 
-    # Parse host and donors once. See cmd_monitor for gt_ad_consistency.
+    # Parse host and donors once. See cmd_detect for gt_ad_consistency.
     host = parse_vcf(
         args.genotype_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
     )
@@ -750,14 +788,16 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         for d in args.donor_sample
     ]
 
-    run_units = read_run_units(args.admix_vcf)
+    run_units = {}
+    for path in dict.fromkeys(admix_by_sample.values()):
+        run_units.update(read_run_units(path))
 
     results = []
     for sample_name in args.sample:
         result, qc, genotypes = _run_single_sample(
             host,
             donors,
-            args.admix_vcf,
+            admix_by_sample[sample_name],
             sample_name,
             args.min_dp,
             args.min_gq,
@@ -804,7 +844,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
 def cmd_report(args: argparse.Namespace) -> int:
     """Render an HTML report from a saved report-data JSON file.
 
-    Reads the envelope written by ``monitor --json`` / ``timeline --json`` and
+    Reads the envelope written by ``detect --json`` / ``timeline --json`` and
     renders the same HTML, so report generation can be split from analysis (or
     re-run later). The ``kind`` field selects single-sample vs timeline.
     """
@@ -960,7 +1000,7 @@ def cmd_build_contamination_table(args: argparse.Namespace) -> int:
     patient's informative donor-hom markers pooled across the supplied timepoints.
     """
     _validate_sample_names(args.genotype_vcf, [args.host_sample, *args.donor_sample])
-    _validate_sample_names(args.admix_vcf, args.sample)
+    admix_by_sample = _resolve_admix_samples(args.admix_vcf, args.sample)
 
     # Same panel-side miscall guard (gt_ad_consistency) the analysis uses.
     host = parse_vcf(
@@ -971,7 +1011,7 @@ def cmd_build_contamination_table(args: argparse.Namespace) -> int:
         for d in args.donor_sample
     ]
 
-    admix_lists = [parse_vcf(args.admix_vcf, sample=s, min_dp=0) for s in args.sample]
+    admix_lists = [parse_vcf(admix_by_sample[s], sample=s, min_dp=0) for s in args.sample]
 
     # Carrier counts come from the co-pooled flowcell individuals; default to
     # every sample in --genotype-vcf (which should include host and donors).
@@ -1016,13 +1056,13 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers = parser.add_subparsers(dest="command")
 
-    monitor_parser = subparsers.add_parser(
-        "monitor",
-        help="Calculate chimerism for one or more samples",
+    detect_parser = subparsers.add_parser(
+        "detect",
+        help="Estimate chimerism (donor fraction) for one or more samples",
     )
-    _add_common_args(monitor_parser)
-    _add_report_meta_args(monitor_parser)
-    _add_output_args(monitor_parser, allow_tsv=True)
+    _add_common_args(detect_parser)
+    _add_report_meta_args(detect_parser)
+    _add_output_args(detect_parser, allow_tsv=True)
 
     timeline_parser = subparsers.add_parser(
         "timeline",
@@ -1039,11 +1079,11 @@ def main(argv: list[str] | None = None) -> int:
 
     report_parser = subparsers.add_parser(
         "report",
-        help="Render an HTML report from a saved monitor/timeline JSON",
+        help="Render an HTML report from a saved detect/timeline JSON",
     )
     report_parser.add_argument(
         "input",
-        help="Report-data JSON from 'monitor --json' or 'timeline --json' ('-' to read stdin)",
+        help="Report-data JSON from 'detect --json' or 'timeline --json' ('-' to read stdin)",
     )
     report_parser.add_argument(
         "--output",
@@ -1256,8 +1296,11 @@ def main(argv: list[str] | None = None) -> int:
     contam_parser.add_argument(
         "--admix-vcf",
         required=True,
+        action="append",
         metavar="VCF",
-        help="Admix VCF holding this patient's serial timepoints (forced pileup AD)",
+        help="Admix VCF holding this patient's serial timepoints (forced pileup AD). "
+        "Repeat to spread timepoints across several VCFs; each --sample is "
+        "resolved to the one VCF that contains it.",
     )
     contam_parser.add_argument(
         "--sample",
@@ -1323,8 +1366,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    if args.command == "monitor":
-        return cmd_monitor(args)
+    if args.command == "detect":
+        return cmd_detect(args)
     if args.command == "timeline":
         return cmd_timeline(args)
     if args.command == "report":

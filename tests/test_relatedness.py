@@ -500,7 +500,7 @@ class TestCliRejectsIdentical:
 
     def _base_argv(self, rel: str) -> list[str]:
         return [
-            "monitor",
+            "detect",
             "--genotype-vcf", "x.vcf",
             "--admix-vcf", "x.vcf",
             "--host-sample", "H",
@@ -526,7 +526,7 @@ class TestCliRejectsIdentical:
     def test_count_mismatch_errors(self):
         # Two donors but one declaration: clear error, before any VCF is opened.
         argv = [
-            "monitor",
+            "detect",
             "--genotype-vcf", "x.vcf",
             "--admix-vcf", "x.vcf",
             "--host-sample", "H",

@@ -1,4 +1,4 @@
-"""Run allomix monitor on all SRP434573 mixtures and compare to ground truth.
+"""Run allomix detect on all SRP434573 mixtures and compare to ground truth.
 
 Role mapping matches the regenerated CSVs (see paper/public_data/SRP434573):
 the minor (titrated) contributor is the HOST (the residual / recurring patient
@@ -49,7 +49,7 @@ from allomix.marker_contamination import (
 
 GEN = resolve_srp434573_genotypes_dir()
 OUT = Path("output")
-ALLOMIX = [shutil.which("allomix") or ".venv/bin/allomix", "monitor"]
+ALLOMIX = [shutil.which("allomix") or ".venv/bin/allomix", "detect"]
 # Per-marker contamination correction (Step 30, issue #30). On this co-pooled
 # flowcell the consensus-hom dose-response gate fires, so the correction is
 # applied for the headline two-person figures; a baseline (uncorrected) run is
@@ -194,7 +194,7 @@ def run_mix(
     error_table: Path | None = None,
     contam_table: Path | None = None,
 ) -> list[dict]:
-    """Run allomix monitor (TSV) and return one parsed dict per admix sample.
+    """Run allomix detect (TSV) and return one parsed dict per admix sample.
 
     Args:
         panel: Genotype VCF (defaults to the real ``GEN/<name>.SRP434573.vcf.gz``).
@@ -273,7 +273,7 @@ def write_tsv(path: Path, cols: list[str], rows: list[dict]) -> None:
 
 
 def two_person_row(name: str, host: str, donor: str, known: float | None, rec: dict) -> dict:
-    """Build one two-person result row dict from an allomix monitor record."""
+    """Build one two-person result row dict from an allomix detect record."""
     sample = rec.get("sample")
     # MLE host fraction = 100 - donor_pct (two-component).
     dpct = fnum(rec.get("donor_pct"))

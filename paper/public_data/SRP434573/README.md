@@ -289,7 +289,7 @@ cp output/genotypes/SRP434573/*.error_table.tsv \
    paper/public_data/SRP434573/genotypes/
 ```
 
-Once committed, `run_srp434573_allomix.py` passes each table to `allomix monitor
+Once committed, `run_srp434573_allomix.py` passes each table to `allomix detect
 --error-table` automatically (it falls back to the default model when absent), so
 the paper figures pick up the data-derived background on the next build. The
 tables hold only aggregated per-site rates and read counts (no patient

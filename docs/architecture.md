@@ -55,7 +55,7 @@ classify -> estimate -> presence -> select path is defined in exactly one place.
 | `qc.py` | Quality verdict: marker counts, beta-binomial goodness-of-fit, PASS/REVIEW/FAIL with reasons. | `assess_quality`, `QCReport` |
 | `analysis.py` | The shared single-sample pipeline that ties classify -> estimate -> presence -> QC together. | `analyse_sample`, `SampleAnalysis` |
 | `report.py` | Output formatting (TSV, JSON, timeline JSON) for single- and multi-donor results. | `to_tsv`, `to_json`, `timeline_json` |
-| `cli.py` | Argument parsing and the `monitor` / `timeline` / `estimate-bias` / `estimate-errors` commands. Thin: parses input, calls `analyse_sample`, formats output. | `main` |
+| `cli.py` | Argument parsing and the `detect` / `timeline` / `estimate-bias` / `estimate-errors` commands. Thin: parses input, calls `analyse_sample`, formats output. | `main` |
 | `simulate.py` | Standalone synthetic-VCF generator for in-silico validation. Dependency-light, plain-text VCF I/O, so its parser is `parse_text_vcf` (not `genotype.parse_vcf`) and it keeps its own `alt_dose`. | `blend_vcfs`, `build_joint_vcf`, `parse_text_vcf` |
 
 ## Two analysis paths
@@ -86,5 +86,5 @@ The `scripts/` directory holds standalone, regenerable diagnostic and
 data-generation tools (not part of the installed package). The host-presence
 plots (`plot_host_presence_per_marker.py`, `host_presence_manhattan.py`) consume
 `analysis.analyse_sample` and the public `detect.donor_hom_markers`, so the
-markers and pooled lines they draw match the `monitor` batch exactly, including
+markers and pooled lines they draw match the `detect` batch exactly, including
 the sex-chromosome and artifact-filter handling. See `docs/scripts.md`.

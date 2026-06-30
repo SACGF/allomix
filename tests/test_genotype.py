@@ -6,9 +6,8 @@ import pytest
 
 from allomix.genotype import (
     MarkerData,
-    _alt_dose,
+    MarkerType,
     classify_markers,
-    marker_type,
     parse_vcf,
 )
 
@@ -29,47 +28,53 @@ class TestMarkerType:
     """Test Vynck marker type classification."""
 
     def test_hom_ref_vs_hom_alt(self):
-        assert marker_type((0, 0), (1, 1)) == 0
+        assert MarkerType.classify((0, 0), (1, 1)) == 0
 
     def test_hom_alt_vs_hom_ref(self):
-        assert marker_type((1, 1), (0, 0)) == 1
+        assert MarkerType.classify((1, 1), (0, 0)) == 1
 
     def test_het_vs_hom_ref(self):
-        assert marker_type((0, 1), (0, 0)) == 10
+        assert MarkerType.classify((0, 1), (0, 0)) == 10
 
     def test_het_vs_hom_alt(self):
-        assert marker_type((0, 1), (1, 1)) == 11
+        assert MarkerType.classify((0, 1), (1, 1)) == 11
 
     def test_hom_ref_vs_het(self):
-        assert marker_type((0, 0), (0, 1)) == 20
+        assert MarkerType.classify((0, 0), (0, 1)) == 20
 
     def test_hom_alt_vs_het(self):
-        assert marker_type((1, 1), (0, 1)) == 21
+        assert MarkerType.classify((1, 1), (0, 1)) == 21
 
     def test_same_hom_ref(self):
-        assert marker_type((0, 0), (0, 0)) is None
+        assert MarkerType.classify((0, 0), (0, 0)) is None
 
     def test_same_het(self):
-        assert marker_type((0, 1), (0, 1)) is None
+        assert MarkerType.classify((0, 1), (0, 1)) is None
 
     def test_same_hom_alt(self):
-        assert marker_type((1, 1), (1, 1)) is None
+        assert MarkerType.classify((1, 1), (1, 1)) is None
 
 
 # ---------------------------------------------------------------------------
-# _alt_dose
+# MarkerType metadata (dose + label carried on the enum members)
 # ---------------------------------------------------------------------------
 
 
-class TestAltDose:
-    def test_hom_ref(self):
-        assert _alt_dose((0, 0)) == 0
+class TestMarkerTypeMetadata:
+    def test_dose_pairs_round_trip_through_classify(self):
+        # Every member's (host_dose, donor_dose) must classify back to itself.
+        for mt in MarkerType:
+            host_gt = (0, 0) if mt.host_dose == 0 else (0, 1) if mt.host_dose == 1 else (1, 1)
+            donor_gt = (0, 0) if mt.donor_dose == 0 else (0, 1) if mt.donor_dose == 1 else (1, 1)
+            assert MarkerType.classify(host_gt, donor_gt) is mt
 
-    def test_het(self):
-        assert _alt_dose((0, 1)) == 1
+    def test_label(self):
+        assert MarkerType.HOST_HOMREF_DONOR_HOMALT.label == "host 0/0, donor 1/1"
+        assert MarkerType.HOST_HOMALT_DONOR_HET.label == "host 1/1, donor 0/1"
 
-    def test_hom_alt(self):
-        assert _alt_dose((1, 1)) == 2
+    def test_label_for_bare_code(self):
+        assert MarkerType.label_for(0) == "host 0/0, donor 1/1"
+        assert MarkerType.label_for(999) == "999"  # unrecognised code passes through
 
 
 # ---------------------------------------------------------------------------

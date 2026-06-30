@@ -19,7 +19,7 @@ import pytest
 
 from allomix.chimerism import estimate_multi_donor
 from allomix.cli import main
-from allomix.genotype import InformativeMarker, classify_markers, marker_type, parse_vcf
+from allomix.genotype import InformativeMarker, MarkerType, classify_markers, parse_vcf
 from allomix.likelihood import (
     expected_weight,
     expected_weight_multi,
@@ -58,8 +58,8 @@ def _make_marker(
     pos: int = 100,
 ) -> InformativeMarker:
     """Create an InformativeMarker for testing."""
-    mt1 = marker_type(host_gt, donor1_gt)
-    mt2 = marker_type(host_gt, donor2_gt)
+    mt1 = MarkerType.classify(host_gt, donor1_gt)
+    mt2 = MarkerType.classify(host_gt, donor2_gt)
     mtype = mt1 if mt1 is not None else mt2
     return InformativeMarker(
         chrom="chr1",

@@ -40,7 +40,7 @@ from allomix.marker_contamination import (
     load_contamination_table,
     save_contamination_table,
 )
-from allomix.relatedness import VALID_DECLARATIONS
+from allomix.relatedness import Relatedness
 from allomix.report import (
     DonorMeta,
     ReportMeta,
@@ -52,14 +52,14 @@ from allomix.report import (
 from allomix.runmeta import RunUnitInfo, read_run_units
 
 
-def _expected_relatedness_value(value: str) -> str:
-    """Validate one ``--expected-relatedness`` value (argparse ``type``).
+def _expected_relatedness_value(value: str) -> Relatedness | None:
+    """Parse one ``--expected-relatedness`` value (argparse ``type``).
 
-    Accepts the relationship declarations plus NA (case-insensitive), returns the
-    lowercased form. Rejects "identical" (see the raised error for why).
+    Accepts the relationship declarations plus NA (case-insensitive). Returns the
+    matching ``Relatedness``, or None for NA (no expectation). Rejects "identical"
+    (see the raised error for why).
     """
-    v = value.strip().lower()
-    if v == "identical":
+    if value.strip().lower() == "identical":
         raise argparse.ArgumentTypeError(
             "'identical' is not a valid expected relatedness. Host and donor are "
             "only identical for a monozygotic-twin (syngeneic) donor, which has "
@@ -67,13 +67,13 @@ def _expected_relatedness_value(value: str) -> str:
             "chimerism does not apply. (If samples do come back identical, "
             "allomix fails QC and says so.)"
         )
-    allowed = {*VALID_DECLARATIONS, "na"}
-    if v not in allowed:
-        valid = ", ".join([*VALID_DECLARATIONS, "NA"])
+    try:
+        return Relatedness.from_declared(value)
+    except ValueError:
+        valid = ", ".join(Relatedness.declared_values())
         raise argparse.ArgumentTypeError(
-            f"invalid expected relatedness {value!r}; choose from {valid}"
-        )
-    return v
+            f"invalid expected relatedness {value!r}; choose from {valid}, NA"
+        ) from None
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -104,7 +104,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         type=_expected_relatedness_value,
         help="Declared host-vs-donor relationship for the QC relatedness check, "
         "one per --donor-sample in the same order (repeat to match). One of "
-        f"{', '.join(VALID_DECLARATIONS)} or NA (no expectation). A declared "
+        f"{', '.join(Relatedness.declared_values())} or NA (no expectation). A declared "
         "relationship that crosses the related/unrelated boundary fails QC. "
         "'identical' is rejected: an identical-twin (syngeneic) donor cannot "
         "be monitored by genotype.",
@@ -398,7 +398,7 @@ def _run_single_sample(
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
     marker_type_overdispersion: bool = True,
-    expected_relatedness: list[str] | None = None,
+    expected_relatedness: list[Relatedness | None] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
 ) -> tuple:

@@ -14,7 +14,7 @@ from typing import TextIO
 from allomix import __version__
 from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
-from allomix.genotype import marker_type_label
+from allomix.genotype import MarkerType
 from allomix.html.meta import DonorMeta, ReportMeta
 from allomix.html.render import render_single
 from allomix.qc import QCReport
@@ -96,7 +96,7 @@ def _write_marker_csv(
                     m.chrom,
                     str(m.pos),
                     str(int(m.marker_type)),
-                    marker_type_label(m.marker_type),
+                    MarkerType.label_for(m.marker_type),
                     str(m.ad_ref),
                     str(m.ad_alt),
                     str(m.dp),

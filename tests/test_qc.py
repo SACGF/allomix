@@ -16,10 +16,8 @@ from allomix.qc import (
     assess_quality,
 )
 from allomix.relatedness import (
-    DEGREE_FIRST,
-    DEGREE_IDENTICAL,
-    DEGREE_UNRELATED,
     AdmixConsistencyResult,
+    Relatedness,
     RelatednessResult,
 )
 from allomix.runmeta import RunUnitInfo
@@ -193,26 +191,20 @@ class TestIndexHoppingFlag:
 
     def test_shared_run_warns_without_review(self):
         result = _make_chimerism_result()
-        result.run_unit = RunUnitInfo(
-            run_unit="FC1:1", source="RG:PU", shares_run_with_host=True
-        )
+        result.run_unit = RunUnitInfo(run_unit="FC1:1", source="RG:PU", shares_run_with_host=True)
         qc = assess_quality(result, _make_genotypes())
         assert any("Index-hopping" in w and "FC1:1" in w for w in qc.warnings)
         assert qc.status == "PASS"  # soft warning only
 
     def test_not_shared_no_warning(self):
         result = _make_chimerism_result()
-        result.run_unit = RunUnitInfo(
-            run_unit="FC2:2", source="RG:PU", shares_run_with_host=False
-        )
+        result.run_unit = RunUnitInfo(run_unit="FC2:2", source="RG:PU", shares_run_with_host=False)
         qc = assess_quality(result, _make_genotypes())
         assert not any("Index-hopping" in w for w in qc.warnings)
 
     def test_undetermined_no_warning(self):
         result = _make_chimerism_result()
-        result.run_unit = RunUnitInfo(
-            run_unit="FC3:3", source="RG:PU", shares_run_with_host=None
-        )
+        result.run_unit = RunUnitInfo(run_unit="FC3:3", source="RG:PU", shares_run_with_host=None)
         qc = assess_quality(result, _make_genotypes())
         assert not any("Index-hopping" in w for w in qc.warnings)
 
@@ -680,8 +672,12 @@ class TestRobustExclusionReview:
             for i in range(19)
         ]
         bad = _make_marker_result(
-            pos=1900, dp=2000, expected_vaf=0.10, observed_vaf=0.50,
-            residual=0.40, included=False,
+            pos=1900,
+            dp=2000,
+            expected_vaf=0.10,
+            observed_vaf=0.50,
+            residual=0.40,
+            included=False,
         )
         result = _make_chimerism_result(n_informative=20, per_marker=good + [bad])
         result.n_robust_excluded = 1
@@ -689,17 +685,14 @@ class TestRobustExclusionReview:
         qc = assess_quality(result, _make_genotypes())
         assert qc.goodness_of_fit_pval is not None and qc.goodness_of_fit_pval > 0.01
         assert (
-            qc.goodness_of_fit_pval_pretrim is not None
-            and qc.goodness_of_fit_pval_pretrim < 0.01
+            qc.goodness_of_fit_pval_pretrim is not None and qc.goodness_of_fit_pval_pretrim < 0.01
         )
         assert qc.status == "REVIEW"
         assert any("pre-trim" in w for w in qc.warnings)
 
 
-def _rel(degree: int, coefficient: float) -> RelatednessResult:
-    """A RelatednessResult with a fixed degree, for QC-integration tests."""
-    from allomix.relatedness import DEGREE_LABELS
-
+def _rel(degree: Relatedness, coefficient: float) -> RelatednessResult:
+    """A RelatednessResult with a fixed detected relatedness, for QC-integration tests."""
     return RelatednessResult(
         a_name="host",
         b_name="donor",
@@ -707,7 +700,7 @@ def _rel(degree: int, coefficient: float) -> RelatednessResult:
         ci_low=coefficient - 0.05,
         ci_high=coefficient + 0.05,
         confidence="high",
-        relationship=DEGREE_LABELS[degree],
+        relationship=degree.label,
         degree=degree,
         n_sites=80,
         het_a=60,
@@ -722,21 +715,25 @@ class TestRelatednessQC:
 
     def test_boundary_mismatch_fails(self):
         result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(DEGREE_UNRELATED, 0.03)]
-        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["first-degree"])
+        result.relatedness = [_rel(Relatedness.UNRELATED, 0.03)]
+        qc = assess_quality(
+            result, _make_genotypes(), expected_relatedness=[Relatedness.FIRST_DEGREE]
+        )
         assert qc.status == "FAIL"
         assert any("relatedness check FAIL" in w for w in qc.warnings)
 
     def test_within_tolerance_passes(self):
         result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]
-        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["first-degree"])
+        result.relatedness = [_rel(Relatedness.FIRST_DEGREE, 0.5)]
+        qc = assess_quality(
+            result, _make_genotypes(), expected_relatedness=[Relatedness.FIRST_DEGREE]
+        )
         assert qc.status == "PASS"
 
     def test_no_expectation_no_verdict(self):
         result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]
-        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["NA"])
+        result.relatedness = [_rel(Relatedness.FIRST_DEGREE, 0.5)]
+        qc = assess_quality(result, _make_genotypes(), expected_relatedness=[None])
         assert qc.status == "PASS"
         assert not any("relatedness check" in w for w in qc.warnings)
         # The estimate is still carried on the report even without a verdict.
@@ -744,7 +741,7 @@ class TestRelatednessQC:
 
     def test_relatedness_attached_to_report(self):
         result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]
+        result.relatedness = [_rel(Relatedness.FIRST_DEGREE, 0.5)]
         qc = assess_quality(result, _make_genotypes())
         assert qc.relatedness == result.relatedness
 
@@ -752,20 +749,20 @@ class TestRelatednessQC:
         # More declarations than host-vs-donor pairs: strict zip errors rather
         # than silently leaving a donor unchecked.
         result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]  # one host-vs-donor pair
+        result.relatedness = [_rel(Relatedness.FIRST_DEGREE, 0.5)]  # one host-vs-donor pair
         with pytest.raises(ValueError):
             assess_quality(
                 result,
                 _make_genotypes(),
-                expected_relatedness=["first-degree", "unrelated"],
+                expected_relatedness=[Relatedness.FIRST_DEGREE, Relatedness.UNRELATED],
             )
 
     def test_gaining_relatedness_reviews_not_fails(self):
         # Declared unrelated but a non-identical relationship detected: REVIEW,
         # not FAIL (not a random-swap signature).
         result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(DEGREE_FIRST, 0.5)]
-        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["unrelated"])
+        result.relatedness = [_rel(Relatedness.FIRST_DEGREE, 0.5)]
+        qc = assess_quality(result, _make_genotypes(), expected_relatedness=[Relatedness.UNRELATED])
         assert qc.status == "REVIEW"
         assert not any("FAIL" in w for w in qc.warnings)
 
@@ -773,7 +770,7 @@ class TestRelatednessQC:
         # An identical reference pair is an unconditional FAIL with a clear
         # message, even when no expected relationship is declared.
         result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(DEGREE_IDENTICAL, 1.0)]
+        result.relatedness = [_rel(Relatedness.IDENTICAL, 1.0)]
         qc = assess_quality(result, _make_genotypes())
         assert qc.status == "FAIL"
         assert any("Identical reference samples" in w for w in qc.warnings)
@@ -782,8 +779,8 @@ class TestRelatednessQC:
         # When identical and a declaration is given, only the duplicate message
         # is emitted (the declared-verdict message is skipped).
         result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(DEGREE_IDENTICAL, 1.0)]
-        qc = assess_quality(result, _make_genotypes(), expected_relatedness=["unrelated"])
+        result.relatedness = [_rel(Relatedness.IDENTICAL, 1.0)]
+        qc = assess_quality(result, _make_genotypes(), expected_relatedness=[Relatedness.UNRELATED])
         assert qc.status == "FAIL"
         assert any("Identical reference samples" in w for w in qc.warnings)
         assert not any("relatedness check" in w for w in qc.warnings)

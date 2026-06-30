@@ -21,7 +21,7 @@ from allomix.detect import (
     select_donor_hom_markers,
 )
 from allomix.error_rates import MarkerErrorRates
-from allomix.genotype import InformativeMarker, marker_type
+from allomix.genotype import InformativeMarker, MarkerType
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,7 +44,7 @@ def _imarker(
     variability noise sources documented in the plan's prototype-results
     section don't contaminate the calibration check.
     """
-    mtypes = [marker_type(host_gt, d) for d in donor_gts]
+    mtypes = [MarkerType.classify(host_gt, d) for d in donor_gts]
     mt = (
         mtypes[0]
         if mtypes and mtypes[0] is not None
@@ -492,7 +492,7 @@ def _dp4_marker(host_gt, donor_gt, h, f_h, depth, e, one_strand, pos):
         ad_ref, ad_alt, dp4 = other, y, (of, orv, da_fwd, da_rev)
     else:  # donor-absent allele = REF
         ad_ref, ad_alt, dp4 = y, other, (da_fwd, da_rev, of, orv)
-    mt = marker_type(host_gt, donor_gt)
+    mt = MarkerType.classify(host_gt, donor_gt)
     return InformativeMarker(
         chrom="chr1",
         pos=pos,

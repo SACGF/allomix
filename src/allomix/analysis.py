@@ -19,6 +19,7 @@ from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
 from allomix.likelihood import PanelCalibration
 from allomix.qc import QCReport, assess_quality
 from allomix.relatedness import (
+    Relatedness,
     RelatednessResult,
     admix_consistency,
     relatedness_coefficient,
@@ -67,7 +68,7 @@ def analyse_sample(
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
     marker_type_overdispersion: bool = True,
-    expected_relatedness: list[str] | None = None,
+    expected_relatedness: list[Relatedness | None] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
 ) -> AdmixtureSampleAnalysis:
@@ -90,9 +91,9 @@ def analyse_sample(
         marker_type_overdispersion: Fit a separate beta-binomial rho per marker
             class (donor-hom vs donor-het) in single-donor estimation (issue #33).
             Ignored for multi-donor.
-        expected_relatedness: Declared relationship per donor (one entry per
-            ``donors``, value in ``relatedness.VALID_DECLARATIONS`` or "NA"/None).
-            Compared against estimated host-vs-donor relatedness in QC.
+        expected_relatedness: Declared relationship per donor as a ``Relatedness``
+            member (one entry per ``donors``; None for no expectation). Compared
+            against estimated host-vs-donor relatedness in QC.
         relatedness_tolerance: Allowed degree distance before a declared-vs-detected
             mismatch is flagged (see ``evaluate_expected``).
     """

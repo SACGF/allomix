@@ -15,9 +15,9 @@ from allomix.contamination import ContaminationResult
 from allomix.detect import HostPresenceResult
 from allomix.genotype import MarkerGenotypes
 from allomix.relatedness import (
-    DEGREE_IDENTICAL,
     MIN_CONSENSUS,
     AdmixConsistencyResult,
+    Relatedness,
     RelatednessResult,
     evaluate_expected,
 )
@@ -264,7 +264,7 @@ def assess_quality(
     result: ChimerismResult,
     genotypes: MarkerGenotypes,
     min_informative: int = 3,
-    expected_relatedness: list[str] | None = None,
+    expected_relatedness: list[Relatedness | None] | None = None,
     relatedness_tolerance: int = 1,
 ) -> QCReport:
     """Assess quality of a chimerism result and produce a QC report.
@@ -282,9 +282,10 @@ def assess_quality(
     get a valid report.
 
     Args:
-        expected_relatedness: Declared host-vs-donor relationships, aligned with
-            the leading host-vs-donor entries of ``result.relatedness`` (one per
-            donor, in donor order). "NA"/None entries are skipped.
+        expected_relatedness: Declared host-vs-donor relationships as ``Relatedness``
+            members, aligned with the leading host-vs-donor entries of
+            ``result.relatedness`` (one per donor, in donor order). None entries (no
+            expectation) are skipped.
         relatedness_tolerance: Allowed degree distance for a relatedness PASS.
     """
     warnings: list[str] = []
@@ -431,7 +432,7 @@ def assess_quality(
         # Intrinsically an error (chimerism is meaningless), so a hard FAIL
         # checked unconditionally.
         for rel in relatedness:
-            if rel.degree == DEGREE_IDENTICAL:
+            if rel.degree == Relatedness.IDENTICAL:
                 status = "FAIL"
                 duplicate_pairs.add(rel.pair)
                 coef = "" if rel.coefficient is None else f"r={rel.coefficient:.2f}, "

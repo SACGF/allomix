@@ -8,11 +8,8 @@ from allomix.analysis import analyse_sample
 from allomix.cli import main
 from allomix.genotype import MarkerData, parse_vcf
 from allomix.relatedness import (
-    DEGREE_FIRST,
-    DEGREE_IDENTICAL,
-    DEGREE_THIRD,
-    DEGREE_UNRELATED,
     MIN_CONSENSUS,
+    Relatedness,
     admix_consistency,
     evaluate_expected,
     relatedness_coefficient,
@@ -105,7 +102,7 @@ class TestRelatednessCoefficient:
             donor = _markers_to_md(markers, "host_gt")  # identical to host
             res = relatedness_coefficient(host, donor, "host", "donor")
             assert res.coefficient == 1.0
-            assert res.degree == DEGREE_IDENTICAL
+            assert res.degree == Relatedness.IDENTICAL
             assert res.relationship.startswith("identical")
             assert res.ibs0 == 0
 
@@ -131,7 +128,7 @@ class TestRelatednessCoefficient:
             res = relatedness_coefficient(host, donor, "host", "donor")
             assert res.coefficient is not None
             assert 0.35 < res.coefficient < 0.7
-            assert res.degree == DEGREE_FIRST
+            assert res.degree == Relatedness.FIRST_DEGREE
 
     def test_too_few_het_sites_gives_no_coefficient(self):
         # Only two shared het sites -> below MIN_HET_SITES.
@@ -197,7 +194,7 @@ class TestEvaluateExpected:
 
     def test_declared_related_detected_unrelated_fails(self):
         res = self._result_with_degree(40, 20)  # coef 0.0 -> unrelated
-        assert res.degree == DEGREE_UNRELATED
+        assert res.degree == Relatedness.UNRELATED
         v = evaluate_expected(res, "first-degree")
         assert v.status == "FAIL"
         assert "first-degree" in v.message and "unrelated" in v.message
@@ -205,7 +202,7 @@ class TestEvaluateExpected:
     def test_declared_unrelated_detected_identical_fails(self):
         # Identical where two distinct individuals were declared: sample reuse.
         res = self._result_with_degree(40, 0)  # coef 1.0 -> identical
-        assert res.degree == DEGREE_IDENTICAL
+        assert res.degree == Relatedness.IDENTICAL
         v = evaluate_expected(res, "unrelated")
         assert v.status == "FAIL"
 
@@ -213,7 +210,7 @@ class TestEvaluateExpected:
         # Gaining a (non-identical) relationship is not a random-swap signature,
         # so it is a REVIEW, not a FAIL.
         res = self._result_with_degree(100, 25)  # coef 0.5 -> first-degree
-        assert res.degree == DEGREE_FIRST
+        assert res.degree == Relatedness.FIRST_DEGREE
         v = evaluate_expected(res, "unrelated")
         assert v.status == "REVIEW"
 
@@ -226,20 +223,20 @@ class TestEvaluateExpected:
     def test_within_tolerance_passes(self):
         # coef 0.12 -> third-degree; declared second-degree, distance 1.
         res = self._result_with_degree(100, 44)
-        assert res.degree == DEGREE_THIRD
+        assert res.degree == Relatedness.THIRD_DEGREE
         v = evaluate_expected(res, "second-degree", tolerance=1)
         assert v.status == "PASS"
 
     def test_two_level_gap_reviews(self):
         # coef 0.12 -> third-degree; declared first-degree, distance 2.
         res = self._result_with_degree(100, 44)
-        assert res.degree == DEGREE_THIRD
+        assert res.degree == Relatedness.THIRD_DEGREE
         v = evaluate_expected(res, "first-degree", tolerance=1)
         assert v.status == "REVIEW"
 
     def test_related_catch_all_matches_first_degree(self):
         res = self._result_with_degree(100, 25)  # coef 0.5 -> first-degree
-        assert res.degree == DEGREE_FIRST
+        assert res.degree == Relatedness.FIRST_DEGREE
         v = evaluate_expected(res, "related")
         assert v.status == "PASS"
 
@@ -382,25 +379,25 @@ class TestEndToEndSyntheticRelated:
         analysis = _analyse_related(tmp_path, "sibling", seed=7)
         rel = analysis.result.relatedness[0]
         assert rel.a_name == "host" and rel.b_name == "donor"
-        assert rel.degree == DEGREE_FIRST
+        assert rel.degree == Relatedness.FIRST_DEGREE
         assert rel.confidence == "high"
 
     def test_unrelated_pair_detected_unrelated(self, tmp_path):
         analysis = _analyse_related(tmp_path, "unrelated", seed=11)
         rel = analysis.result.relatedness[0]
-        assert rel.degree == DEGREE_UNRELATED
+        assert rel.degree == Relatedness.UNRELATED
 
     def test_declared_boundary_mismatch_fails(self, tmp_path):
         # An unrelated pair declared first-degree crosses the boundary -> FAIL.
         analysis = _analyse_related(
-            tmp_path, "unrelated", seed=11, expected_relatedness=["first-degree"]
+            tmp_path, "unrelated", seed=11, expected_relatedness=[Relatedness.FIRST_DEGREE]
         )
         assert analysis.qc.status == "FAIL"
         assert any("relatedness check FAIL" in w for w in analysis.qc.warnings)
 
     def test_correct_declaration_passes(self, tmp_path):
         analysis = _analyse_related(
-            tmp_path, "sibling", seed=7, expected_relatedness=["first-degree"]
+            tmp_path, "sibling", seed=7, expected_relatedness=[Relatedness.FIRST_DEGREE]
         )
         # No relatedness FAIL/REVIEW contributed by the identity check.
         assert not any("relatedness check FAIL" in w for w in analysis.qc.warnings)
@@ -434,7 +431,7 @@ class TestEndToEndSyntheticRelated:
         admix = parse_vcf(admix_path, sample="ADMIX", min_dp=0)
         analysis = analyse_sample(host, [donor], admix, min_dp=50, min_gq=0, error_rate=0.01)
 
-        assert analysis.result.relatedness[0].degree == DEGREE_IDENTICAL
+        assert analysis.result.relatedness[0].degree == Relatedness.IDENTICAL
         assert analysis.qc.status == "FAIL"
         assert any("Identical reference samples" in w for w in analysis.qc.warnings)
 
@@ -446,7 +443,7 @@ class TestEndToEndSyntheticRelated:
         for seed in range(8):
             analysis = _analyse_related(
                 tmp_path, "cousin", seed=seed, n=300,
-                expected_relatedness=["related"],
+                expected_relatedness=[Relatedness.RELATED],
             )
             fails = [w for w in analysis.qc.warnings if "relatedness check FAIL" in w]
             assert not fails, f"seed {seed} hard-failed a cousin declared related: {fails}"
@@ -457,7 +454,7 @@ class TestEndToEndSyntheticRelated:
         for seed in range(8):
             analysis = _analyse_related(
                 tmp_path, "cousin", seed=seed, n=300,
-                expected_relatedness=["third-degree"],
+                expected_relatedness=[Relatedness.THIRD_DEGREE],
             )
             verdicts = [w for w in analysis.qc.warnings if "relatedness check" in w]
             assert not any("FAIL" in w for w in verdicts), f"seed {seed}: {verdicts}"

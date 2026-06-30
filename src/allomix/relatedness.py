@@ -20,58 +20,111 @@ sex-mismatched transplants. The robust coefficient is adapted from somalier
 (Pedersen & Quinlan, MIT licensed); standard kinship estimation.
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
+from enum import Enum
 
 from scipy.stats import binom, norm
 
 from allomix.constants import CI_LEVEL, DEFAULT_ERROR_RATE
 from allomix.genotype import MarkerData, is_sex_chrom, marker_key
 
-# Coefficient bands -> degree index: a coefficient above a band's lower edge maps
-# to that degree. Scale: ~1.0 identical, ~0.5 first-degree, ~0.25 second-degree,
-# ~0.125 third-degree, ~0 unrelated.
-IDENTICAL_MIN = 0.70
-FIRST_DEGREE_MIN = 0.35
-SECOND_DEGREE_MIN = 0.17
-THIRD_DEGREE_MIN = 0.08
 
-DEGREE_IDENTICAL = 0
-DEGREE_FIRST = 1
-DEGREE_SECOND = 2
-DEGREE_THIRD = 3
-DEGREE_UNRELATED = 4
+class Relatedness(str, Enum):
+    """A host-vs-donor relatedness class, estimated from data or declared by a lab.
 
-DEGREE_LABELS = {
-    DEGREE_IDENTICAL: "identical / duplicate",
-    DEGREE_FIRST: "first-degree (parent/child/sibling)",
-    DEGREE_SECOND: "second-degree (half-sib/uncle/grandparent)",
-    DEGREE_THIRD: "third-degree (cousin)",
-    DEGREE_UNRELATED: "unrelated",
-}
+    Member value is the lowercase wire string used on the CLI / batch CSV and in messages, so a
+    ``Relatedness`` is a ``str``. Members carry an ``ordinal`` on a 0 (identical) ..
+    4 (unrelated) scale for degree-distance comparisons, the lower edge of the
+    coefficient band that maps to them (``min_coef``), and an English ``label``.
+    Coefficient scale: ~1.0 identical, ~0.5 first-degree, ~0.25 second-degree,
+    ~0.125 third-degree, ~0 unrelated.
 
-# Declared expected-relationship strings accepted on input, mapped to a degree.
-# "related" is a catch-all for any related class (degrees 1-3), handled separately.
-# "identical" is deliberately NOT accepted: the only genuinely identical pair is an
-# identical-twin (syngeneic) donor, which has no host/donor differences to measure,
-# so genotype chimerism does not apply. Identical stays a *detected* outcome
-# (flagged duplicate / unmeasurable).
-DECLARED_DEGREE = {
-    "first-degree": DEGREE_FIRST,
-    "second-degree": DEGREE_SECOND,
-    "third-degree": DEGREE_THIRD,
-    "unrelated": DEGREE_UNRELATED,
-}
-RELATED_CATCH_ALL = "related"
-#: Values accepted from the CLI / batch CSV. "NA" (or blank) means no expectation.
-VALID_DECLARATIONS = (*DECLARED_DEGREE.keys(), RELATED_CATCH_ALL)
+    Two members are context-specific:
+
+    - ``IDENTICAL`` is only ever a *detected* outcome (a duplicate, or an
+      identical-twin/syngeneic donor that cannot be monitored). It is not a valid
+      declaration, so ``from_declared`` rejects it.
+    - ``RELATED`` is only ever a *declared* catch-all ("any related degree"). It has
+      no coefficient band, so ``from_coef`` never returns it.
+    """
+
+    # name = (wire value, ordinal, lower coefficient edge, label)
+    IDENTICAL = ("identical", 0, 0.70, "identical / duplicate")
+    FIRST_DEGREE = ("first-degree", 1, 0.35, "first-degree (parent/child/sibling)")
+    SECOND_DEGREE = ("second-degree", 2, 0.17, "second-degree (half-sib/uncle/grandparent)")
+    THIRD_DEGREE = ("third-degree", 3, 0.08, "third-degree (cousin)")
+    UNRELATED = ("unrelated", 4, float("-inf"), "unrelated")
+    RELATED = ("related", 5, float("nan"), "related (any degree)")
+
+    def __new__(cls, value: str, ordinal: int, min_coef: float, label: str) -> Relatedness:
+        member = str.__new__(cls, value)
+        member._value_ = value
+        member.ordinal = ordinal
+        member.min_coef = min_coef
+        member.label = label
+        return member
+
+    @classmethod
+    def from_coef(cls, coef: float) -> Relatedness:
+        """Map a relatedness coefficient to the highest band it clears.
+
+        Always a concrete degree (identical..unrelated), never the ``RELATED``
+        catch-all, whose ``min_coef`` is NaN so the ``>`` test is never true.
+        """
+        for member in cls:  # ordered identical..unrelated, descending edges
+            if coef > member.min_coef:
+                return member
+        return cls.UNRELATED
+
+    @classmethod
+    def declared_values(cls) -> tuple[str, ...]:
+        """Wire strings accepted as a declaration: every class except identical."""
+        return tuple(m.value for m in cls if m is not cls.IDENTICAL)
+
+    @classmethod
+    def from_declared(cls, value: str | Relatedness | None) -> Relatedness | None:
+        """Normalize a declared relatedness from the CLI / CSV to a member.
+
+        Returns None for no expectation (None, blank, or "NA"); the matching member
+        otherwise. Raises ValueError on an unrecognised value (likely a typo) or on
+        "identical", a detected-only outcome that is never a valid declaration, so
+        either is a hard error rather than silently turning the check off.
+        """
+        if value is None:
+            return None
+        if isinstance(value, cls):
+            member = value
+        else:
+            text = value.strip().lower()
+            if text in _NO_EXPECTATION_VALUES:
+                return None
+            try:
+                member = cls(text)
+            except ValueError:
+                raise ValueError(
+                    f"unrecognised expected relatedness {value!r}; choose from "
+                    f"{', '.join(cls.declared_values())} or NA"
+                ) from None
+        if member is cls.IDENTICAL:
+            raise ValueError(
+                "'identical' is not a valid declared relatedness; it is a "
+                "detected-only outcome (duplicate / identical-twin donor)"
+            )
+        return member
+
+
+#: Inputs that mean "no expectation declared": no verdict, and no error.
+_NO_EXPECTATION_VALUES = {"", "na"}
 
 # When a declaration and the estimate sit on opposite sides of the
 # related/unrelated boundary, only a *close* relationship (second-degree or nearer)
 # is a hard FAIL. Third-degree (cousin) sits within sampling noise of the boundary,
 # so such a crossing is REVIEW: keeps the swap/mislabel signal without failing
 # legitimate distant kin that estimate just over the line.
-BOUNDARY_FAIL_MAX_DEGREE = DEGREE_SECOND
+BOUNDARY_FAIL_MAX_DEGREE = Relatedness.SECOND_DEGREE
 
 # Minimum heterozygous sites (in the scarcer sample) before a coefficient is
 # trusted at all; below this, ``coefficient`` is None.
@@ -103,8 +156,9 @@ class RelatednessResult:
         ci_low: Lower bound of the approximate 95% CI (None if no coefficient).
         ci_high: Upper bound of the approximate 95% CI (None if no coefficient).
         confidence: "low" / "med" / "high" from the usable het-site count.
-        relationship: English relationship label for ``degree``.
-        degree: Degree index 0-4 (see ``DEGREE_LABELS``), or None if no estimate.
+        relationship: English label for the detected relatedness (``degree.label``).
+        degree: Detected ``Relatedness`` (always a concrete degree, never the
+            ``RELATED`` catch-all), or None if no estimate.
         n_sites: Shared, clean, autosomal biallelic markers compared.
         shared_hets: Sites heterozygous in both samples.
         ibs0: Opposite-homozygote sites (0 vs 2 alt dose).
@@ -117,7 +171,7 @@ class RelatednessResult:
     ci_high: float | None
     confidence: str
     relationship: str
-    degree: int | None
+    degree: Relatedness | None
     n_sites: int
     het_a: int
     het_b: int
@@ -172,19 +226,6 @@ def _clean_dose(gt: tuple[int, int]) -> int | None:
     if a < 0 or b < 0 or a > 1 or b > 1:
         return None
     return a + b
-
-
-def _degree_from_coef(coef: float) -> int:
-    """Map a relatedness coefficient to a degree index (see DEGREE_LABELS)."""
-    if coef > IDENTICAL_MIN:
-        return DEGREE_IDENTICAL
-    if coef > FIRST_DEGREE_MIN:
-        return DEGREE_FIRST
-    if coef > SECOND_DEGREE_MIN:
-        return DEGREE_SECOND
-    if coef > THIRD_DEGREE_MIN:
-        return DEGREE_THIRD
-    return DEGREE_UNRELATED
 
 
 def _confidence(n_eff: int) -> str:
@@ -274,7 +315,7 @@ def relatedness_coefficient(
         )
 
     coef = (shared_hets - 2 * ibs0) / n_eff
-    degree = _degree_from_coef(coef)
+    degree = Relatedness.from_coef(coef)
     ci_low, ci_high = _coef_ci(coef, n_eff)
     return RelatednessResult(
         a_name=a_name,
@@ -283,7 +324,7 @@ def relatedness_coefficient(
         ci_low=ci_low,
         ci_high=ci_high,
         confidence=_confidence(n_eff),
-        relationship=DEGREE_LABELS[degree],
+        relationship=degree.label,
         degree=degree,
         n_sites=n_sites,
         het_a=het_a,
@@ -361,32 +402,10 @@ def admix_consistency(
     )
 
 
-#: Inputs that mean "no expectation declared": no verdict, and no error.
-NO_EXPECTATION_VALUES = {"", "na"}
-
-
-def _normalise_declaration(declared: str | None) -> str | None:
-    """Lowercase a declaration; None for no-expectation; raise on a typo.
-
-    None for None / blank / "NA"; the lowercased value when recognised. Raises
-    ValueError otherwise, so a typo (e.g. "frist-degree") is a hard error rather
-    than silently turning the relatedness check off.
-    """
-    if declared is None:
-        return None
-    d = declared.strip().lower()
-    if d in NO_EXPECTATION_VALUES:
-        return None
-    if d not in VALID_DECLARATIONS:
-        raise ValueError(
-            f"unrecognised expected relatedness {declared!r}; choose from "
-            f"{', '.join(VALID_DECLARATIONS)} or NA"
-        )
-    return d
-
-
-def _verdict_status(declared: str, degree: int, tolerance: int) -> str:
-    """Decide PASS / REVIEW / FAIL for a usable declaration and detected degree.
+def _verdict_status(
+    declared_relatedness: Relatedness, detected_relatedness: Relatedness, tolerance: int
+) -> str:
+    """Decide PASS / REVIEW / FAIL for a usable declaration and detected estimate.
 
     Asymmetric, following the realistic failure modes:
 
@@ -401,33 +420,35 @@ def _verdict_status(declared: str, degree: int, tolerance: int) -> str:
       only REVIEW (not a swap signature, and a related donor still yields a usable
       estimate).
     - Within the related class, degree distance <= tolerance is PASS, else REVIEW.
-    """
-    detected_identical = degree == DEGREE_IDENTICAL
-    detected_unrelated = degree == DEGREE_UNRELATED
 
+    ``declared_relatedness`` and ``detected_relatedness`` share one ``Relatedness``
+    scale, so the degree distance is just their ``ordinal`` difference.
+    """
     # Detected identical: sample reuse or an identical-twin (syngeneic) donor;
-    # either way no host/donor differences to measure, so FAIL. ("identical" is not
-    # an accepted declaration, so this never matches one.)
-    if detected_identical:
+    # either way no host/donor differences to measure, so FAIL. (IDENTICAL is not an
+    # accepted declaration, so this never matches the declared side.)
+    if detected_relatedness == Relatedness.IDENTICAL:
         return "FAIL"
 
-    if declared == RELATED_CATCH_ALL:
+    if declared_relatedness == Relatedness.RELATED:
         # Any related degree satisfies "related"; no relationship is REVIEW, not FAIL.
-        return "REVIEW" if detected_unrelated else "PASS"
+        return "REVIEW" if detected_relatedness == Relatedness.UNRELATED else "PASS"
 
-    if declared == "unrelated":
+    if declared_relatedness == Relatedness.UNRELATED:
         # A non-identical unexpected relationship is not a random-swap signature.
-        return "REVIEW" if not detected_unrelated else "PASS"
+        return "PASS" if detected_relatedness == Relatedness.UNRELATED else "REVIEW"
 
-    decl_deg = DECLARED_DEGREE[declared]
-    if detected_unrelated:
-        return "FAIL" if decl_deg <= BOUNDARY_FAIL_MAX_DEGREE else "REVIEW"
-    return "PASS" if abs(decl_deg - degree) <= tolerance else "REVIEW"
+    # Declared a specific degree (first/second/third).
+    if detected_relatedness == Relatedness.UNRELATED:
+        too_close = declared_relatedness.ordinal <= BOUNDARY_FAIL_MAX_DEGREE.ordinal
+        return "FAIL" if too_close else "REVIEW"
+    distance = abs(declared_relatedness.ordinal - detected_relatedness.ordinal)
+    return "PASS" if distance <= tolerance else "REVIEW"
 
 
 def evaluate_expected(
     result: RelatednessResult,
-    declared: str | None,
+    declared: str | Relatedness | None,
     tolerance: int = 1,
 ) -> RelatednessVerdict | None:
     """Compare an estimated relatedness against a declared expectation.
@@ -459,33 +480,33 @@ def evaluate_expected(
         ValueError: if ``declared`` is a non-blank, non-"NA" string that is not a
             recognised relationship.
     """
-    declared_norm = _normalise_declaration(declared)
-    if declared_norm is None:
+    declared_relatedness = Relatedness.from_declared(declared)
+    if declared_relatedness is None:
         return None
 
     if result.degree is None or result.coefficient is None:
         return RelatednessVerdict(
             pair=result.pair,
-            declared=declared_norm,
+            declared=declared_relatedness.value,
             detected="undetermined",
             status="REVIEW",
             message=(
                 f"relatedness check inconclusive for {result.pair}: declared "
-                f"{declared_norm}, too few shared het sites to estimate "
+                f"{declared_relatedness.value}, too few shared het sites to estimate "
                 f"(het_a={result.het_a}, het_b={result.het_b})"
             ),
         )
 
-    status = _verdict_status(declared_norm, result.degree, tolerance)
+    status = _verdict_status(declared_relatedness, result.degree, tolerance)
     coef_str = f"r={result.coefficient:.2f}, {result.n_sites} markers"
     return RelatednessVerdict(
         pair=result.pair,
-        declared=declared_norm,
+        declared=declared_relatedness.value,
         detected=result.relationship,
         status=status,
         message=(
             f"relatedness check {status} for {result.pair}: declared "
-            f"{declared_norm}, detected {result.relationship} ({coef_str})"
+            f"{declared_relatedness.value}, detected {result.relationship} ({coef_str})"
         ),
     )
 
@@ -494,9 +515,8 @@ __all__ = [
     "RelatednessResult",
     "AdmixConsistencyResult",
     "RelatednessVerdict",
+    "Relatedness",
     "relatedness_coefficient",
     "admix_consistency",
     "evaluate_expected",
-    "VALID_DECLARATIONS",
-    "DEGREE_LABELS",
 ]

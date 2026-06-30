@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plot allomix whole-blood chimerism against flow-sorted lineage values.
 
-Internal SA Path validation plot (not part of the allomix package).
+Validation plot (run from `scripts/`, not part of the installed allomix package).
 
 Takes one or two allomix `batch.tsv` files (as produced by
 `scripts/run_csv_batch.py`) and draws a per-sample forest plot. Each sample

@@ -30,7 +30,7 @@ updated admix VCF.
 ```bash
 # Calculate chimerism for a single timepoint (TSV to stdout by default)
 allomix monitor \
-    --panel-vcf patient001_panel.vcf.gz \
+    --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
@@ -39,7 +39,7 @@ allomix monitor \
 
 # Multi-donor (2 donors)
 allomix monitor \
-    --panel-vcf patient001_panel.vcf.gz \
+    --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR1_001 \
@@ -49,7 +49,7 @@ allomix monitor \
 
 # Structured JSON (the artifact the HTML report is rendered from)
 allomix monitor \
-    --panel-vcf patient001_panel.vcf.gz \
+    --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
@@ -59,7 +59,7 @@ allomix monitor \
 # Structured JSON and the HTML report in one run, plus the per-marker CSV
 # (bioinformatician-facing detail the report omits). Any output flags combine.
 allomix monitor \
-    --panel-vcf patient001_panel.vcf.gz \
+    --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
@@ -74,7 +74,7 @@ allomix monitor \
 ```bash
 # Timeline across multiple timepoints (JSON by default, --html for a trend chart)
 allomix timeline \
-    --panel-vcf patient001_panel.vcf.gz \
+    --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
@@ -96,18 +96,18 @@ allomix report report.json --output report.html
 ```bash
 # Estimate bias from per-sample VCFs
 allomix estimate-bias \
-    --vcfs sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
+    --genotype-vcfs sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
     --output bias_table.tsv
 
 # Estimate bias from named samples within a joint-called VCF
 allomix estimate-bias \
-    --vcf joint_called.vcf.gz \
+    --genotype-vcf joint_called.vcf.gz \
     --samples DONOR_001 DONOR_002 DONOR_003 \
     --output bias_table.tsv
 
 # Use bias correction during monitoring
 allomix monitor \
-    --panel-vcf patient001_panel.vcf.gz \
+    --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \

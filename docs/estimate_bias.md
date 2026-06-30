@@ -146,7 +146,7 @@ Feed the pass list into the joint-VCF mode of `estimate-bias`:
 
 ```bash
 allomix estimate-bias \
-  --vcf output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz \
+  --genotype-vcf output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz \
   --samples $(cat output/bias_training/pass_samples.txt) \
   --output output/bias_training/bias_table.tsv \
   --min-het 30
@@ -162,7 +162,7 @@ Two input modes are supported. Use whichever matches how your donor VCFs are org
 
 ```bash
 allomix estimate-bias \
-    --vcfs sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
+    --genotype-vcfs sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
     --output bias_table.tsv
 ```
 
@@ -170,7 +170,7 @@ Shell globbing works:
 
 ```bash
 allomix estimate-bias \
-    --vcfs /path/to/genotyping/*.vcf.gz \
+    --genotype-vcfs /path/to/genotyping/*.vcf.gz \
     --output bias_table.tsv
 ```
 
@@ -180,7 +180,7 @@ The first sample in each VCF is used. This mode suits workflows where each genot
 
 ```bash
 allomix estimate-bias \
-    --vcf joint_called.vcf.gz \
+    --genotype-vcf joint_called.vcf.gz \
     --samples DONOR_001 DONOR_002 DONOR_003 \
     --output bias_table.tsv
 ```
@@ -193,7 +193,7 @@ When you do not have reference samples called the same way as the admixture AD (
 
 ```bash
 allomix estimate-bias --both-het \
-    --vcf patient_genotypes.vcf.gz \
+    --genotype-vcf patient_genotypes.vcf.gz \
     --host-sample HOST --donor-sample DONOR \
     --admix-vcfs patient.admix.vcf.gz \
     --output bias_table.tsv
@@ -205,12 +205,12 @@ A pair's both-het markers are non-informative for that **same** pair, so a singl
 
 | Option | Default | Description |
 |---|---|---|
-| `--vcfs` | | Per-sample VCFs, one per file (het-site mode; mutually exclusive with `--vcf`) |
-| `--vcf` | | Joint-called multi-sample VCF (het-site mode with `--samples`, or genotype source for `--both-het`) |
-| `--samples` | | Sample names to extract from `--vcf` (het-site mode) |
+| `--genotype-vcfs` | | Per-sample VCFs, one per file (het-site mode; mutually exclusive with `--genotype-vcf`) |
+| `--genotype-vcf` | | Joint-called multi-sample VCF (het-site mode with `--samples`, or genotype source for `--both-het`) |
+| `--samples` | | Sample names to extract from `--genotype-vcf` (het-site mode) |
 | `--both-het` | off | Estimate from admixture samples at host+donor both-het markers (caller-consistent cohort table) |
-| `--host-sample` | | Host sample name in `--vcf` (`--both-het` mode) |
-| `--donor-sample` | | Donor sample name in `--vcf` (`--both-het` mode; repeat for multi-donor) |
+| `--host-sample` | | Host sample name in `--genotype-vcf` (`--both-het` mode) |
+| `--donor-sample` | | Donor sample name in `--genotype-vcf` (`--both-het` mode; repeat for multi-donor) |
 | `--admix-vcfs` | | Admixture VCFs supplying the both-het observations (`--both-het` mode) |
 | `--output` / `-o` | `bias_table.tsv` | Output path for the bias table TSV |
 | `--min-het` | 1 | Minimum heterozygous observations required to include a marker |
@@ -237,7 +237,7 @@ Pass the bias table to `monitor` or `timeline` with `--bias-table`:
 
 ```bash
 allomix monitor \
-    --vcf patient001_joint.vcf.gz \
+    --genotype-vcf patient001_joint.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \
     --sample TP1_20240101 \

@@ -34,7 +34,7 @@ allomix takes two VCFs: a **panel VCF** with host/donor genotypes (from GATK joi
 
 ```bash
 allomix monitor \
-    --panel-vcf patient001_panel.vcf.gz \
+    --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
     --host-sample HOST_001 \
     --donor-sample DONOR_001 \

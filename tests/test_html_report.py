@@ -108,7 +108,7 @@ def _qc(status: str = "REVIEW", warnings: list[str] | None = None) -> QCReport:
 
 def _params() -> dict:
     return {
-        "panel_vcf": "/data/panel.vcf.gz",
+        "genotype_vcf": "/data/genotype.vcf.gz",
         "admix_vcf": "/data/admix.vcf.gz",
         "error_table": "/data/err.tsv",
         "bias_table": None,
@@ -301,7 +301,7 @@ class TestMetaAndFooter:
 
     def test_footer_basenames_only_and_citation(self):
         html = _render(_result(), _qc(), params=_params())
-        assert "panel.vcf.gz" in html
+        assert "genotype.vcf.gz" in html
         assert "/data/" not in html  # no patient-identifying paths
         assert "Crysup" in html
 
@@ -483,7 +483,7 @@ class TestMarkerCSV:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -584,7 +584,7 @@ class TestTimeline:
         rc = main(
             [
                 "timeline",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -626,7 +626,7 @@ class TestCLI:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -661,7 +661,7 @@ class TestCLI:
         """--report-timestamp pins the only wall-clock field, so output is stable."""
         argv = [
             "monitor",
-            "--panel-vcf",
+            "--genotype-vcf",
             str(JOINT_VCF),
             "--admix-vcf",
             str(JOINT_VCF),
@@ -691,7 +691,7 @@ class TestCLI:
             main(
                 [
                     "monitor",
-                    "--panel-vcf",
+                    "--genotype-vcf",
                     str(JOINT_VCF),
                     "--admix-vcf",
                     str(JOINT_VCF),
@@ -721,7 +721,7 @@ class TestCLI:
 def _monitor_argv(*, sample="ADMIX_F0.10"):
     return [
         "monitor",
-        "--panel-vcf",
+        "--genotype-vcf",
         str(JOINT_VCF),
         "--admix-vcf",
         str(JOINT_VCF),
@@ -782,7 +782,7 @@ class TestReportSubcommandTimeline:
         rc = main(
             [
                 "timeline",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),

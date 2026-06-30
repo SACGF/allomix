@@ -373,7 +373,7 @@ class TestEstimateErrorsHomrefVcf:
         out = tmp_path / "err.tsv"
         self._panel_vcf(panel)
         main(
-            ["estimate-errors", "--vcf", str(panel), "--samples", "S1", "S2",
+            ["estimate-errors", "--genotype-vcf", str(panel), "--samples", "S1", "S2",
              "--min-reads", "100", "-o", str(out)]
         )
         table = load_error_table(out, error_floor=0.0)
@@ -389,7 +389,7 @@ class TestEstimateErrorsHomrefVcf:
         self._panel_vcf(panel)
         self._homref_vcf(homref)
         main(
-            ["estimate-errors", "--vcf", str(panel), "--homref-vcf", str(homref),
+            ["estimate-errors", "--genotype-vcf", str(panel), "--homref-vcf", str(homref),
              "--samples", "S1", "S2", "--min-reads", "100", "-o", str(out)]
         )
         table = load_error_table(out, error_floor=0.0)
@@ -404,5 +404,5 @@ class TestEstimateErrorsHomrefVcf:
         homref = tmp_path / "homref.vcf"
         self._homref_vcf(homref)
         with pytest.raises(SystemExit):
-            main(["estimate-errors", "--vcfs", str(homref), "--homref-vcf", str(homref),
+            main(["estimate-errors", "--genotype-vcfs", str(homref), "--homref-vcf", str(homref),
                   "-o", str(tmp_path / "err.tsv")])

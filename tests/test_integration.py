@@ -164,7 +164,7 @@ class TestCLIIntegration:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -192,7 +192,7 @@ class TestCLIIntegration:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -221,7 +221,7 @@ class TestCLIIntegration:
             [
                 "estimate-bias",
                 "--both-het",
-                "--vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--host-sample",
                 "HOST",
@@ -241,7 +241,7 @@ class TestCLIIntegration:
     def test_estimate_bias_both_het_requires_inputs(self):
         """--both-het without the required genotype/admix inputs is an error."""
         with pytest.raises(SystemExit):
-            main(["estimate-bias", "--both-het", "--vcf", str(JOINT_VCF)])
+            main(["estimate-bias", "--both-het", "--genotype-vcf", str(JOINT_VCF)])
 
     def test_monitor_estimate_bias_conflicts_with_table(self, tmp_path):
         """--estimate-bias and --bias-table together is an error."""
@@ -251,7 +251,7 @@ class TestCLIIntegration:
             main(
                 [
                     "monitor",
-                    "--panel-vcf",
+                    "--genotype-vcf",
                     str(JOINT_VCF),
                     "--admix-vcf",
                     str(JOINT_VCF),
@@ -276,7 +276,7 @@ class TestCLIIntegration:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -305,7 +305,7 @@ class TestCLIIntegration:
         rc = main(
             [
                 "timeline",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -335,7 +335,7 @@ class TestCLIIntegration:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -365,7 +365,7 @@ class TestCLIIntegration:
             main(
                 [
                     "monitor",
-                    "--panel-vcf",
+                    "--genotype-vcf",
                     str(JOINT_VCF),
                     "--admix-vcf",
                     str(JOINT_VCF),
@@ -401,7 +401,7 @@ class TestHostPresenceCli:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -448,7 +448,7 @@ class TestHostPresenceCli:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(JOINT_VCF),
                 "--admix-vcf",
                 str(JOINT_VCF),
@@ -502,7 +502,7 @@ class TestDynamicJointVcf:
         rc = main(
             [
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 str(joint_path),
                 "--admix-vcf",
                 str(joint_path),

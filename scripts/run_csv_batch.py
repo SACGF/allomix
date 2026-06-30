@@ -174,7 +174,7 @@ def main() -> None:
             cmd = [
                 args.allomix,
                 "monitor",
-                "--panel-vcf",
+                "--genotype-vcf",
                 panel_vcf,
                 "--admix-vcf",
                 admix_vcf,

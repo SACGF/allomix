@@ -133,7 +133,7 @@ def _params_view(params: dict) -> dict:
     error-rate and bias-correction descriptions, and the on/off toggles.
     """
     file_keys = [
-        ("Panel VCF", "panel_vcf"),
+        ("Genotype VCF", "genotype_vcf"),
         ("Admixture VCF", "admix_vcf"),
         ("Error table", "error_table"),
         ("Bias table", "bias_table"),

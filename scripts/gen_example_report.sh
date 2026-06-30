@@ -57,7 +57,7 @@ mkdir -p "$OUT_DIR"
 # 1a. Single-sample report at 1% (the headline example): the 1_99 rung, where
 #     the titrated host sits at 1% and the estimate recovers it cleanly.
 allomix monitor \
-  --panel-vcf "$PANEL" \
+  --genotype-vcf "$PANEL" \
   --admix-vcf "$ADMIX" \
   --error-table "$ERRORS" \
   --host-sample F2 \
@@ -72,7 +72,7 @@ allomix monitor \
 # 1b. Single-sample report at 0.5% (near the panel's contamination floor): the
 #     1_199 rung, kept to show the low-end behaviour and host-presence gating.
 allomix monitor \
-  --panel-vcf "$PANEL" \
+  --genotype-vcf "$PANEL" \
   --admix-vcf "$ADMIX" \
   --error-table "$ERRORS" \
   --host-sample F2 \
@@ -87,7 +87,7 @@ allomix monitor \
 # 2. Timeline report across the F2-into-M1 dilution ladder (high host fraction
 #    1_9 = 10% down to low 1_199 = 0.5%). One --sample per rung, in order.
 allomix timeline \
-  --panel-vcf "$PANEL" \
+  --genotype-vcf "$PANEL" \
   --admix-vcf "$ADMIX" \
   --error-table "$ERRORS" \
   --host-sample F2 \

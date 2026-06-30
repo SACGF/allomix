@@ -111,8 +111,8 @@ are in Supplementary Figures S10 and S11.
 ### Validation on real titrated mixtures
 
 To test allomix on real reads rather than simulation alone, we ran it on a public
-dataset of titrated DNA mixtures (SRA study SRP434573), produced on a panel and platform
-independent of those used to calibrate the simulator. The data are
+dataset of titrated DNA mixtures (SRA study SRP434573[@Chu2024mipsnp]), produced on a
+panel and platform independent of those used to calibrate the simulator. The data are
 {{ srp434573.n_individuals | dp(0) }} unrelated individuals on a
 {{ srp434573.panel_n_snps | commas }}-SNP MIP sample-identification panel
 ({{ srp434573.platform }}, single-strand merged reads, raw on-panel depth
@@ -152,7 +152,9 @@ donor M2 at {{ srp434573.three_m2_est_pct }}% (known
 {{ srp434573.three_m2_known_pct }}%) (Figure 4B).
 
 This dataset carries a genuine low-level co-pooled contamination floor, most plausibly
-index hopping on the patterned flowcell. allomix establishes it from the data by a
+index hopping on the patterned flowcell, which the source study independently identified
+in these data as index misassignment.[@Chu2024mipsnp] allomix establishes it from the
+data by a
 dose-response argument rather than assuming it: at consensus-homozygous sites (host and
 donor both homozygous for the same allele, so the minor allele cannot come from either
 contributor), the median per-site minor-allele fraction rises with the number of other

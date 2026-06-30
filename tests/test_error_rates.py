@@ -373,7 +373,7 @@ class TestEstimateErrorsHomrefVcf:
         out = tmp_path / "err.tsv"
         self._panel_vcf(panel)
         main(
-            ["estimate-errors", "--genotype-vcf", str(panel), "--samples", "S1", "S2",
+            ["estimate-errors", str(panel), "--sample", "S1", "--sample", "S2",
              "--min-reads", "100", "-o", str(out)]
         )
         table = load_error_table(out, error_floor=0.0)
@@ -389,8 +389,8 @@ class TestEstimateErrorsHomrefVcf:
         self._panel_vcf(panel)
         self._homref_vcf(homref)
         main(
-            ["estimate-errors", "--genotype-vcf", str(panel), "--homref-vcf", str(homref),
-             "--samples", "S1", "S2", "--min-reads", "100", "-o", str(out)]
+            ["estimate-errors", str(panel), "--homref-vcf", str(homref),
+             "--sample", "S1", "--sample", "S2", "--min-reads", "100", "-o", str(out)]
         )
         table = load_error_table(out, error_floor=0.0)
         # Background site now supplies the ref->alt rate: 5 ALT / 3000 DP.
@@ -404,5 +404,5 @@ class TestEstimateErrorsHomrefVcf:
         homref = tmp_path / "homref.vcf"
         self._homref_vcf(homref)
         with pytest.raises(SystemExit):
-            main(["estimate-errors", "--genotype-vcfs", str(homref), "--homref-vcf", str(homref),
+            main(["estimate-errors", str(homref), "--homref-vcf", str(homref),
                   "-o", str(tmp_path / "err.tsv")])

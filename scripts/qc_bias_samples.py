@@ -3,7 +3,7 @@
 
 Reads a joint-called multi-sample VCF (typically restricted to the SID bed),
 computes per-sample quality metrics, and outputs a list of samples that pass
-QC (for use with ``allomix estimate-bias --samples ...``) plus an optional
+QC (for use with ``allomix estimate-bias <joint.vcf> --sample ...``) plus an optional
 per-sample metrics TSV.
 
 Metrics per sample:

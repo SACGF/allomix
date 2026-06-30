@@ -19,10 +19,9 @@ from pathlib import Path
 
 import pytest
 
-# Make the paper/scripts and (repo-root) scripts modules importable. This file
-# lives in paper/tests/, so paper/scripts is one level up and scripts/ is two.
+# Make the paper/scripts modules importable. This file lives in paper/tests/, so
+# paper/scripts is one level up.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
 
 import make_semisynthetic_srp434573 as gen  # noqa: E402
 import run_srp434573_allomix as runner  # noqa: E402

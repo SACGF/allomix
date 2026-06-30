@@ -564,8 +564,8 @@ PAPER_SECTIONS = [
 ]
 
 rule paper_test:
-    # Paper-glue tests: the parsers/helpers in paper/scripts (and the
-    # semisynthetic generator in scripts/) that the runners depend on. These do
+    # Paper-glue tests: the parsers/helpers in paper/scripts (including the
+    # semisynthetic generator) that the runners depend on. These do
     # not exercise the src/allomix tool (the core `pytest` suite does that), but
     # a regression here, e.g. a fraction-label parser mislabelling every LoD
     # point, would silently ship a wrong paper. Run them as a build gate. Re-runs
@@ -575,7 +575,7 @@ rule paper_test:
         "paper/tests/test_semisynthetic_srp434573.py",
         "paper/scripts/run_lod_validation.py",
         "paper/scripts/run_srp434573_allomix.py",
-        "scripts/make_semisynthetic_srp434573.py",
+        "paper/scripts/make_semisynthetic_srp434573.py",
     output:
         touch("output/.paper_tests_passed"),
     shell:

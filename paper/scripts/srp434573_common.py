@@ -10,7 +10,7 @@ SRP434573_PIPELINE_GENOTYPES = Path("output/genotypes/SRP434573")
 # Semi-synthetic sub-0.5% mixtures (issue #5): the two pure reference BAMs of
 # each pair blended with samtools subsample, joint-called the same way and
 # committed alongside the real snapshot. Generated TAU-side by
-# scripts/make_semisynthetic_srp434573.py.
+# paper/scripts/make_semisynthetic_srp434573.py.
 SRP434573_COMMITTED_SYNTHETIC = Path("paper/public_data/SRP434573/genotypes_synthetic")
 SRP434573_PIPELINE_SYNTHETIC = Path("output/genotypes/SRP434573_synthetic")
 

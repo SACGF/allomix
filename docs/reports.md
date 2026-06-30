@@ -13,6 +13,13 @@ relatedness, contamination, swap check, run unit), the per-marker rows, and the
 report provenance (recipient metadata, analysis parameters, version, timestamp).
 Bioinformaticians can process it, store it, or upload it elsewhere.
 
+The provenance also records the exact analysis invocation under
+`params.command`, for example `allomix monitor --genotype-vcf ... --no-host-presence`.
+Output-destination and presentation flags (`--json`, `--html`, `--tsv`,
+`--marker-csv`, `--output`, `--template`, `--report-timestamp`, `--log-scale`,
+`--verbose`) are stripped, so the recorded command captures only what determined
+the result and stays byte-stable across runs to different output paths.
+
 Because the report is rendered from exactly this structure,
 `allomix report saved.json --output report.html` regenerates the report from
 saved data without re-running the analysis (on any machine).
@@ -24,7 +31,10 @@ inlined, no network access needed) suitable for review or attaching to a record.
 It is written for the clinician: the headline chimerism fractions with CIs, the
 host-presence callout, a plain-language QC breakdown (informative-marker
 accounting and the number of QC flags), the QC panel, and a methods/provenance
-footer.
+footer. The footer lists the analysis settings (thresholds, error/bias model,
+and the on/off toggles) and ends with a collapsed "Run command" section holding
+the recorded invocation; that section is the only place full file paths appear,
+so it is hidden by default.
 
 It does not include the per-marker table; that detail is for bioinformaticians
 and is written separately with `--marker-csv PATH` (one row per marker per

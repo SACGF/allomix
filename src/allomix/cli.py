@@ -4,6 +4,7 @@ import argparse
 import datetime
 import importlib.util
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -338,6 +339,7 @@ def _build_report_meta(args: argparse.Namespace) -> ReportMeta:
 def _build_report_params(args: argparse.Namespace) -> dict:
     """Collect the analysis parameters shown in the HTML report footer."""
     return {
+        "command": getattr(args, "command_line", None),
         "genotype_vcf": args.genotype_vcf,
         "admix_vcf": args.admix_vcf,
         "error_table": args.error_table,
@@ -357,6 +359,46 @@ def _build_report_params(args: argparse.Namespace) -> dict:
         "artifact_filter": args.artifact_filter,
         "use_sex_chroms": args.use_sex_chroms,
     }
+
+
+# Output-destination and presentation flags. They do not affect the computed
+# result, so the recorded provenance command omits them: it stays byte-stable
+# across runs to different output paths, and reads as "what produced this result"
+# (add your own --json/--html to re-run).
+_CMD_DROP_WITH_VALUE = {
+    "--json",
+    "--html",
+    "--tsv",
+    "--marker-csv",
+    "--output",
+    "-o",
+    "--template",
+    "--report-timestamp",
+}
+_CMD_DROP_FLAG = {"--log-scale", "--verbose"}
+
+
+def _record_command(raw_argv: list[str]) -> str:
+    """Reconstruct the analysis invocation for report provenance.
+
+    Drops output-destination and presentation flags (see the sets above) so the
+    recorded command captures inputs and analysis parameters only. ``shlex.join``
+    quotes any argument with spaces so the line is copy-pasteable.
+    """
+    kept: list[str] = []
+    skip = False
+    for tok in raw_argv:
+        if skip:
+            skip = False
+            continue
+        flag = tok.split("=", 1)[0]
+        if flag in _CMD_DROP_WITH_VALUE:
+            skip = "=" not in tok  # also drop the following value token
+            continue
+        if flag in _CMD_DROP_FLAG:
+            continue
+        kept.append(tok)
+    return shlex.join(["allomix", *kept])
 
 
 def _report_timestamp(args: argparse.Namespace) -> str:
@@ -1271,6 +1313,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+
+    # Record the analysis invocation for report provenance (stored in the JSON
+    # and shown in a collapsed section of the HTML report).
+    raw_argv = sys.argv[1:] if argv is None else argv
+    args.command_line = _record_command(raw_argv)
 
     if args.command is None:
         parser.print_help()

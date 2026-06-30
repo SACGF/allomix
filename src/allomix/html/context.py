@@ -129,8 +129,10 @@ def _params_view(params: dict) -> dict:
     """Methods-footer view of the analysis parameters.
 
     Collapses the raw CLI parameter dict into the labelled lines the footer
-    shows: input file basenames only (no patient-identifying paths), the
-    error-rate and bias-correction descriptions, and the on/off toggles.
+    shows: input file basenames only in the parameter table, the error-rate and
+    bias-correction descriptions, and the on/off toggles. The full invocation
+    (``command``) is passed through for the separate, collapsed "Run command"
+    block, which is the one place full paths appear (provenance, off by default).
     """
     file_keys = [
         ("Genotype VCF", "genotype_vcf"),
@@ -178,7 +180,11 @@ def _params_view(params: dict) -> dict:
             "included" if params.get("use_sex_chroms") else "excluded (autosomes only)",
         ),
     ]
-    return {"input_files": input_files, "param_lines": lines}
+    return {
+        "input_files": input_files,
+        "param_lines": lines,
+        "command": params.get("command"),
+    }
 
 
 # Local NA sentinel for footer parameter text (matches ``format.NA``); kept here

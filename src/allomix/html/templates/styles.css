@@ -179,6 +179,17 @@ details.help .help-body p { margin: 4px 0; }
 }
 .footer dt { font-weight: 600; color: var(--fg); margin-top: 8px; }
 .footer dd { margin: 0 0 2px; }
+.footer .run-command { margin-top: 10px; }
+.footer .run-command summary { cursor: pointer; font-weight: 600; color: var(--fg); }
+.footer .run-command pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 11px;
+}
 
 @media print {
   body { background: #fff; }

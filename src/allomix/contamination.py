@@ -1,32 +1,31 @@
 """In-data contamination estimate at consensus-homozygous markers.
 
 Measures the third-party (neither-host-nor-donor) read signal directly from the
-admixture VCF, independent of any sequencing-run metadata. At markers where the
-host and every donor are homozygous for the *same* allele, the admixture is a
-mixture of identical homozygotes, so the other (minor) allele cannot come from
-either contributor. Its reads are sequencing error plus any DNA leaking in from
-co-loaded samples (index hopping at the sequencer, or physical / library
-cross-contamination). The excess of the minor-allele fraction over the
-per-site sequencing-error floor estimates that contamination.
+admixture VCF, independent of sequencing-run metadata. Where host and every donor
+are homozygous for the *same* allele the admixture is a mixture of identical
+homozygotes, so the other (minor) allele cannot come from either contributor: its
+reads are sequencing error plus any DNA leaking in from co-loaded samples (index
+hopping, or physical / library cross-contamination). The excess of the
+minor-allele fraction over the per-site sequencing-error floor estimates that
+contamination.
 
 This is the "is contamination actually elevated" measurement of issue #12,
 separate from the index-hopping provenance flag (shared sequencing run between
-host and admix), which is metadata the joint-calling pipeline carries and which
-allomix never derives from BAMs. The two are complementary: this says whether a
-third genome is in the reads; the run flag says whether index hopping is a
-plausible mechanism for it.
+host and admix), which is metadata the joint-calling pipeline carries and allomix
+never derives from BAMs. Complementary: this says whether a third genome is in the
+reads; the run flag says whether index hopping is a plausible mechanism.
 
 Relationship to the existing checks:
 
-  - ``allomix.relatedness.admix_consistency`` is a gross-swap detector on the
-    same marker set: it counts sites where the minor allele is *individually*
-    significant (a whole third genome near 50%). It does not fire on a ~0.2%
-    floor spread across every site, which this estimator targets.
+  - ``allomix.relatedness.admix_consistency`` is a gross-swap detector on the same
+    marker set: it counts sites where the minor allele is *individually*
+    significant (a whole third genome near 50%). It does not fire on a ~0.2% floor
+    spread across every site, which this estimator targets.
   - ``allomix.detect.host_presence_test`` works on donor-homozygous markers where
     the *host* carries the minor allele, so it measures host, not third parties.
 
 The headline estimate is the background-subtracted *median* per-site minor
-fraction, not a read-weighted pooled mean: on real panel data a handful of
+fraction, not a read-weighted pooled mean: on real panel data a few
 genotype-miscall or mapping-artifact sites sit at 40-100% minor allele and would
 dominate a pooled mean (validated on SRP434573, issue #12). Those are dropped by
 an upper fraction cap (``max_site_frac``) and the median is robust to any that
@@ -45,22 +44,20 @@ from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import MarkerData, MarkerKey, is_sex_chrom, marker_key
 
 # Consensus-hom markers whose admix minor-allele fraction exceeds this are not
-# low-level contamination: they are genotype miscalls, mapping artifacts, or
-# (en masse) a gross sample swap. Dropped from the contamination estimate and
-# tallied in ``n_excluded_high``. Well above the realistic contamination range
-# (SRP434573 sat at ~0.2% typical, ~1.5% at p95) and well below a miscall (~50%).
+# low-level contamination: genotype miscalls, mapping artifacts, or (en masse) a
+# gross swap. Dropped from the estimate and tallied in ``n_excluded_high``. Well
+# above the realistic contamination range (SRP434573 ~0.2% typical, ~1.5% at p95)
+# and well below a miscall (~50%).
 DEFAULT_MAX_SITE_FRAC = 0.10
 
-# The sequencing-error floor is read off the data: at consensus-hom sites with no
-# co-loaded carrier of the minor allele, the only minor reads are sequencing
-# error, so a low percentile of the per-site minor fractions estimates that floor
-# without trusting a (conservative) global error rate. Contamination is the
-# heterogeneous excess of the median over this floor; a uniform error elevation
-# lifts the floor too and is correctly not called contamination. The 10th
-# percentile keeps the floor on no-carrier sites even when carriers dominate (a
-# quartile would already sit in the contaminated range on a densely pooled
-# library). Needs enough markers to be stable; below that the per-site / global
-# error rate is used.
+# Sequencing-error floor read off the data: at consensus-hom sites with no
+# co-loaded carrier of the minor allele the only minor reads are error, so a low
+# percentile of per-site minor fractions estimates the floor without trusting a
+# global rate. Contamination is the excess of the median over this floor; uniform
+# error lifts the floor too and is correctly not called contamination. The 10th
+# percentile (not a quartile, which would already sit in the contaminated range on
+# a dense pool) holds on no-carrier sites even when carriers dominate. Needs
+# enough markers; below that the per-site/global error rate is used.
 CONTAMINATION_FLOOR_PCTL = 0.10
 MIN_MARKERS_FOR_EMPIRICAL_FLOOR = 20
 

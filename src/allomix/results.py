@@ -37,8 +37,8 @@ class ChimerismResult:
 
     donor_fraction: float  # MLE point estimate (0.0-1.0)
     donor_fraction_ci: tuple[float, float]  # 95% CI
-    host_fraction: float  # 1 - donor_fraction
-    log_likelihood: float  # at MLE
+    host_fraction: float
+    log_likelihood: float
     n_informative: int
     n_markers_used: int  # after outlier exclusion
     per_marker: list[MarkerResult]
@@ -84,9 +84,9 @@ class ChimerismResult:
 class MultiDonorResult:
     """Result of multi-donor chimerism estimation."""
 
-    donor_fractions: list[float]  # [f_donor1, f_donor2, ...]
-    donor_fraction_cis: list[tuple[float, float]]  # [(lo, hi), ...] per donor
-    host_fraction: float  # 1 - sum(donor_fractions)
+    donor_fractions: list[float]
+    donor_fraction_cis: list[tuple[float, float]]  # (lo, hi) per donor
+    host_fraction: float
     log_likelihood: float
     n_informative: int
     n_markers_used: int

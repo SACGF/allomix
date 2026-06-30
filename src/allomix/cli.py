@@ -432,9 +432,9 @@ def _run_single_sample(
         run_unit=run_unit,
     )
 
-    if not use_sex_chroms and analysis.genotypes.n_sex_chrom_excluded:
+    if not use_sex_chroms and analysis.genotypes.n_informative_sex_chrom_excluded:
         print(
-            f"{admix_sample}: excluded {analysis.genotypes.n_sex_chrom_excluded} "
+            f"{admix_sample}: excluded {analysis.genotypes.n_informative_sex_chrom_excluded} "
             "informative sex-chromosome marker(s) (use --use-sex-chroms to keep them)",
             file=sys.stderr,
         )
@@ -551,8 +551,8 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         want_tsv = True
         args.tsv = "-"
 
-    # The single-sample report covers one sample; multiple timepoints belong in
-    # the timeline report (which adds the trend chart).
+    # Single-sample report is for one sample; multiple timepoints use the
+    # timeline report (which adds the trend chart).
     if (want_json or want_html) and len(args.sample) != 1:
         raise SystemExit(
             "monitor --json/--html produce one report for a single --sample; got "
@@ -574,8 +574,8 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         for d in args.donor_sample
     ]
 
-    # Run-unit metadata stamped on the admix VCF header by the pipeline
-    # (index-hopping check, issue #12). Empty when the VCF carries none.
+    # Run-unit metadata from the admix VCF header (index-hopping check, issue #12).
+    # Empty when the VCF carries none.
     run_units = read_run_units(args.admix_vcf)
 
     results: list[tuple[str, object, object]] = []
@@ -699,7 +699,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         if want_html:
             # Deferred import: timeline.py imports matplotlib (the optional
             # `report` extra) at module top, so importing here, after the
-            # capability check, keeps the json path working on base deps alone.
+            # capability check, keeps the json path on base deps alone.
             from allomix.html.timeline import render_timeline
 
             _write_text(
@@ -841,7 +841,7 @@ def cmd_estimate_errors(args: argparse.Namespace) -> int:
 
     # Hom-ref background VCFs (e.g. raw mpileup at force-called amplicon
     # midpoints) carry the same samples; their hom-ref calls add the ref->alt
-    # observations the variant-only joint call cannot supply, pooled through the
+    # observations a variant-only joint call cannot supply, pooled through the
     # same estimator with the panel hom-ref sites.
     for homref_path in args.homref_vcf:
         _validate_sample_names(homref_path, args.samples)

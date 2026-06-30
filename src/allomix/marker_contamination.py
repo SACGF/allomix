@@ -64,15 +64,15 @@ from allomix.genotype import (
 )
 
 # Cap on the carrier dose. The host allele is common, so the dose-response is
-# measurable but saturates; a hard cap keeps a high-frequency site from dominating
-# the regression. Validated at 5 on SRP434573 (carrier COUNT, not allele copies;
-# see claude/step30_design.md open question 1).
+# measurable but saturates; a hard cap stops a high-frequency site dominating the
+# regression. Validated at 5 on SRP434573 (carrier COUNT, not allele copies; see
+# claude/step30_design.md open question 1).
 DEFAULT_DOSE_CAP = 5
 
 # Gate defaults. The correction applies only when the consensus-hom slope is
 # significantly positive (alpha) AND exceeds ``min_slope`` (minimum per-carrier
 # effect worth correcting, in fraction-of-depth units). min_slope defaults to 0,
-# making the gate significance-only unless a caller sets it.
+# so the gate is significance-only unless a caller sets it.
 DEFAULT_GATE_ALPHA = 0.05
 DEFAULT_GATE_MIN_SLOPE = 0.0
 

@@ -225,12 +225,11 @@ class ArtifactThresholds:
     max_abs_rpbz: float = 6.0
 
 
-# Single-strand library auto-detection (issue #18). On amplicon / MIP panels or
-# pear-merged single-end reads there is no two-strand sampling: the donor-absent
-# allele sits on one strand at essentially every marker, so the strand-bias rule
-# flags nearly all of them and the presence test is left with none. When the
-# strand split is one-sided across (almost) every strand-readable marker, the
-# test is non-discriminating, so it is skipped (SCBZ/RPBZ still apply).
+# Single-strand library auto-detection (issue #18). On amplicon/MIP panels or
+# pear-merged single-end reads there is no two-strand sampling, so the strand
+# rule flags nearly every marker and leaves the presence test with none. When
+# the split is one-sided across almost every strand-readable marker the test is
+# non-discriminating, so it is skipped (SCBZ/RPBZ still apply).
 _SINGLE_STRAND_MIN_MARKERS = 20  # need this many strand-readable markers to judge
 _SINGLE_STRAND_FRACTION = 0.9  # >= this fraction one-strand => single-strand library
 
@@ -240,9 +239,9 @@ def _strand_test_uninformative(records: list[_DonorAbsentMarker], thr: ArtifactT
 
     Counts, over every marker with strand data and enough donor-absent reads to
     judge, how many are one-strand (lesser strand below ``max_strand_minor_frac``).
-    If nearly all are, the library has no two-strand sampling (amplicon / MIP /
-    pear-merged single-end), the strand test would flag almost everything and
-    tells us nothing, so it is disabled. See issue #18.
+    If nearly all are, the library has no two-strand sampling (amplicon/MIP/
+    pear-merged single-end) and the strand test flags almost everything while
+    telling us nothing, so it is disabled. See issue #18.
     """
     flagged = qualifying = 0
     for r in records:

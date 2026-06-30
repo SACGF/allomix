@@ -40,10 +40,9 @@ from allomix.likelihood import (
 from allomix.marker_contamination import apply_contamination_correction
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 
-# Robust-refit floors keep trimming from gutting sparse panels: "auto" never
-# drops below ROBUST_MIN_MARKERS, "force" never below ROBUST_HARD_MIN. The
-# residual cut itself (ROBUST_K_DEFAULT) lives in allomix.constants since it is
-# also the CLI/analysis default.
+# Robust-refit floors: "auto" never drops below ROBUST_MIN_MARKERS, "force" never
+# below ROBUST_HARD_MIN. The residual cut (ROBUST_K_DEFAULT) lives in
+# allomix.constants since it is also the CLI/analysis default.
 ROBUST_MAX_ITER = 5
 ROBUST_MIN_MARKERS = 15
 ROBUST_HARD_MIN = 4
@@ -51,13 +50,12 @@ ROBUST_MODES = ("off", "auto", "force")
 
 # One-sided robust trim. At low host fraction the host-carrying markers sit off
 # the donor-dominated fit in the host-present direction (observed VAF pulled
-# toward the host's own allele dose), so a symmetric median/MAD cut trims the
-# very signal we want and collapses the estimate toward donor-only. With this
-# on, residuals deviating toward host presence are never trimmed; only those
-# pointing away (genotype miscalls, mapping artifacts, host CNV/LoH in the
-# anti-host direction) stay eligible. At the limit of detection we would rather
-# keep a few artifacts than discard real low-fraction host signal. See
-# claude/further_improvements.md, Obs 1.
+# toward the host allele dose), so a symmetric median/MAD cut trims the signal we
+# want and collapses toward donor-only. With this on, residuals deviating toward
+# host presence are never trimmed; only those pointing away (genotype miscalls,
+# mapping artifacts, host CNV/LoH in the anti-host direction) stay eligible. At the
+# limit of detection, keep a few artifacts rather than discard real low-fraction
+# host signal. See claude/further_improvements.md, Obs 1.
 ROBUST_ONE_SIDED = True
 
 # Residual outlier cut for the non-robust per-marker flag, in SDs from the mean
@@ -65,8 +63,8 @@ ROBUST_ONE_SIDED = True
 OUTLIER_SD_THRESHOLD = 3.0
 # "auto" engages the refit only when the first pass finds more residual outliers
 # than max(ROBUST_TRIGGER_MIN, ceil(ROBUST_TRIGGER_FRAC * n)). At k=3.5 a clean
-# panel produces <1 chance outlier on average, so a trigger of ~3 leaves clean
-# samples byte-identical while genuine CNV/LoH clusters clear it. "force" uses 1.
+# panel averages <1 chance outlier, so a trigger of ~3 leaves clean samples
+# byte-identical while genuine CNV/LoH clusters clear it. "force" uses 1.
 ROBUST_TRIGGER_FRAC = 0.03
 ROBUST_TRIGGER_MIN = 3
 
@@ -130,20 +128,20 @@ def _compute_per_marker_results(
 # One-sided normal quantile at CI_LEVEL (z_0.95 ~= 1.6449), for EP17-style LoB/LoD.
 _Z95 = float(norm.ppf(CI_LEVEL))
 
-# Keeps a probability strictly inside (0, 1) so p * (1 - p) stays positive and
-# the marker variance never collapses to zero. A safety clamp, not machine eps.
+# Keeps a probability strictly inside (0, 1) so p * (1 - p) stays positive and the
+# marker variance never collapses to zero. A safety clamp, not machine eps.
 _PROB_EPS = 1e-9
 
 # MAD -> SD consistency factor (1 / norm.ppf(0.75)) for the robust refit.
 _MAD_TO_SD = 1.4826
 
 # Feasible range for the beta-binomial concentration rho during optimisation.
-# Out-of-range values get a large finite penalty (_INFEASIBLE_PENALTY) so
-# Nelder-Mead stays in-bounds without a hard constraint.
+# Out-of-range values get _INFEASIBLE_PENALTY so Nelder-Mead stays in-bounds
+# without a hard constraint.
 _RHO_MIN = 0.5
 _RHO_MAX = 50000.0
-# Upper rho cap for the grid search only, below _RHO_MAX on purpose: the grid
-# just seeds Nelder-Mead, which then refines rho up to _RHO_MAX.
+# Upper rho cap for the grid search only, below _RHO_MAX on purpose: the grid just
+# seeds Nelder-Mead, which then refines rho up to _RHO_MAX.
 _RHO_SEED_MAX = 10000.0
 _INFEASIBLE_PENALTY = 1e30
 
@@ -372,8 +370,8 @@ def _estimate_single_donor_bb_core(
         if n_het >= MIN_CLASS_MARKERS and n_hom >= MIN_CLASS_MARKERS:
             return _estimate_single_donor_two_rho(markers, het_mask, error_rate, grid_steps, cal)
         # Sparse class: per-class rho not identifiable, so fall through to the
-        # shared-rho path and record the reason. Routine for small or
-        # hom-dominated panels; a diagnostic field, not a QC warning.
+        # shared-rho path and record the reason (diagnostic field, not a QC
+        # warning; routine for small or hom-dominated panels).
         fell_back: str | None = (
             f"a marker class is sparse (hom={n_hom}, het={n_het}, "
             f"min={MIN_CLASS_MARKERS}); used shared rho for this sample"
@@ -382,10 +380,10 @@ def _estimate_single_donor_bb_core(
         fell_back = None
 
     # Hot path of every paper validation sweep (~99% of build time, millions of
-    # calls), so the f-invariant work is hoisted out of the rho loops and the
-    # per-call-constant terms are precomputed in _precompute_marker_arrays. Keep
-    # any further change bit-identical: output is validated against fixtures and
-    # ~0.1% drift matters at the low-fraction limit of detection.
+    # calls), so f-invariant work is hoisted out of the rho loops and per-call
+    # constants are precomputed in _precompute_marker_arrays. Keep any further
+    # change bit-identical: output is validated against fixtures and ~0.1% drift
+    # matters at the low-fraction limit of detection.
     arr = _precompute_marker_arrays(markers, cal)
 
     # Grid search over f with rho profiled out at each grid point.
@@ -578,8 +576,8 @@ def _estimate_single_donor_two_rho(
         f_hi = brentq(ci_func, f_mle, 1.0, xtol=1e-5)
 
     # Per-marker residuals over the full marker set at the single f_mle, so the
-    # per-marker output and robust-refit interaction keep the same shape as the
-    # shared-rho path; only the f they are evaluated at moves.
+    # per-marker output and robust-refit interaction match the shared-rho path;
+    # only the f they are evaluated at moves.
     per_marker = _compute_per_marker_results(markers, f_mle, cal)
     n_markers_used = sum(1 for mr in per_marker if mr.included)
 
@@ -667,19 +665,18 @@ def _robust_refit(
         keep_mask = np.abs(deviation) <= robust_k * mad
         if ROBUST_ONE_SIDED:
             # Protect markers whose residual deviates toward host presence: that
-            # is under-fit host signal, not an artifact. Raising the host weight
-            # moves expected ALT VAF toward the host's own ALT dose, so the
-            # host-present direction is sign(host_alt / PLOIDY - expected_vaf).
-            # ``current`` and ``result.per_marker`` share order (the core builds
-            # per-marker results by iterating the marker list).
+            # is under-fit host signal, not an artifact. Raising host weight moves
+            # expected ALT VAF toward the host ALT dose, so the host-present
+            # direction is sign(host_alt / PLOIDY - expected_vaf). ``current`` and
+            # ``result.per_marker`` share order (the core iterates the marker list).
             host_alt = np.array([m.host_gt[0] + m.host_gt[1] for m in current], dtype=float)
             exp_vaf = np.array([mr.expected_vaf for mr in result.per_marker], dtype=float)
             host_dir = np.sign(host_alt / PLOIDY - exp_vaf)
             points_to_host = (host_dir != 0.0) & (np.sign(deviation) == host_dir)
             keep_mask = keep_mask | points_to_host
         n_keep = int(keep_mask.sum())
-        # First-pass gate: only engage if outliers exceed the trigger, so clean
-        # samples (a chance outlier or two) are left untouched.
+        # First-pass gate: only engage if outliers exceed the trigger, leaving
+        # clean samples (a chance outlier or two) untouched.
         if it == 0 and (len(current) - n_keep) < min_trigger:
             break
         if n_keep == len(current) or n_keep < min_markers:
@@ -743,8 +740,8 @@ def estimate_single_donor_bb(
 
     # Subtract dose-predicted co-pooled contamination from donor-hom host-allele
     # counts before the MLE (issue #30), so corrected counts flow through the
-    # estimate, residuals, CI, and robust refit uniformly. A no-op (same list)
-    # when no correction is set or the flowcell gated out, so the default path is
+    # estimate, residuals, CI, and robust refit uniformly. A no-op (same list) when
+    # no correction is set or the flowcell gated out, so the default path is
     # byte-identical.
     markers = apply_contamination_correction(markers, cal.contamination_correction)
 
@@ -783,9 +780,6 @@ def _estimate_multi_donor_core(
         2. Nelder-Mead refinement over (f1, f2, log_rho)
         3. Profile likelihood CI per donor, profiling out other f and rho
         4. Per-marker residuals and outlier flagging
-
-    Args:
-        n_donors: Number of donors (currently supports 2).
     """
     cal = calibration or PanelCalibration()
     if n_donors > 2:
@@ -963,9 +957,8 @@ def _profile_likelihood_cis_multi(
     cis: list[tuple[float, float]] = []
 
     for donor_idx in range(n_donors):
-        # The estimator is capped at two donors (enforced in
-        # _estimate_multi_donor_core), so profiling one donor leaves exactly one
-        # "other" donor: the remaining index.
+        # Estimator capped at two donors (in _estimate_multi_donor_core), so
+        # profiling one donor leaves exactly one "other": the remaining index.
         other_idx = next(j for j in range(n_donors) if j != donor_idx)
 
         def profile_ll(fi: float, _other=other_idx, _didx=donor_idx) -> float:

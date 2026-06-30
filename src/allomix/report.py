@@ -123,9 +123,9 @@ def _host_presence_tsv_cells(hp: HostPresenceResult | None) -> list[str]:
     if hp is None:
         return [_NA] * 7
     if hp.n_markers == 0:
-        # Carry the source flag but leave numeric cells NA: the test was not
-        # exercised, though the artifact count stays informative (markers may
-        # have been filtered down to zero).
+        # Carry the source flag but leave numeric cells NA: the test did not run.
+        # The artifact count stays informative (markers may have been filtered to
+        # zero).
         return [
             _NA,
             _NA,

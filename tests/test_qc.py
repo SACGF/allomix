@@ -257,7 +257,7 @@ class TestMarkerLossDiagnosis:
                 n_admix=64,
                 n_admix_in_host=64,
                 n_admix_in_donor=[62],
-                n_drop_admix_dp=58,
+                n_dropped_low_admix_dp=58,
             ),
         )
         msg = _marker_loss_diagnosis(g, 2)

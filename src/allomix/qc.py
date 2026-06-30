@@ -24,43 +24,33 @@ from allomix.relatedness import (
 from allomix.results import ChimerismResult, MarkerResult
 from allomix.runmeta import RunUnitInfo
 
-# Thresholds for the optional warning when the host-presence detector fires
-# significantly but the global MLE does not echo the signal.
+# Warn when the host-presence detector fires but the global MLE does not echo it.
 HOST_PRESENCE_REVIEW_P = 0.01
-# Treat the MLE as "below the detector estimate" when it's < 1/3 of f_h_hat.
-# A factor of 3 absorbs sampling noise; tighter ratios produce a lot of
-# noise warnings at borderline cells.
+# MLE counts as "below the detector" under 1/3 of f_h_hat; the factor of 3
+# absorbs sampling noise without flooding borderline cells with warnings.
 HOST_PRESENCE_RATIO_GAP = 3.0
-# When the robust refit excludes more than this fraction of informative markers,
-# promote the result to REVIEW: a large exclusion points at host copy-number /
-# LoH (or a genotyping problem), and the robust refit itself is unreliable once
-# the aberrant markers are no longer a clear minority.
+# Above this robust-trim fraction, promote to REVIEW: a large exclusion points at
+# host CNV/LoH (or genotyping error) and the trimmed fit is itself unreliable.
 ROBUST_REVIEW_FRACTION = 0.15
-# The admixture carries alleles in neither host nor donor: when the
-# consensus-homozygote swap test is significant at this level (and rests on at
-# least MIN_CONSENSUS markers) the sample is promoted to REVIEW.
+# Consensus-homozygote swap test significant at this level (>= MIN_CONSENSUS
+# markers) promotes to REVIEW.
 SWAP_REVIEW_P = 1e-3
 
-# In-data contamination estimate (third-party signal at consensus-homozygous
-# markers; see ``allomix.contamination``), the low-level floor a gross swap test
-# misses. Distinct from the index-hopping provenance flag (shared sequencing run),
-# which the joint-calling pipeline carries, not allomix. At panel depth the pooled
-# test is significant for any real excess, so the magnitude thresholds below are
-# what actually gate.
+# In-data contamination: third-party signal at consensus-hom markers (see
+# ``allomix.contamination``), the low-level floor the gross swap test misses.
+# Distinct from the index-hopping provenance flag. At panel depth the pooled test
+# is significant for any real excess, so the magnitude thresholds below gate.
 CONTAMINATION_P = 0.01
-# Warn when the estimated contamination floor is at least this fraction and
-# significant. Below this it is benign relative to the clinical <1% target.
-# Tunable: a lab can raise it to silence a known low-level pool floor or lower it
-# to police a more sensitive assay.
+# Warn at/above this floor (significant). Below it is benign vs the <1% target;
+# tunable per lab.
 CONTAMINATION_WARN_FRACTION = 0.002  # 0.2%
-# Promote to REVIEW above this: a floor this size biases low-level host
-# detection (it sits on top of the host fraction at donor-homozygous markers).
+# Above this the floor biases low-level host detection -> REVIEW.
 CONTAMINATION_REVIEW_FRACTION = 0.01  # 1%
 
-# Sample-level QC warning thresholds (soft warnings, not the per-marker filters).
-LOW_MEAN_DEPTH_WARN = 100  # warn when mean admixture depth is below this
-WIDE_CI_WARN_PCT = 20  # warn when a donor-fraction CI spans more than this (%)
-GOF_REVIEW_P = 0.01  # goodness-of-fit p below this promotes the result to REVIEW
+# Sample-level soft warnings (not per-marker filters).
+LOW_MEAN_DEPTH_WARN = 100  # mean admixture depth below this
+WIDE_CI_WARN_PCT = 20  # donor-fraction CI wider than this (%)
+GOF_REVIEW_P = 0.01  # goodness-of-fit p below this -> REVIEW
 
 # Clamp keeping the expected VAF strictly inside (0, 1) so the GoF variance never
 # collapses to zero at homozygous markers (see _error_adjusted_p_alt rationale).
@@ -255,10 +245,10 @@ def _marker_loss_diagnosis(g: MarkerGenotypes, n_informative: int) -> str:
 
     # 3. Sharing is fine; blame the dominant per-marker filter.
     drops = [
-        ("low admixture depth (DP<min)", mc.n_drop_admix_dp),
-        ("host GQ below threshold", mc.n_drop_gq_host),
-        ("donor GQ below threshold", mc.n_drop_gq_donor),
-        ("non-PASS calls", mc.n_drop_pass),
+        ("low admixture depth (DP<min)", mc.n_dropped_low_admix_dp),
+        ("host GQ below threshold", mc.n_dropped_low_gq_host),
+        ("donor GQ below threshold", mc.n_dropped_low_gq_donor),
+        ("non-PASS calls", mc.n_dropped_failed_filter),
     ]
     reason, n = max(drops, key=lambda kv: kv[1])
     if n > 0:
@@ -327,10 +317,9 @@ def assess_quality(
         n_fitted_params=n_fitted,
         error_rate=result.error_rate,
     )
-    # Also evaluate over the full pre-trim set: the robust refit can trim the
-    # worst-fitting markers (host CNV/LoH, miscalls, and at low host fraction the
-    # host-carrying markers themselves), leaving a clean post-trim GoF on a sample
-    # whose fit is actually poor. Only recompute when something was trimmed.
+    # Also evaluate the full pre-trim set: the robust refit can trim the worst
+    # markers (CNV/LoH, miscalls, or low-fraction host signal) and leave a clean
+    # post-trim GoF on a poorly-fitting sample. Recompute only when trimmed.
     if any(not m.included for m in result.per_marker):
         gof_pval_pretrim = _compute_gof_pval(
             result.per_marker,
@@ -398,11 +387,10 @@ def assess_quality(
                 "possible genotyping error, CNV, or sample issue"
             )
 
-    # Host-presence vs MLE disagreement: a significant presence test the global
-    # MLE host-fraction does not echo is the clinically interesting "low-level host
-    # signal below the MLE's resolution" case. Soft warning only; v1 does not
-    # promote qc.status, as the operating characteristics on real samples are still
-    # being mapped.
+    # Host-presence vs MLE disagreement: a significant presence test the MLE does
+    # not echo is the clinically interesting "host below the MLE's resolution"
+    # case. Soft warning only; v1 does not promote status (real-sample operating
+    # characteristics still being mapped).
     hp: HostPresenceResult | None = getattr(result, "host_presence", None)
     if hp is not None and hp.n_markers > 0 and hp.lrt_pval < HOST_PRESENCE_REVIEW_P:
         mle_host = _mle_host_estimate(result)
@@ -417,15 +405,12 @@ def assess_quality(
                 f"f_host_est={hp.f_host_mle:.4%}, mle_host={mle_host:.4%})"
             )
 
-    # Note: a per-marker-type-overdispersion fallback to shared rho (recorded on
-    # ``result.marker_type_overdispersion_fallback``) is NOT surfaced as a QC
-    # warning. Two-rho is the default estimator, and a sparse marker class is
-    # routine for small or hom-dominated panels; the shared-rho fit it falls back
-    # to is the validated baseline, so the fallback stays a diagnostic field only.
+    # A two-rho -> shared-rho fallback (``marker_type_overdispersion_fallback``) is
+    # deliberately NOT warned: a sparse class is routine and shared-rho is the
+    # validated baseline, so it stays a diagnostic field only.
 
-    # A few robust-refit exclusions is routine, but a large fraction signals host
-    # copy-number / LoH (or genotyping error) and means the trimmed fit should not
-    # be trusted blindly.
+    # A few exclusions are routine; a large fraction signals host CNV/LoH (or
+    # genotyping error) and an untrustworthy trimmed fit.
     high_robust_drop = False
     n_robust = getattr(result, "n_robust_excluded", 0)
     drop_frac = getattr(result, "robust_drop_fraction", 0.0)
@@ -437,16 +422,14 @@ def assess_quality(
         if drop_frac > ROBUST_REVIEW_FRACTION:
             high_robust_drop = True
 
-    # Sample-identity QC: two checks on the reference samples plus the
-    # admixture-vs-(host+donor) swap test.
+    # Sample-identity QC: reference-sample checks plus the admix swap test.
     identity_review = False
     relatedness: list[RelatednessResult] | None = getattr(result, "relatedness", None)
     duplicate_pairs: set[str] = set()
     if relatedness:
-        # Duplicate / sample reuse: two reference samples that should be distinct
-        # individuals reading as the same genome. Checked unconditionally (no
-        # declaration needed): it is intrinsically an error and makes host-vs-donor
-        # chimerism meaningless. Hard FAIL.
+        # Duplicate/reuse: two reference samples reading as the same genome.
+        # Intrinsically an error (chimerism is meaningless), so a hard FAIL
+        # checked unconditionally.
         for rel in relatedness:
             if rel.degree == DEGREE_IDENTICAL:
                 status = "FAIL"
@@ -459,13 +442,11 @@ def assess_quality(
                     "either way genotype-based chimerism cannot be measured"
                 )
 
-    # Relatedness vs a declared expectation. A close relationship declared but
-    # detected unrelated (a likely swap) is a hard FAIL; a milder mismatch folds
-    # into the REVIEW block below. Pairs already flagged as duplicates are skipped.
+    # Relatedness vs declared expectation. Close-declared-but-unrelated (likely
+    # swap) is a hard FAIL; milder mismatches go to REVIEW. Skip duplicate pairs.
     if relatedness and expected_relatedness:
-        # Declarations are per donor; align to the host-vs-donor pairs, which lead
-        # `relatedness` in donor order. strict=True turns a count mismatch into an
-        # error rather than silently leaving a donor unchecked.
+        # Declarations are per donor; align to the host-vs-donor pairs that lead
+        # `relatedness` in donor order. strict=True makes a count mismatch an error.
         host_pairs = [r for r in relatedness if r.a_name == "host"]
         for rel, declared in zip(host_pairs, expected_relatedness, strict=True):
             if rel.pair in duplicate_pairs:
@@ -488,9 +469,9 @@ def assess_quality(
             f"consensus-homozygous markers (swap p={ac.swap_pval:.2e})"
         )
 
-    # In-data contamination floor: low-level third-party signal the swap test above
-    # cannot catch. Magnitude-gated warning, promoted to REVIEW when the floor is
-    # large enough to bias low-level host detection.
+    # In-data contamination floor: low-level third-party signal the swap test
+    # misses. Magnitude-gated warning; REVIEW when large enough to bias host
+    # detection.
     contamination_review = False
     contamination: ContaminationResult | None = getattr(result, "contamination", None)
     if (
@@ -509,11 +490,10 @@ def assess_quality(
         if contamination.contamination_fraction >= CONTAMINATION_REVIEW_FRACTION:
             contamination_review = True
 
-    # Index-hopping provenance: the sample shares a sequencing run unit (flowcell
-    # lane) with the host, so hopped host reads could leak in. Soft warning only,
-    # not a status change: sharing a run is a risk, not a defect, and the
-    # contamination estimate above measures whether it actually bit. Absent (silent)
-    # when the admix VCF carried no run metadata.
+    # Index-hopping provenance: shares a sequencing run unit with the host, so
+    # hopped host reads could leak in. Soft warning only (a risk, not a defect;
+    # the contamination estimate above measures whether it bit). Silent when the
+    # admix VCF carried no run metadata.
     run_unit: RunUnitInfo | None = getattr(result, "run_unit", None)
     if run_unit is not None and run_unit.shares_run_with_host:
         warnings.append(

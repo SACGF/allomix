@@ -1,25 +1,23 @@
 """Relatedness estimation and sample-swap detection for QC.
 
-Two allele-frequency-free identity checks computed from the same genotype and
-allele-depth data the chimerism pipeline already parses:
+Two allele-frequency-free identity checks from the genotype and allele-depth data
+the chimerism pipeline already parses:
 
-1. ``relatedness_coefficient`` estimates the kinship between two reference
-   samples (host and a donor, or donor and donor) with a somalier-style robust
-   coefficient over shared autosomal markers. It is reported in output and,
-   when a lab declares an expected relationship, compared against it to flag
-   mislabelled or unexpectedly related reference samples.
+1. ``relatedness_coefficient`` estimates kinship between two reference samples
+   (host/donor or donor/donor) with a somalier-style robust coefficient over
+   shared autosomal markers. Reported in output and, when a lab declares an
+   expected relationship, compared against it to flag mislabelled or unexpectedly
+   related reference samples.
 
-2. ``admix_consistency`` checks the admixture sample against the supplied host
-   and donor(s). At markers where host and all donors share the same homozygous
-   genotype, the admixture must carry that homozygote up to sequencing error,
-   regardless of mixing fraction. Excess minority-allele reads there mean the
-   admixture carries a third genome (a sample swap or wrong-patient VCF).
+2. ``admix_consistency`` checks the admixture against host and donor(s). Where
+   host and all donors share the same homozygous genotype, the admixture must
+   carry that homozygote up to sequencing error, whatever the mixing fraction.
+   Excess minority-allele reads there mean a third genome (sample swap or
+   wrong-patient VCF).
 
-Both are panel-agnostic and use only autosomal markers; sex-chromosome dosage is
-unreliable in sex-mismatched transplants, consistent with the rest of the tool.
-
-The robust coefficient is adapted from somalier (Pedersen & Quinlan, MIT
-licensed). The math is standard kinship estimation.
+Both use only autosomal markers; sex-chromosome dosage is unreliable in
+sex-mismatched transplants. The robust coefficient is adapted from somalier
+(Pedersen & Quinlan, MIT licensed); standard kinship estimation.
 """
 
 import math
@@ -30,9 +28,9 @@ from scipy.stats import binom, norm
 from allomix.constants import CI_LEVEL, DEFAULT_ERROR_RATE
 from allomix.genotype import MarkerData, is_sex_chrom, marker_key
 
-# Coefficient bands -> degree index. A coefficient strictly above a band's lower
-# edge (and within the next one up) maps to that degree. Scale: ~1.0 identical,
-# ~0.5 first-degree, ~0.25 second-degree, ~0.125 third-degree, ~0 unrelated.
+# Coefficient bands -> degree index: a coefficient above a band's lower edge maps
+# to that degree. Scale: ~1.0 identical, ~0.5 first-degree, ~0.25 second-degree,
+# ~0.125 third-degree, ~0 unrelated.
 IDENTICAL_MIN = 0.70
 FIRST_DEGREE_MIN = 0.35
 SECOND_DEGREE_MIN = 0.17
@@ -53,11 +51,11 @@ DEGREE_LABELS = {
 }
 
 # Declared expected-relationship strings accepted on input, mapped to a degree.
-# "related" is a catch-all for any related class (degrees 1-3), handled separately
-# since it is not a single degree. "identical" is deliberately NOT accepted: the
-# only genuinely identical pair is an identical-twin (syngeneic) donor, which has
-# no host/donor differences to measure, so genotype chimerism does not apply.
-# Identical remains a *detected* outcome (flagged as a duplicate / unmeasurable).
+# "related" is a catch-all for any related class (degrees 1-3), handled separately.
+# "identical" is deliberately NOT accepted: the only genuinely identical pair is an
+# identical-twin (syngeneic) donor, which has no host/donor differences to measure,
+# so genotype chimerism does not apply. Identical stays a *detected* outcome
+# (flagged duplicate / unmeasurable).
 DECLARED_DEGREE = {
     "first-degree": DEGREE_FIRST,
     "second-degree": DEGREE_SECOND,
@@ -69,10 +67,10 @@ RELATED_CATCH_ALL = "related"
 VALID_DECLARATIONS = (*DECLARED_DEGREE.keys(), RELATED_CATCH_ALL)
 
 # When a declaration and the estimate sit on opposite sides of the
-# related/unrelated boundary, only a *close* relationship (second-degree or
-# nearer) makes it a hard FAIL. Third-degree (cousin) sits within sampling noise
-# of the boundary, so such a crossing is a REVIEW. This keeps the swap/mislabel
-# signal without failing legitimate distant kin that estimate just over the line.
+# related/unrelated boundary, only a *close* relationship (second-degree or nearer)
+# is a hard FAIL. Third-degree (cousin) sits within sampling noise of the boundary,
+# so such a crossing is REVIEW: keeps the swap/mislabel signal without failing
+# legitimate distant kin that estimate just over the line.
 BOUNDARY_FAIL_MAX_DEGREE = DEGREE_SECOND
 
 # Minimum heterozygous sites (in the scarcer sample) before a coefficient is
@@ -90,8 +88,8 @@ SITE_ALPHA = 1e-3
 # meaningful; below this the check is reported but not acted on.
 MIN_CONSENSUS = 20
 
-# Two-sided normal critical value at CI_LEVEL (z_0.975 ~= 1.9600 for 95%) for
-# the Wald CI. The 0.975 is the two-sided upper tail: 1 - (1 - CI_LEVEL) / 2.
+# Two-sided normal critical value at CI_LEVEL (z_0.975 ~= 1.9600 for 95%) for the
+# Wald CI: upper tail 1 - (1 - CI_LEVEL) / 2.
 _Z_TWO_SIDED = float(norm.ppf(1.0 - (1.0 - CI_LEVEL) / 2.0))
 
 
@@ -201,10 +199,10 @@ def _confidence(n_eff: int) -> str:
 def _coef_ci(coef: float, n_eff: int) -> tuple[float, float]:
     """Approximate 95% CI for the coefficient.
 
-    Treats the coefficient as a proportion estimated over ``n_eff`` =
-    min(het_a, het_b) sites and forms a Wald interval. This is a deliberately
-    simple analytic interval: it captures the dominant effect (the interval
-    widens as the het-site count shrinks) without claiming exactness.
+    Treats the coefficient as a proportion over ``n_eff`` = min(het_a, het_b)
+    sites and forms a Wald interval. Deliberately simple: captures the dominant
+    effect (the interval widens as the het-site count shrinks) without claiming
+    exactness.
     """
     p = min(max(coef, 0.0), 1.0)
     se = math.sqrt(max(p * (1.0 - p), 1e-6) / n_eff)
@@ -370,10 +368,9 @@ NO_EXPECTATION_VALUES = {"", "na"}
 def _normalise_declaration(declared: str | None) -> str | None:
     """Lowercase a declaration; None for no-expectation; raise on a typo.
 
-    Returns None for None / blank / "NA" (a deliberate "no expectation"), and the
-    lowercased value when it is a recognised declaration. Raises ValueError for
-    anything else, so a typo (e.g. "frist-degree") is a hard error rather than
-    silently turning the relatedness check off.
+    None for None / blank / "NA"; the lowercased value when recognised. Raises
+    ValueError otherwise, so a typo (e.g. "frist-degree") is a hard error rather
+    than silently turning the relatedness check off.
     """
     if declared is None:
         return None
@@ -391,33 +388,31 @@ def _normalise_declaration(declared: str | None) -> str | None:
 def _verdict_status(declared: str, degree: int, tolerance: int) -> str:
     """Decide PASS / REVIEW / FAIL for a usable declaration and detected degree.
 
-    The verdict is asymmetric, following the realistic failure modes:
+    Asymmetric, following the realistic failure modes:
 
-    - Losing relatedness (a close relationship declared, but detected unrelated)
-      is the random-swap signature and a FAIL. "Close" means second-degree or
-      nearer; a third-degree (cousin) crossing is a REVIEW, since cousins
-      routinely estimate just over the unrelated line at panel marker counts.
-    - Gaining relatedness by accident is implausible except for sample reuse,
-      which reads as identical/duplicate. A detected *identical* result is
-      therefore a FAIL (reuse, or an identical-twin donor that cannot be
-      monitored), but a moderate unexpected relationship (e.g. unrelated
-      declared, first-degree detected) is only a REVIEW: it is not a swap
-      signature and a related donor still yields a usable estimate.
-    - Within the related class, a degree distance <= tolerance is PASS,
-      otherwise REVIEW.
+    - Losing relatedness (close relationship declared, detected unrelated) is the
+      random-swap signature and a FAIL. "Close" means second-degree or nearer; a
+      third-degree (cousin) crossing is REVIEW, since cousins routinely estimate
+      just over the unrelated line at panel marker counts.
+    - Gaining relatedness by accident is implausible except for sample reuse, which
+      reads as identical/duplicate. A detected *identical* is therefore a FAIL
+      (reuse, or an identical-twin donor that cannot be monitored); a moderate
+      unexpected relationship (e.g. unrelated declared, first-degree detected) is
+      only REVIEW (not a swap signature, and a related donor still yields a usable
+      estimate).
+    - Within the related class, degree distance <= tolerance is PASS, else REVIEW.
     """
     detected_identical = degree == DEGREE_IDENTICAL
     detected_unrelated = degree == DEGREE_UNRELATED
 
-    # Detected identical: sample reuse, or an identical-twin (syngeneic) donor.
-    # Either way the pair has no host/donor differences to measure, so FAIL.
-    # ("identical" is not an accepted declaration, so this never matches one.)
+    # Detected identical: sample reuse or an identical-twin (syngeneic) donor;
+    # either way no host/donor differences to measure, so FAIL. ("identical" is not
+    # an accepted declaration, so this never matches one.)
     if detected_identical:
         return "FAIL"
 
     if declared == RELATED_CATCH_ALL:
-        # Any related degree satisfies "related"; finding no relationship is
-        # worth a look (REVIEW) but not a hard fail.
+        # Any related degree satisfies "related"; no relationship is REVIEW, not FAIL.
         return "REVIEW" if detected_unrelated else "PASS"
 
     if declared == "unrelated":
@@ -437,29 +432,28 @@ def evaluate_expected(
 ) -> RelatednessVerdict | None:
     """Compare an estimated relatedness against a declared expectation.
 
-    Returns None when there is no declaration (None / blank / "NA"), so callers
-    that pass no expectation get no verdict. Raises ValueError on an
-    unrecognised value (likely a typo), rather than silently skipping the check.
+    Returns None when there is no declaration (None / blank / "NA"). Raises
+    ValueError on an unrecognised value (likely a typo) rather than silently
+    skipping the check.
 
     Verdict rules (asymmetric, by realistic failure mode):
         - Losing relatedness: a close relationship declared (second-degree or
-          nearer) but detected unrelated is a FAIL (the random-swap signature).
-          A third-degree (cousin) or "related" catch-all crossing to unrelated
-          is only REVIEW, because cousins routinely estimate just over the line.
+          nearer) but detected unrelated is a FAIL (random-swap signature). A
+          third-degree (cousin) or "related" catch-all crossing to unrelated is
+          only REVIEW, because cousins routinely estimate just over the line.
         - Gaining relatedness: a detected identical/duplicate is a FAIL (sample
           reuse, or an identical-twin donor; either way unmeasurable). A moderate
-          unexpected relationship (e.g. unrelated declared, first-degree
-          detected) is only REVIEW.
-        - Within the related class, degree distance ``d <= tolerance`` is PASS;
-          a larger gap is REVIEW.
+          unexpected relationship (e.g. unrelated declared, first-degree detected)
+          is only REVIEW.
+        - Within the related class, degree distance ``d <= tolerance`` is PASS; a
+          larger gap is REVIEW.
         - A declaration we cannot check (too few het sites, no coefficient) is
           REVIEW.
 
-    Note: a duplicate (identical reference pair) is also flagged unconditionally
-    in ``assess_quality``, independent of any declaration.
+    Note: a duplicate (identical reference pair) is also flagged unconditionally in
+    ``assess_quality``, independent of any declaration.
 
-    ``tolerance`` is the allowed degree distance for a PASS (default 1). Returns
-    None when there is no declaration.
+    ``tolerance`` is the allowed degree distance for a PASS (default 1).
 
     Raises:
         ValueError: if ``declared`` is a non-blank, non-"NA" string that is not a

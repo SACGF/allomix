@@ -130,16 +130,15 @@ class MarkerCounts:
     interpreted by ``allomix.qc``; the estimator never reads it.
     """
 
-    n_host: int = 0  # markers genotyped in host
+    n_host: int = 0
     n_donor_markers: list[int] = field(default_factory=list)  # per donor
-    n_admix: int = 0  # markers in the admixture sample (the universe)
-    n_admix_in_host: int = 0  # admix markers also genotyped in host
-    n_admix_in_donor: list[int] = field(default_factory=list)  # admix markers also in each donor
-    # Reasons shared markers were dropped before classification.
-    n_drop_pass: int = 0  # failed PASS filter
-    n_drop_gq_host: int = 0  # host GQ below threshold
-    n_drop_gq_donor: int = 0  # a donor GQ below threshold
-    n_drop_admix_dp: int = 0  # admixture depth below threshold
+    n_admix: int = 0  # the universe
+    n_admix_in_host: int = 0
+    n_admix_in_donor: list[int] = field(default_factory=list)  # per donor
+    n_dropped_failed_filter: int = 0
+    n_dropped_low_gq_host: int = 0
+    n_dropped_low_gq_donor: int = 0
+    n_dropped_low_admix_dp: int = 0
 
 
 @dataclass
@@ -152,8 +151,8 @@ class MarkerGenotypes:
     n_shared: int
     n_filtered: int
     sample_name: str = ""
-    marker_counts: MarkerCounts | None = None  # per-input diagnostic counts (see MarkerCounts)
-    n_sex_chrom_excluded: int = 0  # informative sex-chrom markers dropped (use_sex_chroms=False)
+    marker_counts: MarkerCounts | None = None  # per-input diagnostic counts
+    n_informative_sex_chrom_excluded: int = 0
 
 
 _SEX_CHROM_NAMES = {"X", "Y", "M", "MT"}
@@ -206,7 +205,7 @@ def parse_vcf(
 
     for variant in vcf:
         if len(variant.ALT) > 1:
-            continue  # skip multiallelic
+            continue
 
         alt = variant.ALT[0] if variant.ALT else "."
 
@@ -371,14 +370,6 @@ def classify_markers(
     Joins markers across host, donor(s), and admixture by (chrom, pos, ref, alt),
     applies depth and quality filters, and assigns Vynck marker types for the
     first donor (multi-donor types are stored in the donor_gts list).
-
-    Args:
-        use_sex_chroms: If False (default), markers on the sex and mitochondrial
-            contigs (X/Y/M) are excluded. They are unreliable for chimerism in
-            sex-mismatched transplants, where host/donor allele dosage on
-            chrX/chrY is wrong. Enable per run only once host and donor sex are
-            known to match. Informative sex-chrom markers dropped are counted in
-            ``MarkerGenotypes.n_sex_chrom_excluded``.
     """
     n_total = len(admixture)
 
@@ -401,11 +392,11 @@ def classify_markers(
 
     informative: list[InformativeMarker] = []
     non_informative: list[MarkerData] = []
-    n_drop_pass = 0
-    n_drop_gq_host = 0
-    n_drop_gq_donor = 0
-    n_drop_admix_dp = 0
-    n_sex_chrom_excluded = 0
+    n_dropped_failed_filter = 0
+    n_dropped_low_gq_host = 0
+    n_dropped_low_gq_donor = 0
+    n_dropped_low_admix_dp = 0
+    n_informative_sex_chrom_excluded = 0
 
     for key in sorted(shared_keys):
         h = host_idx[key]
@@ -415,19 +406,19 @@ def classify_markers(
         if pass_only and (
             h.filter != "PASS" or a.filter != "PASS" or any(d.filter != "PASS" for d in ds)
         ):
-            n_drop_pass += 1
+            n_dropped_failed_filter += 1
             continue
 
         if min_gq > 0:
             if h.gq is not None and h.gq < min_gq:
-                n_drop_gq_host += 1
+                n_dropped_low_gq_host += 1
                 continue
             if any(d.gq is not None and d.gq < min_gq for d in ds):
-                n_drop_gq_donor += 1
+                n_dropped_low_gq_donor += 1
                 continue
 
         if a.dp < min_dp:
-            n_drop_admix_dp += 1
+            n_dropped_low_admix_dp += 1
             continue
 
         # Informative if the host differs from ANY donor.
@@ -439,7 +430,7 @@ def classify_markers(
         # the informative ones lost so the cost is visible.
         if not use_sex_chroms and is_sex_chrom(key[0]):
             if any_informative:
-                n_sex_chrom_excluded += 1
+                n_informative_sex_chrom_excluded += 1
             continue
 
         if any_informative:
@@ -476,10 +467,10 @@ def classify_markers(
         n_admix=len(admixture),
         n_admix_in_host=n_admix_in_host,
         n_admix_in_donor=n_admix_in_donor,
-        n_drop_pass=n_drop_pass,
-        n_drop_gq_host=n_drop_gq_host,
-        n_drop_gq_donor=n_drop_gq_donor,
-        n_drop_admix_dp=n_drop_admix_dp,
+        n_dropped_failed_filter=n_dropped_failed_filter,
+        n_dropped_low_gq_host=n_dropped_low_gq_host,
+        n_dropped_low_gq_donor=n_dropped_low_gq_donor,
+        n_dropped_low_admix_dp=n_dropped_low_admix_dp,
     )
 
     return MarkerGenotypes(
@@ -487,8 +478,13 @@ def classify_markers(
         non_informative=non_informative,
         n_total=n_total,
         n_shared=n_shared,
-        n_filtered=n_drop_pass + n_drop_gq_host + n_drop_gq_donor + n_drop_admix_dp,
+        n_filtered=(
+            n_dropped_failed_filter
+            + n_dropped_low_gq_host
+            + n_dropped_low_gq_donor
+            + n_dropped_low_admix_dp
+        ),
         sample_name=sample_name,
         marker_counts=counts,
-        n_sex_chrom_excluded=n_sex_chrom_excluded,
+        n_informative_sex_chrom_excluded=n_informative_sex_chrom_excluded,
     )

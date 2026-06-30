@@ -36,7 +36,7 @@ per-patient CSV (sample_id, bam_filename, sample_type)
   |     at panel sites + amplicon midpoints
   |     |                           |
   |     v                           |
-  |   allomix estimate-errors --genotype-vcf panel --homref-vcf midpoints
+  |   allomix estimate-errors panel --homref-vcf midpoints --sample HOST ...
   |     |                           |
   |     v                           |
   |   <patient>.error_table.tsv   (per-site, both-direction background)
@@ -65,7 +65,7 @@ It cannot use GATK for the same reason phase 2 does not: the GVCF reassembly str
 - the panel sites (same constrained `call -m -A -C alleles -T panel.targets` as phase 2): a reference sample that is hom-ref there gives the ref->alt rate, one that is hom-alt gives alt->ref.
 - one force-called background position per amplicon, the BED-interval midpoint (`call -m -A`, no panel allele): almost always hom-ref in every individual, so the few stray ALT reads there are clean ref->alt error. The variant-only joint call emits no all-hom-ref sites, so without these the ref->alt direction would be undersampled.
 
-`allomix estimate-errors --genotype-vcf <panel> --homref-vcf <midpoints> --samples HOST DONOR...` pools both into one per-site, both-direction table (`<patient>.error_table.tsv`). A midpoint that is actually polymorphic in some individual is dropped by the estimator's `--max-vaf-homref` guard, so no external allele-frequency resource is needed. Pass the table to `allomix monitor --error-table`. Phase 1b needs the HOST/DONOR BAMs only, so it runs for every patient regardless of whether admix timepoints exist yet, and it needs `allomix` on `PATH` (set `allomix:` in config to point at it).
+`allomix estimate-errors <panel> --homref-vcf <midpoints> --sample HOST --sample DONOR ...` pools both into one per-site, both-direction table (`<patient>.error_table.tsv`). A midpoint that is actually polymorphic in some individual is dropped by the estimator's `--max-vaf-homref` guard, so no external allele-frequency resource is needed. Pass the table to `allomix monitor --error-table`. Phase 1b needs the HOST/DONOR BAMs only, so it runs for every patient regardless of whether admix timepoints exist yet, and it needs `allomix` on `PATH` (set `allomix:` in config to point at it).
 
 The two phases live in one Snakefile and share one DAG. Snakemake skips phase-1 work that already exists when only new admix timepoints are added.
 

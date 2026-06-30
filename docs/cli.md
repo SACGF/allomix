@@ -94,15 +94,15 @@ allomix report report.json --output report.html
 ## estimate-bias
 
 ```bash
-# Estimate bias from per-sample VCFs
+# Estimate bias from per-sample VCFs (positional, globbable)
 allomix estimate-bias \
-    --genotype-vcfs sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
+    sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
     --output bias_table.tsv
 
 # Estimate bias from named samples within a joint-called VCF
 allomix estimate-bias \
-    --genotype-vcf joint_called.vcf.gz \
-    --samples DONOR_001 DONOR_002 DONOR_003 \
+    joint_called.vcf.gz \
+    --sample DONOR_001 --sample DONOR_002 --sample DONOR_003 \
     --output bias_table.tsv
 
 # Use bias correction during monitoring

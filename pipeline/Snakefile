@@ -850,13 +850,13 @@ rule error_table:
         os.path.join(OUTPUT_DIR, "logs", "error_table", "{patient}.log"),
     params:
         allomix=ALLOMIX,
-        samples=lambda wc: list(_ref_samples(wc.patient)),
+        sample_flags=lambda wc: " ".join(f"--sample {s}" for s in _ref_samples(wc.patient)),
     shell:
         """
         {params.allomix} estimate-errors \
-            --genotype-vcf {input.panel} \
+            {input.panel} \
             --homref-vcf {input.homref} \
-            --samples {params.samples} \
+            {params.sample_flags} \
             -o {output.tsv} \
             2>&1 | tee {log}
         """

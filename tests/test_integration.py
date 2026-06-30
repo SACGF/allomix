@@ -220,9 +220,8 @@ class TestCLIIntegration:
         rc = main(
             [
                 "estimate-bias",
-                "--both-het",
-                "--genotype-vcf",
                 str(JOINT_VCF),
+                "--both-het",
                 "--host-sample",
                 "HOST",
                 "--donor-sample",
@@ -241,7 +240,40 @@ class TestCLIIntegration:
     def test_estimate_bias_both_het_requires_inputs(self):
         """--both-het without the required genotype/admix inputs is an error."""
         with pytest.raises(SystemExit):
-            main(["estimate-bias", "--both-het", "--genotype-vcf", str(JOINT_VCF)])
+            main(["estimate-bias", str(JOINT_VCF), "--both-het"])
+
+    def test_estimate_bias_samples_file(self, tmp_path):
+        """--samples-file reads names (skipping blanks/# comments), merged with --sample."""
+        pass_list = tmp_path / "pass.txt"
+        pass_list.write_text("# cohort pass-list\nHOST\n\n")
+        out = tmp_path / "bias.tsv"
+        rc = main(
+            [
+                "estimate-bias",
+                str(JOINT_VCF),
+                "--samples-file",
+                str(pass_list),
+                "--sample",
+                "DONOR",
+                "--output",
+                str(out),
+            ]
+        )
+        assert rc == 0
+        # File contributed HOST, --sample added DONOR: a joint-mode run over both.
+        assert out.read_text().splitlines()[0].split("\t") == [
+            "chrom",
+            "pos",
+            "ref",
+            "alt",
+            "bias",
+            "n_het",
+        ]
+
+    def test_estimate_bias_samples_file_missing(self):
+        """A missing --samples-file is a clean error, not a traceback."""
+        with pytest.raises(SystemExit):
+            main(["estimate-bias", str(JOINT_VCF), "--samples-file", "/no/such/file.txt"])
 
     def test_monitor_estimate_bias_conflicts_with_table(self, tmp_path):
         """--estimate-bias and --bias-table together is an error."""

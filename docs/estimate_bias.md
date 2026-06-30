@@ -146,11 +146,15 @@ Feed the pass list into the joint-VCF mode of `estimate-bias`:
 
 ```bash
 allomix estimate-bias \
-  --genotype-vcf output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz \
-  --samples $(cat output/bias_training/pass_samples.txt) \
+  output/bias_training/samples_bias_training.idt_rhampseq_sid_SNPsQC.vcf.gz \
+  --samples-file output/bias_training/pass_samples.txt \
   --output output/bias_training/bias_table.tsv \
   --min-het 30
 ```
+
+The genotype VCF is a positional argument. `--samples-file` reads the pass list
+(one sample name per line, blank lines and `#` comments skipped); for a handful
+of samples you can instead repeat `--sample NAME`, and the two can be combined.
 
 With 100+ samples passing QC, raise `--min-het` to around 30: every site should accumulate plenty of hets, and a stricter threshold drops any locus with unexpectedly thin coverage.
 
@@ -162,15 +166,15 @@ Two input modes are supported. Use whichever matches how your donor VCFs are org
 
 ```bash
 allomix estimate-bias \
-    --genotype-vcfs sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
+    sample1.vcf.gz sample2.vcf.gz sample3.vcf.gz \
     --output bias_table.tsv
 ```
 
-Shell globbing works:
+The genotype VCFs are positional, so shell globbing works:
 
 ```bash
 allomix estimate-bias \
-    --genotype-vcfs /path/to/genotyping/*.vcf.gz \
+    /path/to/genotyping/*.vcf.gz \
     --output bias_table.tsv
 ```
 
@@ -180,8 +184,8 @@ The first sample in each VCF is used. This mode suits workflows where each genot
 
 ```bash
 allomix estimate-bias \
-    --genotype-vcf joint_called.vcf.gz \
-    --samples DONOR_001 DONOR_002 DONOR_003 \
+    joint_called.vcf.gz \
+    --sample DONOR_001 --sample DONOR_002 --sample DONOR_003 \
     --output bias_table.tsv
 ```
 
@@ -192,8 +196,7 @@ Use this when your donor genotyping VCFs were joint-called alongside other sampl
 When you do not have reference samples called the same way as the admixture AD (the two-phase pipeline does not produce mpileup'd pure references), estimate bias from the admixture VCFs themselves, at markers where the host and every donor are heterozygous. There the true admixture VAF is 0.5 regardless of the mixing fraction, so the admixture AD gives the per-marker bias directly, from the same caller being analysed.
 
 ```bash
-allomix estimate-bias --both-het \
-    --genotype-vcf patient_genotypes.vcf.gz \
+allomix estimate-bias patient_genotypes.vcf.gz --both-het \
     --host-sample HOST --donor-sample DONOR \
     --admix-vcfs patient.admix.vcf.gz \
     --output bias_table.tsv
@@ -205,12 +208,12 @@ A pair's both-het markers are non-informative for that **same** pair, so a singl
 
 | Option | Default | Description |
 |---|---|---|
-| `--genotype-vcfs` | | Per-sample VCFs, one per file (het-site mode; mutually exclusive with `--genotype-vcf`) |
-| `--genotype-vcf` | | Joint-called multi-sample VCF (het-site mode with `--samples`, or genotype source for `--both-het`) |
-| `--samples` | | Sample names to extract from `--genotype-vcf` (het-site mode) |
+| `GENOTYPE_VCF` (positional) | | Genotype VCF(s): several per-sample files (first sample of each), or one joint VCF with `--sample`, or the `--both-het` genotype source. Accepts shell globs. |
+| `--sample` | | Sample name to read from a single joint VCF (repeat per sample; het-site mode) |
+| `--samples-file` | | File of sample names (one per line; `#` comments skipped) for a single joint VCF; merged with `--sample` |
 | `--both-het` | off | Estimate from admixture samples at host+donor both-het markers (caller-consistent cohort table) |
-| `--host-sample` | | Host sample name in `--genotype-vcf` (`--both-het` mode) |
-| `--donor-sample` | | Donor sample name in `--genotype-vcf` (`--both-het` mode; repeat for multi-donor) |
+| `--host-sample` | | Host sample name in the genotype VCF (`--both-het` mode) |
+| `--donor-sample` | | Donor sample name in the genotype VCF (`--both-het` mode; repeat for multi-donor) |
 | `--admix-vcfs` | | Admixture VCFs supplying the both-het observations (`--both-het` mode) |
 | `--output` / `-o` | `bias_table.tsv` | Output path for the bias table TSV |
 | `--min-het` | 1 | Minimum heterozygous observations required to include a marker |

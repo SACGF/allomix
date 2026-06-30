@@ -214,7 +214,7 @@ def run_mix(
         error_table = GEN / f"{name}.error_table.tsv"
     cmd = [
         *ALLOMIX,
-        "--panel-vcf", str(panel),
+        "--genotype-vcf", str(panel),
         "--admix-vcf", str(admix),
         "--host-sample", host,
         "--tsv", "-",

@@ -854,7 +854,7 @@ rule error_table:
     shell:
         """
         {params.allomix} estimate-errors \
-            --vcf {input.panel} \
+            --genotype-vcf {input.panel} \
             --homref-vcf {input.homref} \
             --samples {params.samples} \
             -o {output.tsv} \

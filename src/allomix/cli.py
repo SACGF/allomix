@@ -79,10 +79,10 @@ def _expected_relatedness_value(value: str) -> Relatedness | None:
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
     """Add arguments shared between monitor and timeline."""
     parser.add_argument(
-        "--panel-vcf",
+        "--genotype-vcf",
         required=True,
-        help="Panel VCF with host/donor genotypes (typically GATK joint-called; "
-        "see docs/joint_calling.md)",
+        help="VCF with host/donor genotypes (GT), typically GATK joint-called "
+        "(see docs/joint_calling.md)",
     )
     parser.add_argument(
         "--admix-vcf",
@@ -201,7 +201,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--estimate-bias",
         action="store_true",
-        help="Estimate per-marker bias inline from all samples in --panel-vcf, "
+        help="Estimate per-marker bias inline from all samples in --genotype-vcf, "
         "held in memory (no separate `estimate-bias` step or table file). "
         "Mutually exclusive with --bias-table. Estimate from data called "
         "the same way as the admix; works best when the panel VCF holds "
@@ -326,7 +326,7 @@ def _build_report_meta(args: argparse.Namespace) -> ReportMeta:
 def _build_report_params(args: argparse.Namespace) -> dict:
     """Collect the analysis parameters shown in the HTML report footer."""
     return {
-        "panel_vcf": args.panel_vcf,
+        "genotype_vcf": args.genotype_vcf,
         "admix_vcf": args.admix_vcf,
         "error_table": args.error_table,
         "bias_table": args.bias_table,
@@ -506,8 +506,8 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
         raise SystemExit("Use either --bias-table or --estimate-bias, not both")
 
     if estimate_bias and not args.no_bias_correction:
-        samples = list(VCF(args.panel_vcf).samples)
-        marker_lists = [parse_vcf(args.panel_vcf, sample=s, min_dp=0, min_gq=0) for s in samples]
+        samples = list(VCF(args.genotype_vcf).samples)
+        marker_lists = [parse_vcf(args.genotype_vcf, sample=s, min_dp=0, min_gq=0) for s in samples]
         biases = biases_to_simple_dict(
             estimate_biases(marker_lists, min_het=args.estimate_bias_min_het)
         )
@@ -539,7 +539,7 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
 def cmd_monitor(args: argparse.Namespace) -> int:
     """Run the monitor subcommand."""
     _validate_expected_relatedness(args)
-    _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
+    _validate_sample_names(args.genotype_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
 
     # No output flag defaults to TSV on stdout (the historical default).
@@ -567,10 +567,10 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     # reads in a 2-sample joint call). Without it the wider gnomAD-derived panel
     # recovers markers that bias the estimator toward false host signal (Step 23).
     host = parse_vcf(
-        args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
+        args.genotype_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
     )
     donors = [
-        parse_vcf(args.panel_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
+        parse_vcf(args.genotype_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
         for d in args.donor_sample
     ]
 
@@ -648,17 +648,17 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             "timeline --html needs matplotlib for the trend chart: pip install 'allomix[report]'"
         )
     _validate_expected_relatedness(args)
-    _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
+    _validate_sample_names(args.genotype_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
 
     calibration = _load_calibration(args)
 
     # Parse host and donors once. See cmd_monitor for gt_ad_consistency.
     host = parse_vcf(
-        args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
+        args.genotype_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
     )
     donors = [
-        parse_vcf(args.panel_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
+        parse_vcf(args.genotype_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
         for d in args.donor_sample
     ]
 
@@ -746,25 +746,25 @@ def cmd_estimate_bias(args: argparse.Namespace) -> int:
     if args.both_het:
         return _cmd_estimate_bias_both_het(args)
 
-    if args.vcfs and args.vcf:
-        raise SystemExit("Use either --vcfs or --vcf/--samples, not both")
-    if not args.vcfs and not args.vcf:
-        raise SystemExit("One of --vcfs or --vcf is required")
-    if args.vcf and not args.samples:
-        raise SystemExit("--samples is required when using --vcf")
+    if args.genotype_vcfs and args.genotype_vcf:
+        raise SystemExit("Use either --genotype-vcfs or --genotype-vcf/--samples, not both")
+    if not args.genotype_vcfs and not args.genotype_vcf:
+        raise SystemExit("One of --genotype-vcfs or --genotype-vcf is required")
+    if args.genotype_vcf and not args.samples:
+        raise SystemExit("--samples is required when using --genotype-vcf")
 
     marker_lists = []
-    if args.vcfs:
-        for vcf_path in args.vcfs:
+    if args.genotype_vcfs:
+        for vcf_path in args.genotype_vcfs:
             markers = parse_vcf(vcf_path, min_dp=0, min_gq=0)
             marker_lists.append(markers)
-        n_source = f"{len(args.vcfs)} VCFs"
+        n_source = f"{len(args.genotype_vcfs)} VCFs"
     else:
-        _validate_sample_names(args.vcf, args.samples)
+        _validate_sample_names(args.genotype_vcf, args.samples)
         for sample in args.samples:
-            markers = parse_vcf(args.vcf, sample=sample, min_dp=0, min_gq=0)
+            markers = parse_vcf(args.genotype_vcf, sample=sample, min_dp=0, min_gq=0)
             marker_lists.append(markers)
-        n_source = f"{len(args.samples)} samples from {args.vcf}"
+        n_source = f"{len(args.samples)} samples from {args.genotype_vcf}"
 
     biases = estimate_biases(marker_lists, min_het=args.min_het)
     save_bias_table(biases, args.output)
@@ -785,18 +785,24 @@ def _cmd_estimate_bias_both_het(args: argparse.Namespace) -> int:
     builder: run it across patients and apply the table (``--bias-table``) to
     other patients, whose informative markers it covers.
     """
-    if args.vcfs or args.samples:
+    if args.genotype_vcfs or args.samples:
         raise SystemExit(
-            "--both-het uses --vcf with --host-sample/--donor-sample, not --vcfs/--samples"
+            "--both-het uses --genotype-vcf with --host-sample/--donor-sample, "
+            "not --genotype-vcfs/--samples"
         )
-    if not args.vcf or not args.host_sample or not args.donor_sample or not args.admix_vcfs:
+    if (
+        not args.genotype_vcf
+        or not args.host_sample
+        or not args.donor_sample
+        or not args.admix_vcfs
+    ):
         raise SystemExit(
-            "--both-het requires --vcf, --host-sample, --donor-sample, and --admix-vcfs"
+            "--both-het requires --genotype-vcf, --host-sample, --donor-sample, and --admix-vcfs"
         )
 
-    _validate_sample_names(args.vcf, [args.host_sample, *args.donor_sample])
-    host = parse_vcf(args.vcf, sample=args.host_sample, min_dp=0, min_gq=0)
-    donors = [parse_vcf(args.vcf, sample=d, min_dp=0, min_gq=0) for d in args.donor_sample]
+    _validate_sample_names(args.genotype_vcf, [args.host_sample, *args.donor_sample])
+    host = parse_vcf(args.genotype_vcf, sample=args.host_sample, min_dp=0, min_gq=0)
+    donors = [parse_vcf(args.genotype_vcf, sample=d, min_dp=0, min_gq=0) for d in args.donor_sample]
 
     admix_lists = []
     for vcf_path in args.admix_vcfs:
@@ -816,28 +822,28 @@ def _cmd_estimate_bias_both_het(args: argparse.Namespace) -> int:
 
 def cmd_estimate_errors(args: argparse.Namespace) -> int:
     """Run the estimate-errors subcommand."""
-    if args.vcfs and args.vcf:
-        raise SystemExit("Use either --vcfs or --vcf/--samples, not both")
-    if not args.vcfs and not args.vcf:
-        raise SystemExit("One of --vcfs or --vcf is required")
-    if args.vcf and not args.samples:
-        raise SystemExit("--samples is required when using --vcf")
+    if args.genotype_vcfs and args.genotype_vcf:
+        raise SystemExit("Use either --genotype-vcfs or --genotype-vcf/--samples, not both")
+    if not args.genotype_vcfs and not args.genotype_vcf:
+        raise SystemExit("One of --genotype-vcfs or --genotype-vcf is required")
+    if args.genotype_vcf and not args.samples:
+        raise SystemExit("--samples is required when using --genotype-vcf")
 
     if args.homref_vcf and not args.samples:
         raise SystemExit("--homref-vcf requires --samples (the shared sample names)")
 
     marker_lists = []
-    if args.vcfs:
-        for vcf_path in args.vcfs:
+    if args.genotype_vcfs:
+        for vcf_path in args.genotype_vcfs:
             markers = parse_vcf(vcf_path, min_dp=0, min_gq=args.min_gq)
             marker_lists.append(markers)
-        n_source = f"{len(args.vcfs)} VCFs"
+        n_source = f"{len(args.genotype_vcfs)} VCFs"
     else:
-        _validate_sample_names(args.vcf, args.samples)
+        _validate_sample_names(args.genotype_vcf, args.samples)
         for sample in args.samples:
-            markers = parse_vcf(args.vcf, sample=sample, min_dp=0, min_gq=args.min_gq)
+            markers = parse_vcf(args.genotype_vcf, sample=sample, min_dp=0, min_gq=args.min_gq)
             marker_lists.append(markers)
-        n_source = f"{len(args.samples)} samples from {args.vcf}"
+        n_source = f"{len(args.samples)} samples from {args.genotype_vcf}"
 
     # Hom-ref background VCFs (e.g. raw mpileup at force-called amplicon
     # midpoints) carry the same samples; their hom-ref calls add the ref->alt
@@ -872,23 +878,25 @@ def cmd_build_contamination_table(args: argparse.Namespace) -> int:
     the consensus-hom dose response, and a correction slope calibrated on the
     patient's informative donor-hom markers pooled across the supplied timepoints.
     """
-    _validate_sample_names(args.vcf, [args.host_sample, *args.donor_sample])
+    _validate_sample_names(args.genotype_vcf, [args.host_sample, *args.donor_sample])
     _validate_sample_names(args.admix_vcf, args.sample)
 
     # Same panel-side miscall guard (gt_ad_consistency) the analysis uses.
-    host = parse_vcf(args.vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True)
+    host = parse_vcf(
+        args.genotype_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
+    )
     donors = [
-        parse_vcf(args.vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
+        parse_vcf(args.genotype_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
         for d in args.donor_sample
     ]
 
     admix_lists = [parse_vcf(args.admix_vcf, sample=s, min_dp=0) for s in args.sample]
 
     # Carrier counts come from the co-pooled flowcell individuals; default to
-    # every sample in --vcf (which should include host and donors).
-    cohort_samples = args.cohort_samples or list(VCF(args.vcf).samples)
+    # every sample in --genotype-vcf (which should include host and donors).
+    cohort_samples = args.cohort_samples or list(VCF(args.genotype_vcf).samples)
     cohort_genotypes = [
-        parse_vcf(args.vcf, sample=s, min_gq=args.min_gq, gt_ad_consistency=True)
+        parse_vcf(args.genotype_vcf, sample=s, min_gq=args.min_gq, gt_ad_consistency=True)
         for s in cohort_samples
     ]
 
@@ -981,13 +989,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     bias_input = bias_parser.add_mutually_exclusive_group()
     bias_input.add_argument(
-        "--vcfs",
+        "--genotype-vcfs",
         nargs="+",
         metavar="VCF",
         help="Per-sample VCFs, one per file (reads first sample from each)",
     )
     bias_input.add_argument(
-        "--vcf",
+        "--genotype-vcf",
         metavar="VCF",
         help="Joint-called multi-sample VCF (use with --samples)",
     )
@@ -995,7 +1003,7 @@ def main(argv: list[str] | None = None) -> int:
         "--samples",
         nargs="+",
         metavar="SAMPLE_NAME",
-        help="Sample names to extract from --vcf (het-site mode)",
+        help="Sample names to extract from --genotype-vcf (het-site mode)",
     )
     bias_parser.add_argument(
         "--both-het",
@@ -1004,20 +1012,20 @@ def main(argv: list[str] | None = None) -> int:
         "the host and every donor are heterozygous (true VAF 0.5 regardless "
         "of mixing). Use this when you only have admix VCFs (no mpileup'd "
         "reference samples) and need a caller-consistent table. Requires "
-        "--vcf (genotypes), --host-sample, --donor-sample, and --admix-vcfs. "
+        "--genotype-vcf (genotypes), --host-sample, --donor-sample, and --admix-vcfs. "
         "A pair's both-het markers are non-informative for that same pair, "
         "so build the table from a cohort and apply it to other patients.",
     )
     bias_parser.add_argument(
         "--host-sample",
-        help="Host sample name in --vcf (both-het mode)",
+        help="Host sample name in --genotype-vcf (both-het mode)",
     )
     bias_parser.add_argument(
         "--donor-sample",
         action="append",
         default=[],
         metavar="SAMPLE_NAME",
-        help="Donor sample name in --vcf (both-het mode; repeat for multi-donor)",
+        help="Donor sample name in --genotype-vcf (both-het mode; repeat for multi-donor)",
     )
     bias_parser.add_argument(
         "--admix-vcfs",
@@ -1045,13 +1053,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     err_input = err_parser.add_mutually_exclusive_group()
     err_input.add_argument(
-        "--vcfs",
+        "--genotype-vcfs",
         nargs="+",
         metavar="VCF",
         help="Per-sample VCFs, one per file (reads first sample from each)",
     )
     err_input.add_argument(
-        "--vcf",
+        "--genotype-vcf",
         metavar="VCF",
         help="Joint-called multi-sample VCF (use with --samples)",
     )
@@ -1059,7 +1067,7 @@ def main(argv: list[str] | None = None) -> int:
         "--samples",
         nargs="+",
         metavar="SAMPLE_NAME",
-        help="Sample names to extract from --vcf (and from every --homref-vcf)",
+        help="Sample names to extract from --genotype-vcf (and from every --homref-vcf)",
     )
     err_parser.add_argument(
         "--homref-vcf",
@@ -1072,7 +1080,7 @@ def main(argv: list[str] | None = None) -> int:
         "stray ALT reads at these hom-ref calls supply the ref->alt error "
         "background, which a variant-only joint call cannot (it emits no "
         "all-hom-ref sites). Folded into the same estimate. Requires "
-        "--samples and uses the same sample names as --vcf/--vcfs.",
+        "--samples and uses the same sample names as --genotype-vcf/--genotype-vcfs.",
     )
     err_parser.add_argument(
         "--output",
@@ -1110,7 +1118,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Build a per-marker co-pooled contamination table (Step 30, issue #30)",
     )
     contam_parser.add_argument(
-        "--vcf",
+        "--genotype-vcf",
         required=True,
         metavar="VCF",
         help="Joint-called genotype VCF with the host, donor(s), and co-pooled "
@@ -1119,7 +1127,7 @@ def main(argv: list[str] | None = None) -> int:
     contam_parser.add_argument(
         "--host-sample",
         required=True,
-        help="Host sample name in --vcf",
+        help="Host sample name in --genotype-vcf",
     )
     contam_parser.add_argument(
         "--donor-sample",
@@ -1127,7 +1135,7 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         required=True,
         metavar="SAMPLE_NAME",
-        help="Donor sample name in --vcf (repeat for multi-donor)",
+        help="Donor sample name in --genotype-vcf (repeat for multi-donor)",
     )
     contam_parser.add_argument(
         "--admix-vcf",
@@ -1147,8 +1155,8 @@ def main(argv: list[str] | None = None) -> int:
         nargs="+",
         default=None,
         metavar="SAMPLE_NAME",
-        help="Co-pooled cohort sample names in --vcf for carrier counts "
-        "(default: all samples in --vcf)",
+        help="Co-pooled cohort sample names in --genotype-vcf for carrier counts "
+        "(default: all samples in --genotype-vcf)",
     )
     contam_parser.add_argument(
         "--output",

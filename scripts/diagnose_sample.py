@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Diagnose a single admixture sample: per-marker residuals and noise model.
 
-Internal SA Path diagnostic (not part of the allomix package). Built to chase
-down two questions:
+Diagnostic script (run from `scripts/`, not part of the installed allomix
+package). Built to chase down two questions:
 
 1. Why a sample fails goodness-of-fit (e.g. a CNV/LOH makes a block of markers
    disagree with a single contamination fraction). The per-marker standardized

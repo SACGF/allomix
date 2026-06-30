@@ -16,6 +16,10 @@ scripts/<name>.py`. They depend on `allomix` being installed (`pip install -e
 | `run_csv_batch.py` | Run `allomix monitor` for every per-patient CSV in `pipeline/sample_csvs/` against the two-VCF pipeline outputs, and combine the per-patient results into one `batch.tsv`. |
 | `plot_chimerism_comparison.py` | Plot whole-blood NGS chimerism (with CIs) against flow-sorted lineage values, optionally overlaying one or more other runs. |
 | `diagnose_sample.py` | Per-marker residuals and noise model for one admixture sample: localise a goodness-of-fit failure (CNV/LOH) by chromosome and show why a per-sample LOD is what it is (fitted overdispersion `rho`, SE, LoB, LoD). |
+| `plot_host_presence_per_marker.py` | Per-marker host-presence structure for selected admixture samples: the host fraction each donor-homozygous marker implies, with binomial CIs and the pooled MLE line, to see whether the host signal is spread evenly or carried by a few markers (a CNV/LOH clue). |
+| `host_presence_manhattan.py` | Manhattan plot of the same per-marker host signal along the genome, so a host CNV/LOH region shows up as a contiguous run of markers lifted above the pooled host fraction (UPREG markers ringed) rather than a lone artifact. |
+| `host_presence_markers_vcf.py` | Write a VCF of the donor-homozygous markers carrying host-presence signal, flagging the "upregulated" ones, with INFO fields so it can be annotated by VEP or intersected with driver-gene panels for CNV/LOH follow-up. |
+| `plot_informative_karyogram.py` | Karyogram of informative (IBS0/IBS1) markers along the genome for host vs donor(s); IBD blocks read as gaps in the IBS0 ticks, a coarse relatedness sanity check. |
 | `run_validation.py` | Run allomix on synthetic test data against a truth table and produce a validation report. |
 | `generate_test_data.py` | Generate synthetic joint-called VCFs (host + donor + admixture) for tests. |
 | `generate_multidonor_test_data.py` | Generate a multi-donor synthetic dataset (host + 2 related donors). |

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write a VCF of donor-homozygous markers carrying host-presence signal.
 
-Internal SA Path diagnostic (not part of the allomix package).
+Diagnostic script (run from `scripts/`, not part of the installed allomix package).
 
 For one admixture sample, this lists the donor-homozygous markers used by the
 presence test, annotated with the per-marker host signal, and flags the ones
@@ -27,7 +27,7 @@ Usage:
         --vcf-dir output/joint_called \
         --samples-csv-dir pipeline/sample_csvs \
         --panel-suffix .union_sid_haem_vendor_probes.vcf.gz \
-        --admix 29_MO_HP_FULL_REDACTED_REDACTED \
+        --admix SAMPLE_AAAA \
         --out-dir output/host_presence_markers
 """
 

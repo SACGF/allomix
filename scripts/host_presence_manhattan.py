@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Manhattan plot of per-marker host-presence signal along the genome.
 
-Internal SA Path diagnostic (not part of the allomix package).
+Diagnostic script (run from `scripts/`, not part of the installed allomix package).
 
 The per-marker caterpillar (plot_host_presence_per_marker.py) sorts markers by
 magnitude, which hides whether the high markers sit together on the genome. This
@@ -20,9 +20,8 @@ SNPs, but the axis still shows coordinates, so it is not surfaced to stdout.
 
 Usage:
     python scripts/host_presence_manhattan.py \
-        --admix 29_MO_HP_FULL_REDACTED_REDACTED 18_MO_HP_FULL_REDACTED_REDACTED \
-                37_MO_HP_FULL_REDACTED_REDACTED \
-        --out output/host_presence_manhattan_run9.png
+        --admix SAMPLE_AAAA SAMPLE_BBBB SAMPLE_CCCC \
+        --out output/host_presence_manhattan.png
 """
 
 import argparse

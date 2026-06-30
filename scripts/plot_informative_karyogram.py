@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Karyogram of informative markers along the genome for host vs donor(s).
 
-Internal diagnostic (not part of the allomix package).
+Diagnostic script (run from `scripts/`, not part of the installed allomix package).
 
 Each shared marker is classified by how the host and donor genotypes relate,
 which for biallelic SNPs is the identity-by-state (IBS) count:

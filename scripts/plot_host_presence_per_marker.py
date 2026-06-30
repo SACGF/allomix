@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Per-marker host-presence structure for selected admixture samples.
 
-Internal SA Path diagnostic (not part of the allomix package).
+Diagnostic script (run from `scripts/`, not part of the installed allomix package).
 
-The cohort presence figure (plot_host_presence.py) gives one host fraction per
-sample. This one opens the box: at each donor-homozygous marker (where every
+The pooled presence result (one host fraction per sample, in the run's
+batch.tsv) is a single number. This one opens the box: at each donor-homozygous
+marker (where every
 donor is the same homozygote and the host carries the donor-absent allele),
 it shows the host fraction that marker alone implies, so you can see whether
 the host signal is spread evenly across markers or carried by a few.
@@ -34,12 +35,11 @@ Usage:
     python scripts/plot_host_presence_per_marker.py \
         --vcf-dir output/joint_called \
         --samples-csv-dir pipeline/sample_csvs \
-        --batch output/validation_run10/batch.tsv \
-        --run-label run10 \
+        --batch output/validation_run1/batch.tsv \
+        --run-label run1 \
         --panel-suffix .union_sid_haem_vendor_probes.vcf.gz \
-        --admix 29_MO_HP_FULL_REDACTED_REDACTED 18_MO_HP_FULL_REDACTED_REDACTED \
-                37_MO_HP_FULL_REDACTED_REDACTED 2_MO_HP_FULL_REDACTED_REDACTED \
-        --output output/host_presence_per_marker_run10.png
+        --admix SAMPLE_AAAA SAMPLE_BBBB SAMPLE_CCCC SAMPLE_DDDD \
+        --output output/host_presence_per_marker.png
 """
 
 import argparse
@@ -66,7 +66,7 @@ DOSE_COLOR = {1: "#7fcdbb", 2: "#225ea8"}
 
 
 def short_label(name: str) -> str:
-    """Patient code plus leading id, matching plot_host_presence.py."""
+    """Patient code plus leading id, matching the batch.tsv sample labels."""
     leading = name.split("_", 1)[0]
     codes = [t for t in name.split("_") if t.isalpha() and t.isupper() and len(t) >= 3]
     code = codes[-1] if codes else name

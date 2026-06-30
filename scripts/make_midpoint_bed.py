@@ -50,14 +50,8 @@ def read_intervals(bed_path: Path) -> list[tuple[str, int, int]]:
     return intervals
 
 
-def midpoints(
-    intervals: list[tuple[str, int, int]], min_width: int
-) -> list[tuple[str, int]]:
-    """Return one 0-based midpoint position per interval at least ``min_width`` wide.
-
-    The midpoint is ``(start + end) // 2``. Intervals narrower than ``min_width``
-    are skipped and reported by the caller.
-    """
+def midpoints(intervals: list[tuple[str, int, int]], min_width: int) -> list[tuple[str, int]]:
+    """Return one 0-based midpoint position per interval at least ``min_width`` wide."""
     out: list[tuple[str, int]] = []
     for chrom, start, end in intervals:
         if end - start < min_width:
@@ -67,14 +61,11 @@ def midpoints(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument(
         "--bed", required=True, type=Path, help="Capture-panel BED (the pipeline `intervals`)"
     )
-    parser.add_argument(
-        "--out", required=True, type=Path, help="Output single-base midpoint BED"
-    )
+    parser.add_argument("--out", required=True, type=Path, help="Output single-base midpoint BED")
     parser.add_argument(
         "--min-width",
         type=int,

@@ -120,10 +120,7 @@ def main() -> None:
 
     matched.sort(key=lambda r: (_chrom_key(r[0]), r[1]))
 
-    # Write to a plain-text temp, then bgzip if requested.
-    plain_path = (
-        args.out_vcf.with_suffix("") if args.out_vcf.suffix == ".gz" else args.out_vcf
-    )
+    plain_path = args.out_vcf.with_suffix("") if args.out_vcf.suffix == ".gz" else args.out_vcf
     with open(plain_path, "w") as out:
         out.write(_HEADER)
         for chrom, pos, name, ref, alt in matched:

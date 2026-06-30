@@ -72,12 +72,8 @@ def _parse_fields(body: str) -> dict[str, str]:
 def read_run_units(vcf_path: str) -> dict[str, RunUnitInfo]:
     """Read all ``##allomixRunUnit`` lines from a VCF header.
 
-    Args:
-        vcf_path: Path to the (admixture) VCF.
-
-    Returns:
-        ``{sample_id: RunUnitInfo}`` for every line present. Empty when the VCF
-        carries no run-unit metadata.
+    Returns ``{sample_id: RunUnitInfo}`` for every line present, empty when the
+    VCF carries no run-unit metadata.
     """
     vcf = VCF(str(vcf_path))
     try:

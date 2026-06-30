@@ -82,7 +82,7 @@ def main():
     host_vcf = "tests/test_data/host.vcf"
     donor_vcf = "tests/test_data/donor.vcf"
 
-    # --- Standard validation (no bias correction) ---
+    # Standard validation (no bias correction)
     print("Running standard validation...")
     std_rows = []
     for frac in STANDARD_FRACTIONS:
@@ -120,7 +120,6 @@ def main():
         "mean_ci_width_pct": round(std_metrics["mean_ci_width"] * 100, 4),
     })
 
-    # Per-sample results for the table
     for r in std_rows:
         write_fact(f"val_{fraction_to_name(r['true_frac'])}", {
             "true_pct": round(r["true_frac"] * 100, 1),
@@ -134,8 +133,7 @@ def main():
             "n_informative": r["n_informative"],
         })
 
-    # --- Bias correction comparison ---
-    # Generate biased data first
+    # Bias correction comparison
     print("Running bias correction comparison...")
     bias_sd = 0.02
     depth = 2000
@@ -161,11 +159,9 @@ def main():
         )
         write_vcf(result, outdir / f"{name}.vcf")
 
-    # Write bias table
     bias_path = outdir / "true_biases.tsv"
     biases = load_bias_table(bias_path) if bias_path.exists() else None
 
-    # Run with and without bias correction
     for mode, mb in [("no_bias", None), ("with_bias", biases)]:
         rows = []
         for frac in BIAS_FRACTIONS:
@@ -200,20 +196,18 @@ def main():
             ),
         })
 
-    # --- Simulation calibration inputs ---
-    # The non-uniform-depth CV, locus-dropout rate, and sequencing-error rate
-    # used as inputs across the validation scripts (run_depth_validation.py,
-    # run_relatedness_validation.py, generate_timeline_figure.py, etc.). These
-    # are rounded from the empirical panel_empirical values (depth CV 0.429,
-    # no-call 1.6%); exposing them as a fact keeps the paper prose in sync with
-    # what the simulator actually ran rather than re-typing the constants.
+    # Simulation calibration inputs shared across the validation scripts
+    # (run_depth_validation.py, run_relatedness_validation.py,
+    # generate_timeline_figure.py, etc.), rounded from empirical panel_empirical
+    # values (depth CV 0.429, no-call 1.6%). Exposing them as a fact keeps the
+    # paper prose in sync with what the simulator actually ran.
     write_fact("sim_calibration", {
         "depth_cv": 0.43,
         "locus_dropout_pct": 1.6,
         "seq_error_pct": 1,
     })
 
-    # --- Tool landscape facts ---
+    # Tool landscape facts
     write_fact("tool_landscape", {
         "n_commercial_tools": 4,
         "commercial_tools": "AlloSeq HCT; Devyser Chimerism; NGStrack; ScisGo Chimerism MD",
@@ -228,7 +222,7 @@ def main():
         "n_tools_surveyed": 30,
     })
 
-    # --- Panel specs ---
+    # Panel specs
     write_fact("panel_specs", {
         "n_markers_panel": 76,
         "marker_type": "SNP",
@@ -237,7 +231,7 @@ def main():
         "min_informative_markers": 3,
     })
 
-    # --- Copy empirical panel stats into facts dir ---
+    # Copy empirical panel stats into facts dir
     empirical_src = Path("paper/empirical_results/panel_empirical.csv")
     shutil.copy2(empirical_src, FACTS_DIR / "panel_empirical.csv")
     print(f"  Copied {empirical_src} -> {FACTS_DIR / 'panel_empirical.csv'}")

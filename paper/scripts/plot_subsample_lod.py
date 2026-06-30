@@ -125,11 +125,10 @@ def _finite_xy(
 def _draw_curve(ax, x, y, lo, hi, censored, color, marker, x_jitter: float = 1.0) -> None:
     """Draw one depth's LoD curve, distinguishing resolved from censored points.
 
-    Resolved points get a filled marker and the 10-90% band is shaded across
-    them. Censored points (true LoD at or below the value) get an X. An X stays
-    legible where several depths pile onto the same censored value, unlike the
-    open marker plus caret it replaces. ``x_jitter`` is a per-depth multiplicative
-    offset that fans overlapping curves apart.
+    Resolved points get a filled marker and the 10-90% band shaded across them.
+    Censored points (true LoD at or below the value) get an X, which stays legible
+    where several depths pile onto the same censored value. ``x_jitter`` is a
+    per-depth multiplicative offset that fans overlapping curves apart.
     """
     x = [xi * x_jitter for xi in x]
     ax.plot(x, y, "-", color=color, linewidth=1.8, zorder=3)

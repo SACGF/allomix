@@ -203,9 +203,6 @@ def run_pair(
     return rows
 
 
-# --- Per-pair and across-pair LoD summarisation -----------------------------
-
-
 def compute_pair_lod(cell_rows: list[dict]) -> dict:
     """LoD for ONE pair at one (relatedness, depth, n_markers) cell.
 
@@ -311,9 +308,6 @@ def summarise_cell(
     }
 
 
-# --- Output writers ----------------------------------------------------------
-
-
 def write_grid_raw(rows: list[dict], path: Path) -> None:
     fields = [
         "relatedness",
@@ -387,9 +381,6 @@ def write_headline(
                 for k, v in headline.items()
             }
         )
-
-
-# --- Driver ------------------------------------------------------------------
 
 
 def _worker(arg: tuple) -> list[dict]:

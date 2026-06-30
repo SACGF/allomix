@@ -69,7 +69,7 @@ def generate_and_run(
     vcf_dir = outdir / f"depth_{depth}" / f"seed_{seed}"
     vcf_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate consistent per-marker biases (same across depths, heavy-tailed)
+    # Per-marker biases: heavy-tailed, fixed by seed so they are the same across depths.
     _, host_records = sim_parse_vcf(host_vcf)
     _, donor_records = sim_parse_vcf(donor_vcf)
     donor_loci = {r.locus for r in donor_records}
@@ -77,7 +77,6 @@ def generate_and_run(
     bias_rng = random.Random(seed)
     fixed_biases = generate_marker_biases_realistic(n_shared, bias_rng)
 
-    # Generate blended VCFs and capture bias mapping
     bias_dict = None
     for frac in FRACTIONS:
         name = fraction_to_name(frac)
@@ -90,11 +89,10 @@ def generate_and_run(
             depth_cv=depth_cv,
         )
         write_vcf(result, vcf_dir / f"{name}.vcf")
-        # Capture bias dict from first blend (same biases for all fractions)
+        # Biases are identical across fractions, so capture the dict from the first blend.
         if bias_dict is None and result.marker_biases is not None:
             bias_dict = {(c, p, r, a): b for c, p, r, a, b in result.marker_biases}
 
-    # Run allomix on each
     marker_biases = bias_dict if bias_correction else None
     rows = []
     for frac in FRACTIONS:
@@ -192,7 +190,7 @@ def plot_results(
     depths = sorted(all_results.keys())
     n_depths = len(depths)
 
-    # --- Figure 1: Multi-panel scatter (truth vs estimated), all replicates overlaid ---
+    # Figure 1: scatter of truth vs estimated, all replicates overlaid.
     fig, axes = plt.subplots(1, n_depths, figsize=(4 * n_depths, 4), sharey=True)
     if n_depths == 1:
         axes = [axes]
@@ -225,13 +223,12 @@ def plot_results(
     fig.savefig(outdir / "fig1_depth_scatter.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Figure 2: Boxplots of absolute error by depth ---
+    # Figure 2: boxplots of absolute error by depth.
     fig, ax = plt.subplots(figsize=(8, 5))
 
     box_data = []
     box_labels = []
     for depth in depths:
-        # Collect absolute errors from interior fractions across all replicates
         abs_errors = []
         for rep_rows in all_results[depth]:
             for r in rep_rows:
@@ -259,7 +256,7 @@ def plot_results(
     fig.savefig(outdir / "fig2_depth_boxplots.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Figure 3: Summary metrics vs depth with error bars ---
+    # Figure 3: summary metrics vs depth with error bars.
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
 
     mae_means = []
@@ -286,7 +283,6 @@ def plot_results(
         ci_width_means.append(agg["mean_ci_width_mean"] * 100)
         ci_width_sds.append(agg["mean_ci_width_sd"] * 100)
 
-    # Accuracy vs depth
     ax = axes[0]
     ax.errorbar(
         depths, mae_means, yerr=mae_sds, fmt="o-",
@@ -309,7 +305,6 @@ def plot_results(
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
 
-    # CI coverage vs depth
     ax = axes[1]
     ax.errorbar(
         depths, ci_cov_means, yerr=ci_cov_sds, fmt="o-",
@@ -326,7 +321,6 @@ def plot_results(
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
 
-    # CI width vs depth
     ax = axes[2]
     ax.errorbar(
         depths, ci_width_means, yerr=ci_width_sds, fmt="o-",
@@ -420,7 +414,6 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-        # Write per-depth facts (mean ± SD across replicates)
         write_fact(f"depth_{depth}", {
             "depth": depth,
             "n_replicates": args.n_replicates,
@@ -437,7 +430,6 @@ def main(argv: list[str] | None = None) -> int:
             "mean_ci_width_sd_pct": round(agg["mean_ci_width_sd"] * 100, 2),
         })
 
-    # Write combined summary table as TSV
     depths_sorted = sorted(args.depths)
     summary_rows = []
     for depth in depths_sorted:
@@ -469,7 +461,6 @@ def main(argv: list[str] | None = None) -> int:
         w.writerows(summary_rows)
     print(f"\nSummary table: {summary_path}", file=sys.stderr)
 
-    # Write per-sample results for each depth and replicate
     for depth in depths_sorted:
         for rep_idx, rep_rows in enumerate(all_results[depth]):
             results_path = outdir / f"results_{depth}x_rep{rep_idx}.tsv"
@@ -491,10 +482,8 @@ def main(argv: list[str] | None = None) -> int:
                         "ci_covers": r["ci_covers"],
                     })
 
-    # Generate plots
     plot_results(all_results, all_metrics, outdir)
 
-    # Copy figures to facts dir
     for fig in ["fig1_depth_scatter.png", "fig2_depth_boxplots.png", "fig3_depth_summary.png"]:
         src = outdir / fig
         if src.exists():

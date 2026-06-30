@@ -52,12 +52,8 @@ ERROR_RATE = 0.01
 def build_panel(n_markers: int, rng: random.Random) -> list[dict]:
     """Draw an unrelated host/donor panel of informative markers (host != donor).
 
-    Args:
-        n_markers: Number of informative markers to build.
-        rng: Random source (genotypes fixed once, reused across rho/reps).
-
-    Returns:
-        List of dicts with host_gt, donor_gt, ref/alt dose, and host VAF at f=0.
+    ``rng`` fixes the genotypes once; they are reused across rho/reps. Each dict
+    carries host_gt, donor_gt, and host_vaf (the pure-host VAF at f=0).
     """
     panel: list[dict] = []
     pos = 0

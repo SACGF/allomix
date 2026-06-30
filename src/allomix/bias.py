@@ -31,7 +31,7 @@ class MarkerBias:
     ref: str
     alt: str
     bias: float  # median(observed_het_VAF - 0.5); positive = ALT-favoured
-    n_het: int  # number of het observations used
+    n_het: int
 
 
 def estimate_biases(
@@ -40,20 +40,10 @@ def estimate_biases(
 ) -> dict[MarkerKey, MarkerBias]:
     """Estimate per-marker amplification bias from heterozygous observations.
 
-    For each marker, collects VAF from all samples where the genotype is
-    heterozygous (0/1). Bias is estimated as median(VAF - 0.5).
-
-    A positive bias means the ALT allele is preferentially captured/amplified.
-
-    Args:
-        marker_lists: List of MarkerData lists, one per training sample.
-        min_het: Minimum number of het observations required to estimate
-            bias at a marker. Markers with fewer observations are excluded.
-
-    Returns:
-        Dict mapping marker key to MarkerBias.
+    For each marker, collects VAF across samples genotyped heterozygous (0/1) and
+    takes ``bias = median(VAF - 0.5)`` (positive = ALT preferentially captured).
+    Markers with fewer than ``min_het`` het observations are excluded.
     """
-    # Collect het VAF deviations per marker
     het_deviations: dict[MarkerKey, list[float]] = {}
     marker_info: dict[MarkerKey, tuple[str, int, str, str]] = {}
 
@@ -104,25 +94,14 @@ def estimate_biases_both_het(
     differently-called panel VCF (issue #11).
 
     Each admix sample contributes one observation per both-het marker; bias is
-    the median of ``observed VAF - 0.5`` across observations.
+    the median of ``observed VAF - 0.5`` across observations (same convention as
+    ``estimate_biases``).
 
     A pair's both-het markers are non-informative for that same pair (host and
     donor share the heterozygous genotype), so the resulting table only helps
     other pairs whose informative markers it covers. This is therefore a cohort
     table builder, not an inline single-run correction: pool across patients and
     apply the table with ``--bias-table``.
-
-    Args:
-        host: Markers from the host genotyping VCF.
-        donors: List of marker lists, one per donor genotyping VCF.
-        admix_lists: One marker list per admix sample to estimate from (pool
-            across a cohort for useful marker coverage).
-        min_het: Minimum observations required to keep a marker.
-        min_dp: Minimum admix depth for an observation to count.
-
-    Returns:
-        Dict mapping marker key to MarkerBias (same het-site VAF convention as
-        ``estimate_biases``).
     """
     host_idx = {marker_key(m): m for m in host}
     donor_idxs = [{marker_key(m): m for m in d} for d in donors]
@@ -166,12 +145,7 @@ def estimate_biases_both_het(
 
 
 def save_bias_table(biases: dict[MarkerKey, MarkerBias], path: Path | str) -> None:
-    """Write bias estimates to a TSV file.
-
-    Args:
-        biases: Dict mapping marker key to MarkerBias.
-        path: Output file path.
-    """
+    """Write bias estimates to a TSV file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as fh:
@@ -183,14 +157,7 @@ def save_bias_table(biases: dict[MarkerKey, MarkerBias], path: Path | str) -> No
 
 
 def load_bias_table(path: Path | str) -> dict[MarkerKey, float]:
-    """Load a bias table TSV and return a dict of marker key -> bias value.
-
-    Args:
-        path: Path to bias table TSV file.
-
-    Returns:
-        Dict mapping (chrom, pos, ref, alt) to bias float.
-    """
+    """Load a bias table TSV into a dict of marker key -> bias value."""
     biases: dict[MarkerKey, float] = {}
     with open(path, encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -201,12 +168,5 @@ def load_bias_table(path: Path | str) -> dict[MarkerKey, float]:
 
 
 def biases_to_simple_dict(biases: dict[MarkerKey, MarkerBias]) -> dict[MarkerKey, float]:
-    """Convert MarkerBias dict to a simple key -> float dict for use in estimation.
-
-    Args:
-        biases: Dict mapping marker key to MarkerBias.
-
-    Returns:
-        Dict mapping marker key to bias float value.
-    """
+    """Reduce a MarkerBias dict to a key -> bias-float dict for estimation."""
     return {key: mb.bias for key, mb in biases.items()}

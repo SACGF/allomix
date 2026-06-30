@@ -172,16 +172,21 @@ def main() -> None:
         else:
             output_tsv = os.path.join(args.output_dir, f"{patient}.tsv")
             cmd = [
-                args.allomix, "monitor",
-                "--panel-vcf", panel_vcf,
-                "--admix-vcf", admix_vcf,
-                "--host-sample", hosts[0],
-                "--output", output_tsv,
+                args.allomix,
+                "monitor",
+                "--panel-vcf",
+                panel_vcf,
+                "--admix-vcf",
+                admix_vcf,
+                "--host-sample",
+                hosts[0],
+                "--output",
+                output_tsv,
             ]
             for d in donors:
                 cmd += ["--donor-sample", d]
-            # Emit one --expected-relatedness per donor, in donor order, only
-            # when at least one was declared (all-NA means no expectation set).
+            # One --expected-relatedness per donor in donor order, only when at
+            # least one was declared (all-NA means no expectation set).
             if any(r != "NA" for r in donor_relatedness):
                 for r in donor_relatedness:
                     cmd += ["--expected-relatedness", r]
@@ -226,10 +231,7 @@ def main() -> None:
                     out.write(line)
         print(f"\nCombined output: {batch_tsv}")
 
-    print(
-        f"\nDone: {n_run} run, {n_skip_no_admix} skipped (no admix), "
-        f"{n_fail} failed."
-    )
+    print(f"\nDone: {n_run} run, {n_skip_no_admix} skipped (no admix), {n_fail} failed.")
     if n_fail:
         sys.exit(1)
 

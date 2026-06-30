@@ -33,12 +33,11 @@ from cyvcf2 import VCF
 
 log = logging.getLogger(__name__)
 
-# Thresholds for panel characterisation
-EXPECTED_HET_VAF = 0.5  # ideal heterozygous variant allele frequency
-MIN_CALLED_FOR_HWE = 10  # minimum genotyped samples to compute HWE het ratio
+EXPECTED_HET_VAF = 0.5  # ideal heterozygous VAF
+MIN_CALLED_FOR_HWE = 10  # min genotyped samples to compute HWE het ratio
 LOW_HET_RATIO_THRESHOLD = 0.8  # het/HWE ratio below this flags allele dropout
 HIGH_NOCALL_RATE = 0.05  # markers above this no-call rate are flagged
-NEGLIGIBLE_ADO_THRESHOLD = 0.001  # allele dropout estimate below this is "negligible"
+NEGLIGIBLE_ADO_THRESHOLD = 0.001  # allele dropout estimate below this is negligible
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -46,10 +45,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Measure per-marker panel characteristics from genotyping VCFs.",
     )
     p.add_argument("vcf_list", help="Text file with one VCF path per line")
-    p.add_argument("--min-dp", type=int, default=100, help="Min depth for bias stats (default: 100)")
+    p.add_argument(
+        "--min-dp", type=int, default=100, help="Min depth for bias stats (default: 100)"
+    )
     p.add_argument("--min-gq", type=int, default=20, help="Min GQ for bias stats (default: 20)")
     p.add_argument(
-        "--output", default=None,
+        "--output",
+        default=None,
         help="Output file prefix. Writes <output>_per_marker.tsv and <output>_summary.tsv",
     )
     return p.parse_args(argv)
@@ -71,7 +73,6 @@ def _sd(vals: list[float]) -> float:
 
 
 def _cv(vals: list[float]) -> float:
-    """Coefficient of variation."""
     if len(vals) < 2:
         return 0.0
     mean = sum(vals) / len(vals)
@@ -97,15 +98,13 @@ def main(argv: list[str] | None = None) -> int:
 
     log.info("Processing %d VCFs ...", len(vcf_paths))
 
-    # --- Per-marker accumulators ---
-    # key = (chrom, pos, ref, alt)
+    # Per-marker accumulators, keyed by (chrom, pos, ref, alt)
     marker_het_vafs: dict[tuple, list[float]] = defaultdict(list)
     marker_depths: dict[tuple, list[int]] = defaultdict(list)
     marker_gt_counts: dict[tuple, dict[str, int]] = defaultdict(
         lambda: {"hom_ref": 0, "het": 0, "hom_alt": 0, "no_call": 0, "total": 0}
     )
 
-    # --- Per-sample accumulators ---
     sample_depth_cvs: list[float] = []  # depth CV across markers within each sample
     sample_nocall_rates: list[float] = []  # fraction of markers with no-call per sample
 
@@ -131,20 +130,17 @@ def main(argv: list[str] | None = None) -> int:
         n_samples_in_vcf = len(vcf.samples)
         n_total_samples += n_samples_in_vcf
 
-        # Per-sample trackers for this VCF (one list per sample)
         sample_depths_this_vcf: list[list[int]] = [[] for _ in range(n_samples_in_vcf)]
         sample_nocalls_this_vcf: list[int] = [0] * n_samples_in_vcf
         sample_total_markers: list[int] = [0] * n_samples_in_vcf
 
         for variant in vcf:
-            # Skip multiallelic
             if len(variant.ALT) != 1:
                 n_skipped_multi += 1
                 continue
 
             key = (variant.CHROM, variant.POS, variant.REF, variant.ALT[0])
 
-            # Process each sample
             for si in range(n_samples_in_vcf):
                 gt = variant.genotypes[si]
                 alleles = (gt[0], gt[1])
@@ -152,13 +148,11 @@ def main(argv: list[str] | None = None) -> int:
                 counts["total"] += 1
                 sample_total_markers[si] += 1
 
-                # No-call
                 if alleles[0] < 0 or alleles[1] < 0:
                     counts["no_call"] += 1
                     sample_nocalls_this_vcf[si] += 1
                     continue
 
-                # Classify genotype
                 a_set = (alleles[0], alleles[1])
                 is_het = a_set[0] != a_set[1]
 
@@ -169,16 +163,15 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     counts["hom_alt"] += 1
 
-                # Get depth (for all calls, not just het)
+                # Depth for all calls, not just het
                 dp = variant.format("DP")
                 if dp is not None:
                     depth = int(dp[si][0])
                     marker_depths[key].append(depth)
                     sample_depths_this_vcf[si].append(depth)
 
-                # Het-specific: collect VAF for bias measurement
+                # Collect het VAF for bias measurement; filters here apply to bias only
                 if is_het and set(alleles) == {0, 1}:
-                    # Apply filters for bias measurement only
                     if dp is not None:
                         depth = int(dp[si][0])
                         if depth < args.min_dp:
@@ -208,7 +201,6 @@ def main(argv: list[str] | None = None) -> int:
                     marker_het_vafs[key].append(vaf)
                     n_het_total += 1
 
-        # Compute per-sample stats for this VCF
         for si in range(n_samples_in_vcf):
             if sample_depths_this_vcf[si]:
                 sample_depth_cvs.append(_cv(sample_depths_this_vcf[si]))
@@ -218,16 +210,17 @@ def main(argv: list[str] | None = None) -> int:
         if (vi + 1) % 10 == 0 or (vi + 1) == len(vcf_paths):
             log.info(
                 "Processed %d/%d VCFs (%d samples, %d het obs)",
-                vi + 1, len(vcf_paths), n_total_samples, n_het_total,
+                vi + 1,
+                len(vcf_paths),
+                n_total_samples,
+                n_het_total,
             )
 
     if not marker_gt_counts:
         log.error("no variant observations found")
         return 1
 
-    # =====================================================================
-    # Compute per-marker statistics
-    # =====================================================================
+    # Per-marker statistics
     all_markers = sorted(marker_gt_counts.keys())
     n_markers = len(all_markers)
 
@@ -249,12 +242,10 @@ def main(argv: list[str] | None = None) -> int:
         call_rate = n_called / total if total > 0 else 0.0
         nocall_rate = n_nocall / total if total > 0 else 0.0
 
-        # Depth stats for this marker
         depths = marker_depths.get(key, [])
         mean_depth = sum(depths) / len(depths) if depths else 0.0
         depth_cv = _cv(depths)
 
-        # Bias from het VAFs
         het_vafs = marker_het_vafs.get(key, [])
         n_het = len(het_vafs)
         if n_het > 0:
@@ -305,14 +296,9 @@ def main(argv: list[str] | None = None) -> int:
         if not math.isnan(het_ratio):
             all_het_ratios.append(het_ratio)
 
-    # =====================================================================
-    # Aggregate statistics
-    #
-    # Every panel-level number is computed once here and then consumed by
-    # both the printed summary and the facts CSV below. Keeping a single
-    # source means the human-readable report and the machine-readable CSV
-    # cannot drift apart if one is edited later.
-    # =====================================================================
+    # Aggregate statistics. Every panel-level number is computed once here and
+    # consumed by both the printed summary and the facts CSV below, so the
+    # human-readable report and the machine-readable CSV cannot drift apart.
     nocall_sorted = sorted(all_nocall_rates)
     mean_nocall = sum(all_nocall_rates) / len(all_nocall_rates) if all_nocall_rates else 0.0
     median_nocall = _percentile(nocall_sorted, 50) if all_nocall_rates else 0.0
@@ -372,9 +358,7 @@ def main(argv: list[str] | None = None) -> int:
         markers_low_het = 0
         ado_estimate = 0.0
 
-    # =====================================================================
     # Print summary (formatting only; all values come from the block above)
-    # =====================================================================
     print()
     print("=" * 65)
     print("PANEL CHARACTERISATION SUMMARY")
@@ -386,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Total markers (biallelic):    {n_markers}")
 
     print("\n--- LOCUS DROPOUT ---")
-    print(f"  Mean no-call rate/marker:  {mean_nocall:.4f} ({mean_nocall*100:.2f}%)")
+    print(f"  Mean no-call rate/marker:  {mean_nocall:.4f} ({mean_nocall * 100:.2f}%)")
     print(f"  Median no-call rate:       {median_nocall:.4f}")
     print(f"  95th pct no-call rate:     {p95_nocall:.4f}")
     print(f"  Max no-call rate:          {max_nocall:.4f}")
@@ -434,7 +418,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Median het ratio:          {median_hr:.3f}")
         print(f"  5th pct het ratio:         {p5_hr:.3f}")
         print(f"  Min het ratio:             {min_hr:.3f}")
-        print(f"  Markers with ratio < {LOW_HET_RATIO_THRESHOLD}:  {markers_low_het}/{n_het_ratio_markers}")
+        print(
+            f"  Markers with ratio < {LOW_HET_RATIO_THRESHOLD}:  {markers_low_het}/{n_het_ratio_markers}"
+        )
 
     print("\n--- SIMULATION PARAMETERS ---")
     if n_bias_markers > 0:
@@ -446,19 +432,27 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  >>> allele dropout: negligible (het ratio ~{mean_hr:.2f})")
     print("=" * 65)
 
-    # =====================================================================
-    # Write output files
-    # =====================================================================
     if args.output:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         per_marker_path = f"{args.output}_per_marker.tsv"
 
         with open(per_marker_path, "w", encoding="utf-8") as f:
             header = [
-                "marker_index", "total_obs", "n_called", "n_nocall", "call_rate",
-                "n_hom_ref", "n_het", "n_hom_alt", "het_ratio_vs_hwe",
-                "mean_depth", "depth_cv",
-                "n_het_for_bias", "median_bias", "mean_bias", "sd_within",
+                "marker_index",
+                "total_obs",
+                "n_called",
+                "n_nocall",
+                "call_rate",
+                "n_hom_ref",
+                "n_het",
+                "n_hom_alt",
+                "het_ratio_vs_hwe",
+                "mean_depth",
+                "depth_cv",
+                "n_het_for_bias",
+                "median_bias",
+                "mean_bias",
+                "sd_within",
             ]
             f.write("\t".join(header) + "\n")
             for i, s in enumerate(marker_stats):
@@ -471,7 +465,9 @@ def main(argv: list[str] | None = None) -> int:
                     str(s["n_hom_ref"]),
                     str(s["n_het"]),
                     str(s["n_hom_alt"]),
-                    f"{s['het_ratio_vs_hwe']:.4f}" if not math.isnan(s["het_ratio_vs_hwe"]) else "NA",
+                    f"{s['het_ratio_vs_hwe']:.4f}"
+                    if not math.isnan(s["het_ratio_vs_hwe"])
+                    else "NA",
                     f"{s['mean_depth']:.0f}",
                     f"{s['depth_cv']:.4f}",
                     str(s["n_het_for_bias"]),
@@ -482,10 +478,8 @@ def main(argv: list[str] | None = None) -> int:
                 f.write("\t".join(vals) + "\n")
         log.info("Per-marker detail: %s", per_marker_path)
 
-        # --- vibepaper facts CSV (single-row, horizontal format) ---
-        # All values come from the aggregate block above; this just rounds
-        # them and blanks the fields that are undefined when a marker set is
-        # empty (so the CSV stays consistent with the printed summary).
+        # vibepaper facts CSV (single-row). Values come from the aggregate block
+        # above; blank the fields that are undefined when a marker set is empty.
         facts_path = f"{args.output}_facts.csv"
         facts = {
             "n_vcfs": n_vcfs,
@@ -527,11 +521,27 @@ def main(argv: list[str] | None = None) -> int:
         # Explicit column order, kept stable for downstream consumers
         # regardless of the order the conditional fields are added above.
         fieldnames = [
-            "n_vcfs", "n_samples", "n_markers", "n_bias_markers", "n_het_total",
-            "mean_nocall_rate", "mean_nocall_pct", "markers_gt5pct_nocall",
-            "mean_depth", "median_depth", "min_depth", "max_depth", "mean_sample_depth_cv",
-            "sd_bias", "mean_abs_bias", "median_abs_bias", "p95_abs_bias", "max_abs_bias",
-            "mean_het_ratio", "markers_low_het", "ado_estimate",
+            "n_vcfs",
+            "n_samples",
+            "n_markers",
+            "n_bias_markers",
+            "n_het_total",
+            "mean_nocall_rate",
+            "mean_nocall_pct",
+            "markers_gt5pct_nocall",
+            "mean_depth",
+            "median_depth",
+            "min_depth",
+            "max_depth",
+            "mean_sample_depth_cv",
+            "sd_bias",
+            "mean_abs_bias",
+            "median_abs_bias",
+            "p95_abs_bias",
+            "max_abs_bias",
+            "mean_het_ratio",
+            "markers_low_het",
+            "ado_estimate",
         ]
         with open(facts_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)

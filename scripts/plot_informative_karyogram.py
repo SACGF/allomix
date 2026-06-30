@@ -15,11 +15,10 @@ which for biallelic SNPs is the identity-by-state (IBS) count:
 
 For sibling donors the informative markers (IBS0 + IBS1) are not spread evenly:
 the pair share a haplotype across long IBD blocks, so those blocks are depleted
-of IBS0 markers and read as gaps in the red ticks. Plotting marker position
-along the genome (rather than sorting by magnitude) makes those blocks visible,
-the way a karyotype/ideogram does. With a small panel (tens of genome-wide SNPs)
-the picture is coarse, but the clustering of shared vs differing markers is still
-informative for a relatedness sanity check.
+of IBS0 markers and read as gaps in the red ticks. Plotting marker position along
+the genome (rather than sorting by magnitude) makes those blocks visible, the way
+an ideogram does. With a small panel (tens of genome-wide SNPs) the picture is
+coarse, but the clustering still works as a relatedness sanity check.
 
 The x axis is genomic position, so the figure is written to a LOCAL file only
 (see CLAUDE.md): open it on this machine, do not surface coordinates to stdout.
@@ -66,15 +65,10 @@ def norm_chrom(chrom: str) -> str:
 def chromosome_lengths(build: str) -> dict[str, int]:
     """Assembled-molecule chromosome lengths (bp) for a genome build.
 
-    Pulls the lengths from bioutils rather than hardcoding them, so the build is
-    a parameter (GRCh37, GRCh38, ...) instead of a baked-in assumption.
-
-    Args:
-        build: A genome build name known to bioutils, e.g. "GRCh38" or "GRCh37".
-
-    Returns:
-        Ordered mapping of canonical chromosome name (1..22, X, Y, MT) to length,
-        in assembly order. Scaffolds, patches and alt loci are excluded.
+    Pulls lengths from bioutils rather than hardcoding them, so the build is a
+    parameter (GRCh37, GRCh38, ...) instead of a baked-in assumption. Returns an
+    ordered mapping of canonical chromosome name (1..22, X, Y, MT) to length in
+    assembly order; scaffolds, patches and alt loci are excluded.
     """
     try:
         asm = get_assembly(build)
@@ -103,14 +97,9 @@ def genome_axis(
 ) -> tuple[list[str], dict[str, int], dict[str, int], int]:
     """Build the concatenated-genome coordinate scaffold for a genome build.
 
-    Args:
-        build: Genome build name passed to ``chromosome_lengths``.
-        include_sex: Keep the sex and mitochondrial contigs in the axis.
-
-    Returns:
-        (chrom_order, lengths, offset, genome_len): the chromosomes in plotting
-        order, their lengths, each chromosome's start offset along the
-        concatenated axis, and the total genome length.
+    Returns (chrom_order, lengths, offset, genome_len): the chromosomes in
+    plotting order, their lengths, each chromosome's start offset along the
+    concatenated axis, and the total genome length.
     """
     lengths = chromosome_lengths(build)
     chrom_order = [c for c in lengths if include_sex or not is_sex_chrom(c)]
@@ -127,14 +116,6 @@ def ibs_class(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> int:
 
     Uses allele dosage, so it does not assume which allele is REF. IBS0 is the
     only state that cannot occur where the pair share a haplotype.
-
-    Args:
-        host_gt: Host genotype as allele indices, e.g. (0, 0).
-        donor_gt: Donor genotype as allele indices.
-
-    Returns:
-        2 if the genotypes are identical, 1 if they share exactly one allele,
-        0 if they share no allele (opposite homozygotes).
     """
     h = host_gt[0] + host_gt[1]
     d = donor_gt[0] + donor_gt[1]
@@ -144,18 +125,10 @@ def ibs_class(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> int:
 def load_pair(
     vcf: Path, host: str, donor: str, min_gq: int, offset: dict[str, int]
 ) -> list[tuple[float, int]]:
-    """Classify every marker shared by host and donor into (x, ibs).
+    """Classify every shared, on-axis marker into (genome_x, ibs_class).
 
-    Args:
-        vcf: Joint VCF holding both samples.
-        host: Host sample name (or column index as a string of digits).
-        donor: Donor sample name.
-        min_gq: Minimum GQ for both samples.
-        offset: Chromosome start offsets from ``genome_axis``; markers on
-            contigs absent from it (e.g. sex chroms when excluded) are skipped.
-
-    Returns:
-        List of (genome_x, ibs_class) for each shared, on-axis marker.
+    Markers on contigs absent from ``offset`` (e.g. sex chroms when excluded) are
+    skipped. ``host``/``donor`` may be sample names or column indices as digits.
     """
     host_markers = parse_vcf(vcf, sample=host, min_gq=min_gq, gt_ad_consistency=True)
     donor_markers = parse_vcf(vcf, sample=donor, min_gq=min_gq, gt_ad_consistency=True)

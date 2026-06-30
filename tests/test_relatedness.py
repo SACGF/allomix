@@ -354,7 +354,7 @@ def _analyse_related(tmp_path, relatedness: str, *, seed: int = 7, n: int = 300,
     """Generate a related host/donor pair, blend an admix, run analyse_sample.
 
     The admix is a clean host+donor mixture (donor_fraction 0.3). Returns the
-    SampleAnalysis. Extra kwargs are forwarded to analyse_sample (e.g.
+    AdmixtureSampleAnalysis. Extra kwargs are forwarded to analyse_sample (e.g.
     expected_relatedness).
     """
     rng = random.Random(seed)

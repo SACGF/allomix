@@ -102,11 +102,9 @@ def estimate_error_rates(
         min_vaf_homalt: Drop hom-alt observations where ``ad_alt/dp`` falls
             below this threshold (symmetric to ``max_vaf_homref``).
 
-    Returns:
-        Dict mapping (chrom, pos, ref, alt) to ``MarkerError``. Sites with no
-        usable observations in either direction are omitted.
+    Returns a dict mapping (chrom, pos, ref, alt) to ``MarkerError``; sites with
+    no usable observations in either direction are omitted.
     """
-    # Per-site accumulators
     n_alt_homref: dict[MarkerKey, int] = {}
     n_tot_homref: dict[MarkerKey, int] = {}
     n_ref_homalt: dict[MarkerKey, int] = {}
@@ -159,7 +157,8 @@ def estimate_error_rates(
 
 
 def save_error_table(
-    errors: dict[MarkerKey, MarkerError], path: Path | str,
+    errors: dict[MarkerKey, MarkerError],
+    path: Path | str,
 ) -> None:
     """Write error-rate estimates to a TSV file.
 
@@ -175,8 +174,14 @@ def save_error_table(
         w = csv.writer(fh, delimiter="\t")
         w.writerow(
             [
-                "chrom", "pos", "ref", "alt", "e_refalt", "e_altref",
-                "n_reads_homref", "n_reads_homalt",
+                "chrom",
+                "pos",
+                "ref",
+                "alt",
+                "e_refalt",
+                "e_altref",
+                "n_reads_homref",
+                "n_reads_homalt",
             ]
         )
         for key in sorted(errors.keys()):
@@ -218,16 +223,13 @@ def load_error_table(
         reader = csv.DictReader(fh, delimiter="\t")
         for row in reader:
             key: MarkerKey = (
-                row["chrom"], int(row["pos"]), row["ref"], row["alt"],
+                row["chrom"],
+                int(row["pos"]),
+                row["ref"],
+                row["alt"],
             )
-            e_ra = (
-                None if row["e_refalt"] == "NA"
-                else max(float(row["e_refalt"]), error_floor)
-            )
-            e_ar = (
-                None if row["e_altref"] == "NA"
-                else max(float(row["e_altref"]), error_floor)
-            )
+            e_ra = None if row["e_refalt"] == "NA" else max(float(row["e_refalt"]), error_floor)
+            e_ar = None if row["e_altref"] == "NA" else max(float(row["e_altref"]), error_floor)
             out[key] = MarkerErrorRates(e_refalt=e_ra, e_altref=e_ar)
     return out
 

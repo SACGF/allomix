@@ -197,9 +197,6 @@ def run_mix(
     """Run allomix monitor (TSV) and return one parsed dict per admix sample.
 
     Args:
-        name: Mixture id (e.g. ``mix_F2_into_M1``).
-        host: Host (minor) sample id.
-        donors: Donor (majority) sample id(s).
         panel: Genotype VCF (defaults to the real ``GEN/<name>.SRP434573.vcf.gz``).
         admix: Admix VCF (defaults to the real ``GEN/<name>.admix.vcf.gz``).
         error_table: Per-patient error table (defaults to ``GEN/<name>.error_table.tsv``

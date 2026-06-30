@@ -3,18 +3,16 @@
 
 Diagnostic script (run from `scripts/`, not part of the installed allomix package).
 
-For one admixture sample, this lists the donor-homozygous markers used by the
-presence test, annotated with the per-marker host signal, and flags the ones
-that are "upregulated": markers carrying significantly more donor-absent reads
-than the sample-wide pooled host fraction predicts. Those are the candidates
-for host CNV/LOH (a residual disease clone over-represented at some loci) versus
-a uniform low-level host fraction.
+For one admixture sample, lists the donor-homozygous markers used by the presence
+test, annotated with the per-marker host signal, and flags the UPREG ones (more
+donor-absent reads than the sample-wide pooled host fraction predicts). UPREG
+markers are candidates for host CNV/LOH (a residual disease clone over-represented
+at some loci) versus a uniform low-level host fraction.
 
-The output is a genuine VCF (CHROM/POS/REF/ALT), sorted by genomic position so
-clustering is visible, and carries INFO fields so it can be annotated by VEP /
-intersected with driver-gene panels. It contains coordinates, so it is written
-to a LOCAL file only (see CLAUDE.md); nothing here is printed to stdout beyond
-de-identified counts.
+The output is a genuine VCF (CHROM/POS/REF/ALT) sorted by genomic position so
+clustering is visible, with INFO fields so it can be annotated by VEP or
+intersected with driver-gene panels. It carries coordinates, so it is written to
+a LOCAL file only (see CLAUDE.md); stdout gets de-identified counts only.
 
 Per-marker model: the host carries the donor-absent allele at dose h (1 if host
 het, 2 if host hom), so under a single host fraction f the expected donor-absent

@@ -29,7 +29,6 @@ from allomix.simulate import (  # noqa: E402
 
 log = logging.getLogger(__name__)
 
-# Simulation parameters matching the allomix MLE error model
 DEFAULT_ERROR_RATE = 0.01  # per-read sequencing error probability
 DEFAULT_DEPTH_CV = 0.43  # empirical depth CV from rhAmpSeq panel characterisation
 SEED_HASH_MODULUS = 2**31
@@ -87,15 +86,12 @@ def main(argv: list[str] | None = None) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
     rng = random.Random(args.seed)
 
-    # Generate 3-sibling genotypes
     markers = generate_sibling_trio_genotypes(args.n_markers, rng)
 
-    # Write genotype VCFs
     write_genotype_vcf(markers, outdir / "host.vcf", "HOST", key="host_gt")
     write_genotype_vcf(markers, outdir / "donor1.vcf", "DONOR1", key="donor1_gt")
     write_genotype_vcf(markers, outdir / "donor2.vcf", "DONOR2", key="donor2_gt")
 
-    # Report informativity
     n_inf_d1 = sum(1 for m in markers if m["informative_d1"])
     n_inf_d2 = sum(1 for m in markers if m["informative_d2"])
     n_inf_any = sum(1 for m in markers if m["informative_any"])
@@ -106,7 +102,6 @@ def main(argv: list[str] | None = None) -> int:
     log.info("  Informative for any donor: %d", n_inf_any)
     log.info("  Donors distinguishable: %d", n_distinguishable)
 
-    # Generate chimeric VCFs at grid points
     truth_rows = []
     for f1, f2 in MIXTURE_GRID:
         name = f"host_{100 - round((f1 + f2) * 100)}_d1_{round(f1 * 100)}_d2_{round(f2 * 100)}"
@@ -120,16 +115,17 @@ def main(argv: list[str] | None = None) -> int:
             sample_name=name,
         )
         write_vcf(result, outdir / f"{name}.vcf")
-        truth_rows.append({
-            "sample_name": name,
-            "true_donor1_fraction": f"{f1:.4f}",
-            "true_donor2_fraction": f"{f2:.4f}",
-            "true_host_fraction": f"{1.0 - f1 - f2:.4f}",
-            "num_markers": result.num_markers,
-            "num_informative_any": result.num_informative,
-        })
+        truth_rows.append(
+            {
+                "sample_name": name,
+                "true_donor1_fraction": f"{f1:.4f}",
+                "true_donor2_fraction": f"{f2:.4f}",
+                "true_host_fraction": f"{1.0 - f1 - f2:.4f}",
+                "num_markers": result.num_markers,
+                "num_informative_any": result.num_informative,
+            }
+        )
 
-    # Write truth table
     write_truth_table(truth_rows, outdir / "truth_table.tsv")
 
     log.info("Generated %d chimeric VCFs in %s/", len(MIXTURE_GRID), outdir)

@@ -71,7 +71,6 @@ def run_one_replicate(
     write_genotype_vcf(markers, host_vcf, "host", key="host_gt")
     write_genotype_vcf(markers, donor_vcf, "donor", key="donor_gt")
 
-    # Run allomix at each fraction
     frac_results = []
     for frac in FRACTIONS:
         name = fraction_to_name(frac)
@@ -118,7 +117,7 @@ def run_one_replicate(
             "n_informative": result.n_informative,
         })
 
-    # Compute aggregate metrics (interior fractions only)
+    # Aggregate metrics, interior fractions only.
     interior = [r for r in frac_results if 0.0 < r["true_frac"] < 1.0 and not math.isnan(r["error"])]
     if interior:
         errors = [r["error"] for r in interior]
@@ -156,7 +155,7 @@ def plot_results(all_results: dict[str, list[dict]], outdir: Path) -> None:
         "sibling": "Full sibling",
     }
 
-    # --- Panel 1: Informative markers by relatedness ---
+    # Panel 1: Informative markers by relatedness.
     ax = axes[0]
     for rel in RELATEDNESS_LEVELS:
         reps = all_results[rel]
@@ -173,7 +172,7 @@ def plot_results(all_results: dict[str, list[dict]], outdir: Path) -> None:
     ax.set_title("Informative markers vs relatedness", fontsize=12)
     ax.grid(True, alpha=0.2, axis="y")
 
-    # --- Panel 2: MAE by relatedness ---
+    # Panel 2: MAE by relatedness.
     ax = axes[1]
     for rel in RELATEDNESS_LEVELS:
         reps = all_results[rel]
@@ -191,11 +190,10 @@ def plot_results(all_results: dict[str, list[dict]], outdir: Path) -> None:
     ax.set_title("Accuracy vs relatedness", fontsize=12)
     ax.grid(True, alpha=0.2, axis="y")
 
-    # --- Panel 3: Truth vs estimated across relatedness ---
+    # Panel 3: Truth vs estimated across relatedness.
     ax = axes[2]
     for rel in RELATEDNESS_LEVELS:
         reps = all_results[rel]
-        # Plot all fractions from all replicates
         for rep in reps:
             truths = [r["true_frac"] * 100 for r in rep["frac_results"]
                       if not math.isnan(r.get("est_frac", float("nan")))]
@@ -204,7 +202,6 @@ def plot_results(all_results: dict[str, list[dict]], outdir: Path) -> None:
             ax.scatter(truths, ests, c=colors[rel], s=15, alpha=0.3, zorder=3)
 
     ax.plot([0, 100], [0, 100], "k--", alpha=0.4, linewidth=1)
-    # Legend
     legend_elements = [Line2D([0], [0], marker="o", color="w",
                               markerfacecolor=colors[r], markersize=8, label=labels[r])
                        for r in RELATEDNESS_LEVELS]
@@ -235,13 +232,12 @@ def main() -> int:
 
     all_results: dict[str, list[dict]] = {}
 
-    # Paired design: one shared host panel per replicate, with each relatedness
-    # level's donor derived from that same host through its IBD probabilities. The
-    # only thing that varies across levels is the IBD sharing, so the
-    # informative-marker count is monotone non-increasing with relatedness instead
-    # of being swamped by independent host draws (which previously let 1st cousin
-    # show more informative markers than unrelated by chance). Same approach as the
-    # nested LoD sweep.
+    # Paired design: one shared host panel per replicate, each relatedness level's donor
+    # derived from that same host through its IBD probabilities. Only the IBD sharing
+    # varies across levels, so the informative-marker count is monotone non-increasing
+    # with relatedness instead of being swamped by independent host draws (which
+    # previously let 1st cousin show more informative markers than unrelated by chance).
+    # Same approach as the nested LoD sweep.
     paired_panels = [
         generate_paired_related_genotypes(
             N_MARKERS, RELATEDNESS_LEVELS, random.Random(20240601 + rep)
@@ -268,7 +264,6 @@ def main() -> int:
 
         all_results[rel] = reps
 
-        # Aggregate stats for this relatedness level
         n_infs = [r["n_informative"] for r in reps]
         maes = [r["mae"] * 100 for r in reps if not math.isnan(r["mae"])]
         rmses = [r["rmse"] * 100 for r in reps if not math.isnan(r["rmse"])]
@@ -281,7 +276,6 @@ def main() -> int:
         print(f"  Mean MAE: {mean_mae:.2f}%", file=sys.stderr)
         print(f"  Mean RMSE: {mean_rmse:.2f}%", file=sys.stderr)
 
-        # Write facts CSV
         csv_path = FACTS_DIR / f"rel_{rel.replace('-', '_')}.csv"
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=[
@@ -301,7 +295,6 @@ def main() -> int:
                 "mean_rmse_pct": round(mean_rmse, 2),
             })
 
-    # Summary table
     summary_path = outdir / "relatedness_summary.tsv"
     with open(summary_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter="\t")
@@ -321,10 +314,8 @@ def main() -> int:
             ])
     print(f"\nSummary: {summary_path}", file=sys.stderr)
 
-    # Plot
     plot_results(all_results, outdir)
 
-    # Copy figure to facts dir
     src = outdir / "fig4_relatedness.png"
     if src.exists():
         shutil.copy2(src, FACTS_DIR / "fig4_relatedness.png")

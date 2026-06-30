@@ -45,7 +45,6 @@ from allomix.simulate import (  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
 
-# --- Config ---
 HOST_VCF = "tests/test_data/host.vcf"
 DONOR_VCF = "tests/test_data/donor.vcf"
 EMPIRICAL_PER_MARKER = "paper/empirical_results/panel_per_marker.tsv"
@@ -54,13 +53,13 @@ CALIBRATION_DIR = Path("output/calibration")
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
 # Quick-build mode (ALLOMIX_PAPER_QUICK=1) cuts the replicate counts. The
 # calibration replicate total is driven by the Snakefile (batches x reps), kept
-# in sync there. Figures are watermarked, not for publication.
+# in sync there.
 N_ABLATION_REPS = qval(10, 3)
 N_CALIBRATION_REPS = qval(100, 6)
 N_CALIBRATION_BATCHES = qval(10, 2)
 
-# Ablation conditions: each defines blend_vcfs kwargs and whether to pass
-# the true bias table to the estimator (simulating bias correction).
+# Each condition defines blend_vcfs kwargs and whether to pass the true bias
+# table to the estimator (correct_bias, simulating bias correction).
 CONDITIONS = {
     "Ideal": {
         "blend": {
@@ -122,15 +121,11 @@ CONDITIONS = {
         },
         "correct_bias": True,
     },
-    # No-overdispersion (binomial) baseline vs the same full model with
-    # beta-binomial read sampling. The binomial conditions above (in particular
-    # "Full") are the no-overdispersion baseline; this condition adds per-marker
-    # overdispersion at a realistic concentration (rho = 100, the value fitted
-    # from real per-sample data) applied only at intermediate-VAF markers
-    # (het_only), where PCR/capture jitter is physical. It isolates the effect
-    # of overdispersion, which the depth-by-markers LoD analysis identifies as
-    # the dominant control on the limit of detection at clinical coverage
-    # (Figures S7, S8), from the bias/depth/error/dropout components above.
+    # Adds beta-binomial overdispersion at rho=100 (fitted from real per-sample
+    # data) to the "Full" (binomial, no-overdispersion) model, applied only at
+    # intermediate-VAF markers (het_only) where PCR/capture jitter is physical.
+    # Isolates overdispersion, which the depth-by-markers LoD analysis identifies
+    # as the dominant control on LoD at clinical coverage (Figures S7, S8).
     "Overdispersion": {
         "blend": {
             "marker_bias_sd": 0.0,
@@ -169,9 +164,7 @@ def load_empirical_per_marker() -> list[dict]:
 def _build_bias_table(
     blend_result,
 ) -> dict[tuple[str, int, str, str], float] | None:
-    """Convert BlendResult.marker_biases into the bias dict expected by
-    PanelCalibration(biases=...).
-    """
+    """Convert BlendResult.marker_biases into the dict PanelCalibration(biases=) expects."""
     if not blend_result.marker_biases:
         return None
     return {
@@ -179,17 +172,11 @@ def _build_bias_table(
     }
 
 
-# ---------------------------------------------------------------------------
-# Figure S1: Empirical vs simulated bias distributions
-# ---------------------------------------------------------------------------
-
-
 def plot_bias_distributions(empirical_biases, ax_hist, ax_cdf, rng, n_draws=10_000):
     """Figure S1: empirical vs simulated bias distributions."""
     sim_simple = generate_marker_biases(n_draws, rng, bias_sd=0.0175)
     sim_mixture = generate_marker_biases_realistic(n_draws, rng)
 
-    # Panel A: histogram + KDE
     bins = np.linspace(-0.12, 0.12, 40)
     ax_hist.hist(
         empirical_biases,
@@ -205,7 +192,6 @@ def plot_bias_distributions(empirical_biases, ax_hist, ax_cdf, rng, n_draws=10_0
     kde_mixture = gaussian_kde(sim_mixture)
     ax_hist.plot(xs, kde_simple(xs), color="firebrick", linewidth=2, label="Gaussian (SD=0.0175)")
     ax_hist.plot(xs, kde_mixture(xs), color="steelblue", linewidth=2, label="Mixture model")
-    # Vertical dashed lines at empirical P5, P95
     p5, p95 = np.percentile(empirical_biases, [5, 95])
     ax_hist.axvline(p5, color="0.6", linestyle=":", alpha=0.5)
     ax_hist.axvline(p95, color="0.6", linestyle=":", alpha=0.5)
@@ -214,7 +200,6 @@ def plot_bias_distributions(empirical_biases, ax_hist, ax_cdf, rng, n_draws=10_0
     ax_hist.set_title("A", fontsize=12, fontweight="bold", loc="left")
     ax_hist.legend(fontsize=9)
 
-    # Panel B: CDF of |bias|
     emp_abs = sorted(abs(b) for b in empirical_biases)
     sim_simple_abs = sorted(abs(b) for b in sim_simple)
     sim_mixture_abs = sorted(abs(b) for b in sim_mixture)
@@ -248,17 +233,11 @@ def plot_bias_distributions(empirical_biases, ax_hist, ax_cdf, rng, n_draws=10_0
     ax_cdf.legend(fontsize=9)
 
 
-# ---------------------------------------------------------------------------
-# Figure S2: Depth distribution
-# ---------------------------------------------------------------------------
-
-
 def plot_depth_distributions(marker_depths, marker_depth_cvs, ax_hist, ax_cv):
     """Figure S2: empirical depth distribution vs log-normal model."""
     rng = random.Random(42)
     sim_depths = sample_marker_depths(10_000, mean_depth=1732, depth_cv=0.429, rng=rng)
 
-    # Panel A: depth histogram
     bins = np.linspace(0, 4000, 30)
     ax_hist.hist(
         marker_depths,
@@ -277,7 +256,6 @@ def plot_depth_distributions(marker_depths, marker_depth_cvs, ax_hist, ax_cv):
     ax_hist.set_title("A", fontsize=12, fontweight="bold", loc="left")
     ax_hist.legend(fontsize=9)
 
-    # Panel B: per-marker depth CV (sorted)
     sorted_cvs = sorted(marker_depth_cvs)
     ax_cv.bar(range(len(sorted_cvs)), sorted_cvs, color="steelblue", alpha=0.6)
     ax_cv.axhline(
@@ -293,11 +271,6 @@ def plot_depth_distributions(marker_depths, marker_depth_cvs, ax_hist, ax_cv):
     ax_cv.legend(fontsize=9)
 
 
-# ---------------------------------------------------------------------------
-# Figure S3: Het VAF violin (supplementary)
-# ---------------------------------------------------------------------------
-
-
 def plot_het_vaf_violin(empirical_median_bias, ax_violin):
     """Figure S3: het VAF distribution, empirical vs simulated."""
     rng = random.Random(42)
@@ -310,7 +283,6 @@ def plot_het_vaf_violin(empirical_median_bias, ax_violin):
     parts = ax_violin.violinplot(
         [emp_het_vafs, sim_het_vafs], positions=[1, 2], showmeans=True, showmedians=True
     )
-    # Style the violin bodies
     for pc in parts["bodies"]:
         pc.set_facecolor("steelblue")
         pc.set_alpha(0.5)
@@ -320,17 +292,11 @@ def plot_het_vaf_violin(empirical_median_bias, ax_violin):
     ax_violin.axhline(0.5, color="0.6", linestyle="--", alpha=0.5)
 
 
-# ---------------------------------------------------------------------------
-# Main paper figure: Bias stability
-# ---------------------------------------------------------------------------
-
-
 def plot_bias_stability(empirical_median_bias, empirical_sd_within, ax):
     """Main paper figure: per-marker bias magnitude vs within-marker VAF SD.
 
-    Validates the fixed-bias-per-marker assumption. If within-marker SD is
-    roughly constant regardless of bias magnitude, the fixed-bias model is
-    appropriate.
+    Validates the fixed-bias-per-marker assumption: within-marker SD roughly
+    constant regardless of bias magnitude means the fixed-bias model holds.
     """
     abs_bias = np.abs(empirical_median_bias)
     ax.scatter(
@@ -347,11 +313,6 @@ def plot_bias_stability(empirical_median_bias, empirical_sd_within, ax):
     r = np.corrcoef(abs_bias, empirical_sd_within)[0, 1]
     ax.set_title(f"r = {r:.2f}", fontsize=10)
     ax.grid(True, alpha=0.2)
-
-
-# ---------------------------------------------------------------------------
-# Figure S4: Noise component ablation study
-# ---------------------------------------------------------------------------
 
 
 def run_ablation(host_vcf: str, donor_vcf: str, tmpdir: Path) -> dict[str, list[dict]]:
@@ -416,7 +377,6 @@ def plot_ablation(results, ax_rmse, ax_per_frac):
     }
     linestyles = {c: "--" if "corrected" in c.lower() else "-" for c in CONDITIONS}
 
-    # Panel A: RMSE per condition
     rmses = {}
     for cond, rows in results.items():
         interior = [r for r in rows if 0.0 < r["true_frac"] < 1.0]
@@ -436,7 +396,6 @@ def plot_ablation(results, ax_rmse, ax_per_frac):
     ax_rmse.set_title("A", fontsize=12, fontweight="bold", loc="left")
     ax_rmse.grid(True, alpha=0.2, axis="y")
 
-    # Panel B: per-fraction mean |error|
     for cond in CONDITIONS:
         rows = results[cond]
         fracs = sorted(set(r["true_frac"] for r in rows))
@@ -460,11 +419,6 @@ def plot_ablation(results, ax_rmse, ax_per_frac):
     ax_per_frac.set_title("B", fontsize=12, fontweight="bold", loc="left")
     ax_per_frac.legend(fontsize=8, ncol=2)
     ax_per_frac.grid(True, alpha=0.2)
-
-
-# ---------------------------------------------------------------------------
-# Figure S5: CI calibration
-# ---------------------------------------------------------------------------
 
 
 def run_calibration_batch(
@@ -572,7 +526,6 @@ def plot_calibration(results, ax_coverage, ax_width):
 
     frac_pcts = [f * 100 for f in fracs]
 
-    # Panel A: coverage
     ax_coverage.plot(frac_pcts, coverages, "o-", color="steelblue", markersize=6, linewidth=1.5)
     ax_coverage.axhline(95, color="firebrick", linestyle="--", linewidth=1, alpha=0.7)
     ax_coverage.fill_between(frac_pcts, 90, 100, color="firebrick", alpha=0.05)
@@ -582,7 +535,6 @@ def plot_calibration(results, ax_coverage, ax_width):
     ax_coverage.set_title("A", fontsize=12, fontweight="bold", loc="left")
     ax_coverage.grid(True, alpha=0.2)
 
-    # Panel B: CI width
     ax_width.errorbar(
         frac_pcts,
         widths_mean,
@@ -597,11 +549,6 @@ def plot_calibration(results, ax_coverage, ax_width):
     ax_width.set_ylabel("95% CI width (%)")
     ax_width.set_title("B", fontsize=12, fontweight="bold", loc="left")
     ax_width.grid(True, alpha=0.2)
-
-
-# ---------------------------------------------------------------------------
-# Figure S6: Per-marker residuals
-# ---------------------------------------------------------------------------
 
 
 def plot_residuals(host_vcf, donor_vcf, ax_hist, ax_scatter, tmpdir):
@@ -639,7 +586,6 @@ def plot_residuals(host_vcf, donor_vcf, ax_hist, ax_scatter, tmpdir):
 
     residuals = [o - e for o, e in zip(observed_vafs, expected_vafs)]
 
-    # Panel A: histogram
     ax_hist.hist(
         residuals,
         bins=30,
@@ -663,7 +609,6 @@ def plot_residuals(host_vcf, donor_vcf, ax_hist, ax_scatter, tmpdir):
     ax_hist.set_title("A", fontsize=12, fontweight="bold", loc="left")
     ax_hist.legend(fontsize=9)
 
-    # Panel B: residuals vs expected VAF
     ax_scatter.scatter(
         expected_vafs,
         residuals,
@@ -679,33 +624,24 @@ def plot_residuals(host_vcf, donor_vcf, ax_hist, ax_scatter, tmpdir):
     ax_scatter.set_title("B", fontsize=12, fontweight="bold", loc="left")
 
 
-# ---------------------------------------------------------------------------
-# Facts CSV
-# ---------------------------------------------------------------------------
-
-
 def write_supp_facts(ablation_results, cal_results, empirical_biases, empirical_sd_within):
     """Write summary facts CSV for supplementary text template variables."""
     facts = {}
 
-    # Ablation RMSE per condition
     for cond, rows in ablation_results.items():
         interior = [r for r in rows if 0.0 < r["true_frac"] < 1.0]
         rmse = math.sqrt(sum(r["error"] ** 2 for r in interior) / len(interior))
         key = cond.lower().replace(" ", "_")
         facts[f"ablation_rmse_{key}_pct"] = f"{rmse * 100:.3f}"
 
-    # Calibration overall coverage
     if cal_results:
         n_covered = sum(1 for r in cal_results if r["ci_covers"])
         facts["cal_coverage_pct"] = f"{n_covered / len(cal_results) * 100:.1f}"
 
-    # Empirical bias summary
     abs_biases = [abs(b) for b in empirical_biases]
     facts["n_empirical_markers"] = str(len(empirical_biases))
     facts["empirical_p95_abs_bias"] = f"{np.percentile(abs_biases, 95):.4f}"
 
-    # Bias stability correlation
     r = np.corrcoef(np.abs(empirical_biases), empirical_sd_within)[0, 1]
     facts["bias_stability_r"] = f"{r:.2f}"
 
@@ -715,11 +651,6 @@ def write_supp_facts(ablation_results, cal_results, empirical_biases, empirical_
         writer.writeheader()
         writer.writerow(facts)
     print(f"  Wrote {path}", file=sys.stderr)
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main():
@@ -753,7 +684,6 @@ def main():
     rng = random.Random(42)
     empirical_biases = [m["median_bias"] for m in markers]
 
-    # --- Figure S1: Bias distributions ---
     print("Generating Figure S1: Bias distributions...", file=sys.stderr)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
     plot_bias_distributions(empirical_biases, ax1, ax2, rng)
@@ -761,7 +691,6 @@ def main():
     fig.savefig(FACTS_DIR / "figS1_bias_distributions.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Figure S2: Depth distributions ---
     print("Generating Figure S2: Depth distributions...", file=sys.stderr)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
     marker_depths = [m["mean_depth"] for m in markers]
@@ -771,7 +700,6 @@ def main():
     fig.savefig(FACTS_DIR / "figS2_depth_distributions.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Figure S3: Het VAF violin (supplementary) ---
     print("Generating Figure S3: Het VAF violin...", file=sys.stderr)
     fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
     plot_het_vaf_violin([m["median_bias"] for m in markers], ax)
@@ -779,7 +707,6 @@ def main():
     fig.savefig(FACTS_DIR / "figS3_het_vaf.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Main paper figure: Bias stability ---
     print("Generating bias stability figure...", file=sys.stderr)
     fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
     plot_bias_stability(
@@ -791,7 +718,6 @@ def main():
     fig.savefig(FACTS_DIR / "fig_bias_stability.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Figure S4: Ablation study ---
     print("Generating Figure S4: Ablation study...", file=sys.stderr)
     with tempfile.TemporaryDirectory() as tmpdir:
         ablation_results = run_ablation(HOST_VCF, DONOR_VCF, Path(tmpdir))
@@ -802,7 +728,7 @@ def main():
     fig.savefig(FACTS_DIR / "figS4_ablation.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Figure S5: CI calibration (merge pre-computed batches) ---
+    # Figure S5 merges the pre-computed calibration batches written by --calibration-batch.
     print("Generating Figure S5: CI calibration...", file=sys.stderr)
     cal_results = load_calibration_batches()
     if not cal_results:
@@ -818,7 +744,6 @@ def main():
         fig.savefig(FACTS_DIR / "figS5_ci_calibration.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
 
-    # --- Figure S6: Residuals ---
     print("Generating Figure S6: Residuals...", file=sys.stderr)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -827,7 +752,6 @@ def main():
     fig.savefig(FACTS_DIR / "figS6_residuals.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # --- Write facts CSV ---
     write_supp_facts(
         ablation_results,
         cal_results,

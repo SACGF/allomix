@@ -2,20 +2,18 @@
 """Diagnose a single admixture sample: per-marker residuals and noise model.
 
 Diagnostic script (run from `scripts/`, not part of the installed allomix
-package). Built to chase down two questions:
+package). Chases down two questions:
 
 1. Why a sample fails goodness-of-fit (e.g. a CNV/LOH makes a block of markers
-   disagree with a single contamination fraction). The per-marker standardized
+   disagree with a single contamination fraction). Per-marker standardized
    residuals, summarised per chromosome, localise the offending region.
 2. Why a per-sample LOD is higher than a clean simulation predicts. The fitted
    beta-binomial overdispersion (rho) inflates the per-marker variance and caps
-   the benefit of depth, so the script prints rho, SE(f=0), LoB and LoD and the
-   implied effective-depth ceiling (rho + 1).
+   the benefit of depth, so the implied effective-depth ceiling is rho + 1.
 
-Data-access note (see CLAUDE.md): the full per-marker table, which contains
-genomic coordinates, is written to a LOCAL file for your own CNV cross-check.
-Only de-identified aggregates (fit parameters and per-chromosome counts) are
-printed to stdout, so the console output is safe to share.
+Data-access note (see CLAUDE.md): the per-marker table contains genomic
+coordinates and is written to a LOCAL file; only de-identified aggregates (fit
+parameters, per-chromosome counts) go to stdout, so console output is safe to share.
 
 Usage:
     python scripts/diagnose_sample.py joint_called.vcf.gz \
@@ -49,21 +47,12 @@ def _standardized_residual(
 ) -> float:
     """Residual in units of its own SD, matching the QC goodness-of-fit model.
 
-    Uses the same beta-binomial variance the gof uses,
-    ``var = ev(1-ev)(n+rho)/(n(rho+1))``, with ``ev`` the error-adjusted expected
-    ALT fraction. The error adjustment is what stops homozygous markers (expected
-    VAF 0 or 1) from getting a near-zero variance floor and blowing up to spurious
-    outliers. ``z**2`` is then this marker's contribution to the gof chi-square.
-
-    Args:
-        residual: Observed minus expected ALT fraction (``MarkerResult.residual``).
-        exp_vaf: Model-expected ALT fraction at this marker.
-        dp: Marker depth.
-        rho: Fitted beta-binomial concentration (inf = pure binomial).
-        error_rate: Sequencing error rate used by the fit.
-
-    Returns:
-        Standardized residual (z). 0.0 if the variance is undefined.
+    Uses the same beta-binomial variance the gof uses, with ``ev`` the
+    error-adjusted expected ALT fraction. The error adjustment stops homozygous
+    markers (expected VAF 0 or 1) from getting a near-zero variance floor and
+    blowing up to spurious outliers. ``z**2`` is this marker's contribution to
+    the gof chi-square. ``rho`` inf means pure binomial; returns 0.0 if the
+    variance is undefined.
     """
     if dp <= 0:
         return 0.0
@@ -127,7 +116,7 @@ def main() -> None:
     qc = assess_quality(result, genotypes)
     rho = result.rho
 
-    # Per-marker table (local file, with coordinates).
+    # Per-marker table: local file, carries coordinates.
     args.out.parent.mkdir(parents=True, exist_ok=True)
     per_chrom: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
     n_outliers = 0

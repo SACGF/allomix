@@ -2,15 +2,15 @@
 """Real-data LoD curves by sub-sampling the SRP434573 public mixtures (issue #24).
 
 The simulated LoD figure (``run_lod_validation.py`` -> Figure 1/5) is a best-case
-analytical number on near-binomial simulated data. This script reproduces the
-same panel-size / depth LoD sweep on real reads: it takes the high-depth
-SRP434573 titrated mixtures and throws away markers and reads until the LoD rises
-into the measurable 0.5-10% window, keeping the things a simulator cannot fully
-reproduce (true per-marker capture bias, real between-marker overdispersion, and
-the known co-pooled contamination floor of this dataset).
+analytical number on near-binomial simulated data. This script reruns the same
+panel-size / depth LoD sweep on real reads: it throws away markers and reads from
+the high-depth SRP434573 titrated mixtures until the LoD rises into the
+measurable 0.5-10% window, keeping what a simulator cannot fully reproduce (true
+per-marker capture bias, real between-marker overdispersion, and this dataset's
+known co-pooled contamination floor).
 
-Two independent, complementary readouts are run in the same pass over every cell
-(see ``claude/public_data_subsample_plan.md`` section 5); neither is primary:
+Two complementary readouts run in the same pass over every cell (see
+``claude/public_data_subsample_plan.md`` section 5); neither is primary:
 
   - Magnitude (MLE) LoD: the beta-binomial donor/host-fraction estimate
     (``estimate_single_donor_bb``). A cell is detected when the 95% CI for the
@@ -80,12 +80,11 @@ from run_lod_validation import derive_seed, fit_lod  # noqa: E402
 from run_srp434573_allomix import MIXES, known_host_pct  # noqa: E402
 from srp434573_common import resolve_srp434573_genotypes_dir  # noqa: E402
 
-# --- Sweep grid (plan section 6b) -------------------------------------------
+# Sweep grid (plan section 6b).
 # Quick-build mode (ALLOMIX_PAPER_QUICK=1 / --config quick=1) shrinks the depth,
-# panel-size, and seed grids so the rule drops from tens of minutes to ~a minute;
-# the resulting figures are watermarked and not for publication. The grids are
-# sized like run_lod_validation.py's (the sweep runs both estimators in one pass,
-# so the quick budget is not doubled).
+# panel-size, and seed grids (tens of minutes -> ~a minute; watermarked figures,
+# not for publication). Grids are sized like run_lod_validation.py's (the sweep
+# runs both estimators in one pass, so the quick budget is not doubled).
 DEPTHS = qval([100, 250, 500, 1000, 2000], [250, 1000])
 N_MARKERS_GRID = qval([25, 50, 75, 100, 200, 400], [50, 200])
 # Titration fractions are fixed by the SRP434573 dilution series (minor = host),
@@ -122,16 +121,10 @@ TESTS = ("mle", "presence", "mle_analytical")
 def rate_for_mean_depth(markers: list, target_mean_depth: float) -> float:
     """Global binomial keep-rate to hit ``target_mean_depth`` for one sample.
 
-    Computed from the full informative set's observed mean admix depth so it is a
-    stable per-sample quantity, then applied to whichever panel subset is drawn.
-
-    Args:
-        markers: The full informative-marker list for the sample.
-        target_mean_depth: Desired mean admix depth after thinning.
-
-    Returns:
-        ``min(1.0, target_mean_depth / observed_mean_depth)``. ``1.0`` (no
-        thinning) when the target is at or above the observed mean.
+    Computed from the FULL informative set's observed mean admix depth (a stable
+    per-sample quantity), then applied to whichever panel subset is drawn.
+    Returns ``min(1.0, target / observed)``; 1.0 (no thinning) when the target
+    is at or above the observed mean.
     """
     d_obs = float(np.mean([m.admix_dp for m in markers]))
     if d_obs <= 0:
@@ -142,15 +135,10 @@ def rate_for_mean_depth(markers: list, target_mean_depth: float) -> float:
 def load_mixture(name: str, host: str, donor: str) -> dict[float, list[tuple[str, list]]]:
     """Parse one two-person mixture into informative markers per titration sample.
 
-    Args:
-        name: Mixture name (e.g. ``mix_F2_into_M1``).
-        host: Minor (titrated) contributor sample name in the panel VCF.
-        donor: Major (background) contributor sample name in the panel VCF.
-
-    Returns:
-        Mapping ``fraction_pct -> [(admix_sample_name, informative_markers), ...]``.
-        Each admix sample (including v1/v2 repeats) contributes one entry under
-        its known minor (= host) percent.
+    ``host`` is the minor (titrated) contributor, ``donor`` the major
+    (background) contributor. Returns ``fraction_pct -> [(admix_sample_name,
+    informative_markers), ...]``; each admix sample (including v1/v2 repeats)
+    contributes one entry under its known minor (= host) percent.
     """
     gen = resolve_srp434573_genotypes_dir()
     panel = gen / f"{name}.SRP434573.vcf.gz"
@@ -164,8 +152,8 @@ def load_mixture(name: str, host: str, donor: str) -> dict[float, list[tuple[str
         if pct is None:
             continue
         admix_md = parse_vcf(admix, sample=sample, min_dp=0)
-        # min_dp=0 here: the full-depth filter is applied after thinning instead,
-        # so the rate is computed from the complete informative set.
+        # min_dp=0: the depth filter is applied after thinning, so the rate is
+        # computed from the complete informative set.
         genos = classify_markers(host_md, [donor_md], admix_md, min_dp=0)
         if genos.informative:
             by_fraction[pct].append((sample, genos.informative))
@@ -175,13 +163,9 @@ def load_mixture(name: str, host: str, donor: str) -> dict[float, list[tuple[str
 def cell_results(markers_thinned_full: list, n_markers: int) -> dict:
     """Run both estimators on one (already-thinned) panel prefix.
 
-    Args:
-        markers_thinned_full: The full thinned informative list (one permutation,
-            globally thinned), from which a length-``n_markers`` prefix is taken.
-        n_markers: Panel size (nominal, before low-depth dropout).
-
-    Returns:
-        Dict with both readouts and ``n_used`` (markers surviving ``min_dp``).
+    ``n_markers`` is the nominal panel size (before low-depth dropout); a
+    length-``n_markers`` prefix of the globally-thinned permutation is taken.
+    Returns a dict with both readouts and ``n_used`` (markers surviving min_dp).
     """
     subset = markers_thinned_full[:n_markers]
     thinned = [m for m in subset if m.admix_dp >= DEFAULT_MIN_DP]
@@ -210,10 +194,9 @@ def cell_results(markers_thinned_full: list, n_markers: int) -> dict:
 def run_mixture(name: str, host: str, donor: str, n_seeds: int) -> list[dict]:
     """Sweep one mixture over (sample, fraction, depth, n_markers, seed).
 
-    For each (sample, seed) one panel permutation is drawn (shared across depths
-    so the panel composition is stable), and for each depth the full ordered list
-    is thinned once at that depth's global rate, so the n_markers grid is strict
-    prefixes (monotone). Both estimators run on every prefix.
+    One panel permutation per (sample, seed), shared across depths so panel
+    composition is stable; per depth the ordered list is thinned once at that
+    depth's global rate, so the n_markers grid is strict prefixes (monotone).
 
     Returns one raw row per (mixture, sample, fraction, depth, n_markers, seed).
     """
@@ -252,9 +235,6 @@ def run_mixture(name: str, host: str, donor: str, n_seeds: int) -> list[dict]:
     return rows
 
 
-# --- Per-mixture and across-mixture LoD summarisation ------------------------
-
-
 def _empirical_pair_lod(rows: list[dict], detected_key: str) -> dict:
     """LoD for ONE mixture at one (depth, n_markers) cell, for one empirical test.
 
@@ -285,10 +265,9 @@ def _empirical_pair_lod(rows: list[dict], detected_key: str) -> dict:
     else:
         lod = fit[0]
         if lod > MAX_FRACTION:
-            # The 95% crossing extrapolates beyond the largest probed fraction:
-            # detection never reached 95% in range, so the LoD is above it. Treat
-            # as above-range (a conservative ceiling) instead of plotting a
-            # meaningless far-extrapolated value.
+            # 95% crossing extrapolates beyond the largest probed fraction
+            # (detection never reached 95% in range). Treat as above-range
+            # (conservative ceiling), not a far-extrapolated value.
             lod, note = LOD_ABOVE_RANGE, "above_range_extrap"
 
     return {
@@ -414,13 +393,11 @@ def summarise_cell(test: str, depth: int, n_markers: int, pair_summaries: list[d
 def _monotonize_over_panels(by_nm: dict[int, dict]) -> None:
     """Enforce non-increasing per-mixture LoD across ascending panel size, in place.
 
-    The panels are nested (a larger panel is a superset of a smaller one, sharing
-    one marker permutation), so the true LoD cannot rise as markers are added. A
-    cell whose fitted LoD exceeds the best seen at a smaller panel is therefore
-    estimation noise; clamp it to that running minimum. Sentinels order as
-    below-range (best, the dilution-grid floor) < any finite LoD < above-range
-    (worst); NaN cells (fit failed) are left untouched and do not update the
-    running minimum.
+    Panels are nested (larger is a superset, one shared permutation), so true
+    LoD cannot rise as markers are added; a fitted LoD above the running minimum
+    is estimation noise and is clamped to it. Sentinels order below-range (best,
+    dilution-grid floor) < finite LoD < above-range (worst); NaN cells (fit
+    failed) are left untouched and do not update the running minimum.
     """
     best = math.inf
     for nm in sorted(by_nm):
@@ -441,9 +418,6 @@ def _monotonize_over_panels(by_nm: dict[int, dict]) -> None:
             ps["lod"] = LOD_ABOVE_RANGE
         else:
             ps["lod"] = best
-
-
-# --- Output writers ----------------------------------------------------------
 
 
 def write_raw(rows: list[dict], path: Path) -> None:
@@ -568,16 +542,12 @@ def write_headline(
         )
 
 
-# --- Driver ------------------------------------------------------------------
-
-
 def _read_raw_csv(path: Path) -> list[dict]:
     """Load a previously written subsample_lod_raw.csv back into typed rows.
 
-    Lets the aggregation, summary, and plotting stages be recomputed from an
-    existing sweep without repeating the (expensive) read sub-sampling. Column
-    types mirror what ``run_mixture`` emits so the summarisation code is
-    unchanged.
+    Lets aggregation/summary/plotting be recomputed from an existing sweep
+    without repeating the expensive read sub-sampling. Column types mirror
+    ``run_mixture``'s output.
     """
 
     def _f(x: str) -> float:
@@ -703,10 +673,9 @@ def main(argv: list[str] | None = None) -> int:
             ps["mixture"] = mixture
             ps_by_group[(test, mixture, depth)][nm] = ps
 
-    # Project each per-mixture curve onto the monotone constraint implied by the
-    # nested panels (LoD cannot rise with more markers). Median/quantiles of
-    # monotone curves are themselves monotone, so the summary curve and band come
-    # out smooth without enforcing anything on the aggregate directly.
+    # Monotonize each per-mixture curve (nested panels: LoD cannot rise with
+    # more markers). Median/quantiles of monotone curves are themselves monotone,
+    # so the summary curve and band stay smooth without aggregate enforcement.
     for by_nm in ps_by_group.values():
         _monotonize_over_panels(by_nm)
 
@@ -735,10 +704,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # Mixtures whose titration series reaches the lowest probed fraction. The
-    # all-mixture median is pinned above that fraction by the mixtures that lack
-    # it, so a second curve over just these mixtures shows the LoD the data can
-    # actually resolve at the bottom of the grid (labelled and overlaid in the
-    # figure, not a replacement for the all-mixture curve).
+    # all-mixture median is pinned above that fraction by the mixtures lacking
+    # it, so a second curve over just these shows the LoD the data can resolve at
+    # the bottom of the grid (overlaid in the figure, not a replacement).
     min_frac_pct = min(FRACTIONS_PCT)
     mix_fracs: dict[str, set] = defaultdict(set)
     for r in all_rows:

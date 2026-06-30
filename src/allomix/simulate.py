@@ -23,10 +23,6 @@ from allomix.constants import (
 from allomix.genotype import InformativeMarker, MarkerData
 from allomix.likelihood import inject_bias
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _chrom_sort_key(chrom: str) -> tuple[int, int]:
     """Sort key for chromosome names (chr1, chr2, ... chr22, chrX, chrY)."""
@@ -35,11 +31,6 @@ def _chrom_sort_key(chrom: str) -> tuple[int, int]:
         return (0, int(name))
     except ValueError:
         return (1, ord(name[0]) if name else 0)
-
-
-# ---------------------------------------------------------------------------
-# Data types
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -59,29 +50,15 @@ class VcfRecord:
 
     @property
     def locus(self) -> str:
-        """Return a unique key for the genomic position."""
         return f"{self.chrom}:{self.pos}"
-
-
-# ---------------------------------------------------------------------------
-# VCF I/O helpers
-# ---------------------------------------------------------------------------
 
 
 def parse_text_vcf(path: str | Path) -> tuple[list[str], list[VcfRecord]]:
     """Read a plain-text VCF and return (header_lines, records).
 
-    This is the simulator's own line-based parser, kept separate from
-    ``allomix.genotype.parse_vcf`` (cyvcf2-backed, returns ``MarkerData``).
-    The simulator stays dependency-light and round-trips raw VCF text, so it
-    uses this instead.
-
-    Args:
-        path: Path to a plain-text VCF file (not gzipped).
-
-    Returns:
-        A tuple of (header_lines, records) where header_lines includes all
-        lines starting with '#' and records is a list of VcfRecord.
+    The simulator's own line-based parser, kept separate from
+    ``allomix.genotype.parse_vcf`` (cyvcf2-backed) so the simulator stays
+    dependency-light and round-trips raw VCF text.
     """
     header: list[str] = []
     records: list[VcfRecord] = []
@@ -114,14 +91,7 @@ def parse_text_vcf(path: str | Path) -> tuple[list[str], list[VcfRecord]]:
 
 
 def extract_gt(record: VcfRecord) -> tuple[int, int] | None:
-    """Extract the diploid genotype allele indices from a VcfRecord.
-
-    Args:
-        record: A VcfRecord with GT as the first FORMAT field.
-
-    Returns:
-        Tuple of (allele1, allele2) as ints, or None if GT is missing/nocall.
-    """
+    """Extract the diploid genotype allele indices, or None if missing/nocall."""
     fmt_keys = record.format_.split(":")
     fmt_vals = record.sample.split(":")
     gt_idx = fmt_keys.index("GT") if "GT" in fmt_keys else None
@@ -141,16 +111,7 @@ def extract_gt(record: VcfRecord) -> tuple[int, int] | None:
 
 
 def extract_depth(record: VcfRecord) -> int | None:
-    """Extract the total depth (DP) from a VcfRecord.
-
-    Falls back to summing AD if DP is not available.
-
-    Args:
-        record: A VcfRecord.
-
-    Returns:
-        Total read depth as int, or None if not determinable.
-    """
+    """Total depth (DP), falling back to summing AD, or None if not determinable."""
     fmt_keys = record.format_.split(":")
     fmt_vals = record.sample.split(":")
     lookup = dict(zip(fmt_keys, fmt_vals))
@@ -171,20 +132,8 @@ def extract_depth(record: VcfRecord) -> int | None:
 
 
 def alt_dose(gt: tuple[int, int]) -> int:
-    """Count the number of ALT alleles (non-zero) in a diploid genotype.
-
-    Args:
-        gt: Tuple of two allele indices.
-
-    Returns:
-        Number of ALT alleles (0, 1, or 2).
-    """
+    """Count of ALT alleles (non-zero) in a diploid genotype (0, 1, or 2)."""
     return (1 if gt[0] != 0 else 0) + (1 if gt[1] != 0 else 0)
-
-
-# ---------------------------------------------------------------------------
-# Core simulation logic
-# ---------------------------------------------------------------------------
 
 
 def expected_vaf(
@@ -192,20 +141,11 @@ def expected_vaf(
     donor_gt: tuple[int, int],
     donor_fraction: float,
 ) -> float:
-    """Calculate the expected ALT VAF in a chimeric mixture.
+    """Expected ALT VAF in a diploid chimeric mixture.
 
-    The mixture model assumes diploid genomes:
         expected_vaf = ((1 - f) * host_alt_dose + f * donor_alt_dose) / 2
 
-    where f is the fraction of cells from the donor.
-
-    Args:
-        host_gt: Host diploid genotype as (allele1, allele2).
-        donor_gt: Donor diploid genotype as (allele1, allele2).
-        donor_fraction: Fraction of donor DNA in mixture (0.0 to 1.0).
-
-    Returns:
-        Expected ALT allele frequency (0.0 to 1.0).
+    where f (``donor_fraction``, 0.0-1.0) is the donor cell fraction.
     """
     h = alt_dose(host_gt)
     d = alt_dose(donor_gt)
@@ -217,17 +157,10 @@ def expected_vaf_multi(
     donor_gts: list[tuple[int, int]],
     donor_fractions: list[float],
 ) -> float:
-    """Calculate the expected ALT VAF in a multi-donor chimeric mixture.
+    """Expected ALT VAF in a multi-donor chimeric mixture.
 
-    VAF = ((1 - f1 - f2 - ...) * host_dose + f1 * d1_dose + f2 * d2_dose + ...) / 2
-
-    Args:
-        host_gt: Host diploid genotype.
-        donor_gts: List of donor diploid genotypes.
-        donor_fractions: List of donor fractions (must sum to <= 1.0).
-
-    Returns:
-        Expected ALT allele frequency (0.0 to 1.0).
+    VAF = ((1 - f1 - f2 - ...) * host_dose + f1 * d1_dose + f2 * d2_dose + ...) / 2.
+    ``donor_fractions`` must sum to <= 1.0.
     """
     f_host = 1.0 - sum(donor_fractions)
     vaf = f_host * alt_dose(host_gt)
@@ -240,27 +173,20 @@ def expected_vaf_multi(
 class HostAberration:
     """A somatic copy-number aberration carried by the host (recipient) clone.
 
-    In HSCT chimerism monitoring the recipient is usually a haematological
-    malignancy patient, and the residual or relapsing host clone routinely
-    carries copy-number changes. This describes the clone's state at a single
-    marker, as a mixture: a fraction ``clonal_fraction`` of the host cells
-    carry the aberration (copy number ``cn`` with ``alt_copies`` ALT alleles),
-    the remaining host cells are normal diploid germline.
+    The recipient is usually a haematological malignancy patient whose residual
+    or relapsing clone carries copy-number changes. The clone's state at a single
+    marker is a mixture: a fraction ``clonal_fraction`` (0.0-1.0) of host cells
+    carry the aberration (copy number ``cn`` with ``alt_copies`` ALT alleles), the
+    rest are normal diploid germline.
 
-    Copy-neutral loss of heterozygosity (CN-LoH, acquired uniparental disomy)
-    is ``cn=2`` with ``alt_copies`` forced to 0 or 2 (the clone retains two
-    copies of one germline homolog). The same dataclass also expresses
-    deletions (``cn=1``) and gains (``cn=3``) for future use.
-
-    Attributes:
-        cn: Total copy number of the marker locus in the clone.
-        alt_copies: Number of ALT alleles among those ``cn`` copies (0..cn).
-        clonal_fraction: Fraction of host cells carrying the aberration
-            (0.0-1.0). The rest are normal diploid host.
+    Copy-neutral loss of heterozygosity (CN-LoH, acquired uniparental disomy) is
+    ``cn=2`` with ``alt_copies`` forced to 0 or 2 (the clone retains two copies of
+    one germline homolog). The same dataclass also expresses deletions (``cn=1``)
+    and gains (``cn=3``).
     """
 
     cn: int
-    alt_copies: int
+    alt_copies: int  # ALT alleles among the cn copies (0..cn)
     clonal_fraction: float
 
 
@@ -272,28 +198,16 @@ def cn_weighted_vaf(
 ) -> float:
     """Expected ALT VAF in a chimeric mixture, weighted by copy number.
 
-    The plain mixture model (``expected_vaf_multi``) divides by 2 because it
-    assumes every contributing genome is diploid. A host copy-number
-    aberration breaks that assumption two ways: it changes the clone's allele
-    balance, and (for non-copy-neutral changes) it changes how much host DNA
+    The plain mixture model (``expected_vaf_multi``) divides by 2 assuming every
+    genome is diploid. A host copy-number aberration breaks that: it changes the
+    clone's allele balance, and (for non-copy-neutral changes) how much host DNA
     the locus contributes, so the local mixing fraction differs from the
     genome-wide fractions. This computes the copy-number-weighted average:
 
         VAF = sum_i (frac_i * cn_i * alt_frac_i) / sum_i (frac_i * cn_i)
 
-    where each contributor i is the normal-diploid host, the host clone, and
-    each donor. With no aberration this reduces exactly to
-    ``expected_vaf_multi``.
-
-    Args:
-        host_gt: Host germline diploid genotype.
-        donor_gts: List of donor diploid genotypes.
-        donor_fractions: Per-donor fractions (must sum to <= 1.0).
-        host_aberration: Optional host clone aberration. None means the host
-            is fully diploid germline.
-
-    Returns:
-        Expected ALT allele frequency (0.0 to 1.0).
+    over contributors i (normal-diploid host, host clone, each donor). With
+    ``host_aberration`` None this reduces exactly to ``expected_vaf_multi``.
     """
     f_host = 1.0 - sum(donor_fractions)
     if host_aberration is None:
@@ -329,17 +243,9 @@ def _clone_state(
       - ``gain``: one homolog is duplicated (cn=3).
 
     Deletions and gains change the locus DNA mass, so they shift the local
-    mixing fraction even at homozygous markers; they are therefore applied to
-    any germline genotype.
+    mixing fraction even at homozygous markers and apply to any germline genotype.
 
-    Args:
-        host_gt: Host germline diploid genotype.
-        kind: One of ``CNV_KINDS``.
-        clonal_fraction: Fraction of host cells carrying the aberration.
-        rng: Random instance.
-
-    Returns:
-        A HostAberration, or None if the aberration is invisible at this marker.
+    Returns None when the aberration is invisible at this marker.
     """
     a = list(host_gt)
     if kind == "cnloh":
@@ -368,22 +274,12 @@ def assign_cnv_aberrations(
 ) -> list[HostAberration | None]:
     """Assign host copy-number aberrations of one kind to a fraction of markers.
 
-    Each marker is independently eligible to be affected with probability
-    ``fraction_affected``. For ``cnloh`` only heterozygous germline markers
-    show an effect (see ``_clone_state``), so an eligible homozygous marker
-    stays None. For ``deletion`` and ``gain`` every eligible marker is affected.
+    Each marker is independently eligible with probability ``fraction_affected``.
+    For ``cnloh`` only heterozygous germline markers show an effect (see
+    ``_clone_state``); for ``deletion`` and ``gain`` every eligible marker is
+    affected. ``markers`` must be in the order the blender iterates them.
 
-    Args:
-        markers: Marker dicts (each carrying a diploid genotype under
-            ``host_key``), in the same order the blender iterates them.
-        fraction_affected: Per-marker probability of carrying the aberration.
-        clonal_fraction: Fraction of host cells carrying the aberration.
-        rng: Random instance for reproducibility.
-        kind: One of ``CNV_KINDS`` (``"cnloh"``, ``"deletion"``, ``"gain"``).
-        host_key: Dict key holding the host diploid genotype.
-
-    Returns:
-        List aligned to ``markers``; each entry is a HostAberration or None.
+    Returns a list aligned to ``markers``, each entry a HostAberration or None.
     """
     if kind not in CNV_KINDS:
         raise ValueError(f"kind must be one of {CNV_KINDS}, got {kind!r}")
@@ -405,23 +301,11 @@ def assign_cnloh_aberrations(
 ) -> list[HostAberration | None]:
     """Assign copy-neutral LoH aberrations to a fraction of host het markers.
 
-    Thin wrapper over ``assign_cnv_aberrations`` with ``kind="cnloh"``. CN-LoH
-    is only observable at host heterozygous markers (a homozygous genotype is
+    Thin wrapper over ``assign_cnv_aberrations`` with ``kind="cnloh"``. CN-LoH is
+    only observable at host heterozygous markers (a homozygous genotype is
     unchanged by losing heterozygosity); an affected het marker retains one
     germline homolog at random, so the clone becomes homozygous REF
     (``alt_copies=0``) or homozygous ALT (``alt_copies=2``).
-
-    Args:
-        markers: Marker dicts (each carrying a diploid genotype under
-            ``host_key``), in the same order the blender iterates them.
-        fraction_affected: Probability that a given host het marker carries
-            CN-LoH (0.0-1.0).
-        clonal_fraction: Fraction of host cells carrying the aberration.
-        rng: Random instance for reproducibility.
-        host_key: Dict key holding the host diploid genotype.
-
-    Returns:
-        List aligned to ``markers``; each entry is a HostAberration or None.
     """
     return assign_cnv_aberrations(
         markers, fraction_affected, clonal_fraction, rng, kind="cnloh", host_key=host_key
@@ -429,17 +313,9 @@ def assign_cnloh_aberrations(
 
 
 def is_informative(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> bool:
-    """Determine whether a marker is informative for chimerism detection.
+    """Informative when host and donor differ in ALT allele dose.
 
-    A marker is informative when host and donor have different ALT allele doses,
-    which means the mixed sample will show a VAF shift relative to the host.
-
-    Args:
-        host_gt: Host diploid genotype.
-        donor_gt: Donor diploid genotype.
-
-    Returns:
-        True if the marker is informative.
+    Only then does the mixed sample show a VAF shift relative to the host.
     """
     return alt_dose(host_gt) != alt_dose(donor_gt)
 
@@ -452,63 +328,39 @@ def sample_allele_counts(
     rho: float = float("inf"),
     rho_marker_type: str = "all",
 ) -> tuple[int, int]:
-    """Sample allele counts from a (beta-)binomial with sequencing errors.
+    """Sample (ref_count, alt_count) from a (beta-)binomial with sequencing errors.
 
-    When ``error_rate`` > 0, each simulated read has a chance of being
-    mis-called using the 4-state (trinucleotide) model: a correct read
-    is called correctly with probability ``(1 - error_rate)``; when an
-    error occurs, it is equally likely to produce any of the 3 other
-    bases.  Only one of those 3 is the alternative allele at a biallelic
-    site, so the effective per-read REF->ALT (or ALT->REF) error rate
-    is ``error_rate / 3``.
+    Matches the error model in ``chimerism.log_likelihood_marker_bb()`` so
+    in-silico validation uses a consistent generative model.
 
-    When ``rho`` is finite, reads are drawn beta-binomial instead of binomial:
-    a per-marker ALT probability is first drawn from Beta(p*rho, (1-p)*rho), then
-    reads are binomial given that probability. This injects the extra-binomial
-    overdispersion seen in real sequencing (PCR/capture jitter), with ``rho`` the
-    beta-binomial concentration matching ``chimerism`` (var inflated by
-    ``(n+rho)/(rho+1)``; ``rho -> inf`` recovers the pure binomial). It is the
-    dominant control on the achievable limit of detection at high depth.
+    When ``error_rate`` > 0, reads are mis-called under the 4-state
+    (trinucleotide) model: a correct read survives with probability
+    ``(1 - error_rate)``, and an error is uniform over the 3 other bases, so the
+    effective per-read REF->ALT (or ALT->REF) rate at a biallelic site is
+    ``error_rate / 3``.
 
-    The ``rho_marker_type`` switch chooses where overdispersion applies:
+    When ``rho`` is finite, reads are beta-binomial: a per-marker ALT probability
+    is drawn from Beta(p*rho, (1-p)*rho), then reads binomial given it. This
+    injects the extra-binomial overdispersion of real sequencing (PCR/capture
+    jitter); variance is inflated by ``(n+rho)/(rho+1)``, ``rho -> inf`` recovers
+    the pure binomial, and ``rho`` is the dominant control on the achievable limit
+    of detection at high depth.
+
+    ``rho_marker_type`` chooses where overdispersion applies:
 
       - ``"all"`` (default): every marker is beta-binomial when ``rho`` is finite.
-        Preserves prior behaviour.
-      - ``"het_only"``: overdispersion is applied only at intermediate VAF
-        (``0.05 < vaf < 0.95``); at boundary VAF (donor-absent background or
-        pure-alt) reads are drawn binomial regardless of ``rho``. The threshold
-        is evaluated on the *unbiased* input ``vaf``, before the error-model
-        transform pulls ``p`` off the boundaries. Physically this matches the
-        observation that overdispersion (PCR/capture jitter) is a het/intermediate
-        amplification effect; at a marker whose donor-absent allele sits at the
-        sequencing-error background there is nothing to be biased and the
-        residual variance is well-modelled by a Poisson/binomial error floor.
-        This is the regime presence-detection at donor-homozygous markers
+      - ``"het_only"``: overdispersion only at intermediate VAF (``0.05 < vaf <
+        0.95``, evaluated on the *unbiased* input before the error transform pulls
+        ``p`` off the boundaries); boundary VAF stays binomial. Overdispersion is a
+        het/intermediate amplification effect; at a donor-absent allele sitting at
+        the sequencing-error background the residual variance is a binomial error
+        floor. This is the regime presence-detection at donor-homozygous markers
         targets (see ``claude/20_host_presence_detection_plan.md``).
-
-    This matches the error model in ``chimerism.log_likelihood_marker_bb()``,
-    ensuring that in-silico validation uses a consistent generative model.
-
-    Args:
-        vaf: Expected variant allele frequency (before sequencing error).
-        depth: Total read depth to simulate.
-        rng: Optional Random instance for reproducibility.
-        error_rate: Per-read total sequencing error probability (0.0-1.0).
-            The probability of a specific substitution (e.g. REF->ALT)
-            is ``error_rate / 3``.  Default 0.0 (no sequencing error).
-        rho: Beta-binomial concentration. ``inf`` (default) is pure binomial;
-            smaller values mean more overdispersion.
-        rho_marker_type: Where to apply ``rho``. One of ``"all"`` (default)
-            or ``"het_only"`` (see above).
-
-    Returns:
-        Tuple of (ref_count, alt_count).
     """
     if rng is None:
         rng = random.Random()
     if depth <= 0:
         return (0, 0)
-    # Clamp VAF to valid probability range
     p = max(0.0, min(1.0, vaf))
 
     # Decide overdispersion applicability from the unbiased VAF, before the
@@ -521,22 +373,12 @@ def sample_allele_counts(
     else:
         raise ValueError(f"rho_marker_type must be 'all' or 'het_only', got {rho_marker_type!r}")
 
-    # Apply sequencing error using the 4-state (trinucleotide) model,
-    # matching chimerism.log_likelihood_marker().  A correct read is
-    # called correctly with probability (1-e); when wrong, the error is
-    # uniform over the 3 other bases, so P(REF->ALT) = e/3.
-    #
-    # The estimator's 4-state model allocates probability to 4 bases:
-    #   p_alt = p*(1-e) + (1-p)*e/3
-    #   p_ref = (1-p)*(1-e) + p*e/3
-    #   p_alt + p_ref = 1 - 2e/3  (remainder goes to 2 non-REF/ALT bases)
-    #
-    # Since a binomial simulator classifies every read as REF or ALT,
-    # we normalise to the conditional probability:
-    #   p_binomial = p_alt / (p_ref + p_alt) = p_alt / (1 - 2e/3)
-    #
-    # This gives symmetric error floors (e/3 at both extremes) and
-    # produces an unbiased MLE under the estimator's likelihood.
+    # 4-state error model (matching chimerism.log_likelihood_marker). The
+    # estimator allocates p_alt = p*(1-e) + (1-p)*e/3 and p_ref similarly, with
+    # p_alt + p_ref = 1 - 2e/3 (the rest goes to the 2 non-REF/ALT bases). A
+    # binomial simulator classifies every read as REF or ALT, so normalise to the
+    # conditional p_alt / (1 - 2e/3). This gives symmetric e/3 error floors and an
+    # unbiased MLE under the estimator's likelihood.
     if error_rate > 0:
         e = error_rate
         p_alt = p * (1.0 - e) + (1.0 - p) * e / N_OTHER_BASES
@@ -573,19 +415,8 @@ def thin_informative_markers(
     probability ``rate``, making the surviving ref/alt counts binomial draws.
 
     Host/donor genotypes, marker type, and bias annotations are preserved; only
-    the admix counts (``admix_ad_ref``, ``admix_ad_alt``, ``admix_dp``) are
-    resampled. ``rate == 1.0`` is a no-op pass-through (cannot upsample), and the
-    input markers are never mutated (fresh copies are returned).
-
-    Args:
-        markers: Informative markers from ``classify_markers``.
-        rate: Global keep-probability in (0, 1]. ``1.0`` returns copies of the
-            input unchanged.
-        rng: NumPy random generator for the binomial draws (deterministic for a
-            seeded generator).
-
-    Returns:
-        A new list of ``InformativeMarker`` with thinned admix counts.
+    the admix counts are resampled. ``rate == 1.0`` is a no-op pass-through
+    (cannot upsample). Input markers are never mutated (fresh copies returned).
 
     Raises:
         ValueError: If ``rate`` is not in (0, 1].
@@ -610,15 +441,7 @@ def thin_informative_markers(
 
 
 def gt_from_counts(ref_count: int, alt_count: int) -> str:
-    """Assign a genotype string from allele counts using simple thresholds.
-
-    Args:
-        ref_count: Reference allele read count.
-        alt_count: Alternative allele read count.
-
-    Returns:
-        Genotype string: '0/0', '0/1', or '1/1'.
-    """
+    """Call a genotype string ('./.', '0/0', '0/1', '1/1') from allele counts."""
     total = ref_count + alt_count
     if total == 0:
         return "./."
@@ -628,11 +451,6 @@ def gt_from_counts(ref_count: int, alt_count: int) -> str:
     if af > HOM_ALT_MIN_VAF:
         return "1/1"
     return "0/1"
-
-
-# ---------------------------------------------------------------------------
-# High-level blending
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -657,25 +475,14 @@ def sample_marker_depths(
     depth_cv: float,
     rng: random.Random,
 ) -> list[int]:
-    """Draw per-marker depths from a log-normal matching empirical CV.
+    """Draw per-marker depths from a log-normal with E[X]=mean_depth, CV[X]=depth_cv.
 
-    In real sequencing panels, depth varies substantially across markers
-    (empirically CV=0.43 on 76-SNP rhAmpSeq panel). The log-normal is
-    parameterised so that E[X] = mean_depth and CV[X] = depth_cv.
-
-    Args:
-        n_markers: Number of markers.
-        mean_depth: Target mean depth across markers.
-        depth_cv: Coefficient of variation for depth across markers.
-            0.0 = uniform depth (all markers get mean_depth).
-        rng: Random instance for reproducibility.
-
-    Returns:
-        List of per-marker depths (integers, minimum 1).
+    Real panels vary depth substantially across markers (empirically CV=0.43 on
+    the 76-SNP rhAmpSeq panel). ``depth_cv=0`` gives uniform depth. Depths are
+    integers, minimum 1.
     """
     if depth_cv <= 0:
         return [mean_depth] * n_markers
-    # Log-normal parameters from desired mean and CV
     sigma2 = math.log(1 + depth_cv**2)
     mu = math.log(mean_depth) - sigma2 / 2
     sigma = math.sqrt(sigma2)
@@ -687,29 +494,17 @@ def generate_marker_biases(
     rng: random.Random,
     bias_sd: float = 0.02,
 ) -> list[float]:
-    """Generate per-marker capture/amplification biases.
+    """Generate per-marker capture/amplification biases, one fixed N(0, bias_sd) each.
 
-    Each marker gets a fixed bias drawn from N(0, bias_sd). This models
-    the systematic reference/alt allele capture efficiency difference seen
-    in real hybridisation capture and amplicon data (Vynck et al.).
-
-    Bias is expressed in het-site VAF units: a bias of +0.02 shifts the
-    observed ALT VAF of a true heterozygote to 0.52 (ALT preferentially
-    captured). It is injected multiplicatively in logit space (see
-    ``allomix.likelihood.inject_bias``), so away from VAF 0.5 the shift is a
-    proportional nudge rather than a flat additive offset, matching how the
+    Models the systematic REF/ALT capture efficiency difference of real
+    hybridisation-capture and amplicon data (Vynck et al.). Bias is in het-site
+    VAF units: +0.02 shifts a true het's observed ALT VAF to 0.52. It is injected
+    multiplicatively in logit space (``allomix.likelihood.inject_bias``), so away
+    from VAF 0.5 the shift is proportional, not additive, matching how the
     estimator corrects for it (issue #20).
 
-    Args:
-        n_markers: Number of markers.
-        rng: Random instance for reproducibility.
-        bias_sd: Standard deviation of the bias distribution. Typical values:
-            0.0 = no bias (ideal), 0.02 = realistic (empirically measured as
-            0.019 on 76-SNP rhAmpSeq panel across 210 joint-called VCFs),
-            0.05 = high (poor panel design).
-
-    Returns:
-        List of per-marker bias values.
+    ``bias_sd`` typical values: 0.0 = none, 0.02 = realistic (empirically 0.019 on
+    the 76-SNP rhAmpSeq panel across 210 joint-called VCFs), 0.05 = poor panel.
     """
     if bias_sd <= 0:
         return [0.0] * n_markers
@@ -723,28 +518,14 @@ def generate_marker_biases_realistic(
     outlier_frac: float = 0.05,
     outlier_sd: float = 0.08,
 ) -> list[float]:
-    """Generate biases with a heavy-tailed distribution.
+    """Generate biases with a heavy-tailed mixture distribution.
 
-    The empirical bias distribution is heavy-tailed: median |bias| is 0.005
-    but 95th percentile is 0.041 and max is 0.10. A simple Gaussian
-    underestimates the tails. This uses a mixture model:
-
-        95% of markers: N(0, sd)         — typical markers
-        5% of markers:  N(0, outlier_sd) — outlier markers with extreme bias
-
-    The default parameters are calibrated from 71 markers across 210
-    joint-called VCFs on a 76-SNP rhAmpSeq panel, yielding an overall
-    SD of ~0.018 matching the empirical measurement.
-
-    Args:
-        n_markers: Number of markers.
-        rng: Random instance for reproducibility.
-        sd: Standard deviation for the bulk of markers (default 0.012).
-        outlier_frac: Fraction of outlier markers (default 0.05).
-        outlier_sd: Standard deviation for outlier markers (default 0.08).
-
-    Returns:
-        List of per-marker bias values.
+    The empirical bias distribution is heavy-tailed (median |bias| 0.005, 95th
+    pct 0.041, max 0.10), which a simple Gaussian underestimates. Mixture:
+    ``1 - outlier_frac`` of markers from N(0, sd), the rest from N(0, outlier_sd).
+    Defaults are calibrated from 71 markers across 210 joint-called VCFs on the
+    76-SNP rhAmpSeq panel, giving an overall SD ~0.018 matching the empirical
+    measurement.
     """
     biases = []
     for _ in range(n_markers):
@@ -754,10 +535,6 @@ def generate_marker_biases_realistic(
             biases.append(rng.gauss(0, sd))
     return biases
 
-
-# ---------------------------------------------------------------------------
-# Relatedness-based genotype generation
-# ---------------------------------------------------------------------------
 
 # IBD sharing probabilities: (P(IBD=0), P(IBD=1), P(IBD=2))
 RELATEDNESS_IBD = {
@@ -770,15 +547,7 @@ RELATEDNESS_IBD = {
 
 
 def _draw_genotype(p_alt: float, rng: random.Random) -> tuple[int, int]:
-    """Draw a diploid genotype from Hardy-Weinberg equilibrium.
-
-    Args:
-        p_alt: Population ALT allele frequency.
-        rng: Random instance.
-
-    Returns:
-        Diploid genotype as (allele1, allele2), each 0 or 1.
-    """
+    """Draw a diploid genotype under Hardy-Weinberg at ALT frequency ``p_alt``."""
     a1 = 1 if rng.random() < p_alt else 0
     a2 = 1 if rng.random() < p_alt else 0
     return (a1, a2)
@@ -792,14 +561,7 @@ def _draw_related_genotype(
 ) -> tuple[int, int]:
     """Draw a donor genotype conditional on host genotype and IBD sharing.
 
-    Args:
-        host_gt: Host diploid genotype.
-        p_alt: Population ALT allele frequency.
-        ibd_probs: (P(IBD=0), P(IBD=1), P(IBD=2)).
-        rng: Random instance.
-
-    Returns:
-        Donor diploid genotype.
+    ``ibd_probs`` is (P(IBD=0), P(IBD=1), P(IBD=2)).
     """
     r = rng.random()
     if r < ibd_probs[0]:
@@ -822,19 +584,12 @@ def generate_related_genotypes(
 ) -> list[dict]:
     """Generate synthetic host-donor genotype pairs with specified relatedness.
 
-    Marker allele frequencies are drawn uniformly from ``maf_range``, then
-    host and donor genotypes are generated with appropriate IBD sharing.
+    Marker allele frequencies are drawn uniformly from ``maf_range``, then host
+    and donor genotypes are generated with the matching IBD sharing.
+    ``relatedness`` is a key of ``RELATEDNESS_IBD``.
 
-    Args:
-        n_markers: Number of markers to generate.
-        relatedness: One of 'unrelated', 'cousin', 'half-sibling',
-            'parent-child', 'sibling'.
-        rng: Random instance for reproducibility.
-        maf_range: (min, max) minor allele frequency range for markers.
-
-    Returns:
-        List of dicts with keys: chrom, pos, ref, alt, host_gt, donor_gt,
-        p_alt, informative.
+    Returns a list of dicts keyed: chrom, pos, ref, alt, host_gt, donor_gt,
+    p_alt, informative.
     """
     if relatedness not in RELATEDNESS_IBD:
         raise ValueError(
@@ -883,17 +638,10 @@ def generate_paired_related_genotypes(
     related level (e.g. first cousin) showing more informative markers than a less
     related one (e.g. unrelated) by chance.
 
-    Args:
-        n_markers: Number of markers to generate.
-        relatedness_levels: Relatedness levels to derive, each a key of
-            ``RELATEDNESS_IBD``.
-        rng: Random instance for reproducibility.
-        maf_range: (min, max) minor allele frequency range for markers.
-
-    Returns:
-        Dict mapping each relatedness level to its list of marker dicts, with the
-        same keys as :func:`generate_related_genotypes`. The host genotype and
-        ``p_alt`` at marker i are identical across levels.
+    Each level in ``relatedness_levels`` is a key of ``RELATEDNESS_IBD``. Returns
+    a dict mapping each level to its marker-dict list (same keys as
+    :func:`generate_related_genotypes`); host genotype and ``p_alt`` at marker i
+    are identical across levels.
     """
     unknown = [r for r in relatedness_levels if r not in RELATEDNESS_IBD]
     if unknown:
@@ -947,17 +695,9 @@ def _mendelian_child(
     parent2: tuple[int, int],
     rng: random.Random,
 ) -> tuple[int, int]:
-    """Draw a child genotype by Mendelian segregation from two parents.
+    """Draw a child genotype by Mendelian segregation (one allele per parent).
 
-    Each parent transmits one allele (chosen uniformly at random).
-
-    Args:
-        parent1: First parent diploid genotype.
-        parent2: Second parent diploid genotype.
-        rng: Random instance.
-
-    Returns:
-        Child diploid genotype (sorted so smaller allele first).
+    Returned sorted, smaller allele first.
     """
     a1 = parent1[rng.randint(0, 1)]
     a2 = parent2[rng.randint(0, 1)]
@@ -971,24 +711,15 @@ def generate_sibling_trio_genotypes(
 ) -> list[dict]:
     """Generate genotypes for 3 siblings (host + 2 donors) from shared parents.
 
-    For each marker:
-    1. Draw population ALT allele frequency
-    2. Draw two parent genotypes from Hardy-Weinberg
-    3. Derive each sibling independently by Mendelian segregation
+    Per marker: draw an ALT frequency, draw two parent genotypes from
+    Hardy-Weinberg, then derive each sibling independently by Mendelian
+    segregation. This preserves the 3-way sibling correlation: each pair has IBD
+    distribution (0.25, 0.5, 0.25) and all three are correlated through the shared
+    parents.
 
-    This preserves the correct 3-way sibling correlation structure:
-    each pair has IBD distribution (0.25, 0.5, 0.25) and the three
-    genotypes are correlated through shared parents.
-
-    Args:
-        n_markers: Number of biallelic markers to generate.
-        rng: Random instance for reproducibility.
-        maf_range: (min, max) minor allele frequency range for markers.
-
-    Returns:
-        List of dicts with keys: chrom, pos, ref, alt, host_gt, donor1_gt,
-        donor2_gt, p_alt, informative_d1, informative_d2, informative_any,
-        donors_distinguishable.
+    Returns a list of dicts keyed: chrom, pos, ref, alt, host_gt, donor1_gt,
+    donor2_gt, p_alt, informative_d1, informative_d2, informative_any,
+    donors_distinguishable.
     """
     markers = []
     for i in range(n_markers):
@@ -1033,12 +764,7 @@ def write_genotype_vcf(
 ) -> None:
     """Write a synthetic genotype VCF from generated marker data.
 
-    Args:
-        markers: List of marker dicts from generate_related_genotypes().
-        path: Output VCF path.
-        sample_name: Sample name for VCF header.
-        key: Which genotype to write ('host_gt' or 'donor_gt').
-        depth: Simulated read depth for FORMAT fields.
+    ``key`` selects which genotype to write ('host_gt' or 'donor_gt').
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1107,50 +833,27 @@ def blend_vcfs(
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
 
     Args:
-        host_path: Path to host genotype VCF (plain text).
-        donor_path: Path to donor genotype VCF (plain text).
         donor_fraction: Fraction of donor DNA (0.0 to 1.0).
-        target_depth: Fixed depth for all markers. If None, uses actual
-            depth from the host VCF.
-        sample_name: Sample name for the output VCF column header.
-            Defaults to 'simulated'.
-        seed: Random seed for reproducibility.
-        marker_bias_sd: Standard deviation of per-marker capture bias.
-            0.0 = no bias (ideal simulation), 0.02 = realistic.
-            Ignored when ``fixed_biases`` is provided. When
-            ``realistic_biases`` is True, this is also ignored (the
-            realistic mixture model is used instead).
-        fixed_biases: Pre-generated per-marker bias values. When provided,
-            these biases are used directly instead of generating random ones.
-            Length must match the number of shared markers.
-        error_rate: Per-read sequencing error rate (default 0.01 = 1%).
-            Each read has this probability of being mis-called.
-        allele_dropout_rate: Per-marker probability of allele dropout
-            (0.0–1.0). When dropout occurs at a heterozygous site, one
-            allele's reads are entirely lost, making a het look like a hom.
-        locus_dropout_rate: Per-marker probability of complete locus
-            dropout (0.0–1.0). Affected markers produce zero reads.
-        depth_cv: Coefficient of variation for per-marker depth
-            (0.0 = uniform depth, 0.43 = empirical value from rhAmpSeq).
-            When > 0 and target_depth is set, per-marker depths are drawn
-            from a log-normal distribution.
-        realistic_biases: If True, use the heavy-tailed mixture bias
-            distribution (generate_marker_biases_realistic) instead of
-            a simple Gaussian. Ignored when ``fixed_biases`` is provided.
-        rho: Beta-binomial overdispersion passed to sample_allele_counts
-            (inf = pure binomial). Smaller values raise the achievable LoD.
-        rho_marker_type: Where to apply ``rho``. One of ``"all"`` (default,
-            existing behaviour) or ``"het_only"`` (apply only at intermediate
-            VAF, keep boundary VAF binomial). See ``sample_allele_counts``.
-        host_aberrations: Optional per-shared-marker host copy-number
-            aberrations (see ``HostAberration`` / ``assign_cnloh_aberrations``).
-            When provided, the expected VAF at an affected marker uses the
-            copy-number-weighted mixture instead of the diploid model. The list
-            must align with the shared markers in iteration order, exactly like
-            ``fixed_biases``; ``None`` entries leave a marker fully diploid.
-
-    Returns:
-        BlendResult containing the header, VCF record lines, and statistics.
+        target_depth: Fixed depth for all markers; None uses the host VCF depth.
+        marker_bias_sd: Per-marker capture bias SD (0.0 ideal, 0.02 realistic).
+            Ignored when ``fixed_biases`` is given or ``realistic_biases`` is set.
+        fixed_biases: Pre-generated per-marker biases used directly. Length must
+            match the number of shared markers.
+        allele_dropout_rate: Per-marker probability (0.0-1.0) that one allele's
+            reads are entirely lost at a het site, making a het look like a hom.
+        locus_dropout_rate: Per-marker probability (0.0-1.0) of zero reads.
+        depth_cv: Per-marker depth CV (0.0 uniform, 0.43 empirical rhAmpSeq).
+            Applied only when > 0 and ``target_depth`` is set (log-normal draw).
+        realistic_biases: Use the heavy-tailed mixture bias distribution instead
+            of a Gaussian. Ignored when ``fixed_biases`` is given.
+        rho: Beta-binomial overdispersion (inf = pure binomial); smaller raises
+            the achievable LoD. See ``sample_allele_counts``.
+        rho_marker_type: ``"all"`` (default) or ``"het_only"``.
+        host_aberrations: Optional per-shared-marker host copy-number aberrations
+            (see ``HostAberration``). Affected markers use the copy-number-weighted
+            mixture instead of the diploid model. Must align with the shared
+            markers in iteration order like ``fixed_biases``; ``None`` entries
+            leave a marker fully diploid.
     """
     if not 0.0 <= donor_fraction <= 1.0:
         raise ValueError(f"donor_fraction must be 0.0-1.0, got {donor_fraction}")
@@ -1159,7 +862,6 @@ def blend_vcfs(
     host_header, host_records = parse_text_vcf(host_path)
     _, donor_records = parse_text_vcf(donor_path)
 
-    # Index donor records by locus
     donor_by_locus: dict[str, VcfRecord] = {}
     for rec in donor_records:
         donor_by_locus[rec.locus] = rec
@@ -1167,7 +869,7 @@ def blend_vcfs(
     if sample_name is None:
         sample_name = "simulated"
 
-    # Rewrite the header: replace sample name in #CHROM line
+    # Replace the sample name in the #CHROM line, copy other header lines as-is.
     out_header = []
     for line in host_header:
         if line.startswith("#CHROM"):
@@ -1177,7 +879,7 @@ def blend_vcfs(
         else:
             out_header.append(line)
 
-    # Pre-generate per-marker biases (one per shared locus, in order)
+    # Per-marker biases, one per shared locus in iteration order.
     n_shared = sum(1 for hr in host_records if hr.locus in donor_by_locus)
     if fixed_biases is not None:
         if len(fixed_biases) != n_shared:
@@ -1195,7 +897,6 @@ def blend_vcfs(
             f"host_aberrations length ({len(host_aberrations)}) != shared markers ({n_shared})"
         )
 
-    # Pre-generate per-marker depths
     if depth_cv > 0 and target_depth is not None:
         marker_depths = sample_marker_depths(n_shared, target_depth, depth_cv, rng)
     else:
@@ -1218,11 +919,10 @@ def blend_vcfs(
         if host_gt is None or donor_gt is None:
             continue
 
-        # Must share the same REF allele
+        # Must share the same REF allele.
         if host_rec.ref != donor_rec.ref:
             continue
 
-        # Determine depth
         if marker_depths is not None:
             depth = marker_depths[bias_idx]
         elif target_depth is not None:
@@ -1230,7 +930,7 @@ def blend_vcfs(
         else:
             depth = extract_depth(host_rec) or 1000
 
-        # Locus dropout: marker produces zero reads
+        # Locus dropout: marker produces zero reads.
         if locus_dropout_rate > 0 and rng.random() < locus_dropout_rate:
             bias_idx += 1
             continue
@@ -1239,7 +939,6 @@ def blend_vcfs(
         if is_informative(host_gt, donor_gt):
             num_informative += 1
 
-        # Calculate expected VAF, apply per-marker capture bias, then sample.
         # A host copy-number aberration replaces the diploid model at this marker.
         aberr = host_aberrations[bias_idx] if host_aberrations is not None else None
         if aberr is not None:
@@ -1252,8 +951,7 @@ def blend_vcfs(
         bias_info.append((host_rec.chrom, host_rec.pos, host_rec.ref, alt_allele_bias, this_bias))
         bias_idx += 1
 
-        # Allele dropout: at a het-like site, one allele is entirely lost.
-        # This pushes the observed VAF to 0.0 or 1.0.
+        # Allele dropout at a het-like site: one allele lost, VAF pushed to 0 or 1.
         if allele_dropout_rate > 0 and 0.05 < vaf_biased < 0.95:
             if rng.random() < allele_dropout_rate:
                 vaf_biased = 0.0 if rng.random() < 0.5 else 1.0
@@ -1262,12 +960,11 @@ def blend_vcfs(
             vaf_biased, depth, rng, error_rate, rho, rho_marker_type
         )
 
-        # Build output record
         gt = gt_from_counts(ref_count, alt_count)
         total = ref_count + alt_count
         af_val = f"{alt_count / total:.4f}" if total > 0 else "0"
         gq = 99
-        # Simplified PL: just put 0 for the called genotype
+        # Simplified PL: 0 for the called genotype.
         if gt == "0/0":
             pl = f"0,{gq},{gq * 10}"
         elif gt == "1/1":
@@ -1278,17 +975,14 @@ def blend_vcfs(
         sample_field = f"{gt}:{ref_count},{alt_count}:{total}:{gq}:{pl}:{af_val}"
         format_field = "GT:AD:DP:GQ:PL:AF"
 
-        # Use the host's ALT allele; if host was ref-only, use donor's ALT
+        # Use the host's ALT allele; if host was ref-only, use the donor's.
         alt_allele = host_rec.alt if host_rec.alt != "." else donor_rec.alt
         if alt_allele == ".":
-            # Both are hom-ref with no ALT listed -- skip or emit as-is
-            # For chimerism we still want to emit the site for completeness
-            alt_allele = "."
-            # If no ALT allele, strip AF from format
+            # Both hom-ref with no ALT listed. Still emit the site for
+            # completeness, but with no ALT there is no AF field.
             sample_field = f"{gt}:{ref_count}:{total}:{gq}:{pl}"
             format_field = "GT:AD:DP:GQ:PL"
 
-        # Build minimal INFO
         info_parts = [f"DP={total}"]
         if alt_allele != ".":
             ac = alt_count
@@ -1346,12 +1040,7 @@ def blend_vcfs(
 
 
 def write_vcf(result: BlendResult, path: str | Path) -> None:
-    """Write a BlendResult to a VCF file.
-
-    Args:
-        result: BlendResult from blend_vcfs().
-        path: Output file path.
-    """
+    """Write a BlendResult to a VCF file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -1374,24 +1063,8 @@ def blend_from_genotype_dicts(
 ) -> BlendResult:
     """Create a synthetic chimeric VCF directly from genotype dicts.
 
-    Designed for use with generate_sibling_trio_genotypes() output.
-    Supports 1 or 2 donors via donor_fractions length.
-
-    Args:
-        markers: List of marker dicts with host_gt, donor1_gt, donor2_gt.
-        donor_fractions: [f_donor1] or [f_donor1, f_donor2].
-        target_depth: Mean sequencing depth.
-        seed: Random seed.
-        error_rate: Sequencing error rate.
-        depth_cv: Depth CV across markers.
-        sample_name: Sample name for VCF header.
-        rho: Beta-binomial overdispersion passed to sample_allele_counts
-            (inf = pure binomial).
-        rho_marker_type: Where to apply ``rho``. One of ``"all"`` (default,
-            existing behaviour) or ``"het_only"``. See ``sample_allele_counts``.
-
-    Returns:
-        BlendResult with synthetic chimeric VCF data.
+    Designed for ``generate_sibling_trio_genotypes()`` output. Supports 1 or 2
+    donors via the length of ``donor_fractions`` ([f1] or [f1, f2]).
     """
     if sum(donor_fractions) > 1.0 + 1e-9:
         raise ValueError(f"donor_fractions sum to {sum(donor_fractions):.4f}, must be <= 1.0")
@@ -1404,7 +1077,6 @@ def blend_from_genotype_dicts(
     else:
         depths = [target_depth] * n
 
-    # Build header
     chroms = sorted(set(m["chrom"] for m in markers), key=_chrom_sort_key)
     header = [
         "##fileformat=VCFv4.2",
@@ -1455,11 +1127,6 @@ def blend_from_genotype_dicts(
     )
 
 
-# ---------------------------------------------------------------------------
-# Joint VCF generation (multi-sample)
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class JointVcfResult:
     """Result of building a multi-sample joint VCF."""
@@ -1502,28 +1169,16 @@ def build_joint_vcf(
     depth_cv: float = 0.0,
     marker_bias_sd: float = 0.0,
 ) -> JointVcfResult:
-    """Build a multi-sample joint VCF containing host, donor(s), and admixture samples.
+    """Build a multi-sample joint VCF of host, donor(s), and admixture samples.
 
-    Simulates what GATK joint calling would produce: all samples in one VCF,
-    with ALT alleles discovered anywhere propagated to every sample's AD field.
+    Simulates GATK joint calling: all samples in one VCF, with ALT alleles
+    discovered anywhere propagated to every sample's AD field.
 
     Args:
-        host_path: Host genotype VCF.
-        donor_paths: List of donor genotype VCFs.
-        admix_fractions: Donor fraction for each admixture sample. For single-donor,
-            each element is a float. For multi-donor, each element should be a list
-            of per-donor fractions (not yet supported; pass single floats).
-        admix_sample_names: Column name for each admixture sample.
-        host_sample_name: Column name for the host.
-        donor_sample_names: Column names for donors. Defaults to DONOR, DONOR1/DONOR2, etc.
-        target_depth: Fixed depth for all markers/samples. If None, uses host VCF depth.
-        seed: Random seed.
-        error_rate: Sequencing error rate for admixture simulation.
-        depth_cv: Coefficient of variation for per-marker depth.
-        marker_bias_sd: Per-marker capture bias SD.
-
-    Returns:
-        JointVcfResult with header lines and per-locus record lines.
+        admix_fractions: Donor fraction per admixture sample. Single-donor only
+            (one float each); multi-donor per-sample lists are not yet supported.
+        donor_sample_names: Defaults to DONOR, or DONOR1/DONOR2/... for multiple.
+        target_depth: Fixed depth for all markers/samples; None uses host VCF depth.
     """
     if len(admix_fractions) != len(admix_sample_names):
         raise ValueError(
@@ -1533,11 +1188,9 @@ def build_joint_vcf(
 
     rng = random.Random(seed)
 
-    # Parse host and donor VCFs
     host_header, host_records = parse_text_vcf(host_path)
     donor_record_lists = [parse_text_vcf(dp)[1] for dp in donor_paths]
 
-    # Default donor names
     if donor_sample_names is None:
         if len(donor_paths) == 1:
             donor_sample_names = ["DONOR"]
@@ -1546,10 +1199,9 @@ def build_joint_vcf(
 
     all_sample_names = [host_sample_name] + donor_sample_names + admix_sample_names
 
-    # Index donor records by locus
     donor_by_locus = [{rec.locus: rec for rec in donor_recs} for donor_recs in donor_record_lists]
 
-    # Find shared loci (present in host and all donors)
+    # Loci present in host and all donors.
     shared_loci = []
     for host_rec in host_records:
         if all(host_rec.locus in dbl for dbl in donor_by_locus):
@@ -1557,14 +1209,12 @@ def build_joint_vcf(
 
     n_shared = len(shared_loci)
 
-    # Pre-generate per-marker biases and depths
     marker_biases = generate_marker_biases(n_shared, rng, marker_bias_sd)
     if depth_cv > 0 and target_depth is not None:
         marker_depths = sample_marker_depths(n_shared, target_depth, depth_cv, rng)
     else:
         marker_depths = None
 
-    # Build header
     out_header = []
     for line in host_header:
         if line.startswith("#CHROM"):
@@ -1586,11 +1236,10 @@ def build_joint_vcf(
         if host_gt is None or any(dg is None for dg in donor_gts):
             continue
 
-        # Check REF allele consistency
         if any(dr.ref != host_rec.ref for dr in donor_recs):
             continue
 
-        # Determine ALT allele: use first non-"." ALT from any sample
+        # ALT allele: first non-"." ALT from any sample.
         alt_allele = host_rec.alt
         if alt_allele == ".":
             for dr in donor_recs:
@@ -1600,7 +1249,6 @@ def build_joint_vcf(
         if alt_allele == ".":
             alt_allele = "."
 
-        # Determine depth for this marker
         if marker_depths is not None:
             depth = marker_depths[idx]
         elif target_depth is not None:
@@ -1610,26 +1258,19 @@ def build_joint_vcf(
 
         bias = marker_biases[idx]
 
-        # Check informativeness (any donor differs from host)
         if any(is_informative(host_gt, dg) for dg in donor_gts):
             num_informative += 1
 
-        # Build sample columns
         sample_fields = []
-
-        # Host column: simulate genotyping reads
         sample_fields.append(_simulate_genotype_sample(host_gt, depth, rng))
-
-        # Donor columns: simulate genotyping reads
         for dg in donor_gts:
             sample_fields.append(_simulate_genotype_sample(dg, depth, rng))
 
-        # Admixture columns: simulate chimeric reads
         for frac in admix_fractions:
             if len(donor_gts) == 1:
                 vaf = expected_vaf(host_gt, donor_gts[0], frac)
             else:
-                # For multi-donor with single fraction, split equally
+                # Multi-donor with a single fraction: split it equally.
                 per_donor = [frac / len(donor_gts)] * len(donor_gts)
                 vaf = expected_vaf_multi(host_gt, donor_gts, per_donor)
 
@@ -1640,7 +1281,6 @@ def build_joint_vcf(
             af_val = f"{alt_count / total:.4f}" if total > 0 else "0"
             sample_fields.append(f"{gt}:{ref_count},{alt_count}:{total}:99:{af_val}")
 
-        # Build info
         info_parts = [f"DP={depth}"]
 
         line = "\t".join(
@@ -1669,12 +1309,7 @@ def build_joint_vcf(
 
 
 def write_joint_vcf(result: JointVcfResult, path: str | Path) -> None:
-    """Write a JointVcfResult to a VCF file.
-
-    Args:
-        result: JointVcfResult from build_joint_vcf().
-        path: Output file path.
-    """
+    """Write a JointVcfResult to a VCF file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:

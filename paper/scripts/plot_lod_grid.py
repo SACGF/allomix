@@ -155,7 +155,7 @@ def plot(mle_path: Path, presence_path: Path, out_path: Path) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(11.5, 9.4), sharex=True, sharey=True)
 
     for i, rel in enumerate(RELATEDNESS_ORDER):
-        # --- MLE column (left): LoD solid + band, LoB faint dashed --------------
+        # MLE column (left): LoD solid + band, LoB faint dashed
         ax = axes[i][0]
         for depth in depths:
             cell = mle.get(rel, {}).get(depth, [])
@@ -177,7 +177,7 @@ def plot(mle_path: Path, presence_path: Path, out_path: Path) -> None:
                 )
         _style_axis(ax, nmarkers)
 
-        # --- Presence column (right): LoD solid square + band ------------------
+        # Presence column (right): LoD solid square + band
         ax = axes[i][1]
         for depth in depths:
             cell = presence.get(rel, {}).get(depth, [])
@@ -190,7 +190,6 @@ def plot(mle_path: Path, presence_path: Path, out_path: Path) -> None:
             ax.fill_between(x_f, lo_f, hi_f, color=colors[depth], alpha=0.15, linewidth=0)
         _style_axis(ax, nmarkers)
 
-    # Column headers (top row) and row labels (left column).
     axes[0][0].set_title("MLE (quantify)", fontsize=12, fontweight="bold")
     axes[0][1].set_title("Presence test (detect)", fontsize=12, fontweight="bold")
     for i, rel in enumerate(RELATEDNESS_ORDER):
@@ -208,7 +207,6 @@ def plot(mle_path: Path, presence_path: Path, out_path: Path) -> None:
     for j in range(2):
         axes[1][j].set_xlabel("Panel size (markers)", fontsize=11)
 
-    # One depth legend (top-right panel) plus a style key (top-left panel).
     axes[0][1].legend(title="Depth", fontsize=9, loc="upper right", framealpha=0.9)
     style_handles = [
         plt.Line2D([0], [0], color="grey", linewidth=1.8, marker="o", label="LoD (CI excludes 0)"),

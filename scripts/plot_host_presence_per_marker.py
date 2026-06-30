@@ -3,33 +3,26 @@
 
 Diagnostic script (run from `scripts/`, not part of the installed allomix package).
 
-The pooled presence result (one host fraction per sample, in the run's
-batch.tsv) is a single number. This one opens the box: at each donor-homozygous
-marker (where every
-donor is the same homozygote and the host carries the donor-absent allele),
-it shows the host fraction that marker alone implies, so you can see whether
-the host signal is spread evenly across markers or carried by a few.
+Breaks down the pooled presence result (one host fraction per sample in the
+run's batch.tsv) marker by marker. At each donor-homozygous marker (every donor
+the same homozygote, host carrying the donor-absent allele) the detector counts
+``y`` donor-absent reads out of depth ``n`` and the host carries the allele at
+dose ``h`` (1 if host het, 2 if host hom). Under a single host fraction f the
+expected donor-absent VAF is f*(h/2), so the marker's implied host fraction is
+(y/n)/(h/2). Plotting that per marker, sorted, with each marker's binomial CI and
+the pooled MLE line shows whether the host signal is spread evenly or carried by
+a few markers.
 
-For each marker the detector counts ``y`` donor-absent reads out of depth ``n``,
-and the host carries that allele at dose ``h`` (1 if host het, 2 if host hom).
-Under a single host fraction f the expected donor-absent VAF is f*(h/2), so the
-marker's implied host fraction is (y/n)/(h/2). Plotting that per marker, sorted,
-with each marker's binomial CI and the pooled MLE line, answers three things at
-once: how many markers carry any host signal, whether the implied fractions
-agree (even) or scatter beyond their CIs (overdispersed / a few drivers), and
-how the per-marker picture relates to the single pooled estimate.
+Points come from the local VCFs (no coordinates surfaced). The pooled MLE host
+fraction and presence p-value are read from the run's batch.tsv so the reference
+line matches the reported result exactly.
 
-Points come from the local VCFs (no coordinates are surfaced). The pooled MLE
-host fraction and presence p-value are read from the run's batch.tsv so the
-reference line matches the reported result exactly.
-
-Convention: the y axis is host fraction %, because this figure is about where
-the (small) host signal sits; the cohort figure stays in donor %.
+Convention: the y axis is host fraction %, because this figure is about where the
+(small) host signal sits; the cohort figure stays in donor %.
 
 Markers the detector drops as alignment artifacts (strand / soft-clip /
 read-position bias, e.g. the TP53 intron-3 indel site) are drawn as black X
-marks and left out of the pooled MLE line and the marker counts, so the figure
-shows both where the artifact markers sat and the cleaned-up pooled estimate.
+marks and left out of the pooled MLE line and the marker counts.
 
 Usage:
     python scripts/plot_host_presence_per_marker.py \
@@ -74,9 +67,9 @@ def short_label(name: str) -> str:
 
 
 def _wilson(y: int, n: int) -> tuple[float, float, float]:
-    """Wilson point and 95% interval for a binomial proportion.
+    """Wilson point and 95% interval (p_hat, lo, hi) for a binomial proportion.
 
-    Returns (p_hat, lo, hi). Handles y == 0 (lower bound 0) without blowing up.
+    Handles y == 0 (lower bound 0) without blowing up.
     """
     if n <= 0:
         return 0.0, 0.0, 0.0
@@ -148,9 +141,8 @@ def per_marker_rows(
     host = parse_vcf(panel, sample=meta["host"], min_gq=min_gq, gt_ad_consistency=True)
     donor = parse_vcf(panel, sample=meta["donor"], min_gq=min_gq, gt_ad_consistency=True)
     admix = parse_vcf(admix_vcf, sample=admix_sample, min_dp=0)
-    # One shared analysis path (allomix.analysis): same classify -> presence ->
-    # donor-hom selection the `monitor` CLI runs, so the points and the pooled
-    # line here match the reported batch exactly.
+    # Same allomix.analysis path the `monitor` CLI runs (classify -> presence ->
+    # donor-hom selection), so points and pooled line match the reported batch.
     analysis = analyse_sample(
         host,
         [donor],
@@ -194,20 +186,19 @@ def per_marker_rows(
 def _draw_panel(ax, label: str, markers: list[dict], pooled: dict | None) -> None:
     """Draw one sample's per-marker caterpillar with the pooled MLE line.
 
-    Markers whose 95% CI excludes the pooled MLE are ringed: these are the
-    ones that disagree with a single shared host fraction. If the host signal
-    were evenly distributed and binomial, only about 5% would land outside by
-    chance; many more means the spread is overdispersed or driven by a few
-    markers, which is the same thing the chimerism goodness-of-fit flags.
+    Markers whose 95% CI excludes the pooled MLE are ringed: those that disagree
+    with a single shared host fraction. If the host signal were evenly distributed
+    and binomial, only about 5% would land outside by chance; many more means the
+    spread is overdispersed or driven by a few markers, the same thing the
+    chimerism goodness-of-fit flags.
     """
     markers = sorted(markers, key=lambda d: d["f_pct"])
     x = list(range(len(markers)))
     kept = [d for d in markers if not d["artifact"]]
     n_art = sum(1 for d in markers if d["artifact"])
-    # "Has host presence" = signal above background: the background-subtracted
-    # 95% CI lower bound clears 0. Counting y > 0 only measures coverage,
-    # because at this depth nearly every marker catches a background read.
-    # Counts use the kept (non-artifact) markers, matching the pooled line.
+    # "Has host presence" = background-subtracted 95% CI lower bound clears 0.
+    # Counting y > 0 only measures coverage, because at this depth nearly every
+    # marker catches a background read. Counts use kept (non-artifact) markers.
     n_lit = sum(1 for d in kept if d["lo_pct"] > 0)
     n_tot = len(kept)
     f_mle = pooled["f_pct"] if pooled is not None else None
@@ -215,9 +206,8 @@ def _draw_panel(ax, label: str, markers: list[dict], pooled: dict | None) -> Non
     n_inconsistent = 0
     for xi, d in zip(x, markers):
         if d["artifact"]:
-            # Filtered as an alignment artifact: black X, no CI bar, and left
-            # out of the pooled line and all counts. This is the same set the
-            # Manhattan plot rings with an X.
+            # Alignment artifact: black X, no CI bar, excluded from pooled line
+            # and counts. Same set the Manhattan plot rings with an X.
             ax.plot(xi, d["f_pct"], "x", color="#000000", ms=7.0, mew=1.7, zorder=5)
             continue
         c = DOSE_COLOR.get(d["h"], "#888888")

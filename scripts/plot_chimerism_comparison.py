@@ -60,13 +60,7 @@ def parse_lineages(text: str) -> dict[str, float]:
     """Parse a flow lineage string into {lineage: donor_pct}.
 
     Handles the mixed `;` and `,` delimiters seen in the source sheet, e.g.
-    "CD45 100%; CD3 93.19%, CD13 30.58%".
-
-    Args:
-        text: Raw cell value.
-
-    Returns:
-        Mapping of lineage name to donor percentage. Empty if nothing parses.
+    "CD45 100%; CD3 93.19%, CD13 30.58%". Empty if nothing parses.
     """
     if not text:
         return {}
@@ -74,18 +68,11 @@ def parse_lineages(text: str) -> dict[str, float]:
 
 
 def _qc_status(row: dict, gof: float | None) -> str:
-    """Three-state QC status for a batch.tsv row.
+    """Three-state QC status (PASS / REVIEW / FAIL) for a batch.tsv row.
 
-    Uses the ``qc_status`` column when present (allomix now emits PASS / REVIEW /
-    FAIL). For older files that only have the binary ``qc_pass`` column, derive
-    REVIEW from a failing goodness-of-fit so a poor-fit sample is still flagged.
-
-    Args:
-        row: One batch.tsv row.
-        gof: Parsed goodness-of-fit p-value, or None.
-
-    Returns:
-        One of "PASS", "REVIEW", "FAIL".
+    Uses the ``qc_status`` column when present. For older files that only have
+    the binary ``qc_pass`` column, derive REVIEW from a failing goodness-of-fit
+    (``gof`` None when absent) so a poor-fit sample is still flagged.
     """
     status = row.get("qc_status")
     if status:
@@ -98,17 +85,7 @@ def _qc_status(row: dict, gof: float | None) -> str:
 
 
 def read_batch(path: Path, flow_column: str | None, donor_column: str = "Donor") -> dict[str, dict]:
-    """Read a batch.tsv into {sample: row dict} with parsed numeric fields.
-
-    Args:
-        path: Path to a batch.tsv.
-        flow_column: Name of the column holding flow lineage strings, or None.
-        donor_column: Name of the column describing the donor type.
-
-    Returns:
-        Mapping of sample name to a dict with donor_pct, ci_lo, ci_hi, qc_pass,
-        donor (type string), lineages (dict), and optional lod_pct.
-    """
+    """Read a batch.tsv into {sample: row dict} with parsed numeric fields."""
     out: dict[str, dict] = {}
     with path.open(encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -152,23 +129,15 @@ def read_batch(path: Path, flow_column: str | None, donor_column: str = "Donor")
 
 
 def host(donor_pct: float) -> float:
-    """Convert a donor percentage to host percentage."""
     return 100.0 - donor_pct
 
 
 def _marker_count(rec: dict) -> str:
-    """Format a run's marker count as informative/total for the x-axis label.
+    """Format a run's marker count as informative/total (e.g. "34/76") for the x label.
 
-    The total marker count is one of the things that changes between runs (panel
-    coverage, locus dropout), so showing the informative count as a fraction of
-    the total makes the panel difference legible. Older batch.tsv files without a
-    total fall back to the informative count alone.
-
-    Args:
-        rec: One run's batch row.
-
-    Returns:
-        e.g. "34/76" when a total is recorded, else "34".
+    Total marker count changes between runs (panel coverage, locus dropout), so
+    the fraction makes the panel difference legible. Older batch.tsv files
+    without a total fall back to the informative count alone.
     """
     n_inf = rec["n_informative"]
     n_total = rec.get("n_total_markers", 0)
@@ -176,16 +145,11 @@ def _marker_count(rec: dict) -> str:
 
 
 def short_label(name: str, field: int | None, code: bool) -> str:
-    """Shorten a long sample name for display.
+    """Shorten a long sample name for display, else return the full name.
 
-    Args:
-        name: Full sample name, e.g. "14_MO_IDH_APM5_REDACTED_REDACTED".
-        field: If set, split on "_" and take this 0-based index.
-        code: If True, take the last all-uppercase-letters token (robust to the
-            patient code sitting at field 3 or 4). Wins over ``field``.
-
-    Returns:
-        The shortened label, or the full name if nothing suitable is found.
+    With ``code``, take the last all-uppercase-letters token (robust to the
+    patient code sitting at field 3 or 4); this wins over ``field``, which
+    instead splits on "_" and takes that 0-based index.
     """
     if code:
         tokens = [t for t in name.split("_") if t.isalpha() and t.isupper()]
@@ -241,7 +205,6 @@ def plot(
             entry is the primary run (drawn filled); flow lineages, donor type,
             sample ordering and the explicit-donor star are all read from it.
             Earlier entries are compare runs, drawn hollow.
-        labels: Legend label for each run, parallel to ``runs``.
         show_lod: If True, shade each sample's region at or below the primary
             run's limit of detection (where a signal is not a reportable
             detection). Needs an ``lod_pct`` column in the primary batch.tsv.

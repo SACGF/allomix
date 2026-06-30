@@ -7,13 +7,12 @@ donor-absent allele is expected at the per-site sequencing-error background
 in a pure-donor sample, so its read counts give a one-sided detection test
 against that background.
 
-This is complementary to the fraction MLE in ``chimerism``: the MLE estimates
-the magnitude, this test guards the low end and answers "is host present?"
-directly. See ``claude/20_host_presence_detection_plan.md`` for the full
-rationale; the calibration evidence under realistic overdispersion lives in
-``paper/scripts/run_presence_lod_validation.py`` (the simulated presence-LoD
-sweep behind Figure 1), and the unit-level gate checks in
-``tests/test_detect.py``.
+Complementary to the fraction MLE in ``chimerism``: the MLE estimates the
+magnitude, this test guards the low end and answers "is host present?" directly.
+See ``claude/20_host_presence_detection_plan.md`` for the full rationale; the
+calibration evidence under realistic overdispersion lives in
+``paper/scripts/run_presence_lod_validation.py`` (the presence-LoD sweep behind
+Figure 1), with gate checks in ``tests/test_detect.py``.
 
 The two statistics computed here are:
 
@@ -499,13 +498,8 @@ def host_presence_test(
             (strand bias, soft-clip bias, read-position bias) before testing.
             See ``ArtifactThresholds``. Requires admix bias annotations
             (DP4/SCBZ/RPBZ); a no-op on VCFs lacking them.
-        artifact_thresholds: Thresholds for the artifact filter. Defaults to
-            ``ArtifactThresholds()`` when None.
-
-    Returns:
-        A ``HostPresenceResult`` summarising both statistics, the MLE host
-        fraction and its profile CI, and the provenance of the background
-        rates.
+        artifact_thresholds: Override the artifact-filter thresholds (defaults
+            to ``ArtifactThresholds()``).
     """
     if contamination_floor < 0.0:
         raise ValueError(f"contamination_floor must be >= 0, got {contamination_floor!r}")

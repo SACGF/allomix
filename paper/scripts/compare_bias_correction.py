@@ -58,15 +58,15 @@ def generate_biased_data(
 ) -> tuple[Path, Path]:
     """Generate biased test data with consistent per-marker biases.
 
-    All fractions share the same per-marker biases (as in real data where
-    biases are a property of the capture panel, not the sample).
+    All fractions share the same per-marker biases, as in real data where biases are a
+    property of the capture panel, not the sample.
 
     Returns (truth_table_path, bias_table_path).
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Pre-generate panel biases: parse VCFs to count shared markers,
-    # then generate biases once with a fixed seed.
+    # Generate the panel biases once with a fixed seed, so they are shared across all
+    # fractions. Parse the VCFs first to count shared markers.
     _, host_records = sim_parse_vcf(host_vcf)
     _, donor_records = sim_parse_vcf(donor_vcf)
     donor_loci = {r.locus for r in donor_records}
@@ -77,13 +77,13 @@ def generate_biased_data(
 
     truth_rows = []
 
-    # Generate one blend to capture marker identities for the bias table
+    # first_result captures marker identities for the bias table.
     first_result = None
 
     for frac in FRACTIONS:
         name = _fraction_to_name(frac)
-        # Each fraction gets a different seed for allele count sampling,
-        # but uses the SAME fixed_biases for panel capture bias.
+        # Per-fraction seed for allele-count sampling, but the SAME fixed_biases for
+        # panel capture bias.
         sample_seed = seed + hash(str(frac)) % (2**31)
 
         result = blend_vcfs(
@@ -107,14 +107,12 @@ def generate_biased_data(
             "true_donor_fraction": f"{frac:.6f}",
         })
 
-    # Write truth table
     truth_path = outdir / "truth_table.tsv"
     with open(truth_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, ["sample_name", "true_donor_fraction"], delimiter="\t")
         w.writeheader()
         w.writerows(truth_rows)
 
-    # Write bias table from the first result's marker_biases
     bias_path = outdir / "true_biases.tsv"
     with open(bias_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter="\t")
@@ -179,8 +177,8 @@ def compute_metrics(rows: list[dict]) -> dict:
     if n == 0:
         return {}
 
-    # Exclude boundary fractions (0% and 100%) from error metrics
-    # since they have no room for bias to manifest
+    # Exclude boundary fractions (0% and 100%) from error metrics: they have no room for
+    # bias to manifest.
     interior = [r for r in rows if 0.0 < r["true_frac"] < 1.0]
     ni = len(interior)
 
@@ -264,7 +262,6 @@ def try_plot(rows_no: list[dict], rows_yes: list[dict], outdir: Path, bias_sd: f
     err_no = [r["error"] * 100 for r in rows_no]
     err_yes = [r["error"] * 100 for r in rows_yes]
 
-    # Scatter: truth vs estimated
     ax = axes[0]
     ax.scatter(truths, est_no, c="firebrick", s=50, label="No correction", alpha=0.7, zorder=3)
     ax.scatter(truths, est_yes, c="steelblue", s=50, label="Bias-corrected", alpha=0.7, zorder=3)
@@ -276,7 +273,6 @@ def try_plot(rows_no: list[dict], rows_yes: list[dict], outdir: Path, bias_sd: f
     ax.set_aspect("equal")
     ax.grid(True, alpha=0.3)
 
-    # Residuals
     ax = axes[1]
     ax.scatter(truths, err_no, c="firebrick", s=50, label="No correction", alpha=0.7, zorder=3)
     ax.scatter(truths, err_yes, c="steelblue", s=50, label="Bias-corrected", alpha=0.7, zorder=3)
@@ -287,7 +283,6 @@ def try_plot(rows_no: list[dict], rows_yes: list[dict], outdir: Path, bias_sd: f
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
 
-    # CI coverage
     ax = axes[2]
     for i, r in enumerate(rows_no):
         color = "firebrick"
@@ -345,25 +340,21 @@ def main(argv: list[str] | None = None) -> int:
         bias_sd=args.bias_sd, depth=args.depth, seed=args.seed,
     )
 
-    # Load the true bias table
     biases = load_bias_table(bias_path)
     print(f"  Bias table: {len(biases)} markers", file=sys.stderr)
 
-    # Run without bias correction
     print("Running allomix WITHOUT bias correction ...", file=sys.stderr)
     rows_no = run_validation(
         args.host, args.donor, truth_path, outdir / "vcfs",
         marker_biases=None,
     )
 
-    # Run with bias correction
     print("Running allomix WITH bias correction ...", file=sys.stderr)
     rows_yes = run_validation(
         args.host, args.donor, truth_path, outdir / "vcfs",
         marker_biases=biases,
     )
 
-    # Compute and display metrics
     m_no = compute_metrics(rows_no)
     m_yes = compute_metrics(rows_yes)
 

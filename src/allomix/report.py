@@ -42,8 +42,7 @@ __all__ = [
 # envelope shape changes so downstream consumers can branch on it.
 REPORT_SCHEMA_VERSION = "1"
 
-# Column order for the per-marker CSV (the bioinformatician-facing detail that
-# the clinician HTML report deliberately omits).
+# Column order for the per-marker CSV.
 _MARKER_CSV_COLS = [
     "sample",
     "chrom",
@@ -66,18 +65,14 @@ def to_marker_csv(
 ) -> None:
     """Write per-marker detail for one or more samples as a CSV.
 
-    This is the bioinformatician-facing artifact: the clinician HTML report
-    omits the per-marker table on purpose, so the full marker accounting (allele
-    depths, observed vs expected VAF, residual, and the include/exclude flag) is
-    written here instead. One row per marker per sample, with a leading
-    ``sample`` column so a multi-timepoint file stays tidy. Marker-type codes are
-    expanded to a readable host/donor genotype label (see
-    ``allomix.genotype.MarkerType``).
+    The bioinformatician-facing artifact: the HTML report omits the per-marker
+    table on purpose, so the full marker accounting goes here. One row per marker
+    per sample, with a leading ``sample`` column. Marker-type codes are expanded
+    to a readable host/donor genotype label (see ``allomix.genotype.MarkerType``).
 
     Args:
-        results: ``(sample_name, result)`` pairs. A single-sample report passes
-            a one-element list; a timeline passes one entry per timepoint.
-        output: Output file path or a writable text stream.
+        results: ``(sample_name, result)`` pairs, one-element for a single-sample
+            report, one entry per timepoint for a timeline.
     """
     if isinstance(output, (str, Path)):
         with open(output, "w", encoding="utf-8", newline="") as fh:
@@ -120,18 +115,17 @@ _NA = "NA"
 
 
 def _host_presence_tsv_cells(hp: HostPresenceResult | None) -> list[str]:
-    """Format the six host-presence columns for a single result.
+    """Format the host-presence columns (order matches ``_HOST_PRESENCE_TSV_COLS``).
 
-    Order matches ``_HOST_PRESENCE_TSV_COLS`` below. Returns ``NA`` for every
-    column when the detector did not run, and per-column ``NA`` when there
-    are no usable markers (the source flag still carries information).
+    ``NA`` for every column when the detector did not run; per-column ``NA`` when
+    there are no usable markers (the source flag still carries information).
     """
     if hp is None:
         return [_NA] * 7
     if hp.n_markers == 0:
-        # Carry the source flag (typically "none") but leave numeric cells
-        # empty since the test was not actually exercised. The artifact count
-        # is still informative (markers may have been filtered down to zero).
+        # Carry the source flag but leave numeric cells NA: the test was not
+        # exercised, though the artifact count stays informative (markers may
+        # have been filtered down to zero).
         return [
             _NA,
             _NA,
@@ -173,9 +167,8 @@ def _host_presence_json(hp: HostPresenceResult | None) -> dict | None:
     }
 
 
-# Names APPENDED to the existing TSV summary. Order matters: downstream
-# scripts parse by header so renaming or reordering existing columns would
-# break them. New columns sit at the end.
+# Appended to the existing TSV summary. Downstream scripts parse by header, so
+# renaming or reordering existing columns breaks them; new columns go at the end.
 _HOST_PRESENCE_TSV_COLS = [
     "host_present_p",
     "host_f_est",
@@ -186,10 +179,9 @@ _HOST_PRESENCE_TSV_COLS = [
     "host_artifact_filtered",
 ]
 
-# Relatedness columns, appended after the host-presence block. For multi-donor
-# samples the host-vs-donor pairs are joined with ";" within each cell, keeping
-# the row rectangular. The pass/fail verdict itself lives in qc_status /
-# qc_warnings, not a separate column.
+# Relatedness columns, appended after the host-presence block. Multi-donor
+# host-vs-donor pairs are joined with ";" within each cell to keep the row
+# rectangular. The pass/fail verdict lives in qc_status / qc_warnings.
 _RELATEDNESS_TSV_COLS = [
     "relatedness",
     "relatedness_ci",
@@ -199,11 +191,10 @@ _RELATEDNESS_TSV_COLS = [
 
 
 def _relatedness_tsv_cells(relatedness: list[RelatednessResult] | None) -> list[str]:
-    """Format the four relatedness columns from the host-vs-donor pairs.
+    """Format the relatedness columns (order matches ``_RELATEDNESS_TSV_COLS``).
 
-    Order matches ``_RELATEDNESS_TSV_COLS``. Reports the host-vs-donor pairs (in
-    donor order); multiple donors are joined with ";". Returns ``NA`` cells when
-    no relatedness was computed.
+    Reports the host-vs-donor pairs in donor order, joined with ";". ``NA`` cells
+    when no relatedness was computed.
     """
     if not relatedness:
         return [_NA] * len(_RELATEDNESS_TSV_COLS)
@@ -227,9 +218,9 @@ def _relatedness_tsv_cells(relatedness: list[RelatednessResult] | None) -> list[
 def _relatedness_json(relatedness: list[RelatednessResult] | None) -> list[dict] | None:
     """JSON view of all relatedness pairs.
 
-    Carries the per-pair sample names and split CI bounds (not just the joined
-    ``pair`` / ``ci`` of the TSV view) so the HTML QC table can render straight
-    from this dict without the source ``RelatednessResult`` objects.
+    Carries per-pair names and split CI bounds (not just the TSV's joined ``pair``
+    / ``ci``) so the HTML QC table renders from this dict alone, without the source
+    ``RelatednessResult`` objects.
     """
     if not relatedness:
         return None
@@ -253,8 +244,8 @@ def _relatedness_json(relatedness: list[RelatednessResult] | None) -> list[dict]
 
 
 # Contamination columns, appended after the relatedness block. ``contamination_frac``
-# is the estimated third-party floor (fraction above sequencing error), the
-# in-data half of issue #12.
+# is the estimated third-party floor (fraction above sequencing error), the in-data
+# half of issue #12.
 _CONTAMINATION_TSV_COLS = [
     "contamination_frac",
     "contamination_p",
@@ -364,15 +355,8 @@ def to_tsv(
 ) -> None:
     """Write chimerism result and QC report as a TSV file.
 
-    Writes a header and summary line. When verbose is True, also writes
-    per-marker detail lines after a blank separator line.
-    Handles both single-donor and multi-donor results.
-
-    Args:
-        result: Chimerism estimation result (single or multi-donor).
-        qc: Quality control report.
-        output: File path or writable text stream.
-        verbose: If True, include per-marker detail section.
+    Writes a header and summary line; ``verbose`` appends a per-marker detail
+    section after a blank separator. Handles single- and multi-donor results.
     """
     if isinstance(output, (str, Path)):
         with open(output, "w", encoding="utf-8") as fh:
@@ -394,16 +378,9 @@ def _write_tsv(
     verbose: bool,
     sample_name: str = "sample",
 ) -> None:
-    """Write TSV content to an open file handle.
-
-    Args:
-        result: Chimerism estimation result.
-        qc: Quality control report.
-        fh: Open text file handle.
-        verbose: If True, include per-marker detail section.
-    """
-    # Summary header and line. Host-presence columns are appended at the end
-    # so existing parsers continue to find ``donor_pct`` etc. by header.
+    """Write single-donor TSV content to an open file handle."""
+    # Host-presence and later columns are appended at the end so existing parsers
+    # keep finding ``donor_pct`` etc. by header.
     summary_cols = [
         "sample",
         "donor_pct",
@@ -499,7 +476,6 @@ def _write_tsv_multi(
     """Write multi-donor TSV content to an open file handle."""
     n_donors = len(result.donor_fractions)
 
-    # Build header dynamically
     cols = ["sample"]
     for i in range(n_donors):
         d = i + 1
@@ -522,7 +498,6 @@ def _write_tsv_multi(
     )
     fh.write("\t".join(cols) + "\n")
 
-    # Build data line
     gof_str = f"{qc.goodness_of_fit_pval:.4f}" if qc.goodness_of_fit_pval is not None else "NA"
 
     vals = [sample_name]
@@ -609,8 +584,8 @@ def _markers_json(result: ChimerismResult | MultiDonorResult) -> list[dict]:
 def _qc_common_json(result: ChimerismResult | MultiDonorResult, qc: QCReport) -> dict:
     """QC and sub-analysis fields shared by the single- and multi-donor views.
 
-    This is the complete per-sample accounting the HTML report renders, so the
-    report can be produced from the JSON alone (no result/QC objects needed).
+    The complete per-sample accounting the HTML report renders, so the report can
+    be produced from the JSON alone (no result/QC objects needed).
     """
     return {
         "n_total_markers": qc.n_total_markers,
@@ -637,9 +612,8 @@ def _qc_common_json(result: ChimerismResult | MultiDonorResult, qc: QCReport) ->
         "qc_pass": qc.pass_,
         "qc_status": qc.status,
         "warnings": list(qc.warnings),
-        # host_presence is carried on the result (the QC report has no such
-        # field); the swap / relatedness / contamination / run-unit sub-analyses
-        # are owned by the QC report, mirroring what the QC panel reads.
+        # host_presence is carried on the result (the QC report has no such field);
+        # the other sub-analyses are owned by the QC report.
         "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
         "relatedness": _relatedness_json(qc.relatedness),
         "admix_consistency": _admix_consistency_json(qc.admix_consistency),
@@ -655,22 +629,13 @@ def to_json(
 ) -> dict:
     """Convert a chimerism result and QC report to a JSON-serialisable dict.
 
-    This per-sample dict is the structured payload the HTML report renders from.
-    It carries the headline estimate, the full QC accounting, every sub-analysis
-    (host presence, relatedness, contamination, swap check, run unit), and the
-    per-marker rows. Handles both single-donor (``ChimerismResult``) and
-    multi-donor (``MultiDonorResult``) results.
+    The per-sample payload the HTML report renders from: headline estimate, full
+    QC accounting, every sub-analysis (host presence, relatedness, contamination,
+    swap check, run unit), and the per-marker rows. Handles single-donor
+    (``ChimerismResult``) and multi-donor (``MultiDonorResult``) results.
 
-    Percent-valued headline fields use the ``*_pct`` suffix; nested
-    sub-analyses keep their native fractions.
-
-    Args:
-        result: Chimerism estimation result.
-        qc: Quality control report.
-        sample_name: Sample identifier to include in output.
-
-    Returns:
-        Dictionary suitable for ``json.dumps()``.
+    Percent-valued headline fields use the ``*_pct`` suffix; nested sub-analyses
+    keep their native fractions.
     """
     if _is_multi_donor(result):
         donors = []
@@ -723,25 +688,12 @@ def report_data(
     timestamp: str | None = None,
     version: str = __version__,
 ) -> dict:
-    """Build the single-sample report envelope: the canonical structured artifact.
+    """Build the single-sample report envelope (``kind == "single"``).
 
-    The envelope wraps the per-sample analysis (``to_json``) together with the
-    report provenance (recipient/transplant metadata, analysis parameters,
-    version, generation time). It is what ``allomix monitor --json`` writes and
-    what the HTML renderer consumes, so a report can be produced either in one
-    step or later from the saved JSON.
-
-    Args:
-        result: Chimerism estimation result (single or multi-donor).
-        qc: Quality control report.
-        sample_name: Sample identifier shown in the report.
-        meta: Optional recipient / transplant metadata for the header band.
-        params: Analysis parameters for the methods footer.
-        timestamp: Preformatted report generation time, or None.
-        version: allomix version string.
-
-    Returns:
-        A JSON-serialisable envelope dict with ``kind == "single"``.
+    Wraps the per-sample analysis (``to_json``) with report provenance (metadata,
+    params, version, generation time). Written by ``allomix monitor --json`` and
+    consumed by the HTML renderer, so a report can be produced in one step or later
+    from the saved JSON.
     """
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -767,20 +719,13 @@ def to_html(
 ) -> None:
     """Write a single-sample chimerism report as a self-contained HTML file.
 
-    Builds the structured envelope (``report_data``) and renders it; the HTML
-    layer adds no analysis, only formatting, and reads only the envelope. The
-    rendered document inlines all CSS and JavaScript so it opens from disk with
-    no network access.
+    Builds the envelope (``report_data``) and renders it; the HTML layer adds no
+    analysis, only formatting. The document inlines all CSS and JavaScript so it
+    opens from disk with no network access.
 
     Args:
-        result: Chimerism estimation result (single or multi-donor).
-        qc: Quality control report.
-        output: Output file path or a writable text stream.
-        sample_name: Sample identifier shown in the report.
-        meta: Optional recipient / transplant metadata for the header band.
         timestamp: Preformatted report generation time. Passed in (rather than
             read from the clock) so the output is deterministic and testable.
-        params: Analysis parameters for the methods footer.
         template_dir: Optional directory of template overrides (the ``--template``
             flag), searched ahead of the built-in templates.
     """
@@ -806,15 +751,8 @@ def timeline_json(
     """Build a timeline of chimerism results across multiple timepoints.
 
     Each timepoint is the full per-sample ``to_json`` dict, so the longitudinal
-    report (trend chart, table, and the latest-timepoint detail sections) renders
-    from this structure alone. Handles both single-donor and multi-donor results.
-
-    Args:
-        results: List of (sample_name, result, QCReport) tuples, one per
-            timepoint, in chronological order.
-
-    Returns:
-        Dictionary with a ``timepoints`` key listing the per-sample dicts.
+    report (trend chart, table, latest-timepoint detail) renders from this
+    structure alone. ``results`` are in chronological order.
     """
     return {"timepoints": [to_json(result, qc, sample_name=name) for name, result, qc in results]}
 
@@ -827,22 +765,11 @@ def timeline_report_data(
     timestamp: str | None = None,
     version: str = __version__,
 ) -> dict:
-    """Build the timeline report envelope: the canonical structured artifact.
+    """Build the timeline report envelope (``kind == "timeline"``).
 
     The longitudinal counterpart of ``report_data``: wraps every timepoint's
-    analysis with the report provenance. Written by ``allomix timeline --json``
-    and consumed by the timeline HTML renderer.
-
-    Args:
-        results: ``(sample_name, result, QCReport)`` per timepoint, in
-            chronological order.
-        meta: Optional recipient / transplant metadata for the header band.
-        params: Analysis parameters for the methods footer.
-        timestamp: Preformatted report generation time, or None.
-        version: allomix version string.
-
-    Returns:
-        A JSON-serialisable envelope dict with ``kind == "timeline"``.
+    analysis with report provenance. Written by ``allomix timeline --json`` and
+    consumed by the timeline HTML renderer. ``results`` are in chronological order.
     """
     return {
         "schema_version": REPORT_SCHEMA_VERSION,

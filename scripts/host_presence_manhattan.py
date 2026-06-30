@@ -3,20 +3,19 @@
 
 Diagnostic script (run from `scripts/`, not part of the installed allomix package).
 
-The per-marker caterpillar (plot_host_presence_per_marker.py) sorts markers by
-magnitude, which hides whether the high markers sit together on the genome. This
-plot keeps genomic position on the x axis, so a host CNV/LOH region shows up as a
-contiguous run of markers lifted above the sample-wide pooled host fraction,
-while a lone artifact stays isolated.
+Unlike the per-marker caterpillar (plot_host_presence_per_marker.py), which sorts
+by magnitude, this keeps genomic position on the x axis, so a host CNV/LOH region
+shows up as a contiguous run of markers lifted above the sample-wide pooled host
+fraction while a lone artifact stays isolated.
 
-y is the dose-normalised implied host fraction at each donor-homozygous marker
-(background subtracted), with the pooled MLE drawn as a horizontal line. Points
-are coloured by chromosome; markers that are significantly above the pooled
-fraction (UPREG, Bonferroni one-sided binomial) are ringed.
+y is the dose-normalised, background-subtracted implied host fraction at each
+donor-homozygous marker, with the pooled MLE drawn as a horizontal line. Points
+are coloured by chromosome; UPREG markers (significantly above the pooled
+fraction, Bonferroni one-sided binomial) are ringed.
 
-The x axis is genomic position, so the figure is written to a LOCAL file only
-(see CLAUDE.md): open it on this machine. The marker sites are public panel
-SNPs, but the axis still shows coordinates, so it is not surfaced to stdout.
+The x axis shows genomic coordinates, so the figure is written to a LOCAL file
+only (see CLAUDE.md) and not surfaced to stdout, even though the marker sites are
+public panel SNPs.
 
 Usage:
     python scripts/host_presence_manhattan.py \
@@ -69,7 +68,7 @@ HG38 = {
     "chrY": 57227415,
 }
 CHROM_ORDER = list(HG38.keys())
-# Cumulative offset of each chromosome's start along the concatenated axis.
+# Cumulative start offset of each chromosome along the concatenated axis.
 _OFFSET: dict[str, int] = {}
 _acc = 0
 for _c in CHROM_ORDER:
@@ -145,8 +144,8 @@ def build_markers(
 ) -> tuple[list[dict], dict]:
     """Per-marker implied host fraction with genome coordinate and UPREG flag.
 
-    Bonferroni-upregulated markers are annotated with their nearest
-    protein-coding gene for the manual driver-gene check.
+    UPREG markers are annotated with their nearest protein-coding gene for the
+    manual driver-gene check.
     """
     panel = os.path.join(vcf_dir, meta["stem"] + panel_suffix)
     admix_vcf = os.path.join(vcf_dir, meta["stem"] + ".admix.vcf.gz")
@@ -200,7 +199,7 @@ def build_markers(
 
 
 def _draw_panel(ax, label: str, markers: list[dict], pooled: dict) -> None:
-    """One sample panel: markers along the genome, pooled line, per-chrom mean."""
+    """Draw one sample's panel: markers, pooled line, per-chromosome means."""
     by_chrom: dict[str, list[dict]] = {}
     for m in markers:
         if m.get("artifact"):
@@ -222,19 +221,16 @@ def _draw_panel(ax, label: str, markers: list[dict], pooled: dict) -> None:
         ci = CHROM_ORDER.index(m["chrom"]) % 2
         ax.plot(m["x"], m["implied_pct"], "o", ms=5, color=ALT_COLORS[ci], zorder=2)
 
-    # Per-chromosome mean line: a horizontal segment over each chromosome's
-    # span at the mean implied host fraction of its markers. A whole chromosome
-    # (or arm) sitting above the pooled line is the CNV/LOH signature, distinct
-    # from a single isolated spike.
+    # Per-chromosome mean line: horizontal segment over each chromosome's span
+    # at its markers' mean implied host fraction. A whole chromosome (or arm)
+    # above the pooled line is the CNV/LOH signature, distinct from a lone spike.
     for chrom, ms in by_chrom.items():
         mean = sum(d["implied_pct"] for d in ms) / len(ms)
         x0 = _OFFSET[chrom]
         ax.plot([x0, x0 + HG38[chrom]], [mean, mean], color="black", lw=1.1, alpha=0.7, zorder=3)
 
-    # Pooled (sample-wide) host fraction.
     ax.axhline(pooled["f_pct"], color="#c0392b", lw=1.1, zorder=1)
 
-    # Label the nearest gene of each upregulated marker.
     for m in markers:
         if m["upreg"]:
             ax.plot(
@@ -285,7 +281,7 @@ def main() -> None:
         "--label",
         default=None,
         help="Run tag for the figure title (default: trailing token of --out stem, "
-             "e.g. 'run10' from host_presence_manhattan_run10.png)",
+        "e.g. 'run10' from host_presence_manhattan_run10.png)",
     )
     args = ap.parse_args()
     run_label = args.label or args.out.stem.split("_")[-1]
@@ -334,14 +330,17 @@ def main() -> None:
             label="upregulated (Bonferroni), gene-labelled",
         ),
         plt.Line2D(
-            [], [], marker="x", ls="", color="#999999", mew=1.6,
+            [],
+            [],
+            marker="x",
+            ls="",
+            color="#999999",
+            mew=1.6,
             label="artifact-filtered (strand/soft-clip/read-pos bias)",
         ),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=3, frameon=False, fontsize=8.5)
-    fig.suptitle(
-        f"Host-presence signal along the genome (CNV view) — {run_label}", fontsize=12
-    )
+    fig.suptitle(f"Host-presence signal along the genome (CNV view) — {run_label}", fontsize=12)
     fig.tight_layout(rect=(0, 0.04, 1, 0.97))
     fig.savefig(args.out, dpi=150)
     print(f"Wrote {args.out} (local only; x axis shows genomic coordinates)")

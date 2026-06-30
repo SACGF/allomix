@@ -121,7 +121,7 @@ def run_rep(rep: int, base_seed: int, n_markers: int, depth: int, work_dir: Path
             pass_only=False,
         )
 
-    # --- Part A: a 0.5% host call, analytical LoD floored at a synthetic 0.2%. ---
+    # Part A: a 0.5% host call, analytical LoD floored at a synthetic 0.2%.
     admix_md = _blend(
         host_vcf, donor_vcf, biases, LOW_HOST_FRAC, depth, base_seed * 31 + rep, admix_path
     )
@@ -134,7 +134,7 @@ def run_rep(rep: int, base_seed: int, n_markers: int, depth: int, work_dir: Path
     floored_lod = res.lod_fraction
     floored_lob = res.lob_fraction
 
-    # --- Part B: clean blank and clean 0.5% host through the real pipeline. ---
+    # Part B: clean blank and clean 0.5% host through the real pipeline.
     # Blank (no host): in-data floor and presence FP rate.
     blank_md = _blend(host_vcf, donor_vcf, biases, 0.0, depth, base_seed * 53 + rep, admix_path)
     blank_genos = classify(blank_md)
@@ -225,7 +225,6 @@ def summarise(rows: list[dict], depth: int) -> int:
         f"{mean('pres_floor_f'):.4%} / {mean('pres_nofloor_f'):.4%}"
     )
 
-    # Gates.
     ok = True
     if not floor_holds:
         print("FAIL: a reported LoD fell below the contamination floor.")

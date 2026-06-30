@@ -19,8 +19,7 @@ the --allele-dose flag for review; it renders to output/srp_contam_alleles.png a
 is not part of the paper build (the two x-axes tell the same story; the carrier
 count was chosen for cleaner, denser bins).
 
-House style follows plot_srp434573.py: Agg backend, paper_quick watermark, dpi 150,
-percent-formatted y-axis via a FuncFormatter.
+House style follows plot_srp434573.py.
 """
 
 import argparse
@@ -36,7 +35,7 @@ import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for sid
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 OUT = Path("output")
-FACTS_DIR = OUT / "facts"  # figS13 is a paper supplementary figure
+FACTS_DIR = OUT / "facts"
 PERSITE = FACTS_DIR / "srp_contam_persite.csv"
 YFLOOR_PCT = 0.001  # percent; where exact-zero sites are drawn on the log axis
 MEDIAN_COLOR = "#d62728"
@@ -75,13 +74,8 @@ def plot_dose(
     """Boxplot of per-site minor fraction by co-pooled dose bin.
 
     Args:
-        rows: (n_carriers, n_alleles, minor_frac) tuples.
         col: index into each row of the binning variable (0 carriers, 1 alleles).
-        bins: ordered bin values to draw, left to right.
-        labels: x tick label per bin.
         merge_last: if True, the final bin collects all values >= bins[-1] ("k+").
-        xlabel, title: axis text.
-        out_path: PNG destination.
     """
     by_bin: dict[int, list[float]] = {b: [] for b in bins}
     for row in rows:
@@ -107,7 +101,6 @@ def plot_dose(
     for box in bp["boxes"]:
         box.set(facecolor=BOX_COLOR, alpha=0.55, edgecolor="0.3")
 
-    # Per-bin median overlaid as a connected line to make the trend explicit.
     ax.plot(positions, medians, marker="D", markersize=7, color=MEDIAN_COLOR,
             linewidth=1.8, markeredgecolor="white", markeredgewidth=0.7, zorder=5,
             label="per-bin median")
@@ -125,7 +118,6 @@ def plot_dose(
     ax.set_ylabel("per-site minor fraction (log scale)", fontsize=12)
     ax.set_title(title, fontsize=12.5, fontweight="bold")
 
-    # n_sites under each box.
     for pos, n in zip(positions, counts):
         ax.annotate(f"n={n}", xy=(pos, 0.0), xytext=(0, -20), textcoords="offset points",
                     xycoords=("data", "axes fraction"), ha="center", va="top",
@@ -162,7 +154,6 @@ def main() -> int:
         out_path=FACTS_DIR / "figS13_srp_contam.png",
     )
 
-    # Review-only alternative x-axis (dose-weighted), behind a flag.
     if args.allele_dose:
         plot_dose(
             rows, col=1,

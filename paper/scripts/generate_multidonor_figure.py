@@ -30,7 +30,6 @@ from allomix.likelihood import total_log_likelihood_multi_bb  # noqa: E402
 DATA_DIR = Path("tests/test_data/multidonor")
 FACTS_DIR = Path("output/facts")
 
-# Representative interior mixture for contour plot
 CONTOUR_SAMPLE = "host_60_d1_30_d2_10"  # 60% host, 30% d1, 10% d2
 CONTOUR_TRUE_F1 = 0.30
 CONTOUR_TRUE_F2 = 0.10
@@ -83,11 +82,10 @@ def plot_figure(results: list[dict]) -> None:
     """Generate the 2-panel figure."""
     fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
 
-    # --- Panel A: Per-donor accuracy scatter ---
+    # Panel A: per-donor accuracy scatter
     ax = axes[0]
 
     for r in results:
-        # Donor 1 (blue circles)
         ax.errorbar(
             r["true_f1"] * 100,
             r["est_f1"] * 100,
@@ -103,7 +101,6 @@ def plot_figure(results: list[dict]) -> None:
             alpha=0.8,
             zorder=3,
         )
-        # Donor 2 (orange triangles)
         ax.errorbar(
             r["true_f2"] * 100,
             r["est_f2"] * 100,
@@ -129,7 +126,6 @@ def plot_figure(results: list[dict]) -> None:
     ax.set_aspect("equal")
     ax.grid(True, alpha=0.2)
 
-    # Custom legend
     legend_elements = [
         Line2D(
             [0],
@@ -153,10 +149,9 @@ def plot_figure(results: list[dict]) -> None:
     ]
     ax.legend(handles=legend_elements, fontsize=9, loc="upper left")
 
-    # --- Panel B: 2D log-likelihood contour ---
+    # Panel B: 2D log-likelihood contour
     ax = axes[1]
 
-    # Find the representative sample's markers
     contour_result = None
     for r in results:
         if r["sample_name"] == CONTOUR_SAMPLE:
@@ -168,7 +163,6 @@ def plot_figure(results: list[dict]) -> None:
     else:
         markers = contour_result["markers"]
 
-        # Evaluate LL on a grid
         grid_n = 200
         f1_range = np.linspace(0, 1, grid_n)
         f2_range = np.linspace(0, 1, grid_n)
@@ -179,24 +173,20 @@ def plot_figure(results: list[dict]) -> None:
                 if f1 + f2 <= 1.0:
                     ll_grid[j, i] = total_log_likelihood_multi_bb(markers, [f1, f2], error_rate=0.01)
 
-        # Find maximum LL
         ll_max = np.nanmax(ll_grid)
         delta_ll = ll_max - ll_grid
 
         # 95% joint CI contour: chi2(df=2) / 2
         threshold_95 = chi2.ppf(0.95, df=2) / 2  # ~2.996
 
-        # Grey out infeasible region
         infeasible = np.zeros_like(ll_grid, dtype=bool)
         for i in range(grid_n):
             for j in range(grid_n):
                 if f1_range[i] + f2_range[j] > 1.0:
                     infeasible[j, i] = True
 
-        # Mask infeasible region
         delta_ll_masked = np.where(infeasible, np.nan, delta_ll)
 
-        # Filled contour of delta-LL
         levels = [0, 0.5, 1, threshold_95, 5, 10, 20, 50]
         cf = ax.contourf(
             f1_range * 100,
@@ -208,7 +198,6 @@ def plot_figure(results: list[dict]) -> None:
             extend="max",
         )
 
-        # 95% CI contour line
         ax.contour(
             f1_range * 100,
             f2_range * 100,
@@ -219,13 +208,12 @@ def plot_figure(results: list[dict]) -> None:
             linestyles="--",
         )
 
-        # Grey out infeasible region
+        # Grey out the infeasible (f1 + f2 > 1) region
         f1_fill = np.array([0, 100, 100])
         f2_fill = np.array([100, 100, 0])
         ax.fill(f1_fill, f2_fill, color="0.85", alpha=0.6, zorder=2)
         ax.plot([0, 100], [100, 0], color="0.5", linewidth=1, linestyle="-", zorder=2)
 
-        # Mark true point and MLE
         ax.plot(
             CONTOUR_TRUE_F1 * 100,
             CONTOUR_TRUE_F2 * 100,
@@ -260,7 +248,6 @@ def plot_figure(results: list[dict]) -> None:
         ax.set_aspect("equal")
         ax.grid(True, alpha=0.2)
 
-        # Legend for panel B
         legend_b = [
             Line2D(
                 [0],
@@ -288,7 +275,6 @@ def plot_figure(results: list[dict]) -> None:
 
     fig.tight_layout()
 
-    # Save
     FACTS_DIR.mkdir(parents=True, exist_ok=True)
     fig_path = FACTS_DIR / "fig_multidonor.png"
     fig.savefig(fig_path, dpi=300, bbox_inches="tight")

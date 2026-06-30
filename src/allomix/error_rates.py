@@ -10,7 +10,7 @@ context all produce direction-specific error rates. The output table is
 consumed by ``chimerism.estimate_single_donor_bb`` and
 ``chimerism.estimate_multi_donor`` via the ``errors`` field of a
 ``chimerism.PanelCalibration``, and by the host-presence detector
-(``allomix.detect.host_presence_test``) as the per-site background.
+(``allomix.host_presence.host_presence_test``) as the per-site background.
 
 This module mirrors ``allomix.bias``: estimator pooled across reads, save/load
 TSV with NA for missing per-direction entries, and a runtime loader that

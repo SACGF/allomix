@@ -24,6 +24,7 @@ from allomix.constants import (
     PLOIDY,
     ROBUST_K_DEFAULT,
 )
+from allomix.contamination_table import apply_contamination_correction
 from allomix.genotype import InformativeMarker
 from allomix.likelihood import (
     PanelCalibration,
@@ -37,7 +38,6 @@ from allomix.likelihood import (
     expected_weight_multi,
     total_log_likelihood_multi_bb,
 )
-from allomix.marker_contamination import apply_contamination_correction
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 
 # Robust-refit floors: "auto" never drops below ROBUST_MIN_MARKERS, "force" never

@@ -12,7 +12,7 @@ magnitude, this test guards the low end and answers "is host present?" directly.
 See ``claude/20_host_presence_detection_plan.md`` for the full rationale; the
 calibration evidence under realistic overdispersion lives in
 ``paper/scripts/run_presence_lod_validation.py`` (the presence-LoD sweep behind
-Figure 1), with gate checks in ``tests/test_detect.py``.
+Figure 1), with gate checks in ``tests/test_host_presence.py``.
 
 The two statistics computed here are:
 
@@ -484,7 +484,7 @@ def host_presence_test(
             background rate. Prevents a zero rate from producing -inf
             log-likelihood on a single stray read.
         contamination_floor: In-data third-party contamination fraction (see
-            ``allomix.contamination.estimate_contamination``) added to every
+            ``allomix.sample_contamination.estimate_contamination``) added to every
             marker's H0 background rate. A co-pooled genome that carries the
             host's (donor-absent) allele inflates exactly the donor-absent
             counts this test reads, so the background a real host signal must

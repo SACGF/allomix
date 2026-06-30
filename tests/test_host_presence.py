@@ -1,4 +1,4 @@
-"""Tests for allomix.detect — host-presence detection at donor-hom markers.
+"""Tests for allomix.host_presence — host-presence detection at donor-hom markers.
 
 The detector is calibrated by construction when the simulator's symmetric
 error rate ``e`` is mirrored by ``e_i = e/3`` on the detector side; these
@@ -15,13 +15,13 @@ import numpy as np
 import pytest
 
 from allomix.chimerism import estimate_single_donor_bb
-from allomix.detect import (
+from allomix.error_rates import MarkerErrorRates
+from allomix.genotype import InformativeMarker, MarkerType
+from allomix.host_presence import (
     HostPresenceResult,
     host_presence_test,
     select_donor_hom_markers,
 )
-from allomix.error_rates import MarkerErrorRates
-from allomix.genotype import InformativeMarker, MarkerType
 
 # ---------------------------------------------------------------------------
 # Helpers

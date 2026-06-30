@@ -13,9 +13,8 @@ from dataclasses import dataclass
 
 from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
 from allomix.constants import ROBUST_K_DEFAULT
-from allomix.contamination import estimate_contamination
-from allomix.detect import DonorHomMarker, donor_hom_markers, host_presence_test
 from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
+from allomix.host_presence import DonorHomMarker, donor_hom_markers, host_presence_test
 from allomix.likelihood import PanelCalibration
 from allomix.qc import QCReport, assess_quality
 from allomix.relatedness import (
@@ -26,6 +25,7 @@ from allomix.relatedness import (
 )
 from allomix.results import ChimerismResult, MultiDonorResult
 from allomix.runmeta import RunUnitInfo
+from allomix.sample_contamination import estimate_contamination
 
 
 @dataclass
@@ -76,7 +76,7 @@ def analyse_sample(
 
     Single-donor estimation when ``donors`` has one entry, multi-donor otherwise.
     The host-presence detector (on by default) is cheap and complementary to the
-    MLE; see ``allomix.detect``.
+    MLE; see ``allomix.host_presence``.
 
     Args:
         admix: Parsed admixture markers (parse with ``min_dp=0``; filtering is

@@ -20,9 +20,9 @@ import numpy as np
 from scipy.special import expit, gammaln, logit
 
 from allomix.constants import DEFAULT_ERROR_RATE, N_OTHER_BASES, PLOIDY
+from allomix.contamination_table import ContaminationCorrection
 from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey
-from allomix.marker_contamination import ContaminationCorrection
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ class PanelCalibration:
       ``allomix.error_rates``). Used for the asymmetric REF/ALT-only likelihood
       where both directions are known.
     - ``contamination_correction``: per-marker co-pooled contamination correction
-      (Step 30, see ``allomix.marker_contamination``). Applied by
+      (Step 30, see ``allomix.contamination_table``). Applied by
       ``estimate_single_donor_bb`` before the MLE. None (the default) and a
       gated-out table both leave estimation byte-identical.
 

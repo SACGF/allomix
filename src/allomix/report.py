@@ -12,15 +12,15 @@ from pathlib import Path
 from typing import TextIO
 
 from allomix import __version__
-from allomix.contamination import ContaminationResult
-from allomix.detect import HostPresenceResult
 from allomix.genotype import MarkerType
+from allomix.host_presence import HostPresenceResult
 from allomix.html.meta import DonorMeta, ReportMeta
 from allomix.html.render import render_single
 from allomix.qc import QCReport
 from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
 from allomix.results import ChimerismResult, MultiDonorResult
 from allomix.runmeta import RunUnitInfo
+from allomix.sample_contamination import ContaminationResult
 
 # Re-exported so the public surface is ``from allomix.report import ReportMeta``,
 # matching where the other output types live. The dataclasses themselves sit in

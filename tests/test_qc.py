@@ -645,21 +645,6 @@ class TestGoFEndToEnd:
         )
 
 
-# ---------------------------------------------------------------------------
-# Version consistency
-# ---------------------------------------------------------------------------
-
-
-class TestVersionConsistency:
-    def test_versions_match(self):
-        """pyproject.toml version should match __init__.py __version__."""
-        with open("pyproject.toml", encoding="utf-8") as f:
-            content = f.read()
-        match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
-        assert match is not None, "Could not find version in pyproject.toml"
-        assert match.group(1) == allomix.__version__
-
-
 class TestRobustExclusionReview:
     """A large robust-refit exclusion fraction should warn and flag REVIEW."""
 

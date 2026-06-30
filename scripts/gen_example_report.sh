@@ -36,8 +36,12 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DATA="$REPO_ROOT/paper/public_data/SRP434573/genotypes"
-OUT_DIR="$REPO_ROOT/docs/examples"
+# Run from the repo root and pass repo-relative paths, so the invocation recorded
+# in each report's "Run command" footer is portable (no absolute home path) and
+# byte-identical wherever it is regenerated.
+cd "$REPO_ROOT"
+DATA="paper/public_data/SRP434573/genotypes"
+OUT_DIR="docs/examples"
 
 # Pinned so the committed reports are byte-reproducible.
 TIMESTAMP="2026-06-29 00:00:00 (example build)"

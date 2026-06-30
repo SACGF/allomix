@@ -62,7 +62,12 @@ def run_sample(
     admix = parse_vcf(sample_path, min_dp=0, min_gq=0)
 
     genotypes = classify_markers(
-        host, [donor], admix, min_dp=min_dp, min_gq=min_gq, pass_only=False,
+        host,
+        [donor],
+        admix,
+        min_dp=min_dp,
+        min_gq=min_gq,
+        pass_only=False,
     )
     genotypes.sample_name = Path(sample_path).stem
 
@@ -81,7 +86,7 @@ def run_sample(
 
 
 def compute_metrics(rows: list[dict]) -> dict:
-    """Compute aggregate validation metrics from per-sample results."""
+    """Aggregate validation metrics (errors as fractions, reported as percentages)."""
     n = len(rows)
     if n == 0:
         return {}
@@ -112,34 +117,43 @@ def compute_metrics(rows: list[dict]) -> dict:
 
 
 def write_results_tsv(rows: list[dict], path: Path) -> None:
-    """Write per-sample validation results."""
     fields = [
-        "sample_name", "true_donor_pct", "estimated_donor_pct",
-        "error_pct", "abs_error_pct", "ci_lo_pct", "ci_hi_pct",
-        "ci_width_pct", "ci_covers_truth", "n_informative", "n_used", "qc_pass",
+        "sample_name",
+        "true_donor_pct",
+        "estimated_donor_pct",
+        "error_pct",
+        "abs_error_pct",
+        "ci_lo_pct",
+        "ci_hi_pct",
+        "ci_width_pct",
+        "ci_covers_truth",
+        "n_informative",
+        "n_used",
+        "qc_pass",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fields, delimiter="\t")
         writer.writeheader()
         for r in rows:
-            writer.writerow({
-                "sample_name": r["sample_name"],
-                "true_donor_pct": f"{r['true_donor_fraction'] * 100:.2f}",
-                "estimated_donor_pct": f"{r['estimated_donor_fraction'] * 100:.2f}",
-                "error_pct": f"{r['error'] * 100:.4f}",
-                "abs_error_pct": f"{abs(r['error']) * 100:.4f}",
-                "ci_lo_pct": f"{r['ci_lo'] * 100:.2f}",
-                "ci_hi_pct": f"{r['ci_hi'] * 100:.2f}",
-                "ci_width_pct": f"{r['ci_width'] * 100:.2f}",
-                "ci_covers_truth": str(r["ci_covers_truth"]),
-                "n_informative": r["n_informative"],
-                "n_used": r["n_used"],
-                "qc_pass": str(r["qc_pass"]),
-            })
+            writer.writerow(
+                {
+                    "sample_name": r["sample_name"],
+                    "true_donor_pct": f"{r['true_donor_fraction'] * 100:.2f}",
+                    "estimated_donor_pct": f"{r['estimated_donor_fraction'] * 100:.2f}",
+                    "error_pct": f"{r['error'] * 100:.4f}",
+                    "abs_error_pct": f"{abs(r['error']) * 100:.4f}",
+                    "ci_lo_pct": f"{r['ci_lo'] * 100:.2f}",
+                    "ci_hi_pct": f"{r['ci_hi'] * 100:.2f}",
+                    "ci_width_pct": f"{r['ci_width'] * 100:.2f}",
+                    "ci_covers_truth": str(r["ci_covers_truth"]),
+                    "n_informative": r["n_informative"],
+                    "n_used": r["n_used"],
+                    "qc_pass": str(r["qc_pass"]),
+                }
+            )
 
 
 def write_summary_tsv(metrics: dict, path: Path) -> None:
-    """Write aggregate validation summary."""
     with open(path, "w", encoding="utf-8") as f:
         f.write("metric\tvalue\n")
         f.write(f"n_samples\t{metrics['n_samples']}\n")
@@ -152,7 +166,6 @@ def write_summary_tsv(metrics: dict, path: Path) -> None:
 
 
 def try_plot(rows: list[dict], outdir: Path) -> None:
-    """Generate validation plots."""
     truths = [r["true_donor_fraction"] * 100 for r in rows]
     estimates = [r["estimated_donor_fraction"] * 100 for r in rows]
     errors = [r["error"] * 100 for r in rows]
@@ -160,7 +173,6 @@ def try_plot(rows: list[dict], outdir: Path) -> None:
     ci_his = [r["ci_hi"] * 100 for r in rows]
     covers = [r["ci_covers_truth"] for r in rows]
 
-    # --- Scatter: truth vs estimated ---
     fig, ax = plt.subplots(figsize=(7, 7))
     ax.scatter(truths, estimates, c="steelblue", s=50, edgecolors="white", linewidth=0.5, zorder=3)
     ax.plot([0, 100], [0, 100], "k--", alpha=0.5, label="Identity")
@@ -176,7 +188,6 @@ def try_plot(rows: list[dict], outdir: Path) -> None:
     fig.savefig(outdir / "validation_scatter.png", dpi=150)
     plt.close(fig)
 
-    # --- Residuals (Bland-Altman style) ---
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.scatter(truths, errors, c="steelblue", s=50, edgecolors="white", linewidth=0.5, zorder=3)
     ax.axhline(0, color="k", linestyle="--", alpha=0.5)
@@ -188,7 +199,6 @@ def try_plot(rows: list[dict], outdir: Path) -> None:
     fig.savefig(outdir / "validation_residuals.png", dpi=150)
     plt.close(fig)
 
-    # --- CI coverage ---
     fig, ax = plt.subplots(figsize=(8, 5))
     for i, r in enumerate(rows):
         color = "steelblue" if covers[i] else "firebrick"
@@ -218,13 +228,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--truth", required=True, help="Truth table TSV")
     parser.add_argument("--vcf-dir", required=True, help="Directory containing chimeric VCFs")
     parser.add_argument(
-        "--outdir", default="output/validation",
+        "--outdir",
+        default="output/validation",
         help="Output directory for results (default: output/validation)",
     )
     parser.add_argument("--min-dp", type=int, default=0, help="Minimum depth filter")
     parser.add_argument("--min-gq", type=int, default=0, help="Minimum GQ filter")
     parser.add_argument(
-        "--error-rate", type=float, default=0.01, help="Sequencing error rate",
+        "--error-rate",
+        type=float,
+        default=0.01,
+        help="Sequencing error rate",
     )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -233,7 +247,6 @@ def main(argv: list[str] | None = None) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
     vcf_dir = Path(args.vcf_dir)
 
-    # Read truth table
     with open(args.truth, encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
         truth_rows = list(reader)
@@ -252,8 +265,11 @@ def main(argv: list[str] | None = None) -> int:
         log.info("Running %s (truth=%.1f%%) ...", sample_name, true_frac * 100)
 
         result = run_sample(
-            args.host, args.donor, str(vcf_path),
-            min_dp=args.min_dp, min_gq=args.min_gq,
+            args.host,
+            args.donor,
+            str(vcf_path),
+            min_dp=args.min_dp,
+            min_gq=args.min_gq,
             error_rate=args.error_rate,
         )
 
@@ -261,36 +277,35 @@ def main(argv: list[str] | None = None) -> int:
         ci_covers = result["ci_lo"] <= true_frac <= result["ci_hi"]
         ci_width = result["ci_hi"] - result["ci_lo"]
 
-        rows.append({
-            "sample_name": sample_name,
-            "true_donor_fraction": true_frac,
-            "estimated_donor_fraction": result["estimated_donor_fraction"],
-            "error": error,
-            "ci_lo": result["ci_lo"],
-            "ci_hi": result["ci_hi"],
-            "ci_width": ci_width,
-            "ci_covers_truth": ci_covers,
-            "n_informative": result["n_informative"],
-            "n_used": result["n_used"],
-            "qc_pass": result["qc_pass"],
-        })
+        rows.append(
+            {
+                "sample_name": sample_name,
+                "true_donor_fraction": true_frac,
+                "estimated_donor_fraction": result["estimated_donor_fraction"],
+                "error": error,
+                "ci_lo": result["ci_lo"],
+                "ci_hi": result["ci_hi"],
+                "ci_width": ci_width,
+                "ci_covers_truth": ci_covers,
+                "n_informative": result["n_informative"],
+                "n_used": result["n_used"],
+                "qc_pass": result["qc_pass"],
+            }
+        )
 
     if not rows:
         log.error("No samples processed")
         return 1
 
-    # Write per-sample results
     results_path = outdir / "validation_results.tsv"
     write_results_tsv(rows, results_path)
     log.info("Per-sample results: %s", results_path)
 
-    # Compute and write summary
     metrics = compute_metrics(rows)
     summary_path = outdir / "validation_summary.tsv"
     write_summary_tsv(metrics, summary_path)
     log.info("Summary metrics: %s", summary_path)
 
-    # Log summary
     log.info("")
     log.info("=" * 50)
     log.info("VALIDATION SUMMARY")

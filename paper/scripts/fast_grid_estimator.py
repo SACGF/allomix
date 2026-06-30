@@ -92,14 +92,6 @@ def _p_alt_grid(
 
     Vectorized form of ``_p_alt_for_f`` over an ``(n_f,)`` fraction grid; returns
     an ``(n_f, M)`` array whose row i is exactly ``_p_alt_for_f(arr, f_grid[i])``.
-
-    Args:
-        arr: Per-marker arrays from ``_precompute_marker_arrays``.
-        f_grid: Donor fractions to evaluate, shape ``(n_f,)``.
-        error_rate: Sequencing error rate.
-
-    Returns:
-        ``(n_f, M)`` array of P(observe ALT).
     """
     f = f_grid[:, None]  # (n_f, 1)
     host = arr.host_ref_dose[None, :]  # (1, M)
@@ -132,14 +124,10 @@ def _ll_grid_over_rho(
 ) -> np.ndarray:
     """Total log-likelihood on the full ``(n_f, n_rho)`` grid.
 
-    ``p_alt`` is the ``(n_f, M)`` array from ``_p_alt_grid``. Loops over the
-    rho-grid (cheap: ``n_rho`` is small) so the largest temporary is one
-    ``(n_f, M)`` block per rho, keeping memory bounded. Each rho column equals
-    summing the per-marker beta-binomial terms over the marker axis, i.e. the
-    vectorized counterpart of ``_ll_from_p_alt`` evaluated for every f at once.
-
-    Returns:
-        ``(n_f, n_rho)`` array of total log-likelihoods.
+    ``p_alt`` is the ``(n_f, M)`` array from ``_p_alt_grid``. Loops over the rho-grid
+    (cheap, ``n_rho`` is small) so the largest temporary is one ``(n_f, M)`` block per
+    rho, bounding memory. Each rho column is the vectorized counterpart of
+    ``_ll_from_p_alt`` evaluated for every f at once. Returns an ``(n_f, n_rho)`` array.
     """
     n, k = arr.n[None, :], arr.k[None, :]
     out = np.empty((p_alt.shape[0], rho_grid.shape[0]), dtype=float)
@@ -216,10 +204,7 @@ def estimate_single_donor_bb_grid(
     exact estimator (the default) for the final publication figures.
 
     Args:
-        markers: Informative markers with admixture allele counts.
-        error_rate: Sequencing error rate (fallback when a marker lacks
-            per-direction rates).
-        calibration: Optional per-marker bias and error tables.
+        error_rate: Fallback when a marker lacks per-direction rates.
         n_f: Number of f-grid points on ``[0, 1]``.
         n_rho: Number of log-spaced rho-grid points on ``[1, _RHO_MAX]``.
         refine: Run the 1-D profiled local polish from the grid argmax
@@ -287,8 +272,8 @@ def estimate_single_donor_bb_grid(
         return -float(opt_rho.fun)
 
     if refine:
-        # The LL is unimodal in f, so the optimum lies within one grid step of the
-        # argmax; bracket +/- 2 steps for safety and solve f with rho profiled out.
+        # LL is unimodal in f, so the optimum lies within one grid step of the argmax;
+        # bracket +/- 2 steps for safety and solve f with rho profiled out.
         step = 1.0 / (n_f - 1)
         lo = max(0.0, best_f - 2.0 * step)
         hi = min(1.0, best_f + 2.0 * step)
@@ -313,9 +298,8 @@ def estimate_single_donor_bb_grid(
                 )
                 best_rho = math.exp(float(opt_rho.x))
 
-    # Coarse profile-likelihood CI from the grid: profile rho out of the (f, rho)
-    # grid (max over the rho axis at each f), then bracket where the profile drops
-    # by chi2(0.95, df=1)/2 from the maximum. Cheap and good enough for a sweep.
+    # Coarse profile-likelihood CI: profile rho out (max over the rho axis at each f),
+    # then bracket where the profile drops by chi2(0.95, df=1)/2 from the maximum.
     prof = ll.max(axis=1)
     half_threshold = float(chi2.ppf(CI_LEVEL, df=1)) / 2.0
     above = prof >= (best_ll - half_threshold)

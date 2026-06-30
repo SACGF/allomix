@@ -1,39 +1,35 @@
 #!/usr/bin/env python3
 """Generate semi-synthetic sub-0.5% mixtures for the SRP434573 paper section.
 
-The public SRP434573 titration series bottoms out at a 0.5% minor (host)
-fraction. This driver builds *lower* points (host fractions 0.1-0.5% by default)
-by blending pure reference BAMs with ``samtools view --subsample`` (wrapped by
-``scripts/mix_bams.sh``, which depth-normalizes on on-target reads). The resulting
-reads are real (real panel noise, real GATK/bcftools path) but the mixing ratio
-is artificial, so the points are *semi-synthetic* and must be labelled as such
-downstream.
+The public SRP434573 titration bottoms out at a 0.5% minor (host) fraction. This
+driver builds lower points (host fractions 0.1-0.5% by default) by blending pure
+reference BAMs with ``samtools view --subsample`` (via ``scripts/mix_bams.sh``,
+which depth-normalizes on on-target reads). The reads are real (real panel noise,
+real GATK/bcftools path) but the mixing ratio is artificial, so points are
+semi-synthetic and must be labelled as such downstream.
 
-Two kinds of mixture are produced:
+Two kinds of mixture:
 
   - Two-person dilution series (one donor): host titrated along the low ladder in
-    a single donor background, the sub-0.5% counterpart of the real titration.
-  - Three-person host + 2 donor mixtures (the real F2/M1/M2 trio): host titrated
-    along the same ladder while the two donors split the remaining background by
-    each ``--donor-splits`` ratio. This exercises allomix's 2-donor capability on
-    real-noise reads (issue #5, requested for double-graft monitoring).
+    a single donor background.
+  - Three-person host + 2 donor mixtures (the real F2/M1/M2 trio, host = minor):
+    host titrated along the same ladder while the two donors split the remaining
+    background by each ``--donor-splits`` ratio. Exercises allomix's 2-donor
+    capability on real-noise reads (issue #5, double-graft monitoring).
 
-This step runs ONCE, TAU-side, because the source BAMs live on ``/tau``. It does
-two things:
+Runs ONCE, TAU-side, because the source BAMs live on ``/tau``. It (1) subsamples
++merges the pure reference BAMs at each (fraction, [split,] seed) into a mixed BAM
+under ``--bam-dir``, passing each component to ``mix_bams.sh`` with its explicit
+target fraction (no minor/major argument-order trap); (2) writes one synthetic
+per-mixture CSV (``<name>.synthetic.csv``) whose HOST/DONOR rows reuse the pure
+reference BAMs (so phase-1 genotypes match the real run) and whose ADMIX rows
+point at the mixed BAMs.
 
-  1. For every mixture, subsample+merge the pure reference BAMs at each
-     (fraction, [split,] seed) into a mixed BAM under ``--bam-dir``. Each
-     component is passed to ``mix_bams.sh`` with its explicit target fraction, so
-     there is no minor/major argument-order trap to get wrong.
-  2. Write one synthetic per-mixture CSV (``<name>.synthetic.csv``) whose
-     HOST/DONOR rows reuse the pure reference BAMs (so phase-1 genotypes match the
-     real run) and whose ADMIX rows point at the mixed BAMs.
-
-It then prints the follow-on commands to run by hand (it does NOT launch GATK
-itself): the existing ``pipeline/Snakefile`` over the synthetic CSVs, then a copy
-of the genotype + admix VCFs into the committed snapshot at
-``paper/public_data/SRP434573/genotypes_synthetic``. The paper build consumes
-that snapshot (see ``paper/scripts/run_srp434573_allomix.py``).
+It then prints follow-on commands to run by hand (it does NOT launch GATK): the
+existing ``pipeline/Snakefile`` over the synthetic CSVs, then a copy of the
+genotype + admix VCFs into the committed snapshot at
+``paper/public_data/SRP434573/genotypes_synthetic``, which the paper build
+consumes (see ``paper/scripts/run_srp434573_allomix.py``).
 
 Usage (TAU-side, where the BAMs are):
 
@@ -60,16 +56,14 @@ DEFAULT_PANEL_BED = REPO / "paper/public_data/SRP434573/SRP434573.bed"
 SNAPSHOT_DIR = REPO / "paper/public_data/SRP434573/genotypes_synthetic"
 PIPELINE_OUTPUT_DIR = "output/genotypes/SRP434573_synthetic"
 
-# Host (minor) fractions to synthesise, as percentages. Brackets the real 0.5%
-# point (which the anchored pairs also have for a synthetic-vs-real cross-check).
+# Host (minor) fractions as percentages. Includes 0.5% for a synthetic-vs-real
+# cross-check against the anchored pairs.
 DEFAULT_FRACTIONS_PCT = [0.1, 0.2, 0.3, 0.4, 0.5]
 DEFAULT_REPS = 5
 
-# Three-person (host + 2 donor) mixtures reuse the real F2/M1/M2 trio. The host is
-# titrated at the same low ladder; the two donors split the remaining background by
-# these ratios (donor1 : donor2). "eq" is a realistic balanced double graft; the
-# unequal split also stresses allomix resolving two donors at different levels. The
-# realised donor percents are written into each sample name (the ground truth the
+# Donor1:donor2 background split ratios for the three-person mixtures. "eq" is a
+# balanced double graft; "2to1" stresses resolving two donors at different levels.
+# Realised donor percents are written into each sample name (the ground truth the
 # paper runner decodes), so these ratios live in one place.
 DEFAULT_DONOR_SPLITS = {
     "eq": (1.0, 1.0),
@@ -82,10 +76,8 @@ def read_mix_csv(
 ) -> tuple[tuple[str, str], list[tuple[str, str]]] | None:
     """Return ``((host_id, host_bam), [(donor_id, donor_bam), ...])`` for a CSV.
 
-    The host is the minor (titrated) contributor, the donor(s) the majority
-    background. Handles both the two-person pairs (one donor) and the three-person
-    host + 2 donor mixture. Returns ``None`` for CSVs with no host or with neither
-    one nor two donors.
+    Host is the minor (titrated) contributor, donor(s) the majority background.
+    Returns ``None`` for CSVs with no host or with neither one nor two donors.
     """
     host: tuple[str, str] | None = None
     donors: list[tuple[str, str]] = []
@@ -105,8 +97,8 @@ def read_mix_csv(
 def sample_name(minor: str, major: str, pct: float, rep: int) -> str:
     """Two-person synthetic admix sample id, e.g. ``syn_F2-M1_f0.1_rep3``.
 
-    The known host fraction and replicate read straight off the name, mirroring
-    how the real ``1_N_X-Y`` aliases encode their fraction.
+    Host fraction and replicate encode in the name, mirroring the real ``1_N_X-Y``
+    aliases.
     """
     return f"syn_{minor}-{major}_f{pct:g}_rep{rep}"
 
@@ -114,11 +106,12 @@ def sample_name(minor: str, major: str, pct: float, rep: int) -> str:
 def sample_name3(
     host: str, d1: str, d2: str, hpct: float, d1pct: float, d2pct: float, rep: int
 ) -> str:
-    """Three-person synthetic admix sample id.
+    """Three-person synthetic admix sample id, e.g.
+    ``syn3_F2-M1-M2_h0.5_d66.47-33.23_rep1``.
 
-    e.g. ``syn3_F2-M1-M2_h0.5_d66.47-33.23_rep1``. The known host percent and the
-    two donor percents (the ground truth ``run_srp434573_allomix.py`` decodes)
-    read straight off the name, so no separate split table has to be kept in sync.
+    Host percent and the two donor percents (the ground truth
+    ``run_srp434573_allomix.py`` decodes) encode in the name, so no separate split
+    table has to be kept in sync.
     """
     return f"syn3_{host}-{d1}-{d2}_h{hpct:g}_d{d1pct:g}-{d2pct:g}_rep{rep}"
 
@@ -182,10 +175,8 @@ def build_mix(
 ) -> int:
     """Mix one host/donor(s) group across the grid and write its synthetic CSV.
 
-    One donor -> two-person dilution series (host minor fraction ladder). Two
-    donors -> three-person host + 2 donor mixtures: the host is titrated at the
-    same ladder while the two donors split the remaining background by each ratio
-    in ``donor_splits``. Returns the number of ADMIX rows produced.
+    One donor -> two-person dilution series. Two donors -> three-person mixtures,
+    one per ratio in ``donor_splits``. Returns the number of ADMIX rows produced.
     """
     host_id, host_bam = host
     rows: list[tuple[str, str, str]] = [(host_id, host_bam, "HOST")]
@@ -201,8 +192,8 @@ def build_mix(
                 d_id, d_bam = donors[0]
                 sid = sample_name(host_id, d_id, pct, rep)
                 out_bam = mixed_bam_path(bam_dir, host_id, d_id, pct, rep)
-                # Donor (background) first so it keeps the seed the old 2-person
-                # runs used (seed); host (minor) gets seed+1 as before.
+                # Donor (background) first keeps the seed the old 2-person runs
+                # used; host (minor) gets seed+1.
                 components = [(d_bam, 1.0 - t), (host_bam, t)]
                 _emit(mix_cmd(mix_script, out_bam, panel_bed, sid, seed, components),
                       dry_run)

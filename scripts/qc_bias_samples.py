@@ -34,7 +34,6 @@ log = logging.getLogger(__name__)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse command-line arguments."""
     p = argparse.ArgumentParser(
         description="Sample-level QC for bias-training joint VCFs.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -139,7 +138,6 @@ def _metric_row(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run sample-level QC on a joint VCF."""
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -230,18 +228,24 @@ def main(argv: list[str] | None = None) -> int:
         out_metrics = Path(args.output_metrics)
         out_metrics.parent.mkdir(parents=True, exist_ok=True)
         cols = [
-            "sample", "n_sites", "n_called", "n_nocall", "n_low_dp",
-            "n_hom_ref", "n_het", "n_hom_alt",
-            "nocall_rate", "het_rate", "mean_vaf_dev", "pass", "reasons",
+            "sample",
+            "n_sites",
+            "n_called",
+            "n_nocall",
+            "n_low_dp",
+            "n_hom_ref",
+            "n_het",
+            "n_hom_alt",
+            "nocall_rate",
+            "het_rate",
+            "mean_vaf_dev",
+            "pass",
+            "reasons",
         ]
         with open(out_metrics, "w", encoding="utf-8") as f:
             f.write("\t".join(cols) + "\n")
             for r in rows:
-                vaf_dev = (
-                    f"{r['mean_vaf_dev']:.4f}"
-                    if not math.isnan(r["mean_vaf_dev"])
-                    else "NA"
-                )
+                vaf_dev = f"{r['mean_vaf_dev']:.4f}" if not math.isnan(r["mean_vaf_dev"]) else "NA"
                 vals = [
                     r["sample"],
                     str(r["n_sites"]),

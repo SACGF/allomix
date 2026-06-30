@@ -18,14 +18,8 @@ SRP434573_PIPELINE_SYNTHETIC = Path("output/genotypes/SRP434573_synthetic")
 def resolve_srp434573_genotypes_dir() -> Path:
     """Locate the SRP434573 genotype VCFs.
 
-    Prefer a freshly joint-called ``output/genotypes/SRP434573`` (full
-    from-scratch reproduction) if it has VCFs; otherwise fall back to the
-    committed snapshot under ``paper/public_data/SRP434573/genotypes`` so the
-    paper builds from a fresh checkout.
-
-    Returns:
-        Path to the directory holding the per-mixture ``*.SRP434573.vcf.gz`` and
-        ``*.admix.vcf.gz`` files.
+    Prefer a freshly joint-called pipeline dir; fall back to the committed
+    snapshot so the paper builds from a fresh checkout.
     """
     if any(SRP434573_PIPELINE_GENOTYPES.glob("*.SRP434573.vcf.gz")):
         return SRP434573_PIPELINE_GENOTYPES
@@ -33,17 +27,11 @@ def resolve_srp434573_genotypes_dir() -> Path:
 
 
 def resolve_srp434573_synthetic_dir() -> Path | None:
-    """Locate the semi-synthetic mixture VCFs, or ``None`` if not generated yet.
+    """Locate the semi-synthetic mixture VCFs, or None if not generated yet.
 
-    Prefer a freshly joint-called ``output/genotypes/SRP434573_synthetic`` if it
-    has admix VCFs; otherwise fall back to the committed snapshot under
-    ``paper/public_data/SRP434573/genotypes_synthetic``. Returns ``None`` when
-    neither exists, so a fresh checkout (before the TAU-side generation step has
-    run) builds exactly as before, without the synthetic points.
-
-    Returns:
-        Path to the directory holding the per-pair ``*.synthetic.admix.vcf.gz``
-        files, or ``None``.
+    Prefer the freshly joint-called pipeline dir, else the committed snapshot.
+    None when neither exists, so a fresh checkout (before the TAU-side generation
+    step has run) builds as before, without the synthetic points.
     """
     if any(SRP434573_PIPELINE_SYNTHETIC.glob("*.synthetic.admix.vcf.gz")):
         return SRP434573_PIPELINE_SYNTHETIC

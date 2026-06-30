@@ -64,8 +64,6 @@ from allomix.simulate import (  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paper_quick import QUICK, qval  # noqa: E402
 
-# --- Sweep grid --------------------------------------------------------------
-
 # Quick-build mode (ALLOMIX_PAPER_QUICK=1) only cuts the replicate count (see
 # DEFAULT_N_REPS below), not the sweep grid: the headline snapshot needs every
 # relatedness/kind/burden cell and the full true-fraction grid for the LoD
@@ -135,7 +133,7 @@ def derive_seed(*parts: object) -> int:
     return int.from_bytes(digest, "big")
 
 
-# --- CLSI EP17-A2 LoB / LoD (copied from run_lod_validation.py for independence) ---
+# CLSI EP17-A2 LoB / LoD (copied from run_lod_validation.py for independence).
 
 
 def compute_lob(est_fracs_at_zero: list[float]) -> float:
@@ -212,18 +210,12 @@ def _blend_and_estimate(
 ) -> dict[int, dict]:
     """Blend one sample at ``depth`` and estimate the minor component per panel.
 
-    ``minor_frac`` is the true fraction of the minor (detected) component. The
-    recipient/host always carries the aberration; ``mode`` sets which role it
-    plays:
-
-      - ``"donor"``: detect the donor (minor); host is the major background
-        carrying the aberration. Mixed-chimerism / substantial-recipient regime.
-      - ``"host"``: detect the recipient relapse (minor) carrying the aberration;
-        donor is the clean major background. Early-warning relapse regime.
-
-    The full panel is blended once; each panel size in ``n_markers_grid`` is then
-    evaluated as a strict prefix (nested, as in run_lod_validation). Returns a
-    dict keyed by panel size; ``est`` is the estimated minor-component fraction.
+    ``minor_frac`` is the true fraction of the minor (detected) component;
+    ``mode`` ("donor"/"host", see MODES) sets which role the aberration-carrying
+    recipient plays. The full panel is blended once; each panel size in
+    ``n_markers_grid`` is evaluated as a strict prefix (nested, as in
+    run_lod_validation). Returns a dict keyed by panel size; ``est`` is the
+    estimated minor-component fraction.
     """
     donor_frac = minor_frac if mode == "donor" else 1.0 - minor_frac
     blend = blend_vcfs(

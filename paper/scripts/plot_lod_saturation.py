@@ -72,11 +72,7 @@ def _lod_model(X: np.ndarray, A: float, rho: float) -> np.ndarray:
 
 
 def _fit(n: np.ndarray, m: np.ndarray, lod: np.ndarray, fixed_a: float | None = None):
-    """Fit (A, rho) of the LoD model. If ``fixed_a`` is set, fit rho only.
-
-    Returns:
-        ``(A, rho)``.
-    """
+    """Fit (A, rho) of the LoD model. If ``fixed_a`` is set, fit rho only."""
     if fixed_a is not None:
         popt, _ = curve_fit(
             lambda X, rho: _lod_model(X, fixed_a, rho),

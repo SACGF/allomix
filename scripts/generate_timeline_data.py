@@ -34,7 +34,7 @@ from allomix.simulate import blend_vcfs, write_vcf  # noqa: E402
 
 log = logging.getLogger(__name__)
 
-# (day, donor_fraction) — simulates engraftment then relapse
+# (day, donor_fraction); simulates engraftment then relapse
 TIMEPOINTS = [
     (30, 0.95),
     (60, 0.98),
@@ -53,13 +53,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", required=True, help="Host genotype VCF")
     parser.add_argument("--donor", required=True, help="Donor genotype VCF")
     parser.add_argument(
-        "--outdir", default="output/timeline",
+        "--outdir",
+        default="output/timeline",
         help="Output directory (default: output/timeline)",
     )
     parser.add_argument("--depth", type=int, default=2000, help="Target depth (default: 2000)")
     parser.add_argument("--seed", type=int, default=99, help="Random seed (default: 99)")
     parser.add_argument(
-        "--bias-sd", type=float, default=0.0,
+        "--bias-sd",
+        type=float,
+        default=0.0,
         help="Per-marker capture bias SD (0=ideal, 0.02=realistic, default: 0)",
     )
     args = parser.parse_args(argv)
@@ -88,21 +91,26 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_vcf(result, outdir / vcf_name)
 
-        truth_rows.append({
-            "sample_name": sample_name,
-            "day": str(day),
-            "true_donor_fraction": f"{donor_frac:.6f}",
-            "num_markers": str(result.num_markers),
-            "num_informative": str(result.num_informative),
-        })
+        truth_rows.append(
+            {
+                "sample_name": sample_name,
+                "day": str(day),
+                "true_donor_fraction": f"{donor_frac:.6f}",
+                "num_markers": str(result.num_markers),
+                "num_informative": str(result.num_informative),
+            }
+        )
 
     truth_path = outdir / "truth_table.tsv"
     write_truth_table(
         truth_rows,
         truth_path,
         fieldnames=[
-            "sample_name", "day", "true_donor_fraction",
-            "num_markers", "num_informative",
+            "sample_name",
+            "day",
+            "true_donor_fraction",
+            "num_markers",
+            "num_informative",
         ],
     )
 

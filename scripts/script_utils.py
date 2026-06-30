@@ -12,8 +12,6 @@ def write_truth_table(
     """Write a truth table as a tab-separated file.
 
     Args:
-        rows: List of dicts, one per sample.
-        path: Output TSV path.
         fieldnames: Column order. Defaults to keys of the first row.
     """
     if fieldnames is None:

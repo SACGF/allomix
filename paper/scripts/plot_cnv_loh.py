@@ -17,9 +17,6 @@ The two rows are the two low-fraction detection tasks:
 
 A LoD above the 20% probed ceiling (component undetectable) is drawn above the
 dotted line.
-
-Output:
-    output/facts/fig_cnv_loh.png
 """
 
 import argparse
@@ -38,7 +35,7 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator  # noqa: 
 FACTS_DIR = Path("output/facts")
 KINDS = ["cnloh", "deletion", "gain"]
 KIND_LABELS = {"cnloh": "CN-LoH (copy-neutral)", "deletion": "Deletion (CN1)", "gain": "Gain (CN3)"}
-# Rows: relapse detection first (primary use), then donor detection.
+# Relapse detection first (primary use), then donor detection.
 MODES = ["host", "donor"]
 MODE_YLABEL = {
     "host": "Relapse (recipient) LoD (%)",

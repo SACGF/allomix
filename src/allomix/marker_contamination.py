@@ -12,14 +12,14 @@ true-zero host and inflates every low-dilution estimate upward.
 The correction predicts the per-marker contamination on donor-hom markers from
 the co-pooled carrier dose and subtracts it from the host-allele count before the
 MLE. The host signal is identical at every donor-hom marker (independent of
-carrier count); only the contamination scales with carrier count. So per marker:
+carrier count); only the contamination scales with it. So per marker:
 
     host_allele_reads_corrected = host_allele_reads - slope * n_carriers * depth
 
 where ``slope`` is the per-carrier contamination rate and ``n_carriers`` is the
-number of co-pooled individuals carrying the host allele at that site (capped).
-Only the dose-dependent part is subtracted; the flat error floor stays handled by
-the per-site error model (``allomix.error_rates``, issue #23), so it is not
+capped number of co-pooled individuals carrying the host allele at that site.
+Only the dose-dependent part is subtracted; the flat error floor stays with the
+per-site error model (``allomix.error_rates``, issue #23), so it is not
 double-counted.
 
 Two pieces are measured per run, not hardcoded (see ``claude/step30_design.md``):
@@ -63,20 +63,16 @@ from allomix.genotype import (
     marker_key,
 )
 
-# Default cap on the carrier dose. The host allele is common, so almost every
-# donor-hom marker has at least one co-pooled carrier; the dose-response is
-# measurable but saturates, and a hard cap keeps a high-frequency site from
-# dominating the regression. Validated at 5 on SRP434573 (carrier COUNT, not
-# allele copies; see claude/step30_design.md open question 1).
+# Cap on the carrier dose. The host allele is common, so the dose-response is
+# measurable but saturates; a hard cap keeps a high-frequency site from dominating
+# the regression. Validated at 5 on SRP434573 (carrier COUNT, not allele copies;
+# see claude/step30_design.md open question 1).
 DEFAULT_DOSE_CAP = 5
 
-# Gate defaults. The correction is applied only when the consensus-hom slope is
-# significantly positive at this level AND exceeds ``min_slope`` (a minimum
-# per-carrier effect worth correcting, in fraction-of-depth units). Both are
-# principled knobs, not thresholds tuned to one dataset: alpha is a standard
-# significance level and min_slope screens out dose responses too small to move a
-# clinical call. min_slope defaults to 0 so the gate is significance-only unless a
-# caller sets it.
+# Gate defaults. The correction applies only when the consensus-hom slope is
+# significantly positive (alpha) AND exceeds ``min_slope`` (minimum per-carrier
+# effect worth correcting, in fraction-of-depth units). min_slope defaults to 0,
+# making the gate significance-only unless a caller sets it.
 DEFAULT_GATE_ALPHA = 0.05
 DEFAULT_GATE_MIN_SLOPE = 0.0
 
@@ -92,12 +88,11 @@ class ContaminationCorrection:
     unchanged.
 
     Attributes:
-        carriers: Per-marker co-pooled carrier counts, ``(n_ref, n_alt)``: the
-            number of cohort individuals carrying the REF and ALT allele at that
-            marker. The host's and donor's own contributions are removed at
-            correction time, so these are raw cohort totals (the cohort is
-            expected to include the host and donor, who were on the flowcell).
-        slope: Per-carrier contamination rate (fraction of depth). Subtracted as
+        carriers: Per-marker raw cohort carrier counts ``(n_ref, n_alt)``: cohort
+            individuals carrying the REF and ALT allele. The host's and donor's own
+            contributions are removed at correction time, so the cohort is expected
+            to include the host and donor (who were on the flowcell).
+        slope: Per-carrier contamination rate (fraction of depth), subtracted as
             ``slope * dose * depth`` from the host-allele count. 0 on a gated-out
             (clean) flowcell.
         dose_cap: Maximum carrier dose used (see ``DEFAULT_DOSE_CAP``).
@@ -106,8 +101,7 @@ class ContaminationCorrection:
         gate_slope: Consensus-hom slope the gate decision was made on (provenance).
         gate_p_value: One-sided p-value of ``gate_slope`` (provenance).
         n_consensus: Consensus-hom observations behind the gate (provenance).
-        n_informative: Informative donor-hom observations behind ``slope``
-            (provenance).
+        n_informative: Informative donor-hom observations behind ``slope``.
     """
 
     carriers: dict[MarkerKey, tuple[int, int]] = field(default_factory=dict)
@@ -120,20 +114,12 @@ class ContaminationCorrection:
     n_informative: int = 0
 
     def carrier_dose(self, m: InformativeMarker, host_allele: int) -> int:
-        """Co-pooled carrier dose of ``host_allele`` at marker ``m``.
+        """Co-pooled carrier dose of ``host_allele`` (0=REF, 1=ALT) at marker ``m``.
 
-        The raw cohort count of carriers of that allele, minus the host's and
-        the (first) donor's own carriage, clamped to ``[0, dose_cap]``. For a
-        donor-hom marker the host carries the host allele and the donor does not,
-        so this removes exactly the one host contribution, leaving the co-pooled
-        carrier count.
-
-        Args:
-            m: Informative marker.
-            host_allele: The host (donor-absent) allele, 0 (REF) or 1 (ALT).
-
-        Returns:
-            Carrier dose in ``[0, dose_cap]``.
+        The raw cohort count of carriers of that allele, minus the host's and the
+        (first) donor's own carriage, clamped to ``[0, dose_cap]``. For a donor-hom
+        marker the host carries the host allele and the donor does not, so this
+        removes exactly the one host contribution, leaving the co-pooled count.
         """
         n_ref, n_alt = self.carriers.get((m.chrom, m.pos, m.ref, m.alt), (0, 0))
         total = n_alt if host_allele == 1 else n_ref
@@ -157,13 +143,6 @@ def apply_contamination_correction(
     ``slope * dose * depth`` reads removed from its host allele and its depth
     rebuilt from the two allele counts. Donor-het and non-donor-hom markers pass
     through untouched.
-
-    Args:
-        markers: Informative markers with admixture allele counts.
-        correction: The per-marker correction, or None.
-
-    Returns:
-        Corrected markers (or the original list when the correction is a no-op).
     """
     if correction is None or not correction.gated or correction.slope <= 0.0:
         return markers
@@ -193,11 +172,6 @@ def apply_contamination_correction(
         else:
             out.append(replace(m, admix_ad_alt=new_reads, admix_dp=m.admix_ad_ref + new_reads))
     return out
-
-
-# ---------------------------------------------------------------------------
-# Table estimation (build step)
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -307,14 +281,10 @@ def estimate_carrier_counts(
     For every marker, counts how many cohort individuals carry the REF allele
     and how many carry the ALT allele (one count per individual per allele,
     regardless of het/hom). This is the dose lookup the correction subtracts
-    against; it is the deployment-invariant part of the table, coming from the
-    same joint-called cohort genotypes that feed the #23 error table.
+    against, the deployment-invariant part of the table, from the same
+    joint-called cohort genotypes that feed the #23 error table.
 
-    Args:
-        genotype_lists: One parsed marker list per cohort individual.
-
-    Returns:
-        Dict mapping marker key to ``(n_ref_carriers, n_alt_carriers)``.
+    Returns a dict mapping marker key to ``(n_ref_carriers, n_alt_carriers)``.
     """
     n_ref: dict[MarkerKey, int] = {}
     n_alt: dict[MarkerKey, int] = {}
@@ -485,10 +455,6 @@ def estimate_contamination_table(
         n_informative=mag.n,
     )
 
-
-# ---------------------------------------------------------------------------
-# Save / load
-# ---------------------------------------------------------------------------
 
 _HEADER_KEYS = (
     "slope",

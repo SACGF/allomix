@@ -34,10 +34,7 @@ SEED_HASH_MODULUS = 2**31
 
 
 def _create_flipped_vcf(tmp_dir: Path, source_path: Path) -> Path:
-    """Create a VCF where genotypes are flipped (0/0->1/1, 1/1->0/0, 0/1 stays).
-
-    This ensures maximum informativeness between host and donor.
-    """
+    """Flip genotypes (0/0<->1/1, het unchanged) for maximum host/donor informativeness."""
     lines = []
     with open(source_path, encoding="utf-8") as f:
         for line in f:
@@ -91,7 +88,6 @@ def _create_flipped_vcf(tmp_dir: Path, source_path: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for the test data generator."""
     parser = argparse.ArgumentParser(
         description="Generate synthetic joint-called VCFs for testing allomix.",
     )
@@ -125,11 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
 
     host_path = Path(args.host)
-
-    # Create a flipped-genotype donor VCF for maximum informativeness
     donor_path = _create_flipped_vcf(outdir, host_path)
 
-    # --- Single-donor joint VCF ---
     single_fracs = [0.0, 0.01, 0.10, 0.50, 1.0]
     single_names = [f"ADMIX_F{f:.2f}" for f in single_fracs]
 
@@ -147,7 +140,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_joint_vcf(single_result, outdir / "joint_single_donor.vcf")
 
-    # --- Multi-donor joint VCF (use same host, two copies of flipped donor) ---
     multi_fracs = [0.0, 0.10, 0.50]
     multi_names = [f"ADMIX_F{f:.2f}" for f in multi_fracs]
 
@@ -165,22 +157,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_joint_vcf(multi_result, outdir / "joint_multi_donor.vcf")
 
-    # --- Truth table ---
     truth_rows = []
     for frac, name in zip(single_fracs, single_names):
-        truth_rows.append({
-            "vcf": "joint_single_donor.vcf",
-            "sample_name": name,
-            "true_donor_fraction": f"{frac:.6f}",
-            "n_donors": "1",
-        })
+        truth_rows.append(
+            {
+                "vcf": "joint_single_donor.vcf",
+                "sample_name": name,
+                "true_donor_fraction": f"{frac:.6f}",
+                "n_donors": "1",
+            }
+        )
     for frac, name in zip(multi_fracs, multi_names):
-        truth_rows.append({
-            "vcf": "joint_multi_donor.vcf",
-            "sample_name": name,
-            "true_donor_fraction": f"{frac:.6f}",
-            "n_donors": "2",
-        })
+        truth_rows.append(
+            {
+                "vcf": "joint_multi_donor.vcf",
+                "sample_name": name,
+                "true_donor_fraction": f"{frac:.6f}",
+                "n_donors": "2",
+            }
+        )
 
     truth_path = outdir / "truth_table.tsv"
     write_truth_table(
@@ -192,7 +187,6 @@ def main(argv: list[str] | None = None) -> int:
     log.info("Generated joint VCFs in %s/", outdir)
     log.info("Truth table: %s", truth_path)
 
-    # Clean up temp donor VCF
     donor_path.unlink(missing_ok=True)
 
     return 0

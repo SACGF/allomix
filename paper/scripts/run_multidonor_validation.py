@@ -179,7 +179,6 @@ def main() -> int:
     print("Running multi-donor validation on 3-brothers test data...", file=sys.stderr)
     results = run_validation()
 
-    # Print summary table to stderr
     print(
         f"\n{'Sample':<30} {'True d1':>8} {'True d2':>8} {'Est d1':>8} {'Est d2':>8} "
         f"{'Err d1':>8} {'Err d2':>8} {'CI1':>5} {'CI2':>5} {'Rank':>5}",
@@ -196,7 +195,6 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    # Compute per-donor metrics
     m_d1 = compute_metrics(results, "f1")
     m_d2 = compute_metrics(results, "f2")
     m_total = compute_total_metrics(results)
@@ -231,7 +229,6 @@ def main() -> int:
     n_inf_d1 = results[0]["n_inf_d1"]
     n_inf_d2 = results[0]["n_inf_d2"]
 
-    # Write facts CSV for vibepaper
     write_fact(
         "multidonor",
         {
@@ -257,7 +254,6 @@ def main() -> int:
         },
     )
 
-    # Write per-sample results CSV
     results_path = FACTS_DIR / "multidonor_results.csv"
     fields = [
         "sample_name",

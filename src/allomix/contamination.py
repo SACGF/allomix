@@ -10,28 +10,28 @@ cross-contamination). The excess of the minor-allele fraction over the
 per-site sequencing-error floor estimates that contamination.
 
 This is the "is contamination actually elevated" measurement of issue #12,
-deliberately separate from the index-hopping provenance flag (shared sequencing
-run between host and admix), which is metadata the joint-calling pipeline carries
-and which allomix never derives from BAMs. The two are complementary: this one
-says whether a third genome is in the reads; the run flag says whether index
-hopping is a plausible mechanism for it.
+separate from the index-hopping provenance flag (shared sequencing run between
+host and admix), which is metadata the joint-calling pipeline carries and which
+allomix never derives from BAMs. The two are complementary: this says whether a
+third genome is in the reads; the run flag says whether index hopping is a
+plausible mechanism for it.
 
 Relationship to the existing checks:
 
   - ``allomix.relatedness.admix_consistency`` is a gross-swap detector on the
     same marker set: it counts sites where the minor allele is *individually*
     significant (a whole third genome near 50%). It does not fire on a ~0.2%
-    floor spread across every site, which is exactly what this estimator targets.
+    floor spread across every site, which this estimator targets.
   - ``allomix.detect.host_presence_test`` works on donor-homozygous markers where
     the *host* carries the minor allele, so it measures host, not third parties.
 
-Robustness: the headline estimate is the background-subtracted *median* per-site
-minor fraction, not a read-weighted pooled mean. On real panel data a handful of
+The headline estimate is the background-subtracted *median* per-site minor
+fraction, not a read-weighted pooled mean: on real panel data a handful of
 genotype-miscall or mapping-artifact sites sit at 40-100% minor allele and would
-dominate a pooled mean (validated on SRP434573, issue #12). Those sites are
-dropped by an upper fraction cap (``max_site_frac``), and the median is robust to
-any that remain. A gross sample swap puts many sites above the cap, so it is left
-to ``admix_consistency``; this estimator stays focused on the low-level floor.
+dominate a pooled mean (validated on SRP434573, issue #12). Those are dropped by
+an upper fraction cap (``max_site_frac``) and the median is robust to any that
+remain. A gross swap puts many sites above the cap and is left to
+``admix_consistency``; this estimator stays on the low-level floor.
 """
 
 import statistics
@@ -51,17 +51,16 @@ from allomix.genotype import MarkerData, MarkerKey, is_sex_chrom, marker_key
 # (SRP434573 sat at ~0.2% typical, ~1.5% at p95) and well below a miscall (~50%).
 DEFAULT_MAX_SITE_FRAC = 0.10
 
-# The sequencing-error floor is read off the data itself: at consensus-hom sites
-# with no co-loaded carrier of the minor allele, the only minor reads are
-# sequencing error, so a low percentile of the per-site minor fractions
-# estimates that floor without trusting a (typically conservative) global error
-# rate. Contamination is the heterogeneous excess of the median over this floor;
-# a uniform error elevation lifts the floor too and is correctly not called
-# contamination. A low percentile (10th) is used so the floor still lands on the
-# no-carrier sites even when carriers dominate the panel (as on a densely pooled
-# library, where a quartile would already sit in the contaminated range). The
-# empirical floor needs enough markers to be stable; below that the per-site /
-# global error rate is used instead.
+# The sequencing-error floor is read off the data: at consensus-hom sites with no
+# co-loaded carrier of the minor allele, the only minor reads are sequencing
+# error, so a low percentile of the per-site minor fractions estimates that floor
+# without trusting a (conservative) global error rate. Contamination is the
+# heterogeneous excess of the median over this floor; a uniform error elevation
+# lifts the floor too and is correctly not called contamination. The 10th
+# percentile keeps the floor on no-carrier sites even when carriers dominate (a
+# quartile would already sit in the contaminated range on a densely pooled
+# library). Needs enough markers to be stable; below that the per-site / global
+# error rate is used.
 CONTAMINATION_FLOOR_PCTL = 0.10
 MIN_MARKERS_FOR_EMPIRICAL_FLOOR = 20
 
@@ -72,33 +71,28 @@ class ContaminationResult:
 
     Attributes:
         n_markers: Consensus-homozygous markers used (after the fraction cap).
-        contamination_fraction: Headline estimate, ``max(0, median_minor_frac -
-            error_floor)``: the typical per-site minor-allele fraction above the
-            sequencing-error background, i.e. the estimated contamination floor.
-        median_minor_frac: Median per-site minor-allele fraction (raw, before
-            background subtraction).
-        error_floor: Estimated sequencing-error background subtracted from the
-            median. The low percentile of per-site minor fractions (no-carrier /
-            error sites) when there are enough markers; otherwise the per-site /
-            global error rate. See ``floor_empirical``.
-        floor_empirical: True when ``error_floor`` was read off the data (the
-            percentile), False when it fell back to the supplied error rate.
-        pooled_minor_frac: Read-weighted pooled minor fraction over the used
-            markers. Diagnostic only; inflated by any residual high-fraction
-            sites, which is why ``contamination_fraction`` uses the median.
+        contamination_fraction: Headline estimate ``max(0, median_minor_frac -
+            error_floor)``: typical per-site minor-allele fraction above the
+            sequencing-error background.
+        median_minor_frac: Median per-site minor fraction (raw, pre-subtraction).
+        error_floor: Sequencing-error background subtracted from the median. The
+            low percentile of per-site minor fractions when there are enough
+            markers, else the per-site / global error rate. See ``floor_empirical``.
+        floor_empirical: True when ``error_floor`` is the data percentile, False
+            when it fell back to the supplied error rate.
+        pooled_minor_frac: Read-weighted pooled minor fraction. Diagnostic only;
+            inflated by residual high-fraction sites, hence the median headline.
         n_minor_reads: Pooled minor-allele reads ``Y`` over the used markers.
         total_depth: Pooled depth ``N`` over the used markers.
-        p_value: One-sided pooled-Poisson p-value for the minor reads exceeding
-            the error-floor background (presence test). At high depth this is
-            significant for any real excess; use ``contamination_fraction`` for the
-            magnitude that matters clinically.
-        n_excluded_high: Consensus-hom markers dropped above ``max_site_frac``
-            (genotype miscall / mapping artifact / swap site).
+        p_value: One-sided pooled-Poisson presence-test p-value for the minor
+            reads exceeding the error-floor background. Significant for any real
+            excess at high depth; use ``contamination_fraction`` for clinical
+            magnitude.
+        n_excluded_high: Consensus-hom markers dropped above ``max_site_frac``.
         used_per_site_error: True when at least one marker used a per-site rate.
-        error_rate_source: "per-site", "global-fallback", "mixed", or "none"
-            (no usable markers), as in ``allomix.detect``. Describes the
-            per-marker rates used for the test background, not the subtracted
-            floor (see ``floor_empirical``).
+        error_rate_source: "per-site", "global-fallback", "mixed", or "none", as
+            in ``allomix.detect``. The rates used for the test background, not the
+            subtracted floor (see ``floor_empirical``).
     """
 
     n_markers: int

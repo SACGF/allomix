@@ -7,22 +7,21 @@ the package, so anything can import it without risk of a circular import.
 
 # Diploid ploidy: two alleles per genotype. Used for the allele-dose math in the
 # weight model and Fisher information (ref_dose = PLOIDY - alt_dose, weight /=
-# PLOIDY). Named so this "2" reads as ploidy and is visibly distinct from the
-# unrelated donor-count cap in the multi-donor estimator.
+# PLOIDY). Named so this "2" reads as ploidy, distinct from the donor-count cap
+# in the multi-donor estimator.
 PLOIDY = 2
 
-# DNA has 4 bases, so a sequencing error changes the true base into one of the
-# 3 other bases. Assuming errors are spread evenly, a miscall to one specific
-# base (e.g. a true REF read as the ALT allele) has probability
-# ``error_rate / N_OTHER_BASES``. This is the per-direction error floor of the
-# 4-state model shared by chimerism, qc, detect, and simulate.
+# A sequencing error changes the true base into one of the 3 other bases, so
+# (assuming even spread) a miscall to one specific base, e.g. a true REF read as
+# the ALT allele, has probability ``error_rate / N_OTHER_BASES``. The
+# per-direction error floor of the 4-state model shared by chimerism, qc, detect,
+# and simulate.
 N_OTHER_BASES = len("ACGT") - 1
 
 # Default robust-refit residual cut for the median/MAD outlier filter, in robust
 # SDs. 3.5 leaves clean data essentially untouched (drops <1% of markers by
-# chance) while removing copy-number / LoH-inconsistent markers. Defined here
-# because it is both the estimator default (chimerism) and the CLI/analysis
-# default for --robust-k.
+# chance) while removing copy-number / LoH-inconsistent markers. Both the
+# estimator default (chimerism) and the CLI/analysis default for --robust-k.
 ROBUST_K_DEFAULT = 3.5
 
 # Pipeline defaults shared by the CLI, the genotype reader, and the estimators.

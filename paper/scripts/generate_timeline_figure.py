@@ -36,7 +36,6 @@ from allomix.simulate import (  # noqa: E402
 
 FACTS_DIR = Path("output/facts")
 
-# Clinical scenario: post-HSCT engraftment trajectory
 TIMEPOINTS = [
     {"day": 14, "donor_frac": 0.15, "label": "Day +14"},
     {"day": 28, "donor_frac": 0.55, "label": "Day +28"},
@@ -62,9 +61,8 @@ def run_timeline(
 ) -> list[list[dict]]:
     """Run timeline simulation with N replicates.
 
-    Returns list of replicate results, each a list of per-timepoint dicts.
+    Returns a list of replicates, each a list of per-timepoint result dicts.
     """
-    # Count shared markers for bias generation
     _, host_records = sim_parse_vcf(host_vcf)
     _, donor_records = sim_parse_vcf(donor_vcf)
     donor_loci = {r.locus for r in donor_records}
@@ -77,7 +75,6 @@ def run_timeline(
         vcf_dir = outdir / f"seed_{rep_seed}"
         vcf_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate per-marker biases for this replicate
         bias_rng = random.Random(rep_seed)
         fixed_biases = generate_marker_biases_realistic(n_shared, bias_rng)
 
@@ -99,7 +96,6 @@ def run_timeline(
             )
             write_vcf(result, vcf_dir / f"{sample_name}.vcf")
 
-            # Run allomix estimation
             host = parse_vcf(host_vcf, min_dp=0, min_gq=0)
             donor = parse_vcf(donor_vcf, min_dp=0, min_gq=0)
             admix = parse_vcf(str(vcf_dir / f"{sample_name}.vcf"), min_dp=0, min_gq=0)
@@ -125,7 +121,6 @@ def run_timeline(
 
         all_replicates.append(rep_results)
 
-        # Log replicate summary
         max_err = max(abs(r["error"]) for r in rep_results)
         mae = sum(abs(r["error"]) for r in rep_results) / len(rep_results)
         print(
@@ -143,7 +138,6 @@ def write_facts(all_replicates: list[list[dict]]) -> None:
     n_reps = len(all_replicates)
     n_timepoints = len(TIMEPOINTS)
 
-    # Compute per-replicate MAE and max error
     rep_maes = []
     rep_max_errs = []
     for rep in all_replicates:
@@ -158,11 +152,9 @@ def write_facts(all_replicates: list[list[dict]]) -> None:
         sum((v - max_err_mean) ** 2 for v in rep_max_errs) / (n_reps - 1)
     )
 
-    # Mean error at the dip timepoint (day +180)
-    dip_errors = [rep[4]["error"] for rep in all_replicates]  # index 4 = day +180
+    dip_errors = [rep[4]["error"] for rep in all_replicates]  # index 4 = day +180 dip
     dip_abs_mean = sum(abs(e) for e in dip_errors) / n_reps
 
-    # CI coverage across all replicates and timepoints
     total_ci = sum(1 for rep in all_replicates for r in rep if r["ci_covers"])
     ci_coverage = total_ci / (n_reps * n_timepoints)
 
@@ -193,12 +185,10 @@ def plot_figure(all_replicates: list[list[dict]]) -> None:
     days = [tp["day"] for tp in TIMEPOINTS]
     true_fracs = [tp["donor_frac"] * 100 for tp in TIMEPOINTS]
 
-    # Plot individual replicates as thin transparent lines
     for rep in all_replicates:
         est_fracs = [r["est_frac"] * 100 for r in rep]
         ax.plot(days, est_fracs, "o-", color="steelblue", alpha=0.2, linewidth=1, markersize=4)
 
-    # Compute mean and SD across replicates at each timepoint
     n_tp = len(TIMEPOINTS)
     mean_est = []
     sd_est = []
@@ -213,10 +203,8 @@ def plot_figure(all_replicates: list[list[dict]]) -> None:
         mean_ci_lo.append(sum(rep[i]["ci_lo"] * 100 for rep in all_replicates) / len(all_replicates))
         mean_ci_hi.append(sum(rep[i]["ci_hi"] * 100 for rep in all_replicates) / len(all_replicates))
 
-    # True trajectory (dashed grey)
     ax.plot(days, true_fracs, "s--", color="0.4", linewidth=1.5, markersize=5, label="True", zorder=4)
 
-    # Mean estimated trajectory with CI band
     ax.fill_between(days, mean_ci_lo, mean_ci_hi, color="steelblue", alpha=0.15, label="Mean 95% CI")
     ax.plot(
         days, mean_est, "o-",
@@ -225,7 +213,6 @@ def plot_figure(all_replicates: list[list[dict]]) -> None:
         label="Mean estimate", zorder=5,
     )
 
-    # Annotate clinical phases
     phase_labels = [
         (14, "Early\nengraftment"),
         (100, "Stable"),
@@ -261,7 +248,6 @@ def plot_figure(all_replicates: list[list[dict]]) -> None:
 
     fig.tight_layout()
 
-    # Save to facts dir
     FACTS_DIR.mkdir(parents=True, exist_ok=True)
     fig_path = FACTS_DIR / "fig_timeline.png"
     fig.savefig(fig_path, dpi=300, bbox_inches="tight")

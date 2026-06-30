@@ -202,7 +202,6 @@ def summarise(rows: list[dict]) -> None:
             f"{collapse_rate(rs, 'host_one') * 100:>10.0f}%"
         )
 
-    # Headline: mean absolute error on the non-blank fractions, per mode.
     nonblank = [r for r in rows if r["host_frac"] > 0]
     mae_sym = statistics.mean(abs(r["host_sym"] - r["host_frac"]) for r in nonblank)
     mae_one = statistics.mean(abs(r["host_one"] - r["host_frac"]) for r in nonblank)

@@ -8,26 +8,23 @@ Follows CLSI EP17-A2:
   - LoD = lowest true fraction at which >=95% of replicates have est_frac > LoB,
           read from a 2-parameter logistic fit P(detected | f) = sigmoid(a + b*log10(f)).
 
-Two-level replicate design. The previous version pooled N replicates per cell,
-each of which conflated a fresh donor/host pair with a fresh sequencing draw.
-For siblings, the pair-to-pair variation in IBD sharing (how many markers are
-informative) dominates the spread, which leaked into the pooled LoB and
-logistic fit and made the LoD-vs-panel-size curve non-monotone. We now separate
-the two sources of variation:
+Two-level replicate design. Pooling fresh-pair + fresh-draw replicates per cell
+let the sibling pair-to-pair variation in IBD sharing (how many markers are
+informative) leak into the pooled LoB and logistic fit, making the
+LoD-vs-panel-size curve non-monotone. We separate the two variation sources:
 
   - K donor/host PAIRS per relatedness (genotypes + per-marker capture biases
     fixed per pair, reused across every depth/panel/fraction cell). Markers are
-    nested, so the n_markers=50 panel is a strict prefix of the n_markers=400
-    panel: adding markers to a given pair can only add informative markers.
+    nested, so n_markers=50 is a strict prefix of n_markers=400: adding markers
+    to a pair can only add informative ones.
   - M SEQUENCING replicates per pair (only the blend seed varies), so within a
-    pair the sole source of variation is sequencing/sampling noise.
+    pair the sole variation is sequencing/sampling noise.
 
-We compute an LoB + LoD per pair (over its M sequencing replicates), then report
-the MEDIAN LoD across the K pairs as the curve and the 10th-90th percentile
-across pairs as a band. Each pair's own LoD curve is monotone in panel size, so
-the median is too; the band shows the IBD-driven spread (and how it narrows as
-markers are added). Unrelated pairs have little pair-to-pair variation, so they
-run with fewer pairs.
+LoB + LoD are computed per pair (over its M reps); the curve is the MEDIAN LoD
+across the K pairs and the band is the 10th-90th percentile across pairs. Each
+pair's LoD curve is monotone in panel size, so the median is too; the band is
+the IBD-driven spread (narrowing as markers are added). Unrelated pairs vary
+little pair-to-pair, so they run with fewer pairs.
 
 Outputs:
   output/facts/lod_grid_raw.csv     # one row per (pair, seq_rep) per cell
@@ -81,11 +78,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fast_grid_estimator import estimate_single_donor_bb_grid  # noqa: E402
 from paper_quick import qval  # noqa: E402
 
-# --- Sweep grid (plan section "Sweep design") -------------------------------
-# Quick-build mode (ALLOMIX_PAPER_QUICK=1) shrinks every loop: a few pairs, a
-# few sequencing replicates, one-ish depth, and a coarse panel/fraction grid.
-# That turns the slowest rule from ~tens of minutes into ~a minute, at the cost
-# of precision (the resulting figures are watermarked, not for publication).
+# Sweep grid (plan section "Sweep design").
+# Quick-build mode (ALLOMIX_PAPER_QUICK=1) shrinks every loop, turning the
+# slowest rule from ~tens of minutes into ~a minute at the cost of precision
+# (the resulting figures are watermarked, not for publication).
 
 RELATEDNESS_LEVELS = ["unrelated", "sibling"]
 DEPTHS = qval([100, 250, 500, 1000, 2000], [100, 1000])
@@ -94,12 +90,11 @@ TRUE_FRACTIONS = qval(
     [0.0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05],
     [0.0, 0.005, 0.01, 0.02, 0.05],
 )
-# Number of donor/host pairs per relatedness. Siblings need many pairs to
-# characterise the IBD-driven spread; unrelated pairs barely vary, so a handful
-# is enough and the budget is better spent on siblings.
+# Pairs per relatedness. Siblings need many to characterise the IBD-driven
+# spread; unrelated pairs barely vary, so the budget goes to siblings.
 DEFAULT_N_PAIRS = qval({"unrelated": 10, "sibling": 40}, {"unrelated": 2, "sibling": 3})
 # Sequencing replicates per pair: enough blanks for a stable parametric LoB and
-# enough resolution on the 95% detection point (Wald SE ~3% at this count).
+# resolution on the 95% detection point (Wald SE ~3% at this count).
 DEFAULT_N_SEQ_REPS = qval(30, 5)
 # Across-pair band reported around the median LoD curve.
 BAND_LO_Q = 0.10
@@ -109,19 +104,14 @@ MAF_RANGE = (0.2, 0.5)
 ERROR_RATE = 0.01
 LOCUS_DROPOUT_RATE = 0.016
 DEPTH_CV = 0.43
-# The estimator uses grid_steps=1001 by default. For LoD characterisation we
-# only need detection-rule precision (est_frac > LoB), not MLE precision, so a
-# coarser grid is fine and gives a ~5x speedup. Nelder-Mead still refines from
-# the grid maximum, so f-estimates remain accurate to <1e-3.
+# Estimator default is grid_steps=1001. LoD only needs detection-rule precision
+# (est_frac > LoB), not MLE precision, so a coarser grid is fine and ~5x faster;
+# Nelder-Mead still refines from the grid maximum (f accurate to <1e-3).
 ESTIMATOR_GRID_STEPS = 201
 
-# Opt-in fast grid estimator. The exact estimator (estimate_single_donor_bb) is
-# the default and is used for the published full-accuracy pass. Setting the env
-# var ALLOMIX_FAST_GRID=1 (or passing --fast-grid, which sets it for the worker
-# processes) routes the LoD sweep through the vectorized grid estimator instead.
-# It only affects donor_fraction precision, which is all the LoD rule consumes,
-# and matches the exact estimator to well under 0.01 pp. The equivalence is
-# pinned in tests/test_fast_grid_estimator.py.
+# Fast grid estimator params. Routed in via ALLOMIX_FAST_GRID=1 / --fast-grid;
+# matches the exact estimator to well under 0.01 pp on donor_fraction (all the
+# LoD rule consumes). Equivalence pinned in tests/test_fast_grid_estimator.py.
 FAST_GRID_N_F = 201
 FAST_GRID_N_RHO = 32
 
@@ -132,11 +122,10 @@ def _fast_grid_enabled() -> bool:
 
 
 def estimate_fraction(genos_informative, bias_dict):
-    """Run the configured single-donor estimator and return the fitted result.
+    """Run the configured single-donor estimator.
 
     Routes through the fast vectorized grid estimator when ALLOMIX_FAST_GRID is
-    set, otherwise the exact (default) estimator. Both expose ``donor_fraction``
-    and ``donor_fraction_ci``, which is all the LoD computation reads.
+    set, otherwise the exact (default) estimator.
     """
     cal = PanelCalibration(biases=bias_dict)
     if _fast_grid_enabled():
@@ -157,14 +146,12 @@ def estimate_fraction(genos_informative, bias_dict):
 FACTS_DIR = Path("output/facts")
 WORK_DIR = Path("output/lod_validation")
 
-# Numerical constants for logistic / probit work.
 LOGIT_95 = math.log(0.95 / 0.05)  # 2.944...
 # Sentinels for the two edge cells the plan asks us to stop on.
 LOD_BELOW_RANGE = -1.0
 LOD_ABOVE_RANGE = float("inf")
-# Probed-fraction bounds used to clamp per-pair sentinel LoDs before taking the
-# across-pair median/percentiles (a pair that detects everything is clamped to
-# the smallest probed fraction, a pair that detects nothing to the largest).
+# Probed-fraction bounds clamping per-pair sentinel LoDs before the across-pair
+# median/percentiles (detects-everything -> smallest, detects-nothing -> largest).
 MIN_POS_FRACTION = min(f for f in TRUE_FRACTIONS if f > 0)
 MAX_FRACTION = max(TRUE_FRACTIONS)
 
@@ -172,10 +159,9 @@ MAX_FRACTION = max(TRUE_FRACTIONS)
 def derive_seed(*parts: object) -> int:
     """Deterministic seed from a tuple of arbitrary parts.
 
-    Uses SHA-256 of the repr so seeds are stable across Python invocations
-    and worker processes. Python's built-in hash() is randomised per process
-    for str/bytes (PEP 456), which previously made each run of this sweep
-    produce a different "deterministic" output.
+    Uses SHA-256 of the repr so seeds are stable across processes. Python's
+    built-in hash() is per-process randomised for str/bytes (PEP 456), which
+    previously made each run produce different "deterministic" output.
     """
     digest = hashlib.sha256(repr(parts).encode("utf-8")).digest()[:4]
     return int.from_bytes(digest, "big")
@@ -191,13 +177,10 @@ def detection_rate(est_fracs: list[float], lob: float) -> float:
 def compute_lob(est_fracs_at_zero: list[float]) -> float:
     """LoB = mean + 1.645 * SD across blank replicates (parametric, CLSI EP17-A2).
 
-    The parametric form is more efficient than the empirical 95th percentile
-    when blanks are approximately normal (about ~1/sqrt(n) lower SE). EP17-A2
-    explicitly allows it when the blank distribution passes a normality test.
-    Our blank est_fracs are sums of many independent marker contributions
-    (effectively CLT) and pass an Anderson-Darling test in practice, so the
-    parametric form is the right choice here. The factor 1.645 is the standard
-    normal 95th-percentile critical value.
+    EP17-A2 allows the parametric form (more efficient than the empirical 95th
+    percentile, ~1/sqrt(n) lower SE) when blanks pass a normality test. Our
+    blank est_fracs are sums of many independent marker contributions (CLT) and
+    pass Anderson-Darling in practice. 1.645 is the standard-normal 95th pctile.
     """
     if not est_fracs_at_zero:
         return float("nan")
@@ -213,11 +196,11 @@ def _logistic(log10_f: np.ndarray, a: float, b: float) -> np.ndarray:
 def _interp_lod(
     fractions: list[float], rates: list[float], target: float = 0.95,
 ) -> float | None:
-    """Linear interpolation in log10(f) between the two fractions that bracket
-    ``target`` detection rate. Returns None if the rates never cross ``target``.
+    """Linear interpolation in log10(f) between the fractions bracketing ``target``
+    detection rate; None if the rates never cross it.
 
-    This is the fallback when the logistic fit fails (typically when detection
-    jumps too sharply from 0 to 1 to identify the logistic's slope).
+    Fallback when the logistic fit fails (detection jumping too sharply from 0
+    to 1 makes the logistic slope unidentifiable).
     """
     pairs = sorted([(f, r) for f, r in zip(fractions, rates) if f > 0])
     for (f_lo, r_lo), (f_hi, r_hi) in zip(pairs, pairs[1:]):
@@ -237,14 +220,8 @@ def fit_lod(
 ) -> tuple[float, float, float] | None:
     """Fit logistic in log10(f), solve for f at P = 0.95.
 
-    Args:
-        fractions: Non-zero true fractions (parallel with detection_rates).
-        detection_rates: Empirical P(detected) at each fraction.
-        weights: Optional per-point weights (number of replicates), passed as
-            inverse-variance-like sigma to curve_fit.
-
-    Returns:
-        (f95, a, b) on success, or None if the fit failed.
+    ``weights`` are per-point replicate counts, turned into binomial-SE sigma
+    for curve_fit. Returns (f95, a, b), or None if the fit failed.
     """
     pos = [(f, r) for f, r in zip(fractions, detection_rates) if f > 0]
     if len(pos) < 2:
@@ -253,7 +230,7 @@ def fit_lod(
     rates = np.array([r for _, r in pos], dtype=float)
 
     if weights is not None and len(weights) == len(pos):
-        # Use binomial SE as sigma: sqrt(p(1-p)/N), floored.
+        # binomial SE as sigma: sqrt(p(1-p)/N), floored
         n = np.array(weights, dtype=float)
         var = np.clip(rates * (1.0 - rates), 1e-3, None) / np.clip(n, 1.0, None)
         sigma = np.sqrt(var)
@@ -275,11 +252,9 @@ def fit_lod(
         a = b = float("nan")
 
     f95: float | None = None
-    # Require positive slope: detection should increase with fraction. A
-    # negative b means curve_fit converged to a degenerate solution (typically
-    # in the "ultra-easy" corner where detection is ~1.0 at every probed
-    # fraction and the slope is unidentifiable); fall through to the interp
-    # fallback below.
+    # Require positive slope (detection rises with fraction). A negative b is a
+    # degenerate curve_fit solution (the "ultra-easy" corner where detection is
+    # ~1.0 everywhere and the slope is unidentifiable); use the interp fallback.
     if math.isfinite(a) and math.isfinite(b) and b > 1e-9:
         log10_f95 = (LOGIT_95 - a) / b
         try:
@@ -290,9 +265,8 @@ def fit_lod(
             f95 = cand
 
     if f95 is None:
-        # Fallback: linear interpolation in log10(f) between bracketing points.
-        # The logistic cannot identify its slope when detection jumps too
-        # sharply from 0 to 1; the interpolated crossing is still meaningful.
+        # Fallback: interpolate the crossing when the logistic slope is
+        # unidentifiable (sharp 0->1 jump). The interpolated crossing is valid.
         interp = _interp_lod([f for f, _ in pos], [r for _, r in pos])
         if interp is None:
             return None
@@ -302,9 +276,6 @@ def fit_lod(
             a = LOGIT_95 - b * math.log10(f95)
 
     return f95, a, b
-
-
-# --- Per-replicate work ------------------------------------------------------
 
 
 def run_pair(
@@ -317,20 +288,17 @@ def run_pair(
     """Generate one fixed host/donor pair, then run ``n_seq_reps`` sequencing
     replicates across every (n_markers, depth, true_frac) cell.
 
-    The pair's genotypes and per-marker capture biases are drawn once (seeded by
-    ``pair_idx``, not by the sequencing replicate) and reused across every
-    sequencing replicate and panel size. Only the blend seed varies per
-    sequencing replicate, so within a pair the sole source of variation is
-    sequencing/sampling noise. This lets a caller estimate an LoD per pair (over
-    its sequencing replicates) and then characterise the spread across pairs
-    separately.
+    Genotypes and per-marker biases are drawn once per pair (seeded by
+    ``pair_idx``, not the seq replicate) and reused across replicates and panel
+    sizes; only the blend seed varies per replicate, so within a pair the sole
+    variation is sequencing noise. A caller can then estimate an LoD per pair
+    and characterise the across-pair spread separately.
 
-    Strict nesting requires that the n_markers=50 result be a bit-identical
-    prefix of the n_markers=400 result. To achieve that, the admix VCF for a
-    given (seq_rep, depth, frac) is generated ONCE at max_markers and then
-    sliced for each panel size — sharing the rng consumption order (depth
-    sampling, locus-dropout rolls, allele-count binomial draws) so the read
-    counts at marker i never depend on how many markers we use downstream.
+    Strict nesting invariant: the n_markers=50 result must be a bit-identical
+    prefix of n_markers=400. The admix VCF for a given (seq_rep, depth, frac) is
+    generated ONCE at max_markers and sliced per panel size, sharing the rng
+    consumption order (depth, locus-dropout, allele-count draws) so the read
+    counts at marker i never depend on the downstream panel size.
 
     Returns one row per (n_markers, depth, true_frac, seq_rep).
     """
@@ -380,15 +348,11 @@ def run_pair(
                     if blend.marker_biases is not None
                     else None
                 )
-                # NOTE on where the time goes (do not "optimise" this away):
-                # this write_vcf + parse_vcf round-trip looks wasteful but
-                # profiling the inner loop puts it at ~0.2% of wall time. The
-                # cost is ~99% in estimate_single_donor_bb below (the rho
-                # profiling and Nelder-Mead refinement inside the MLE). Replacing
-                # the round-trip with blend_vcfs(return_markers=True) saves
-                # nothing measurable. If you want this sweep faster, optimise the
-                # estimator hot path (chimerism._ll_from_p_alt / the grid+NM
-                # search), not the simulation or IO.
+                # Do not "optimise" this write_vcf + parse_vcf round-trip away:
+                # it is ~0.2% of wall time. ~99% is in estimate_single_donor_bb
+                # (rho profiling + Nelder-Mead). To speed the sweep up, optimise
+                # the estimator hot path (chimerism._ll_from_p_alt / grid+NM),
+                # not the simulation or IO.
                 write_vcf(blend, admix_path)
                 admix_md_full = parse_vcf(str(admix_path), min_dp=0, min_gq=0)
 
@@ -438,21 +402,13 @@ def run_pair(
     return rows
 
 
-# --- Per-pair and across-pair LoB / LoD summarisation -----------------------
-
-
 def compute_pair_lod(cell_rows: list[dict]) -> dict:
     """LoB + LoD for ONE pair at one (relatedness, depth, n_markers) cell.
 
-    ``cell_rows`` are the rows for a single pair across its sequencing
-    replicates and the dilution series. LoB comes from the blank (frac=0)
-    sequencing replicates; LoD from a logistic fit of detection rate vs
-    log10(fraction). LoD is returned in fraction units, or a sentinel
-    (LOD_BELOW_RANGE / LOD_ABOVE_RANGE) when detection is saturated, or NaN when
-    the fit fails for a non-saturated cell.
-
-    Returns a dict with ``lod`` (fraction or sentinel), ``lob`` (fraction),
-    ``note`` and ``mean_n_informative``.
+    LoB comes from the blank (frac=0) replicates; LoD from a logistic fit of
+    detection rate vs log10(fraction). ``lod`` is in fraction units, or a
+    sentinel (LOD_BELOW_RANGE / LOD_ABOVE_RANGE) when detection is saturated, or
+    NaN when the fit fails for a non-saturated cell.
     """
     by_frac: dict[float, list[float]] = {f: [] for f in TRUE_FRACTIONS}
     n_inf: list[int] = []
@@ -471,7 +427,7 @@ def compute_pair_lod(cell_rows: list[dict]) -> dict:
     fit = fit_lod(fractions, rates, weights)
     note = ""
     if fit is None:
-        # Two pathological cases the plan asks us to stop on.
+        # Two saturated cases the plan asks us to stop on.
         if all(r >= 0.95 for r in rates):
             lod = LOD_BELOW_RANGE
             note = "all_detected"
@@ -577,9 +533,6 @@ def _to_pct(x: float) -> float:
     return round(x * 100, 4)
 
 
-# --- Output writers ----------------------------------------------------------
-
-
 def write_grid_raw(rows: list[dict], path: Path) -> None:
     fields = [
         "relatedness", "depth", "n_markers", "true_frac", "pair", "seq_rep", "seed",
@@ -595,8 +548,8 @@ def write_grid_raw(rows: list[dict], path: Path) -> None:
 def write_per_pair(pair_rows: list[dict], path: Path) -> None:
     """Per-pair LoD/LoB, one row per (relatedness, depth, n_markers, pair).
 
-    This is the input to the across-pair median/band and is kept for tracing
-    how individual pairs land (e.g. which sibling pairs drive the band width).
+    Input to the across-pair median/band, kept for tracing which sibling pairs
+    drive the band width.
     """
     fields = [
         "relatedness", "depth", "n_markers", "pair",
@@ -650,9 +603,6 @@ def write_headline(
         w.writeheader()
         w.writerow({k: (round(v, 4) if isinstance(v, float) and math.isfinite(v) else v)
                     for k, v in headline.items()})
-
-
-# --- Driver ------------------------------------------------------------------
 
 
 def _worker(args: tuple) -> list[dict]:
@@ -722,9 +672,9 @@ def main(argv: list[str] | None = None) -> int:
         for rel in args.relatedness
     }
 
-    # Each task is one (relatedness, pair). The worker iterates internally over
-    # all sequencing replicates and n_markers, sharing the max-size admix VCF
-    # across panel sizes so the cells are strictly nested.
+    # One task per (relatedness, pair); the worker iterates internally over seq
+    # replicates and n_markers, sharing the max-size admix VCF across panel sizes
+    # so the cells are strictly nested.
     n_markers_subset = (
         None if args.n_markers == N_MARKERS_GRID else list(args.n_markers)
     )
@@ -763,7 +713,7 @@ def main(argv: list[str] | None = None) -> int:
                 if done % 5 == 0 or done == len(futures):
                     print(f"  [{done}/{len(futures)}] tasks done", file=sys.stderr)
 
-    # Sort rows for stable output regardless of worker order.
+    # Sort for output stable across worker completion order.
     all_rows.sort(key=lambda r: (
         r["relatedness"], r["n_markers"], r["depth"], r["pair"], r["seq_rep"],
         r["true_frac"],
@@ -772,8 +722,7 @@ def main(argv: list[str] | None = None) -> int:
     write_grid_raw(all_rows, FACTS_DIR / "lod_grid_raw.csv")
     print(f"Wrote {FACTS_DIR / 'lod_grid_raw.csv'} ({len(all_rows)} rows)", file=sys.stderr)
 
-    # Per-pair LoD: group rows by (rel, depth, n_markers, pair), fit one LoD per
-    # pair over its sequencing replicates.
+    # Per-pair LoD: one fit per (rel, depth, n_markers, pair) over its seq reps.
     by_pair_cell: dict[tuple, list[dict]] = defaultdict(list)
     for r in all_rows:
         by_pair_cell[(r["relatedness"], r["depth"], r["n_markers"], r["pair"])].append(r)
@@ -816,7 +765,6 @@ def main(argv: list[str] | None = None) -> int:
     write_headline(summaries, FACTS_DIR / "lod_headline.csv", n_pairs, args.n_seq_reps)
     print(f"Wrote {FACTS_DIR / 'lod_headline.csv'}", file=sys.stderr)
 
-    # Flag cells where pairs were dropped or none fit.
     flagged = [s for s in summaries if s["note"]]
     if flagged:
         print("\nCells flagged for review (LoD edge cases):", file=sys.stderr)

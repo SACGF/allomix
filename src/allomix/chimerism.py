@@ -1,18 +1,14 @@
 """MLE chimerism estimation from informative markers.
 
-Implements maximum-likelihood estimation of donor chimerism fraction using
-allele counts at informative SNP markers with known host/donor genotypes.
-Based on the mixture genotype likelihood of Crysup & Woerner (2022),
-Formula 5, simplified for the case of known contributor genotypes.
+Maximum-likelihood estimation of donor chimerism fraction from allele counts at
+informative SNP markers with known host/donor genotypes. Based on the mixture
+genotype likelihood of Crysup & Woerner (2022), Formula 5, simplified for known
+contributor genotypes.
 
-This module is the optimisation layer: the grid search, Nelder-Mead refinement,
-profile-likelihood CIs, Fisher-information detection limits, and the optional
-robust refit. The beta-binomial likelihood and expected-weight model it
-optimises live in ``allomix.likelihood``; the result data types it returns live
-in ``allomix.results``. Import those names from their own modules, not from here.
-
-The in silico CI-coverage and point-estimate accuracy across depths and noise
-conditions are reported in the paper's depth and bias-correction validations.
+This is the optimisation layer (grid search, Nelder-Mead refinement,
+profile-likelihood CIs, Fisher-information detection limits, optional robust
+refit). The likelihood and expected-weight model live in ``allomix.likelihood``;
+the result data types in ``allomix.results``.
 """
 
 import math
@@ -44,45 +40,35 @@ from allomix.likelihood import (
 from allomix.marker_contamination import apply_contamination_correction
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 
-# Robust-refit tuning. The residual cut itself (ROBUST_K_DEFAULT) lives in
-# allomix.constants since it is also the CLI/analysis default. The refit floors
-# below keep trimming from gutting sparse panels: "auto" never drops below
-# ROBUST_MIN_MARKERS, "force" never below ROBUST_HARD_MIN.
+# Robust-refit floors keep trimming from gutting sparse panels: "auto" never
+# drops below ROBUST_MIN_MARKERS, "force" never below ROBUST_HARD_MIN. The
+# residual cut itself (ROBUST_K_DEFAULT) lives in allomix.constants since it is
+# also the CLI/analysis default.
 ROBUST_MAX_ITER = 5
 ROBUST_MIN_MARKERS = 15
 ROBUST_HARD_MIN = 4
 ROBUST_MODES = ("off", "auto", "force")
 
-# One-sided robust trim. The symmetric median/MAD cut removes a marker whenever
-# its residual is a large outlier in either direction. At low host fraction the
-# host-carrying markers sit off the donor-dominated fit *in the host-present
-# direction* (their observed VAF is pulled toward the host's own allele dose),
-# so a symmetric cut trims the very signal we want and collapses the estimate
-# toward the donor-only solution. With this on, a marker whose residual deviates
-# toward host presence is never trimmed; only residuals pointing away from host
-# presence (genotype miscalls, mapping artifacts, host CNV/LoH in the
-# anti-host direction) stay eligible for the cut. This is the intended trade:
-# at the limit of detection we would rather keep a few artifacts than discard a
-# real low-fraction host signal. See claude/further_improvements.md, Obs 1.
+# One-sided robust trim. At low host fraction the host-carrying markers sit off
+# the donor-dominated fit in the host-present direction (observed VAF pulled
+# toward the host's own allele dose), so a symmetric median/MAD cut trims the
+# very signal we want and collapses the estimate toward donor-only. With this
+# on, residuals deviating toward host presence are never trimmed; only those
+# pointing away (genotype miscalls, mapping artifacts, host CNV/LoH in the
+# anti-host direction) stay eligible. At the limit of detection we would rather
+# keep a few artifacts than discard real low-fraction host signal. See
+# claude/further_improvements.md, Obs 1.
 ROBUST_ONE_SIDED = True
 
-# Residual outlier cut for the non-robust per-marker flag, in standard
-# deviations: a marker whose residual is more than this many SDs from the mean
-# residual is marked excluded (flagged, not refit). Used by both the single-
-# and multi-donor estimators below.
+# Residual outlier cut for the non-robust per-marker flag, in SDs from the mean
+# residual (flagged, not refit). Used by both estimators below.
 OUTLIER_SD_THRESHOLD = 3.0
 # "auto" engages the refit only when the first pass finds more residual outliers
-# than this trigger: max(ROBUST_TRIGGER_MIN, ceil(ROBUST_TRIGGER_FRAC * n)). At
-# k=3.5 a clean panel produces <1 chance outlier on average, so a trigger of ~3
-# leaves clean (and the already-validated) samples byte-identical, while
-# genuine copy-number / LoH clusters clear the bar. "force" uses a trigger of 1.
+# than max(ROBUST_TRIGGER_MIN, ceil(ROBUST_TRIGGER_FRAC * n)). At k=3.5 a clean
+# panel produces <1 chance outlier on average, so a trigger of ~3 leaves clean
+# samples byte-identical while genuine CNV/LoH clusters clear it. "force" uses 1.
 ROBUST_TRIGGER_FRAC = 0.03
 ROBUST_TRIGGER_MIN = 3
-
-
-# ---------------------------------------------------------------------------
-# MLE estimation
-# ---------------------------------------------------------------------------
 
 
 def _compute_per_marker_results(
@@ -90,10 +76,7 @@ def _compute_per_marker_results(
     f_mle: float,
     calibration: PanelCalibration,
 ) -> list[MarkerResult]:
-    """Compute per-marker residuals and flag outliers.
-
-    Shared between binomial and beta-binomial estimators.
-    """
+    """Compute per-marker residuals and flag outliers (single-donor)."""
     per_marker: list[MarkerResult] = []
     residuals: list[float] = []
 
@@ -120,7 +103,6 @@ def _compute_per_marker_results(
             )
         )
 
-    # Flag outliers (residual > OUTLIER_SD_THRESHOLD SDs)
     if len(residuals) >= 2:
         r_arr = np.array(residuals)
         mean_r = float(np.mean(r_arr))
@@ -145,27 +127,23 @@ def _compute_per_marker_results(
     return per_marker
 
 
-# One-sided normal quantile at CI_LEVEL (z_0.95 ~= 1.6449), used for EP17-style
-# LoB/LoD.
+# One-sided normal quantile at CI_LEVEL (z_0.95 ~= 1.6449), for EP17-style LoB/LoD.
 _Z95 = float(norm.ppf(CI_LEVEL))
 
-# Margin used to keep a probability strictly inside the open interval (0, 1),
-# so that p * (1 - p) stays positive and the marker variance never collapses to
-# zero. This is a safety clamp, not machine epsilon (np.finfo(float).eps).
+# Keeps a probability strictly inside (0, 1) so p * (1 - p) stays positive and
+# the marker variance never collapses to zero. A safety clamp, not machine eps.
 _PROB_EPS = 1e-9
 
-# Consistency factor converting a median absolute deviation to a standard
-# deviation for normally distributed data (1 / norm.ppf(0.75)). Used by the
-# robust refit to put the MAD-based residual scale on an SD footing.
+# MAD -> SD consistency factor (1 / norm.ppf(0.75)) for the robust refit.
 _MAD_TO_SD = 1.4826
 
 # Feasible range for the beta-binomial concentration rho during optimisation.
-# Values outside this are rejected with a large finite penalty (_INFEASIBLE_PENALTY)
-# so Nelder-Mead stays in-bounds without a hard constraint.
+# Out-of-range values get a large finite penalty (_INFEASIBLE_PENALTY) so
+# Nelder-Mead stays in-bounds without a hard constraint.
 _RHO_MIN = 0.5
 _RHO_MAX = 50000.0
-# Upper rho cap for the initial grid search only. Lower than _RHO_MAX on
-# purpose: the grid just seeds Nelder-Mead, which then refines rho up to _RHO_MAX.
+# Upper rho cap for the grid search only, below _RHO_MAX on purpose: the grid
+# just seeds Nelder-Mead, which then refines rho up to _RHO_MAX.
 _RHO_SEED_MAX = 10000.0
 _INFEASIBLE_PENALTY = 1e30
 
@@ -179,14 +157,8 @@ def _donor_het_mask(markers: list[InformativeMarker]) -> np.ndarray:
 
     Donor-het markers sit at background VAF ~0.5 (symmetric amplification
     scatter); donor-hom markers sit near 0/1 (one-sided host signal). The two
-    classes carry different overdispersion, which is what the per-marker-type
-    mode fits separately (issue #33).
-
-    Args:
-        markers: Informative markers (first donor genotype is used).
-
-    Returns:
-        Boolean array, one entry per marker, True at donor-het markers.
+    classes carry different overdispersion, fit separately by the
+    per-marker-type mode (issue #33).
     """
     return np.fromiter(
         ((m.donor_gts[0][0] + m.donor_gts[0][1]) == 1 for m in markers),
@@ -198,19 +170,10 @@ def _donor_het_mask(markers: list[InformativeMarker]) -> np.ndarray:
 def _donor_het_mask_multi(markers: list[InformativeMarker], n_donors: int) -> np.ndarray:
     """Multi-donor analogue of ``_donor_het_mask`` (phase 2 stub, issue #33).
 
-    True where the combined donor background ALT balance is intermediate (not
-    near 0 or 1), the multi-donor counterpart of donor-het: a marker whose pooled
-    donor background sits near VAF 0.5 carries the symmetric overdispersion the
-    two-rho mode separates out. To be wired into ``_estimate_multi_donor_core``
-    when per-marker-type overdispersion is extended to multi-donor; single-donor
-    ships first.
-
-    Args:
-        markers: Informative markers.
-        n_donors: Number of donors.
-
-    Returns:
-        Boolean array, one entry per marker.
+    True where the pooled donor background sits near VAF 0.5 (the symmetric
+    overdispersion the two-rho mode separates out). To be wired into
+    ``_estimate_multi_donor_core`` when per-marker-type overdispersion is
+    extended to multi-donor; single-donor ships first.
 
     Raises:
         NotImplementedError: Always; multi-donor is a later phase.
@@ -223,13 +186,8 @@ def _donor_het_mask_multi(markers: list[InformativeMarker], n_donors: int) -> np
 def _profile_rho_at_f(arr: _MarkerArrays, f: float, error_rate: float) -> tuple[float, float]:
     """Max LL over rho in [1, _RHO_MAX] at fixed f for one marker class.
 
-    Mirrors the single-rho profile already used in the grid search and CI, so the
+    Mirrors the single-rho profile used in the grid search and CI, so the
     per-class arithmetic is identical to the shared-rho path's.
-
-    Args:
-        arr: Per-marker arrays for one class (from ``_precompute_marker_arrays``).
-        f: Donor fraction to hold fixed.
-        error_rate: Sequencing error rate.
 
     Returns:
         ``(ll_max, rho_at_max)``.
@@ -246,17 +204,7 @@ def _profile_rho_at_f(arr: _MarkerArrays, f: float, error_rate: float) -> tuple[
 def _two_rho_profile_ll(
     arr_hom: _MarkerArrays, arr_het: _MarkerArrays, f: float, error_rate: float
 ) -> float:
-    """Total profiled LL at fixed f: ``max_rho_hom LL(hom) + max_rho_het LL(het)``.
-
-    Args:
-        arr_hom: Donor-hom class arrays.
-        arr_het: Donor-het class arrays.
-        f: Donor fraction to hold fixed.
-        error_rate: Sequencing error rate.
-
-    Returns:
-        Sum of the two per-class profiled log-likelihoods.
-    """
+    """Total profiled LL at fixed f: ``max_rho_hom LL(hom) + max_rho_het LL(het)``."""
     ll_hom, _ = _profile_rho_at_f(arr_hom, f, error_rate)
     ll_het, _ = _profile_rho_at_f(arr_het, f, error_rate)
     return ll_hom + ll_het
@@ -282,12 +230,8 @@ def fraction_se(
     skipped.
 
     Args:
-        markers: Informative markers with admixture allele counts.
-        f_donor: Donor fraction at which to evaluate the SE.
-        error_rate: Sequencing error rate.
         rho: Beta-binomial concentration (inf = pure binomial).
-        calibration: Optional per-marker bias and error tables (only biases
-            are used here).
+        calibration: Per-marker bias and error tables (only biases used here).
         rho_hom: Donor-hom class concentration. When both ``rho_hom`` and
             ``rho_het`` are given, each marker uses its class rho instead of the
             scalar ``rho`` (per-marker-type overdispersion, issue #33).
@@ -360,20 +304,16 @@ def detection_limit(
     ``z * SE(0)`` even though the lower tail piles at 0.
 
     This is the best achievable sensitivity given the fitted noise model
-    (``rho``) and known/corrected biases. It is not a substitute for a
-    validated assay LoD from a blank and dilution series, which must come from
-    replicated experiments (simulation or wetlab).
+    (``rho``) and known/corrected biases. It is not a substitute for a validated
+    assay LoD from a blank and dilution series, which must come from replicated
+    experiments (simulation or wetlab).
 
     Args:
-        markers: Informative markers with admixture allele counts.
-        error_rate: Sequencing error rate.
         rho: Beta-binomial concentration from the fit (inf = pure binomial).
-        calibration: Optional per-marker bias and error tables (only biases
-            are used here).
-        rho_hom: Donor-hom class concentration. When both ``rho_hom`` and
-            ``rho_het`` are given, each marker uses its class rho instead of the
-            scalar ``rho`` (per-marker-type overdispersion, issue #33). Forwarded
-            to both ``fraction_se`` calls.
+        calibration: Per-marker bias and error tables (only biases used here).
+        rho_hom: Donor-hom class concentration, forwarded to both
+            ``fraction_se`` calls (per-marker-type overdispersion, issue #33;
+            see ``fraction_se``).
         rho_het: Donor-het class concentration (see ``rho_hom``).
 
     Returns:
@@ -400,15 +340,15 @@ def _estimate_single_donor_bb_core(
 ) -> ChimerismResult:
     """Single-donor beta-binomial MLE over the given marker set (no robust trim).
 
-    This is the unguarded estimator; ``estimate_single_donor_bb`` wraps it with
-    the optional robust refit. Args/returns as in that wrapper, plus
+    The unguarded estimator; ``estimate_single_donor_bb`` wraps it with the
+    optional robust refit. Args/returns as in that wrapper, plus
     ``marker_type_overdispersion`` (issue #33): when True (the default), fit a
     separate rho for the donor-hom and donor-het marker classes instead of one
-    shared rho, which removes the sub-0.5% MLE floor. Set False to recover the
-    legacy shared-rho path (byte-identical to the pre-#33 estimator). When a
-    marker class has fewer than ``MIN_CLASS_MARKERS`` markers the per-class rho
-    is not identifiable, so the estimator falls back to shared rho for that
-    sample and records the reason on the result (diagnostic only, not a warning).
+    shared rho, which removes the sub-0.5% MLE floor. False recovers the legacy
+    shared-rho path (byte-identical to the pre-#33 estimator). A class with fewer
+    than ``MIN_CLASS_MARKERS`` markers has no identifiable per-class rho, so the
+    sample falls back to shared rho and records the reason on the result
+    (diagnostic only, not a warning).
     """
     cal = calibration or PanelCalibration()
     n_informative = len(markers)
@@ -431,10 +371,9 @@ def _estimate_single_donor_bb_core(
         n_hom = n_informative - n_het
         if n_het >= MIN_CLASS_MARKERS and n_hom >= MIN_CLASS_MARKERS:
             return _estimate_single_donor_two_rho(markers, het_mask, error_rate, grid_steps, cal)
-        # Sparse class: its per-class rho is not identifiable, so fall through to
-        # the shared-rho path for this sample and record the reason on the result.
-        # This is routine for small or hom-dominated panels and is a diagnostic
-        # field only, not a QC warning (two-rho is the default, not a request).
+        # Sparse class: per-class rho not identifiable, so fall through to the
+        # shared-rho path and record the reason. Routine for small or
+        # hom-dominated panels; a diagnostic field, not a QC warning.
         fell_back: str | None = (
             f"a marker class is sparse (hom={n_hom}, het={n_het}, "
             f"min={MIN_CLASS_MARKERS}); used shared rho for this sample"
@@ -442,33 +381,22 @@ def _estimate_single_donor_bb_core(
     else:
         fell_back = None
 
-    # This function is the hot path of every validation sweep in the paper (LoD,
-    # relatedness, depth, overdispersion all bottom out here, millions of calls).
-    # Per profiling it is ~99% of those builds; simulation and VCF IO are noise.
-    # The cost lives in the two scipy searches below (grid rho-profiling and the
-    # Nelder-Mead refinement) hammering _ll_from_p_alt. Optimise here, exactly:
-    # the f-invariant work (w/bias/p_alt via _p_alt_for_f) is already hoisted out
-    # of the rho loops, and the per-call-constant terms are precomputed in
-    # _precompute_marker_arrays. Keep any further change bit-identical (this
-    # estimator's output is validated against fixtures; ~0.1% drift matters at
-    # the low-fraction limit of detection).
-
-    # Precompute the (f, rho)-independent per-marker arrays once and reuse them
-    # across the grid search, Nelder-Mead refinement, and profile-likelihood CI.
+    # Hot path of every paper validation sweep (~99% of build time, millions of
+    # calls), so the f-invariant work is hoisted out of the rho loops and the
+    # per-call-constant terms are precomputed in _precompute_marker_arrays. Keep
+    # any further change bit-identical: output is validated against fixtures and
+    # ~0.1% drift matters at the low-fraction limit of detection.
     arr = _precompute_marker_arrays(markers, cal)
 
-    # Step 1: Grid search over f with rho profiled out at each grid point
+    # Grid search over f with rho profiled out at each grid point.
     grid = np.linspace(0.0, 1.0, grid_steps)
     best_ll = -math.inf
     best_f = 0.0
     best_rho = 100.0
 
-    # Hoisted out of the grid loop: the rho-profiling bounds are the same at
-    # every grid point.
     grid_rho_bounds = (math.log(1.0), math.log(_RHO_SEED_MAX))
     for f in grid:
-        # p_alt depends on f only, so compute it once and reuse it across the
-        # rho profiling (was recomputed at every rho evaluation).
+        # p_alt depends on f only; compute once and reuse across the rho profiling.
         p_alt_f = _p_alt_for_f(arr, f, error_rate)
         opt_rho = minimize_scalar(
             lambda log_r, _p=p_alt_f: -_ll_from_p_alt(arr, _p, math.exp(log_r)),
@@ -482,7 +410,7 @@ def _estimate_single_donor_bb_core(
             best_f = float(f)
             best_rho = rho_cand
 
-    # Step 2: Joint Nelder-Mead refinement over (f, log_rho)
+    # Joint Nelder-Mead refinement over (f, log_rho).
     def neg_ll_joint(x):
         f_val, log_rho_val = x
         if f_val < 0.0 or f_val > 1.0:
@@ -502,8 +430,8 @@ def _estimate_single_donor_bb_core(
     f_mle = max(0.0, min(1.0, float(opt.x[0])))
     rho_mle = math.exp(float(opt.x[1]))
 
-    # Step 3: Profile likelihood CIs for f, profiling out rho at each f.
-    # rho upper bound matches the Nelder-Mead constraint (50000) to avoid
+    # Profile-likelihood CIs for f, profiling out rho at each f. rho upper bound
+    # matches the Nelder-Mead constraint (_RHO_MAX) to avoid
     # profile_ll_f(f_mle) < ll_max_joint, which causes brentq sign errors.
     threshold = chi2.ppf(CI_LEVEL, df=1)
     half_threshold = threshold / 2.0
@@ -525,23 +453,20 @@ def _estimate_single_donor_bb_core(
     def ci_func(f_val: float) -> float:
         return ll_max - profile_ll_f(f_val) - half_threshold
 
-    # Lower bound
     if f_mle <= 0.0 or ci_func(0.0) <= 0.0:
         f_lo = 0.0
     else:
         f_lo = brentq(ci_func, 0.0, f_mle, xtol=1e-5)
 
-    # Upper bound
     if f_mle >= 1.0 or ci_func(1.0) <= 0.0:
         f_hi = 1.0
     else:
         f_hi = brentq(ci_func, f_mle, 1.0, xtol=1e-5)
 
-    # Step 4: Per-marker residuals
     per_marker = _compute_per_marker_results(markers, f_mle, cal)
     n_markers_used = sum(1 for mr in per_marker if mr.included)
 
-    # Step 5: Per-sample analytical detection limits from the fitted noise model.
+    # Per-sample analytical detection limits from the fitted noise model.
     lob, lod = detection_limit(markers, error_rate, rho_mle, cal)
 
     return ChimerismResult(
@@ -569,21 +494,15 @@ def _estimate_single_donor_two_rho(
 ) -> ChimerismResult:
     """Single-donor MLE with a separate rho per marker class (issue #33).
 
-    Fits the donor fraction f jointly with two independent concentration
-    parameters, one for the donor-hom markers and one for the donor-het markers,
-    profiling each rho out at every f. This down-weights the over-dispersed
-    donor-het class (background VAF ~0.5) at low fraction, where its symmetric
-    amplification scatter otherwise rectifies into a small positive host
-    fraction (the sub-0.5% floor). The structure mirrors the shared-rho core: a
-    grid search over f, a Nelder-Mead refinement, a profile-likelihood CI, then
-    per-marker residuals over the full marker set and per-class detection limits.
+    Fits f jointly with two independent concentration parameters, one for the
+    donor-hom markers and one for the donor-het markers, profiling each rho out
+    at every f. This down-weights the over-dispersed donor-het class (background
+    VAF ~0.5) at low fraction, where its symmetric amplification scatter
+    otherwise rectifies into a small positive host fraction (the sub-0.5%
+    floor). Structure mirrors the shared-rho core.
 
     Args:
-        markers: Informative markers (single donor).
         het_mask: Boolean mask from ``_donor_het_mask`` (True at donor-het).
-        error_rate: Sequencing error rate.
-        grid_steps: Number of f grid points for the initial search.
-        cal: Per-marker calibration.
 
     Returns:
         ChimerismResult with ``rho`` set to the het-class rho and ``rho_hom`` /
@@ -594,7 +513,7 @@ def _estimate_single_donor_two_rho(
     arr_hom = _precompute_marker_arrays(hom_markers, cal)
     arr_het = _precompute_marker_arrays(het_markers, cal)
 
-    # Step 1: grid over f, both rhos profiled out at each grid point.
+    # Grid over f, both rhos profiled out at each grid point.
     grid = np.linspace(0.0, 1.0, grid_steps)
     best_ll = -math.inf
     best_f = 0.0
@@ -610,7 +529,7 @@ def _estimate_single_donor_two_rho(
             best_rho_hom = r_hom
             best_rho_het = r_het
 
-    # Step 2: Nelder-Mead refinement over (f, log_rho_hom, log_rho_het).
+    # Nelder-Mead refinement over (f, log_rho_hom, log_rho_het).
     def neg_ll_joint(x):
         f_val, lr_hom, lr_het = x
         if f_val < 0.0 or f_val > 1.0:
@@ -634,7 +553,7 @@ def _estimate_single_donor_two_rho(
     rho_hom_mle = math.exp(float(opt.x[1]))
     rho_het_mle = math.exp(float(opt.x[2]))
 
-    # Step 3: profile-likelihood CI for f, both rhos profiled out at each f.
+    # Profile-likelihood CI for f, both rhos profiled out at each f.
     threshold = chi2.ppf(CI_LEVEL, df=1)
     half_threshold = threshold / 2.0
 
@@ -658,13 +577,13 @@ def _estimate_single_donor_two_rho(
     else:
         f_hi = brentq(ci_func, f_mle, 1.0, xtol=1e-5)
 
-    # Step 4: per-marker residuals over the full marker set at the single f_mle,
-    # so per-marker output, residuals and the robust-refit interaction are
-    # unchanged in shape; only the f they are evaluated at moves.
+    # Per-marker residuals over the full marker set at the single f_mle, so the
+    # per-marker output and robust-refit interaction keep the same shape as the
+    # shared-rho path; only the f they are evaluated at moves.
     per_marker = _compute_per_marker_results(markers, f_mle, cal)
     n_markers_used = sum(1 for mr in per_marker if mr.included)
 
-    # Step 5: per-sample detection limits under the per-class rhos.
+    # Per-sample detection limits under the per-class rhos.
     lob, lod = detection_limit(
         markers,
         error_rate,
@@ -747,22 +666,20 @@ def _robust_refit(
         deviation = resids - med
         keep_mask = np.abs(deviation) <= robust_k * mad
         if ROBUST_ONE_SIDED:
-            # Protect markers whose residual deviates toward host presence.
-            # Increasing the host weight moves a marker's expected ALT VAF toward
-            # the host's own ALT dose (host_alt / PLOIDY), so the host-present
-            # direction at the current fit is sign(host_alt / PLOIDY - expected_vaf).
-            # A residual deviating that way is under-fit host signal, not an
-            # artifact, and must not be trimmed. ``current`` and
-            # ``result.per_marker`` are in the same order (the core estimator
-            # builds per-marker results by iterating the marker list).
+            # Protect markers whose residual deviates toward host presence: that
+            # is under-fit host signal, not an artifact. Raising the host weight
+            # moves expected ALT VAF toward the host's own ALT dose, so the
+            # host-present direction is sign(host_alt / PLOIDY - expected_vaf).
+            # ``current`` and ``result.per_marker`` share order (the core builds
+            # per-marker results by iterating the marker list).
             host_alt = np.array([m.host_gt[0] + m.host_gt[1] for m in current], dtype=float)
             exp_vaf = np.array([mr.expected_vaf for mr in result.per_marker], dtype=float)
             host_dir = np.sign(host_alt / PLOIDY - exp_vaf)
             points_to_host = (host_dir != 0.0) & (np.sign(deviation) == host_dir)
             keep_mask = keep_mask | points_to_host
         n_keep = int(keep_mask.sum())
-        # Gate: on the first pass, only engage if outliers exceed the trigger,
-        # so clean samples (a chance outlier or two) are left untouched.
+        # First-pass gate: only engage if outliers exceed the trigger, so clean
+        # samples (a chance outlier or two) are left untouched.
         if it == 0 and (len(current) - n_keep) < min_trigger:
             break
         if n_keep == len(current) or n_keep < min_markers:
@@ -798,48 +715,37 @@ def estimate_single_donor_bb(
     robust_k: float = ROBUST_K_DEFAULT,
     marker_type_overdispersion: bool = True,
 ) -> ChimerismResult:
-    """Estimate single-donor chimerism with beta-binomial likelihood.
-
-    Estimates single-donor chimerism fraction using beta-binomial
-    per-marker likelihoods to handle overdispersion. Jointly estimates
-    the donor fraction f and concentration parameter rho.
+    """Estimate single-donor chimerism, jointly fitting f and the beta-binomial
+    concentration rho to handle overdispersion.
 
     Args:
-        markers: List of informative markers with admixture allele counts.
-        error_rate: Sequencing error rate (fallback when a marker is missing
-            per-direction rates).
-        grid_steps: Number of grid points for initial f search.
-        calibration: Optional per-marker bias and error tables. For a marker
-            with both per-direction error rates known, the asymmetric
-            REF/ALT-only likelihood is used; otherwise the symmetric 4-state
-            model with ``error_rate`` is used.
+        error_rate: Fallback when a marker is missing per-direction rates.
+        calibration: Per-marker bias and error tables. A marker with both
+            per-direction error rates known uses the asymmetric REF/ALT-only
+            likelihood; otherwise the symmetric 4-state model with ``error_rate``.
         robust: Robust-refit mode. ``"off"`` (default) is the plain MLE.
             ``"auto"`` iteratively drops median/MAD residual outliers and refits,
             never below ``ROBUST_MIN_MARKERS`` survivors; this protects against
             host copy-number / LoH markers (see ``_robust_refit``). ``"force"``
             is the same but trims down to ``ROBUST_HARD_MIN`` (for experiments).
-            On clean data the trim is a no-op and the result is unchanged.
+            On clean data the trim is a no-op.
         robust_k: Residual cut in robust SDs for the refit.
-        marker_type_overdispersion: Fit a separate beta-binomial concentration
-            for the donor-hom and donor-het marker classes instead of one shared
-            rho (issue #33). On by default; removes the sub-0.5% MLE floor. Set
-            False for the legacy shared-rho path (byte-identical to the pre-#33
-            estimator). Falls back to shared rho for a sample when a class has
-            fewer than ``MIN_CLASS_MARKERS`` markers.
-
-    Returns:
-        ChimerismResult with MLE estimate and beta-binomial CIs.
+        marker_type_overdispersion: Fit a separate rho for the donor-hom and
+            donor-het marker classes instead of one shared rho (issue #33). On by
+            default; removes the sub-0.5% MLE floor. False is the legacy
+            shared-rho path (byte-identical to the pre-#33 estimator). Falls back
+            to shared rho when a class has fewer than ``MIN_CLASS_MARKERS``.
     """
     if robust not in ROBUST_MODES:
         raise ValueError(f"robust must be one of {ROBUST_MODES}, got {robust!r}")
 
     cal = calibration or PanelCalibration()
 
-    # Step 30 (issue #30): subtract dose-predicted co-pooled contamination from
-    # donor-hom host-allele counts before the MLE. A no-op (returns the same
-    # list) when no correction is set or the flowcell gated out, so the default
-    # path is byte-identical. Applied here so the corrected counts flow through
-    # the estimate, residuals, CI, and robust refit uniformly.
+    # Subtract dose-predicted co-pooled contamination from donor-hom host-allele
+    # counts before the MLE (issue #30), so corrected counts flow through the
+    # estimate, residuals, CI, and robust refit uniformly. A no-op (same list)
+    # when no correction is set or the flowcell gated out, so the default path is
+    # byte-identical.
     markers = apply_contamination_correction(markers, cal.contamination_correction)
 
     def core(mk: list[InformativeMarker]) -> ChimerismResult:
@@ -862,11 +768,6 @@ def estimate_single_donor_bb(
     )
 
 
-# ---------------------------------------------------------------------------
-# Multi-donor MLE estimation
-# ---------------------------------------------------------------------------
-
-
 def _estimate_multi_donor_core(
     markers: list[InformativeMarker],
     n_donors: int = 2,
@@ -874,10 +775,8 @@ def _estimate_multi_donor_core(
     grid_steps: int = 101,
     calibration: PanelCalibration | None = None,
 ) -> MultiDonorResult:
-    """Estimate multi-donor chimerism fractions via maximum likelihood.
-
-    Uses a beta-binomial likelihood to handle overdispersion, jointly
-    estimating donor fractions and the concentration parameter rho.
+    """Estimate multi-donor chimerism fractions via beta-binomial MLE (no robust
+    trim), jointly fitting the donor fractions and concentration rho.
 
     Algorithm:
         1. Triangular grid search over (f1, f2) at fixed rho
@@ -886,15 +785,7 @@ def _estimate_multi_donor_core(
         4. Per-marker residuals and outlier flagging
 
     Args:
-        markers: Informative markers (for at least one donor).
         n_donors: Number of donors (currently supports 2).
-        error_rate: Sequencing error rate (fallback).
-        grid_steps: Grid resolution per dimension.
-        calibration: Optional per-marker bias and error tables
-            (see ``estimate_single_donor_bb``).
-
-    Returns:
-        MultiDonorResult with per-donor fractions and CIs.
     """
     cal = calibration or PanelCalibration()
     if n_donors > 2:
@@ -918,7 +809,7 @@ def _estimate_multi_donor_core(
             per_donor_n_informative=[0] * n_donors,
         )
 
-    # Step 1: Triangular grid search at fixed rho
+    # Triangular grid search at fixed rho.
     rho_init = 100.0
     best_ll = -math.inf
     best_f = [0.0] * n_donors
@@ -945,7 +836,7 @@ def _estimate_multi_donor_core(
                 best_ll = ll
                 best_f = [f1, f2]
 
-    # Step 2: Nelder-Mead refinement over (f1, f2, log_rho)
+    # Nelder-Mead refinement over (f1, f2, log_rho).
     def neg_ll(x):
         f1, f2, log_rho = x
         if f1 < 0 or f2 < 0 or f1 + f2 > 1.0:
@@ -975,7 +866,6 @@ def _estimate_multi_donor_core(
     rho_mle = math.exp(float(opt.x[2]))
     ll_max = -float(opt.fun)
 
-    # Step 3: Profile likelihood CIs per donor (profiling out other f and rho)
     cis = _profile_likelihood_cis_multi(
         markers,
         f_mle,
@@ -984,10 +874,8 @@ def _estimate_multi_donor_core(
         cal,
     )
 
-    # Step 4: Per-marker residuals
     per_marker = _per_marker_results_multi(markers, f_mle, cal)
 
-    # Per-donor informative counts
     per_donor_n_inf = [0] * n_donors
     for m in markers:
         if m.informative_for is not None:
@@ -1102,7 +990,6 @@ def _profile_likelihood_cis_multi(
                 )
                 return -float(opt_rho.fun)
 
-            # Optimise over (fj, log_rho) jointly
             def neg_ll_inner(x, _di=_didx):
                 fj, log_r = x
                 if fj < 0 or fj > max_fj:
@@ -1135,13 +1022,11 @@ def _profile_likelihood_cis_multi(
         def ci_func(fi: float, _pll=profile_ll, _ref=pll_at_mle) -> float:
             return _ref - _pll(fi) - half_threshold
 
-        # Lower bound
         if fi_mle <= 0.0 or ci_func(0.0) <= 0.0:
             f_lo = 0.0
         else:
             f_lo = brentq(ci_func, 0.0, fi_mle, xtol=1e-5)
 
-        # Upper bound
         if fi_mle >= 1.0 or ci_func(1.0) <= 0.0:
             f_hi = 1.0
         else:
@@ -1184,7 +1069,6 @@ def _per_marker_results_multi(
             )
         )
 
-    # Flag outliers (residual > OUTLIER_SD_THRESHOLD SDs)
     if len(residuals) >= 2:
         r_arr = np.array(residuals)
         mean_r = float(np.mean(r_arr))

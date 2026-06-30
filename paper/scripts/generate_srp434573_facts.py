@@ -1,23 +1,17 @@
 """Summarise the SRP434573 real-data mixture results for the paper.
 
-Reads the two TSVs produced by ``paper/scripts/run_srp434573_allomix.py`` (which runs
-allomix on the joint-called SRP434573 VCFs) and writes:
+Reads the two TSVs produced by ``paper/scripts/run_srp434573_allomix.py`` and writes
+``output/facts/srp434573.csv`` (template variables) and
+``output/facts/fig_srp434573.png`` (two-panel figure: dilution-series accuracy and the
+three-person mixture). It only summarises already-computed allomix output. If the input
+TSVs are missing, regenerate them with ``run_srp434573_allomix.py`` (reads the committed
+snapshot in ``paper/public_data/SRP434573/genotypes``, or a freshly joint-called
+``output/genotypes/SRP434573`` if present).
 
-  output/facts/srp434573.csv     headline facts (template variables)
-  output/facts/fig_srp434573.png two-panel figure: dilution-series accuracy
-                                 (known vs estimated host %) and the one
-                                 three-person mixture
-
-This script does no sequencing or joint calling: it only summarises the
-already-computed allomix output. If the input TSVs are missing, regenerate them
-first with ``paper/scripts/run_srp434573_allomix.py`` (which reads the committed
-genotype snapshot in ``paper/public_data/SRP434573/genotypes``, or a freshly
-joint-called ``output/genotypes/SRP434573`` if present).
-
-The minor (titrated) contributor is mapped to HOST, so the reported quantity is
-the host fraction and the dilution series (10% down to 0.5%) reads as a
-declining-chimerism / relapse-monitoring series. See
-``paper/public_data/SRP434573/README.md`` and ``doc/joint_calling.md``.
+The minor (titrated) contributor is mapped to HOST, so the reported quantity is the host
+fraction and the dilution series (10% down to 0.5%) reads as a declining-chimerism /
+relapse-monitoring series. See ``paper/public_data/SRP434573/README.md`` and
+``doc/joint_calling.md``.
 """
 
 import csv
@@ -35,8 +29,7 @@ from matplotlib.ticker import FuncFormatter  # noqa: E402
 OUT = Path("output")
 FACTS_DIR = OUT / "facts"
 TWO_TSV = OUT / "srp434573_two_person.tsv"
-# Baseline (no Step 30) two-person results, written by run_srp434573_allomix.py
-# alongside the headline (Step 30) TSV, for the before/after contamination facts.
+# Baseline (no Step 30) two-person results, for the before/after contamination facts.
 TWO_BASELINE_TSV = OUT / "srp434573_two_person_baseline.tsv"
 THREE_TSV = OUT / "srp434573_three_person.tsv"
 CONTAM_TABLE_DIR = OUT / "contam_tables"
@@ -91,9 +84,8 @@ def _fmt_pct(v: float, _pos: int) -> str:
 def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts: dict[str, str] = {}
 
-    # Titration accuracy is computed on the dilution series only. The pure
-    # host/donor endpoints (0% and 100% host) carry no titration known fraction
-    # and serve as detection anchors in the figS12 plot, so drop them here.
+    # Titration accuracy uses the dilution series only. The pure host/donor endpoints
+    # (0%/100% host) carry no known fraction (serve as detection anchors in figS12).
     two = [r for r in two if _f(r["known_pct"]) is not None]
 
     known = np.array([_f(r["known_pct"]) for r in two])
@@ -110,9 +102,9 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts["n_review"] = str(sum(1 for q in qc if q == "REVIEW"))
     facts["n_pass"] = str(sum(1 for q in qc if q == "PASS"))
 
-    # Panel and platform metadata (paper/public_data/SRP434573/README.md). The
-    # SNP count is the thesis-stated 1,062; the intervals are reconstructed from
-    # the aligned reads (1,052 = 1,025 autosomal + 27 chrX, derived from the BED).
+    # Panel and platform metadata (paper/public_data/SRP434573/README.md). SNP count is
+    # the thesis-stated 1,062; intervals are reconstructed from aligned reads (1,052 =
+    # 1,025 autosomal + 27 chrX, derived from the BED).
     facts["panel_n_snps"] = "1062"
     facts["platform"] = "Illumina HiSeq 3000"
     facts["raw_depth_min"] = "1000"
@@ -122,16 +114,15 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts["n_intervals_autosomal"] = str(iv["autosomal"])
     facts["n_intervals_chrx"] = str(iv["chrx"])
 
-    # Dilution ladder (minor-contributor %), derived from the known fractions
-    # so the listed levels stay in step with the data.
+    # Dilution ladder (minor-contributor %), derived from the known fractions so the
+    # listed levels stay in step with the data.
     ladder = sorted({float(k) for k in known}, reverse=True)
     facts["n_dilution_levels"] = str(len(ladder))
     facts["dilution_max_pct"] = f"{ladder[0]:g}"
     facts["dilution_min_pct"] = f"{ladder[-1]:g}"
     facts["dilution_ladder"] = ", ".join(f"{v:g}%" for v in ladder)
 
-    # Informative markers actually used in the MLE after GT-quality and depth
-    # filtering (median and range across the two-person timepoints), distinct
+    # Informative markers used in the MLE after GT-quality and depth filtering, distinct
     # from the panel size (1,062 SNPs) and the reconstructed intervals (1,052).
     n_used = np.array([_f(r["n_used"]) for r in two if _f(r["n_used"]) is not None])
     facts["markers_used_median"] = f"{np.median(n_used):.0f}"
@@ -145,7 +136,6 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts["n_reliable"] = str(int(rel.sum()))
     facts["mae_reliable_pct"] = f"{np.mean(np.abs(rel_err)):.2f}"
     facts["max_abs_err_reliable_pct"] = f"{np.max(np.abs(rel_err)):.2f}"
-    # Concordance on the reliable range (Pearson r and r^2 of estimated vs known).
     r = np.corrcoef(known[rel], mle[rel])[0, 1]
     facts["r2_reliable"] = f"{r * r:.3f}"
     facts["r_reliable"] = f"{r:.3f}"
@@ -163,17 +153,14 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts["mle_lowest_max_pct"] = f"{mle[lo].max():.2f}"
     facts["mle_lowest_mean_pct"] = f"{np.mean(mle[lo]):.2f}"
 
-    # 1% host level (six observations across mixtures), the clinically relevant
-    # residual-disease threshold.
+    # 1% host level, the clinically relevant residual-disease threshold.
     one = np.isclose(known, 1.0)
     facts["n_onepct"] = str(int(one.sum()))
     facts["mle_onepct_min_pct"] = f"{mle[one].min():.2f}"
     facts["mle_onepct_max_pct"] = f"{mle[one].max():.2f}"
 
-    # Residual-host presence test (separate from the magnitude MLE): donor-
-    # homozygous markers where the host carries the donor-absent allele. Report
-    # how often it fires, how many markers it reads, and its host-fraction
-    # estimate at the clinically relevant 1% level.
+    # Residual-host presence test (separate from the magnitude MLE): donor-homozygous
+    # markers where the host carries the donor-absent allele.
     pres_p = np.array([_f(r["presence_p"]) for r in two])
     pres_pct = np.array([(_f(r["presence_pct"]) or 0.0) for r in two])
     pres_mk = np.array([(_f(r["presence_markers"]) or 0.0) for r in two])
@@ -198,9 +185,8 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
 def _endpoint_floors(rows: list[dict]) -> list[float]:
     """MLE host % at the true-0%-host endpoints (pure-donor samples).
 
-    Those rows carry no titration known fraction (``known_pct`` blank) and a
-    near-zero estimate; the pure-host endpoint (~100%) is excluded by the < 50%
-    cut. These are the floating floors Step 30 targets.
+    These rows have ``known_pct`` blank; the < 50% cut excludes the pure-host endpoint
+    (~100%). These are the floating floors Step 30 targets.
     """
     out = []
     for r in rows:
@@ -222,8 +208,8 @@ def contamination_facts(two: list[dict], two_base: list[dict] | None) -> dict:
     """
     facts: dict[str, str] = {}
 
-    # In-data contamination level (median per-site minor fraction over the error
-    # floor), read off the headline run; identical under the correction.
+    # In-data contamination level (median per-site minor fraction over the error floor),
+    # read off the headline run; identical under the correction.
     contam = [(_f(r.get("contamination_frac")) or 0.0) * 100 for r in two]
     contam = [c for c in contam if c > 0]
     if contam:
@@ -242,7 +228,7 @@ def contamination_facts(two: list[dict], two_base: list[dict] | None) -> dict:
         facts["contam_line_min_pct"] = f"{min(per_mix.values()):.2f}"
         facts["contam_line_max_pct"] = f"{max(per_mix.values()):.2f}"
 
-    # Step 30 gate outcome and slope range, read from the saved per-mixture tables.
+    # Step 30 gate outcome and slope range, from the saved per-mixture tables.
     if CONTAM_TABLE_DIR.exists():
         from allomix.marker_contamination import load_contamination_table
 
@@ -259,8 +245,8 @@ def contamination_facts(two: list[dict], two_base: list[dict] | None) -> dict:
             facts["correction_slope_min_pct"] = f"{min(slopes):.3f}"
             facts["correction_slope_max_pct"] = f"{max(slopes):.3f}"
 
-    # Zero-host endpoint floor, before vs after Step 30: the headline of the
-    # correction (the floating MLE at true 0% host pulled toward 0).
+    # Zero-host endpoint floor, before vs after Step 30: the floating MLE at true 0%
+    # host pulled toward 0.
     s30_floor = _endpoint_floors(two)
     if s30_floor:
         facts["endpoint_floor_max_corrected_pct"] = f"{max(s30_floor):.3f}"
@@ -288,8 +274,8 @@ def contamination_facts(two: list[dict], two_base: list[dict] | None) -> dict:
 def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
     fig, (axA, axB) = plt.subplots(1, 2, figsize=(12.5, 5.4))
 
-    # Panel A: dilution-series accuracy (log-log scatter, both estimators).
-    # Endpoints (0%/100% host) have no titration known fraction; exclude them.
+    # Panel A: dilution-series accuracy (log-log scatter, both estimators). Endpoints
+    # (0%/100% host) have no known fraction; exclude them.
     two = [r for r in two if _f(r["known_pct"]) is not None]
     known = [_f(r["known_pct"]) for r in two]
     mle = [(_f(r["mle_pct"]) or 0.0) for r in two]
@@ -298,8 +284,8 @@ def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
     mle_p = [m if m > 0 else floor for m in mle]
     pres_p = [p if p > 0 else floor for p in pres]
 
-    # Axis floor sits just below the lowest estimate (~0.26% at the 0.5% dilution)
-    # so the low-end scatter is kept without leaving a large empty lower-left.
+    # Axis floor sits just below the lowest estimate (~0.26% at the 0.5% dilution) so the
+    # low-end scatter is kept without leaving a large empty lower-left.
     lims = [0.2, 13]
     axA.plot(lims, lims, color="0.4", ls="--", lw=1.2, zorder=1, label="perfect recovery (y = x)")
     axA.scatter(

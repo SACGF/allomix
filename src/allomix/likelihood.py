@@ -1,20 +1,16 @@
-"""Likelihood and weight model for chimerism estimation.
+"""Likelihood and weight model for chimerism estimation (no optimisation).
 
 The beta-binomial per-marker likelihood and the expected-weight model it is
-built on, with no optimisation. ``allomix.chimerism`` imports these to build the
-MLE estimators; keeping them separate makes the likelihood model readable on its
-own and lets the vectorised core be tested directly.
+built on; ``allomix.chimerism`` imports these to build the MLE estimators.
 
-Uses a beta-binomial likelihood to handle overdispersion from per-marker
-amplification bias and depth variability. A standard binomial model assumes all
-variance comes from random sampling; in practice, systematic effects produce
-extra-binomial variance that causes binomial CIs to undercover. The
-beta-binomial adds a shared concentration parameter rho that is jointly
-estimated from the data, naturally widening CIs when overdispersion is present,
-with the largest improvement in CI coverage at low donor fractions where
-accurate CIs matter most clinically. Per-marker amplification bias (het-site VAF
-deviation, SD ~0.02 empirically) is corrected multiplicatively in logit space
-(see ``apply_bias``).
+The beta-binomial handles overdispersion from per-marker amplification bias and
+depth variability. A binomial model assumes all variance is random sampling, but
+systematic effects add extra-binomial variance that makes binomial CIs
+undercover. The shared concentration parameter rho, jointly estimated from the
+data, widens CIs when overdispersion is present, with the largest coverage gain
+at low donor fractions where accurate CIs matter most clinically. Per-marker
+amplification bias (het-site VAF deviation, SD ~0.02 empirically) is corrected
+multiplicatively in logit space (see ``apply_bias``).
 """
 
 from dataclasses import dataclass, field
@@ -33,22 +29,21 @@ from allomix.marker_contamination import ContaminationCorrection
 class PanelCalibration:
     """Per-marker calibration applied during chimerism estimation.
 
-    Bundles the two optional per-marker tables the estimators consume:
+    Bundles the optional per-marker tables the estimators consume:
 
-    - ``biases``: amplification bias per marker (see ``allomix.bias``). A
-      positive value means the ALT allele is preferentially captured.
-    - ``errors``: per-direction empirical substitution rates per marker (see
+    - ``biases``: amplification bias per marker (see ``allomix.bias``). Positive
+      means the ALT allele is preferentially captured.
+    - ``errors``: per-direction empirical substitution rates (see
       ``allomix.error_rates``). Used for the asymmetric REF/ALT-only likelihood
       where both directions are known.
+    - ``contamination_correction``: per-marker co-pooled contamination correction
+      (Step 30, see ``allomix.marker_contamination``). Applied by
+      ``estimate_single_donor_bb`` before the MLE. None (the default) and a
+      gated-out table both leave estimation byte-identical.
 
-    - ``contamination_correction``: optional per-marker co-pooled contamination
-      correction (Step 30, see ``allomix.marker_contamination``). Applied by
-      ``allomix.chimerism.estimate_single_donor_bb`` before the MLE. None (the
-      default) and a gated-out table both leave estimation byte-identical.
-
-    Both tables default to empty, so an uncalibrated run is ``PanelCalibration()``.
+    Tables default to empty, so an uncalibrated run is ``PanelCalibration()``.
     Markers absent from a table fall through to the uncorrected weight (bias 0)
-    or the symmetric global ``error_rate`` (errors).
+    or the symmetric global ``error_rate``.
     """
 
     biases: dict[MarkerKey, float] = field(default_factory=dict)
@@ -73,11 +68,6 @@ class PanelCalibration:
         return self.errors.get((m.chrom, m.pos, m.ref, m.alt))
 
 
-# ---------------------------------------------------------------------------
-# Core likelihood functions
-# ---------------------------------------------------------------------------
-
-
 # Clamp keeping expected weights off the 0/1 boundary (log-likelihood needs p > 0).
 W_EPS = 1e-6
 
@@ -99,13 +89,6 @@ def apply_bias(w: float | np.ndarray, bias: float | np.ndarray) -> float | np.nd
     matching the estimate; at an extreme expected VAF it is only a small
     multiplicative nudge rather than a large additive jump. Works for scalars
     and numpy arrays. The result is clamped to ``[W_EPS, 1 - W_EPS]``.
-
-    Args:
-        w: Expected reference allele weight(s) before correction.
-        bias: Per-marker bias(es) in het-site VAF units.
-
-    Returns:
-        Bias-corrected reference allele weight(s).
     """
     p = np.clip(0.5 + bias, W_EPS, 1.0 - W_EPS)  # observed het ALT-favouring as a probability
     w_clamped = np.clip(w, W_EPS, 1.0 - W_EPS)
@@ -121,16 +104,9 @@ def inject_bias(alt_vaf: float | np.ndarray, bias: float | np.ndarray) -> float 
     self-consistent: at the true parameters the injected ALT VAF equals the
     estimator's expected biased ALT VAF, ``1 - apply_bias(w_true, bias)``.
     Equivalent to ``expit(logit(alt_vaf) + logit(0.5 + bias))``; at a het site
-    (true VAF 0.5) the observed VAF becomes ``0.5 + bias``. (Note this is not an
-    algebraic inverse of ``apply_bias``: both shift in the same direction, so
-    composing them would double-correct.)
-
-    Args:
-        alt_vaf: True ALT-allele VAF(s) before bias.
-        bias: Per-marker bias(es) in het-site VAF units.
-
-    Returns:
-        Biased ALT VAF(s), clamped to ``[W_EPS, 1 - W_EPS]``.
+    (true VAF 0.5) the observed VAF becomes ``0.5 + bias``. Not an algebraic
+    inverse of ``apply_bias``: both shift in the same direction, so composing
+    them would double-correct.
     """
     return 1.0 - apply_bias(1.0 - np.asarray(alt_vaf, dtype=float), bias)
 
@@ -145,18 +121,9 @@ def expected_weight(
 
     w = (1 - f) * host_ref_dose / 2 + f * donor_ref_dose / 2
 
-    where ref_dose = 2 - alt_dose. This is the single-donor case of
-    ``expected_weight_multi``; it delegates to that to keep the dose math in one
+    where ref_dose = 2 - alt_dose. The single-donor case of
+    ``expected_weight_multi``, delegating to it to keep the dose math in one
     place (the two are algebraically identical, bias branch included).
-
-    Args:
-        host_gt: Host diploid genotype, e.g. (0, 0), (0, 1), (1, 1).
-        donor_gt: Donor diploid genotype.
-        f_donor: Donor fraction (0.0 to 1.0).
-        bias: Per-marker amplification bias (default 0.0 = no correction).
-
-    Returns:
-        Expected reference allele weight (0.0 to 1.0).
     """
     return expected_weight_multi(host_gt, [donor_gt], [f_donor], bias=bias)
 
@@ -169,13 +136,6 @@ def alt_read_probability(w: float, error_rate: float = DEFAULT_ERROR_RATE) -> fl
     true REF allele miscalled to the ALT base (probability ``e / 3``). The two
     raw probabilities are renormalised so they condition on the read being
     called REF or ALT rather than one of the other two bases.
-
-    Args:
-        w: Expected reference allele weight (fraction of REF alleles).
-        error_rate: Per-base sequencing error rate ``e``.
-
-    Returns:
-        P(observe ALT | w), between 0 and 1.
     """
     e = error_rate
     e_specific = e / N_OTHER_BASES
@@ -208,18 +168,12 @@ def log_likelihood_marker_bb(
     When rho -> inf this converges to the binomial log-likelihood.
 
     Args:
-        ad_ref: Reference allele read count.
-        ad_alt: Alternative allele read count.
-        w: Expected reference allele weight.
-        error_rate: Symmetric 4-state rate, used only when asymmetric rates
-            are not both provided (default 0.01).
-        rho: Beta-binomial concentration parameter. Larger = less
-            overdispersion. Typical empirical values: 50-500.
+        error_rate: Symmetric 4-state rate, used only when asymmetric rates are
+            not both provided.
+        rho: Beta-binomial concentration. Larger = less overdispersion. Typical
+            empirical values: 50-500.
         e_refalt: ``P(observe ALT | true REF)`` for this marker.
         e_altref: ``P(observe REF | true ALT)`` for this marker.
-
-    Returns:
-        Log-likelihood contribution from this marker.
     """
     if e_refalt is not None and e_altref is not None:
         # Asymmetric REF/ALT-only model. p_alt + p_ref = 1 by construction.
@@ -256,18 +210,11 @@ def total_log_likelihood_bb(
     """Sum of per-marker beta-binomial log-likelihoods.
 
     Args:
-        markers: List of informative markers with admixture allele counts.
-        f_donor: Donor fraction to evaluate.
-        error_rate: Sequencing error rate (used as the fallback when a marker
-            is missing from ``calibration.errors`` or only one direction is
-            known).
-        rho: Beta-binomial concentration parameter.
-        calibration: Optional per-marker bias and error tables. A marker's
-            per-direction rates are used (asymmetric model) only when both are
-            known; otherwise the symmetric ``error_rate`` model applies.
-
-    Returns:
-        Total log-likelihood.
+        error_rate: Fallback when a marker is missing from ``calibration.errors``
+            or only one direction is known.
+        calibration: Per-marker bias and error tables. A marker's per-direction
+            rates are used (asymmetric model) only when both are known; otherwise
+            the symmetric ``error_rate`` model applies.
     """
     if not markers:
         return 0.0
@@ -295,8 +242,8 @@ class _MarkerArrays:
     e_refalt: np.ndarray
     e_altref: np.ndarray
     error_mask: np.ndarray  # True where both per-direction rates are known
-    # (f, rho)-independent precomputations, hoisted out of the per-evaluation
-    # hot path. ``has_bias``/``has_error`` cache the per-call ``.any()`` checks;
+    # (f, rho)-independent precomputations hoisted out of the hot path.
+    # ``has_bias``/``has_error`` cache the per-call ``.any()`` checks;
     # ``logit_bias_masked`` is ``logit(clip(0.5 + bias))`` at the biased markers
     # (the only bias-dependent term in ``apply_bias``), so the likelihood loop
     # never recomputes it. All exact: same values the per-call code produced.
@@ -313,14 +260,6 @@ def _precompute_marker_arrays(
 
     Uses the first donor genotype (single-donor model), matching
     ``total_log_likelihood_bb``.
-
-    Args:
-        markers: List of informative markers with admixture allele counts.
-        calibration: Per-marker bias and error tables (empty tables = no
-            correction).
-
-    Returns:
-        Precomputed per-marker arrays for ``_total_ll_vec``.
     """
     n_markers = len(markers)
     host_ref_dose = np.fromiter(
@@ -351,9 +290,8 @@ def _precompute_marker_arrays(
             entry = calibration.error_for(m)
             if entry is None:
                 continue
-            # Both directions required for the asymmetric path. Storing one
-            # only would leave the other side of the likelihood underspecified
-            # at hets and at the opposite-homozygous endpoint.
+            # Both directions required: one alone leaves the likelihood
+            # underspecified at hets and at the opposite-homozygous endpoint.
             if entry.e_refalt is None or entry.e_altref is None:
                 continue
             e_refalt[i] = entry.e_refalt
@@ -361,10 +299,9 @@ def _precompute_marker_arrays(
     error_mask = ~np.isnan(e_refalt)
 
     bias_mask = bias != 0.0
-    # logit(clip(0.5 + bias)) at the biased markers, in array order, so it lines
-    # up with ``w[bias_mask]``. This is exactly the ``logit(p)`` term inside
-    # ``apply_bias``; lifting it here keeps the per-evaluation work to the
-    # w-dependent part only.
+    # The ``logit(p)`` term inside ``apply_bias`` at the biased markers (array
+    # order, lines up with ``w[bias_mask]``), lifted here so the per-evaluation
+    # loop does only the w-dependent part.
     logit_bias_masked = logit(np.clip(0.5 + bias[bias_mask], W_EPS, 1.0 - W_EPS))
 
     return _MarkerArrays(
@@ -394,15 +331,6 @@ def _total_ll_vec(
     Numerically equivalent to ``total_log_likelihood_bb`` (differences only at
     the ``gammaln`` vs ``math.lgamma`` rounding level, ~1e-9). Markers with
     ``n == 0`` contribute 0 automatically.
-
-    Args:
-        arr: Per-marker arrays from ``_precompute_marker_arrays``.
-        f_donor: Donor fraction to evaluate.
-        error_rate: Sequencing error rate.
-        rho: Beta-binomial concentration parameter.
-
-    Returns:
-        Total log-likelihood.
     """
     return _ll_from_p_alt(arr, _p_alt_for_f(arr, f_donor, error_rate), rho)
 
@@ -470,19 +398,10 @@ def total_log_likelihood_multi_bb(
     rho: float = 100.0,
     calibration: PanelCalibration | None = None,
 ) -> float:
-    """Sum of per-marker beta-binomial log-likelihoods for multi-donor model.
+    """Sum of per-marker beta-binomial log-likelihoods for the multi-donor model.
 
     Args:
-        markers: Informative markers (for at least one donor).
-        donor_fractions: [f_donor1, f_donor2, ...].
-        error_rate: Sequencing error rate (fallback when a marker's
-            per-direction rate is missing).
-        rho: Beta-binomial concentration parameter.
-        calibration: Optional per-marker bias and error tables
-            (see ``total_log_likelihood_bb``).
-
-    Returns:
-        Total log-likelihood.
+        error_rate: Fallback when a marker's per-direction rate is missing.
     """
     cal = calibration or PanelCalibration()
     ll = 0.0
@@ -514,14 +433,8 @@ def expected_weight_multi(
 
     w = (1 - f1 - f2) * host_ref_dose/2 + f1 * d1_ref_dose/2 + f2 * d2_ref_dose/2
 
-    Args:
-        host_gt: Host diploid genotype.
-        donor_gts: List of donor diploid genotypes.
-        donor_fractions: List of donor fractions (sum <= 1.0).
-        bias: Per-marker amplification bias.
-
-    Returns:
-        Expected reference allele weight (0.0 to 1.0).
+    ``donor_fractions`` must sum to <= 1.0. Returns the expected reference allele
+    weight (0.0 to 1.0).
     """
     host_ref_dose = PLOIDY - (host_gt[0] + host_gt[1])
     f_host = 1.0 - sum(donor_fractions)

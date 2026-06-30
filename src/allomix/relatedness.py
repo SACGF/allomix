@@ -30,10 +30,6 @@ from scipy.stats import binom, norm
 from allomix.constants import CI_LEVEL, DEFAULT_ERROR_RATE
 from allomix.genotype import MarkerData, is_sex_chrom, marker_key
 
-# ---------------------------------------------------------------------------
-# Tunable constants
-# ---------------------------------------------------------------------------
-
 # Coefficient bands -> degree index. A coefficient strictly above a band's lower
 # edge (and within the next one up) maps to that degree. Scale: ~1.0 identical,
 # ~0.5 first-degree, ~0.25 second-degree, ~0.125 third-degree, ~0 unrelated.
@@ -42,7 +38,6 @@ FIRST_DEGREE_MIN = 0.35
 SECOND_DEGREE_MIN = 0.17
 THIRD_DEGREE_MIN = 0.08
 
-# Degree indices.
 DEGREE_IDENTICAL = 0
 DEGREE_FIRST = 1
 DEGREE_SECOND = 2
@@ -58,13 +53,11 @@ DEGREE_LABELS = {
 }
 
 # Declared expected-relationship strings accepted on input, mapped to a degree.
-# "related" is a catch-all matching any related class (degrees 1-3); handled
-# separately in the comparison since it is not a single degree. "identical" is
-# deliberately NOT accepted as a declaration. The only case where host and donor
-# are genuinely identical is an identical-twin (syngeneic) donor, and then there
-# are no host/donor genetic differences to measure, so genotype-based chimerism
-# does not apply and there is nothing useful to declare. Identical is still a
-# *detected* outcome (flagged as a duplicate / unmeasurable pair).
+# "related" is a catch-all for any related class (degrees 1-3), handled separately
+# since it is not a single degree. "identical" is deliberately NOT accepted: the
+# only genuinely identical pair is an identical-twin (syngeneic) donor, which has
+# no host/donor differences to measure, so genotype chimerism does not apply.
+# Identical remains a *detected* outcome (flagged as a duplicate / unmeasurable).
 DECLARED_DEGREE = {
     "first-degree": DEGREE_FIRST,
     "second-degree": DEGREE_SECOND,
@@ -76,12 +69,10 @@ RELATED_CATCH_ALL = "related"
 VALID_DECLARATIONS = (*DECLARED_DEGREE.keys(), RELATED_CATCH_ALL)
 
 # When a declaration and the estimate sit on opposite sides of the
-# related/unrelated boundary, only a *close* relationship (this degree or nearer:
-# identical / first / second) makes it a hard FAIL. Third-degree (cousin) sits
-# within sampling noise of the boundary, so such a crossing is a REVIEW, not a
-# FAIL. This keeps the swap/mislabel signal (e.g. declared sibling, detected
-# unrelated) without failing legitimate distant kin that estimate just over the
-# line.
+# related/unrelated boundary, only a *close* relationship (second-degree or
+# nearer) makes it a hard FAIL. Third-degree (cousin) sits within sampling noise
+# of the boundary, so such a crossing is a REVIEW. This keeps the swap/mislabel
+# signal without failing legitimate distant kin that estimate just over the line.
 BOUNDARY_FAIL_MAX_DEGREE = DEGREE_SECOND
 
 # Minimum heterozygous sites (in the scarcer sample) before a coefficient is
@@ -104,28 +95,19 @@ MIN_CONSENSUS = 20
 _Z_TWO_SIDED = float(norm.ppf(1.0 - (1.0 - CI_LEVEL) / 2.0))
 
 
-# ---------------------------------------------------------------------------
-# Result types
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class RelatednessResult:
     """Robust relatedness estimate between two samples over shared autosomes.
 
     Attributes:
-        a_name: First sample label.
-        b_name: Second sample label.
-        coefficient: Robust relatedness coefficient, or None when there are too
-            few shared heterozygous sites (< ``MIN_HET_SITES``) to estimate it.
+        coefficient: Robust relatedness coefficient, or None when too few shared
+            heterozygous sites (< ``MIN_HET_SITES``) to estimate it.
         ci_low: Lower bound of the approximate 95% CI (None if no coefficient).
         ci_high: Upper bound of the approximate 95% CI (None if no coefficient).
         confidence: "low" / "med" / "high" from the usable het-site count.
         relationship: English relationship label for ``degree``.
         degree: Degree index 0-4 (see ``DEGREE_LABELS``), or None if no estimate.
         n_sites: Shared, clean, autosomal biallelic markers compared.
-        het_a: Heterozygous sites in sample A.
-        het_b: Heterozygous sites in sample B.
         shared_hets: Sites heterozygous in both samples.
         ibs0: Opposite-homozygote sites (0 vs 2 alt dose).
     """
@@ -146,7 +128,6 @@ class RelatednessResult:
 
     @property
     def pair(self) -> str:
-        """Human-readable pair label, e.g. ``host vs donor1``."""
         return f"{self.a_name} vs {self.b_name}"
 
 
@@ -174,26 +155,13 @@ class AdmixConsistencyResult:
 
 @dataclass
 class RelatednessVerdict:
-    """Outcome of comparing an estimated relatedness against a declared one.
-
-    Attributes:
-        pair: Pair label the verdict applies to.
-        declared: The declared expected relationship.
-        detected: The detected English relationship.
-        status: "PASS", "REVIEW", or "FAIL".
-        message: A one-line explanation suitable for a QC warning.
-    """
+    """Outcome of comparing an estimated relatedness against a declared one."""
 
     pair: str
     declared: str
     detected: str
-    status: str
-    message: str
-
-
-# ---------------------------------------------------------------------------
-# Relatedness coefficient
-# ---------------------------------------------------------------------------
+    status: str  # "PASS", "REVIEW", or "FAIL"
+    message: str  # one-line explanation suitable for a QC warning
 
 
 def _clean_dose(gt: tuple[int, int]) -> int | None:
@@ -260,16 +228,9 @@ def relatedness_coefficient(
     autosomal, clean biallelic genotypes are used. Allele frequencies are not
     needed, which suits an arbitrary panel.
 
-    Args:
-        a: First sample's markers.
-        b: Second sample's markers.
-        a_name: Label for the first sample.
-        b_name: Label for the second sample.
-
-    Returns:
-        A ``RelatednessResult``. ``coefficient`` is None when fewer than
-        ``MIN_HET_SITES`` heterozygous sites are shared, in which case ``degree``
-        is None and ``relationship`` is "undetermined".
+    ``coefficient`` is None when fewer than ``MIN_HET_SITES`` heterozygous sites
+    are shared, in which case ``degree`` is None and ``relationship`` is
+    "undetermined".
     """
     b_by_key = {marker_key(m): m for m in b}
 
@@ -334,11 +295,6 @@ def relatedness_coefficient(
     )
 
 
-# ---------------------------------------------------------------------------
-# Admixture consensus-homozygote consistency / swap check
-# ---------------------------------------------------------------------------
-
-
 def admix_consistency(
     host: list[MarkerData],
     donors: list[list[MarkerData]],
@@ -359,18 +315,9 @@ def admix_consistency(
     This is complementary to the MLE goodness-of-fit, which only uses
     informative markers and never tests these consensus sites.
 
-    Args:
-        host: Parsed host markers.
-        donors: One parsed marker list per donor.
-        admix: Parsed admixture markers (raw allele depths).
-        error_rate: Per-site probability of a minority-allele read under no
-            swap. Using the full symmetric rate (rather than ``error_rate/3``)
-            is the conservative choice: it raises the bar for calling a site
-            discordant.
-        min_dp: Minimum admixture depth for a marker to be tested.
-
-    Returns:
-        An ``AdmixConsistencyResult``.
+    ``error_rate`` is the per-site probability of a minority-allele read under no
+    swap. Using the full symmetric rate (not ``error_rate/3``) is the conservative
+    choice: it raises the bar for calling a site discordant.
     """
     donor_maps = [{marker_key(m): m for m in d} for d in donors]
     admix_map = {marker_key(m): m for m in admix}
@@ -414,11 +361,6 @@ def admix_consistency(
         discordant_fraction=n_discordant / n_consensus,
         swap_pval=swap_pval,
     )
-
-
-# ---------------------------------------------------------------------------
-# Expected-vs-detected comparison
-# ---------------------------------------------------------------------------
 
 
 #: Inputs that mean "no expectation declared": no verdict, and no error.
@@ -516,13 +458,8 @@ def evaluate_expected(
     Note: a duplicate (identical reference pair) is also flagged unconditionally
     in ``assess_quality``, independent of any declaration.
 
-    Args:
-        result: The estimated relatedness for the pair.
-        declared: Declared expected relationship, or None / "NA" for none.
-        tolerance: Allowed degree distance for a PASS (default 1).
-
-    Returns:
-        A ``RelatednessVerdict`` or None.
+    ``tolerance`` is the allowed degree distance for a PASS (default 1). Returns
+    None when there is no declaration.
 
     Raises:
         ValueError: if ``declared`` is a non-blank, non-"NA" string that is not a

@@ -55,11 +55,8 @@ from allomix.runmeta import RunUnitInfo, read_run_units
 def _expected_relatedness_value(value: str) -> str:
     """Validate one ``--expected-relatedness`` value (argparse ``type``).
 
-    Accepts the relationship declarations plus NA (case-insensitive), returning
-    the lowercased form. Rejects "identical" with an explanation: host and donor
-    are only identical for a monozygotic-twin (syngeneic) donor, which has no
-    host/donor genetic differences to measure, so genotype-based chimerism does
-    not apply and there is nothing to declare.
+    Accepts the relationship declarations plus NA (case-insensitive), returns the
+    lowercased form. Rejects "identical" (see the raised error for why).
     """
     v = value.strip().lower()
     if v == "identical":
@@ -264,8 +261,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 def _add_report_meta_args(parser: argparse.ArgumentParser) -> None:
     """Add the optional HTML-report metadata flags.
 
-    Every flag is optional; the HTML report renders cleanly without them. They
-    only populate the header band and are ignored by the tsv/json formats.
+    All optional: they populate the HTML header band and are ignored by the
+    tsv/json formats.
     """
     group = parser.add_argument_group("HTML report metadata (optional)")
     group.add_argument("--recipient-id", help="Recipient identifier for the report header")
@@ -365,8 +362,7 @@ def _report_timestamp(args: argparse.Namespace) -> str:
 def _validate_expected_relatedness(args: argparse.Namespace) -> None:
     """Check --expected-relatedness count matches the number of donors.
 
-    Raises SystemExit with a clear message rather than letting a count mismatch
-    surface later as a strict-zip error in the QC step.
+    Fails early with a clear message rather than as a later strict-zip error in QC.
     """
     er = args.expected_relatedness
     if er is not None and len(er) != len(args.donor_sample):
@@ -378,11 +374,7 @@ def _validate_expected_relatedness(args: argparse.Namespace) -> None:
 
 
 def _validate_sample_names(vcf_path: str, required: list[str]) -> None:
-    """Check that all required sample names exist in the VCF header.
-
-    Raises SystemExit with a clear error listing available names if any
-    are missing.
-    """
+    """Check that all required sample names exist in the VCF header."""
     vcf = VCF(vcf_path)
     available = list(vcf.samples)
     vcf.close()
@@ -413,9 +405,8 @@ def _run_single_sample(
     """Run the chimerism pipeline for one admixture sample.
 
     Takes pre-parsed host and donor markers to avoid redundant VCF reads, then
-    delegates to ``allomix.analysis.analyse_sample`` (shared with the
-    diagnostic scripts). Automatically uses multi-donor estimation when more
-    than one donor is provided.
+    delegates to ``allomix.analysis.analyse_sample`` (shared with the diagnostic
+    scripts). Multi-donor estimation kicks in when more than one donor is given.
 
     Returns (ChimerismResult | MultiDonorResult, QCReport, MarkerGenotypes).
     """
@@ -461,10 +452,9 @@ def _open_output(path: str):
 def _add_output_args(parser: argparse.ArgumentParser, *, allow_tsv: bool) -> None:
     """Add the per-artifact output flags shared by monitor and timeline.
 
-    Each flag names where one artifact is written; any combination may be given
-    in a single run (for example ``--json r.json --html r.html``). ``-`` writes
-    to stdout. When no output flag is given the command falls back to its default
-    (TSV for monitor, JSON for timeline), written to stdout.
+    Any combination may be given in one run (e.g. ``--json r.json --html r.html``);
+    ``-`` writes to stdout. With no output flag the command falls back to its
+    default (TSV for monitor, JSON for timeline) on stdout.
     """
     parser.add_argument(
         "--json",
@@ -505,16 +495,11 @@ def _write_text(path: str, text: str) -> None:
 def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     """Build the per-marker calibration from the CLI table options.
 
-    Bias comes from --bias-table, or is estimated inline from the panel VCF
-    samples when --estimate-bias is set, or is empty. Per-site error comes from
-    --error-table or is empty. The --no-*-correction flags force the respective
-    correction off.
-
-    Per-marker bias only helps the markers that are informative for this run,
-    and those are hom in both contributors, so they cannot be measured inline
-    from one host/donor pair. Build a reusable table ahead of time with
-    ``allomix estimate-bias`` (from a reference cohort, or ``--both-het`` across
-    a patient cohort) and pass it with ``--bias-table``.
+    Per-marker bias only helps markers that are informative for this run, and
+    those are hom in both contributors, so they cannot be measured inline from one
+    host/donor pair. Build a reusable table ahead of time with
+    ``allomix estimate-bias`` (from a reference cohort, or ``--both-het`` across a
+    patient cohort) and pass it with ``--bias-table``.
     """
     estimate_bias = getattr(args, "estimate_bias", False)
     if estimate_bias and args.bias_table:
@@ -557,8 +542,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     _validate_sample_names(args.panel_vcf, [args.host_sample] + args.donor_sample)
     _validate_sample_names(args.admix_vcf, args.sample)
 
-    # Resolve which artifacts to write. With no output flag, default to TSV on
-    # stdout (preserving the historical default).
+    # No output flag defaults to TSV on stdout (the historical default).
     want_json = args.json is not None
     want_html = args.html is not None
     want_tsv = args.tsv is not None
@@ -567,8 +551,8 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         want_tsv = True
         args.tsv = "-"
 
-    # The single-sample report covers one admixture sample. Multiple timepoints
-    # belong in the timeline report (which adds the trend chart).
+    # The single-sample report covers one sample; multiple timepoints belong in
+    # the timeline report (which adds the trend chart).
     if (want_json or want_html) and len(args.sample) != 1:
         raise SystemExit(
             "monitor --json/--html produce one report for a single --sample; got "
@@ -577,12 +561,11 @@ def cmd_monitor(args: argparse.Namespace) -> int:
 
     calibration = _load_calibration(args)
 
-    # Parse host and donors once — they're the same for every timepoint.
-    # gt_ad_consistency=True is the panel-side miscall guard: drops
-    # markers where the called GT contradicts the AD VAF (e.g. GATK
-    # called het from 20% VAF reads in a 2-sample joint call). Without
-    # it, the wider gnomAD-derived panel recovers markers that bias the
-    # estimator toward false host signal — see Step 23 verification.
+    # Parse host and donors once (same for every timepoint).
+    # gt_ad_consistency=True is the panel-side miscall guard: drops markers where
+    # the called GT contradicts the AD VAF (e.g. GATK calling het from 20%-VAF
+    # reads in a 2-sample joint call). Without it the wider gnomAD-derived panel
+    # recovers markers that bias the estimator toward false host signal (Step 23).
     host = parse_vcf(
         args.panel_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
     )
@@ -591,11 +574,10 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         for d in args.donor_sample
     ]
 
-    # Optional run-unit metadata stamped on the admix VCF header by the pipeline
+    # Run-unit metadata stamped on the admix VCF header by the pipeline
     # (index-hopping check, issue #12). Empty when the VCF carries none.
     run_units = read_run_units(args.admix_vcf)
 
-    # (sample_name, result, qc) per sample; plus the per-marker CSV rows.
     results: list[tuple[str, object, object]] = []
     marker_rows: list[tuple[str, object]] = []
     for sample_name in args.sample:
@@ -621,8 +603,7 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         results.append((genotypes.sample_name, result, qc))
         marker_rows.append((genotypes.sample_name, result))
 
-    # The structured envelope is the single source for the JSON and the HTML, so
-    # the two always agree. Single-sample only (enforced above).
+    # One envelope feeds both the JSON and the HTML so they always agree.
     if want_json or want_html:
         name, result, qc = results[0]
         data = report_data(
@@ -716,10 +697,9 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         if want_json:
             _write_text(args.json, json.dumps(data, indent=2) + "\n")
         if want_html:
-            # Deferred import: the trend chart needs matplotlib (the optional
-            # `report` extra), and timeline.py imports it at module top. Keeping
-            # this import after the capability check leaves the json path working
-            # on the base runtime deps alone.
+            # Deferred import: timeline.py imports matplotlib (the optional
+            # `report` extra) at module top, so importing here, after the
+            # capability check, keeps the json path working on base deps alone.
             from allomix.html.timeline import render_timeline
 
             _write_text(
@@ -736,11 +716,9 @@ def cmd_timeline(args: argparse.Namespace) -> int:
 def cmd_report(args: argparse.Namespace) -> int:
     """Render an HTML report from a saved report-data JSON file.
 
-    Reads the structured envelope written by ``monitor --json`` or
-    ``timeline --json`` and renders the same HTML the analysis step would have,
-    so report generation can be separated from analysis (or re-run after the data
-    is processed or moved). Single-sample and timeline envelopes are detected
-    from the ``kind`` field.
+    Reads the envelope written by ``monitor --json`` / ``timeline --json`` and
+    renders the same HTML, so report generation can be split from analysis (or
+    re-run later). The ``kind`` field selects single-sample vs timeline.
     """
     raw = sys.stdin.read() if args.input == "-" else Path(args.input).read_text(encoding="utf-8")
     data = json.loads(raw)
@@ -800,12 +778,12 @@ def cmd_estimate_bias(args: argparse.Namespace) -> int:
 def _cmd_estimate_bias_both_het(args: argparse.Namespace) -> int:
     """Build a pooled bias table from admix samples at both-het markers.
 
-    A marker that is heterozygous in both the host and every donor has true
-    admix VAF 0.5 regardless of the mixing fraction, so the admix AD there gives
-    the per-marker bias directly, from the same caller as the admix (issue #11).
-    Those markers are non-informative for the same host/donor pair, so this is a
-    cohort table builder: run it across patients and apply the table (with
-    ``--bias-table``) to other patients, whose informative markers it covers.
+    A marker heterozygous in both host and every donor has true admix VAF 0.5
+    regardless of mixing fraction, so the admix AD there gives the per-marker bias
+    directly, from the same caller as the admix (issue #11). Such markers are
+    non-informative for that same host/donor pair, so this is a cohort table
+    builder: run it across patients and apply the table (``--bias-table``) to
+    other patients, whose informative markers it covers.
     """
     if args.vcfs or args.samples:
         raise SystemExit(
@@ -863,8 +841,8 @@ def cmd_estimate_errors(args: argparse.Namespace) -> int:
 
     # Hom-ref background VCFs (e.g. raw mpileup at force-called amplicon
     # midpoints) carry the same samples; their hom-ref calls add the ref->alt
-    # observations the variant-only joint call cannot supply. They go through the
-    # same estimator, so ref->alt is pooled across panel hom-ref sites and these.
+    # observations the variant-only joint call cannot supply, pooled through the
+    # same estimator with the panel hom-ref sites.
     for homref_path in args.homref_vcf:
         _validate_sample_names(homref_path, args.samples)
         for sample in args.samples:
@@ -897,7 +875,7 @@ def cmd_build_contamination_table(args: argparse.Namespace) -> int:
     _validate_sample_names(args.vcf, [args.host_sample, *args.donor_sample])
     _validate_sample_names(args.admix_vcf, args.sample)
 
-    # Host and donors with the same panel-side miscall guard the analysis uses.
+    # Same panel-side miscall guard (gt_ad_consistency) the analysis uses.
     host = parse_vcf(args.vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True)
     donors = [
         parse_vcf(args.vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
@@ -906,8 +884,8 @@ def cmd_build_contamination_table(args: argparse.Namespace) -> int:
 
     admix_lists = [parse_vcf(args.admix_vcf, sample=s, min_dp=0) for s in args.sample]
 
-    # Cohort genotypes for carrier counts: the co-pooled flowcell individuals.
-    # Default to every sample in --vcf (which should include host and donors).
+    # Carrier counts come from the co-pooled flowcell individuals; default to
+    # every sample in --vcf (which should include host and donors).
     cohort_samples = args.cohort_samples or list(VCF(args.vcf).samples)
     cohort_genotypes = [
         parse_vcf(args.vcf, sample=s, min_gq=args.min_gq, gt_ad_consistency=True)

@@ -10,8 +10,6 @@ band across donor/host pairs shaded, dashed reference lines at 0.5% and 1%.
 Detection here is the host-presence LRT at p < 0.05 (the test's own null is the
 sequencing-error background, so no blank/LoB is needed). Per-marker bias is off in
 the underlying sweep to keep that null calibrated.
-
-Output: output/facts/fig_presence_lod_curves.png
 """
 
 import argparse
@@ -39,7 +37,6 @@ MIN_PLOT_MARKERS = 50
 
 
 def _format_pct(v: float, _pos: int) -> str:
-    """Format a percent tick with the minimum decimals needed."""
     if v >= 1:
         return f"{v:g}%"
     return f"{v:g}%".rstrip("0").rstrip(".")

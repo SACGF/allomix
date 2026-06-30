@@ -1,15 +1,12 @@
 """Single-sample analysis pipeline shared by the CLI and diagnostic scripts.
 
-Given pre-parsed host, donor and admixture markers, ``analyse_sample`` runs the
-full per-sample path once: classify markers, estimate the chimerism fraction
-(single- or multi-donor), run the host-presence detector, assess QC, and select
-the donor-homozygous markers with their artifact flags. Both ``allomix.cli`` and
-the ``scripts/`` diagnostics call this so the genotype -> classify ->
-select-donor-hom -> presence path lives in exactly one place and every knob
-(sex chromosomes, artifact filter, bias/error tables) is handled identically.
+``analyse_sample`` runs the full per-sample path once (classify markers, estimate
+chimerism, run the host-presence detector, assess QC, select the donor-homozygous
+markers) so that path and every knob live in one place for both ``allomix.cli``
+and the ``scripts/`` diagnostics.
 
-This is library code: it does not read VCFs (callers parse first, since the
-input conventions differ) and it does not print. Callers own I/O and messaging.
+Library code: it does not read VCFs (callers parse first, conventions differ) and
+it does not print. Callers own I/O and messaging.
 """
 
 from dataclasses import dataclass
@@ -31,48 +28,22 @@ from allomix.runmeta import RunUnitInfo
 
 
 @dataclass
-class SampleAnalysis:
-    """Everything one admixture sample produces.
-
-    Attributes:
-        genotypes: Classified markers (informative subset, sex-chrom tally).
-        result: The chimerism estimate, single- or multi-donor. The
-            host-presence result is attached as ``result.host_presence`` when
-            ``run_host_presence`` was True.
-        qc: Quality-control verdict for ``result``.
-        donor_hom_markers: Donor-homozygous host-presence markers with their
-            artifact flags, the per-marker detail the diagnostics plot. Empty
-            when ``run_host_presence`` is False.
-    """
-
+class AdmixtureSampleAnalysis:
     genotypes: MarkerGenotypes
-    result: ChimerismResult | MultiDonorResult
+    result: ChimerismResult | MultiDonorResult  # host_presence attached when run_host_presence
     qc: QCReport
-    donor_hom_markers: list[DonorHomMarker]
+    donor_hom_markers: list[DonorHomMarker]  # empty when run_host_presence is False
 
 
 def _floor_detection_limits(
     result: ChimerismResult | MultiDonorResult, contamination_fraction: float
 ) -> None:
-    """Raise the reported LoB/LoD to the in-data contamination floor in place.
+    """Floor LoB/LoD at the in-data contamination level (further_improvements.md, Obs 2).
 
-    The analytical ``lob_fraction`` / ``lod_fraction`` come from sequencing error
-    and Fisher information alone (see ``allomix.chimerism.detection_limit``). They
-    do not know about the co-pooled contamination floor allomix estimates per
-    sample, which is a second noise term competing with sub-1% host detection: at
-    a 0.2% floor a 0.5% host call is within noise, and the reported limit of
-    detection should say so. This floors both limits at the contamination
-    fraction so a sample whose contamination floor exceeds its analytical LoD
-    reports the floor. See ``claude/further_improvements.md``, Obs 2.
-
-    A no-op when ``contamination_fraction`` is 0 (a clean sample) or when the
-    result carries no LoB/LoD fields (multi-donor results do not). Monotonicity
-    ``lod >= lob`` is preserved because both are floored at the same value.
-
-    Args:
-        result: Chimerism result to update in place.
-        contamination_fraction: In-data contamination floor (donor-fraction
-            scale, 0.0-1.0) from ``allomix.contamination.estimate_contamination``.
+    Analytical limits (see ``allomix.chimerism.detection_limit``) come from
+    sequencing error and Fisher information alone; they ignore the co-pooled
+    contamination floor, a second noise term competing with sub-1% host detection.
+    No-op when the fraction is 0 or the result has no LoB/LoD fields (multi-donor).
     """
     if contamination_fraction <= 0.0 or not hasattr(result, "lob_fraction"):
         return
@@ -99,50 +70,33 @@ def analyse_sample(
     expected_relatedness: list[str] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
-) -> SampleAnalysis:
+) -> AdmixtureSampleAnalysis:
     """Run the chimerism pipeline for one pre-parsed admixture sample.
 
-    Single-donor estimation is used when ``donors`` has one entry, multi-donor
-    otherwise. The host-presence detector (on by default) is cheap and
-    complementary to the MLE; see ``allomix.detect``.
+    Single-donor estimation when ``donors`` has one entry, multi-donor otherwise.
+    The host-presence detector (on by default) is cheap and complementary to the
+    MLE; see ``allomix.detect``.
 
     Args:
-        host: Parsed host markers.
-        donors: One parsed marker list per donor.
         admix: Parsed admixture markers (parse with ``min_dp=0``; filtering is
             applied here via ``min_dp``).
-        min_dp: Minimum admix depth for a marker to be used.
-        min_gq: Minimum host/donor genotype quality.
-        error_rate: Global symmetric sequencing error rate.
-        calibration: Optional per-marker bias and error tables (see
-            ``allomix.likelihood.PanelCalibration``).
-        run_host_presence: Run the host-presence detector and select the
-            donor-homozygous markers. When False, ``result.host_presence`` is
-            left unset and ``donor_hom_markers`` is empty.
+        run_host_presence: When False, ``result.host_presence`` is left unset and
+            ``donor_hom_markers`` is empty.
         use_sex_chroms: Keep sex-chromosome markers (default drops them; their
             allele dosage is wrong in sex-mismatched transplants).
-        artifact_filter: Drop alignment-artifact markers from the
-            host-presence test (the returned ``donor_hom_markers`` still lists
-            them, flagged).
-        sample_name: Optional name stamped onto ``genotypes.sample_name``.
-        robust: Robust-refit mode passed to the estimator ("off"/"auto"/"force";
-            see ``estimate_single_donor_bb``). Drops host copy-number/LoH-
-            inconsistent markers and refits; "auto" is the recommended policy.
-        robust_k: Robust residual cut (robust SDs) for the refit.
+        artifact_filter: Drop alignment-artifact markers from the host-presence
+            test (returned ``donor_hom_markers`` still lists them, flagged).
+        robust: Robust-refit mode ("off"/"auto"/"force"; see
+            ``estimate_single_donor_bb``). Drops host copy-number/LoH-inconsistent
+            markers and refits; "auto" is the recommended policy.
         marker_type_overdispersion: Fit a separate beta-binomial rho per marker
             class (donor-hom vs donor-het) in single-donor estimation (issue #33).
-            On by default; set False for the legacy shared-rho path. Ignored for
-            multi-donor (later phase).
-        expected_relatedness: Optional declared relationship per donor (one entry
-            per ``donors`` list, value in ``allomix.relatedness.VALID_DECLARATIONS``
-            or "NA"/None for no expectation). Compared against the estimated
-            host-vs-donor relatedness in QC.
+            Ignored for multi-donor.
+        expected_relatedness: Declared relationship per donor (one entry per
+            ``donors``, value in ``relatedness.VALID_DECLARATIONS`` or "NA"/None).
+            Compared against estimated host-vs-donor relatedness in QC.
         relatedness_tolerance: Allowed degree distance before a declared-vs-detected
-            relatedness mismatch is flagged (default 1; see ``evaluate_expected``).
-
-    Returns:
-        A ``SampleAnalysis`` bundling the genotypes, estimate, QC and the
-        flagged donor-homozygous markers.
+            mismatch is flagged (see ``evaluate_expected``).
     """
     cal = calibration or PanelCalibration()
     genotypes = classify_markers(
@@ -170,12 +124,9 @@ def analyse_sample(
             robust_k=robust_k,
         )
 
-    # In-data contamination estimate at consensus-homozygous markers. Independent
-    # of the MLE and of any sequencing-run metadata (issue #12). Computed before
-    # the host-presence test and the LoD flooring below so its floor can feed
-    # both: a co-pooled genome is a second noise term competing with sub-1% host
-    # detection (see ``claude/further_improvements.md``, Obs 2). QC reads it off
-    # the result like the other identity checks.
+    # In-data contamination estimate at consensus-homozygous markers, independent
+    # of the MLE and run metadata (issue #12). Computed before the host-presence
+    # test and LoD flooring so its floor feeds both (further_improvements.md, Obs 2).
     result.contamination = estimate_contamination(
         host,
         donors,
@@ -189,11 +140,9 @@ def analyse_sample(
 
     dh_markers: list[DonorHomMarker] = []
     if run_host_presence:
-        # Attached to the result before QC so the QC step can read it. The
-        # contamination floor is added to the per-marker H0 background: a
-        # co-pooled genome carrying the donor-absent allele inflates exactly the
-        # counts this test reads, so raising the background guards against
-        # calling that contamination as host signal.
+        # Attached before QC so QC can read it. The contamination floor raises the
+        # per-marker H0 background, guarding against calling a co-pooled genome's
+        # donor-absent allele as host signal.
         result.host_presence = host_presence_test(
             genotypes.informative,
             marker_errors=cal.errors,
@@ -203,10 +152,10 @@ def analyse_sample(
         )
         dh_markers = donor_hom_markers(genotypes.informative)
 
-    # Identity QC over the raw reference/admix markers (not the informative set,
-    # which excludes the shared and consensus-homozygous sites these checks need).
-    # Ordering invariant: host-vs-donor pairs first, in donor order, so QC can
-    # align them with ``expected_relatedness``; donor-vs-donor pairs follow.
+    # Identity QC over the raw reference/admix markers, not the informative set
+    # (which excludes the shared and consensus-hom sites these checks need).
+    # Ordering invariant: host-vs-donor pairs first in donor order (so QC aligns
+    # them with ``expected_relatedness``), then donor-vs-donor pairs.
     donor_labels = ["donor"] if len(donors) == 1 else [f"donor{i + 1}" for i in range(len(donors))]
     relatedness: list[RelatednessResult] = [
         relatedness_coefficient(host, donors[i], "host", donor_labels[i])
@@ -221,8 +170,8 @@ def analyse_sample(
     result.admix_consistency = admix_consistency(
         host, donors, admix, error_rate=error_rate, min_dp=min_dp
     )
-    # Run-unit metadata (index-hopping provenance) read from the admix VCF header
-    # by the caller; attached before QC so the shared-run flag can be reported.
+    # Run-unit metadata (index-hopping provenance); attached before QC so the
+    # shared-run flag can be reported.
     result.run_unit = run_unit
 
     qc = assess_quality(
@@ -232,7 +181,7 @@ def analyse_sample(
         relatedness_tolerance=relatedness_tolerance,
     )
 
-    return SampleAnalysis(
+    return AdmixtureSampleAnalysis(
         genotypes=genotypes,
         result=result,
         qc=qc,
@@ -240,4 +189,4 @@ def analyse_sample(
     )
 
 
-__all__ = ["SampleAnalysis", "analyse_sample"]
+__all__ = ["AdmixtureSampleAnalysis", "analyse_sample"]

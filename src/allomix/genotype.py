@@ -67,13 +67,9 @@ _MARKER_TYPE_LABELS: dict[int, str] = {
 def marker_type_label(code: int) -> str:
     """Readable host/donor genotype label for a marker-type code.
 
-    Args:
-        code: A ``MarkerType`` code (or its bare integer, as found in serialized
-            output).
-
-    Returns:
-        The ``host G/G, donor G/G`` label, or the raw integer as a string for an
-        unrecognised code (so output never breaks on an unexpected value).
+    ``code`` may be a bare integer (as found in serialized output). Returns the
+    raw integer as a string for an unrecognised code, so output never breaks on
+    an unexpected value.
     """
     return _MARKER_TYPE_LABELS.get(code, str(code))
 
@@ -188,19 +184,12 @@ def parse_vcf(
     """Read a VCF and extract MarkerData for a specific sample.
 
     Args:
-        path: Path to VCF or VCF.gz file.
-        sample: Sample name (str) or column index (int, 0-based). Default 0.
-        min_dp: Minimum depth filter. Records below this are excluded.
-        min_gq: Minimum genotype quality. Records below this are excluded.
-        gt_ad_consistency: If True, drop markers where the called GT
-            contradicts the AD-derived VAF (het outside [0.35, 0.65],
-            hom-ref VAF > 0.05, hom-alt VAF < 0.95). Use for reference
-            samples (host/donor) whose GT must match their reads. Do
-            NOT use for admix samples — admix is a mixture, so its VAF
-            is not expected to land at 0/0.5/1 by definition.
-
-    Returns:
-        List of MarkerData, one per passing record.
+        sample: Sample name (str) or 0-based column index (int). Default 0.
+        gt_ad_consistency: If True, drop markers where the called GT contradicts
+            the AD-derived VAF (het outside [0.35, 0.65], hom-ref VAF > 0.05,
+            hom-alt VAF < 0.95). Use for reference samples (host/donor) whose GT
+            must match their reads. Do NOT use for admix: a mixture's VAF is not
+            expected to land at 0/0.5/1.
 
     Raises:
         ValueError: If a string sample name is not found in the VCF.
@@ -216,30 +205,26 @@ def parse_vcf(
         sample_idx = sample
 
     for variant in vcf:
-        # Skip multiallelic sites
         if len(variant.ALT) > 1:
-            continue
+            continue  # skip multiallelic
 
         alt = variant.ALT[0] if variant.ALT else "."
 
-        # Skip indels — admix-side AD comes from straight pileup which
-        # cannot count indel reads the way local-reassembly callers
-        # (GATK HaplotypeCaller) do, producing systematic admix=0-ALT
-        # at sites where the panel sample is genuinely het/hom-alt.
+        # Skip indels: admix-side AD comes from straight pileup, which cannot
+        # count indel reads the way local-reassembly callers (GATK
+        # HaplotypeCaller) do, giving systematic admix=0-ALT at sites where the
+        # panel sample is genuinely het/hom-alt.
         if alt != "." and (len(variant.REF) != 1 or len(alt) != 1):
             continue
 
-        # Extract genotype for the selected sample
         gt_arr = variant.genotypes[sample_idx]  # [allele1, allele2, phased]
         a1, a2 = gt_arr[0], gt_arr[1]
 
-        # Skip no-calls
         if a1 < 0 or a2 < 0:
-            continue
+            continue  # skip no-calls
 
         gt = (min(a1, a2), max(a1, a2))
 
-        # Extract AD
         ad = variant.format("AD")
         if ad is not None:
             ad_vals = ad[sample_idx]
@@ -248,7 +233,6 @@ def parse_vcf(
         else:
             continue  # AD is required
 
-        # Extract DP
         dp_arr = variant.format("DP")
         if dp_arr is not None:
             dp = int(dp_arr[sample_idx][0])
@@ -264,19 +248,16 @@ def parse_vcf(
             gq_arr = None
         gq = int(gq_arr[sample_idx][0]) if gq_arr is not None else None
 
-        # Apply filters
         if dp < min_dp:
             continue
         if gq is not None and min_gq > 0 and gq < min_gq:
             continue
 
-        # Reference-sample GT/AD consistency check. Caller-only filter:
-        # admix is a mixture so its VAF is not expected to track its GT.
-        # For host/donor a het call with VAF below 35% or above 65% is
-        # almost certainly a miscall (GATK rescued it from marginal
-        # evidence in a 2-sample joint call), and using it would feed a
-        # systematic bias into the chimerism estimator at the recovered
-        # marker. The thresholds are loose to tolerate genuine capture
+        # Reference-sample GT/AD consistency check (host/donor only; an admix
+        # mixture's VAF need not track its GT). A het call with VAF outside
+        # 35-65% is almost certainly a GATK miscall rescued from marginal
+        # evidence in a 2-sample joint call, and would feed a systematic bias
+        # into the estimator. Thresholds are loose to tolerate genuine capture
         # bias (median |bias| ~0.5%, 95th pct ~4%).
         if gt_ad_consistency and (ad_ref + ad_alt) >= VAF_CHECK_MIN_DEPTH and alt != ".":
             vaf = ad_alt / (ad_ref + ad_alt)
@@ -290,7 +271,6 @@ def parse_vcf(
                 if vaf < HOM_ALT_MIN_VAF:
                     continue
 
-        # Filter status
         filt = variant.FILTER
         if filt is None:
             filt = "PASS"
@@ -351,11 +331,8 @@ def _alt_dose(gt: tuple[int, int]) -> int:
 def marker_type(host_gt: tuple[int, int], donor_gt: tuple[int, int]) -> MarkerType | None:
     """Classify marker informativeness from the host and donor genotypes.
 
-    See ``MarkerType`` for the class definitions and codes.
-
-    Returns:
-        The ``MarkerType`` for this host/donor pair, or None if the marker is
-        non-informative (same genotype in host and donor).
+    See ``MarkerType`` for the class definitions and codes. Returns None when the
+    marker is non-informative (same ALT dose in host and donor).
     """
     h_dose = _alt_dose(host_gt)
     d_dose = _alt_dose(donor_gt)
@@ -391,30 +368,20 @@ def classify_markers(
 ) -> MarkerGenotypes:
     """Classify shared markers as informative or non-informative.
 
-    Joins markers across host, donor(s), and admixture by (chrom, pos, ref, alt).
-    Applies depth and quality filters. Assigns Vynck marker types for the first
-    donor (multi-donor types are stored in donor_gts list).
+    Joins markers across host, donor(s), and admixture by (chrom, pos, ref, alt),
+    applies depth and quality filters, and assigns Vynck marker types for the
+    first donor (multi-donor types are stored in the donor_gts list).
 
     Args:
-        host: Markers from host genotyping VCF.
-        donors: List of marker lists, one per donor.
-        admixture: Markers from post-HSCT admixture VCF.
-        min_dp: Minimum depth for admixture sample at a marker.
-        min_gq: Minimum GQ for host/donor genotyping samples.
-        pass_only: Only use PASS-filtered markers.
         use_sex_chroms: If False (default), markers on the sex and mitochondrial
             contigs (X/Y/M) are excluded. They are unreliable for chimerism in
-            sex-mismatched transplants, where the host/donor allele dosage on
+            sex-mismatched transplants, where host/donor allele dosage on
             chrX/chrY is wrong. Enable per run only once host and donor sex are
-            known to match. The count of informative sex-chrom markers dropped is
-            reported in ``MarkerGenotypes.n_sex_chrom_excluded``.
-
-    Returns:
-        MarkerGenotypes with classified markers.
+            known to match. Informative sex-chrom markers dropped are counted in
+            ``MarkerGenotypes.n_sex_chrom_excluded``.
     """
     n_total = len(admixture)
 
-    # Index all inputs by key
     host_idx = {marker_key(m): m for m in host}
     donor_idxs = [{marker_key(m): m for m in d} for d in donors]
     admix_idx = {marker_key(m): m for m in admixture}
@@ -425,7 +392,7 @@ def classify_markers(
     n_admix_in_host = len(admix_keys & set(host_idx.keys()))
     n_admix_in_donor = [len(admix_keys & set(di.keys())) for di in donor_idxs]
 
-    # Find shared keys (present in host, all donors, and admixture)
+    # Shared keys: present in host, all donors, and admixture.
     shared_keys = set(host_idx.keys()) & admix_keys
     for di in donor_idxs:
         shared_keys &= set(di.keys())
@@ -445,14 +412,12 @@ def classify_markers(
         ds = [di[key] for di in donor_idxs]
         a = admix_idx[key]
 
-        # Filter: PASS only
         if pass_only and (
             h.filter != "PASS" or a.filter != "PASS" or any(d.filter != "PASS" for d in ds)
         ):
             n_drop_pass += 1
             continue
 
-        # Filter: host/donor GQ
         if min_gq > 0:
             if h.gq is not None and h.gq < min_gq:
                 n_drop_gq_host += 1
@@ -461,12 +426,11 @@ def classify_markers(
                 n_drop_gq_donor += 1
                 continue
 
-        # Filter: admixture depth
         if a.dp < min_dp:
             n_drop_admix_dp += 1
             continue
 
-        # Classify: informative if host differs from ANY donor
+        # Informative if the host differs from ANY donor.
         donor_gts = [d.gt for d in ds]
         mtypes = [marker_type(h.gt, d.gt) for d in ds]
         any_informative = any(mt is not None for mt in mtypes)

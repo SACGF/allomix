@@ -120,8 +120,8 @@ ESTIMATOR_GRID_STEPS = 201
 # var ALLOMIX_FAST_GRID=1 (or passing --fast-grid, which sets it for the worker
 # processes) routes the LoD sweep through the vectorized grid estimator instead.
 # It only affects donor_fraction precision, which is all the LoD rule consumes,
-# and matches the exact estimator to well under 0.01 pp. See
-# paper/scripts/validate_grid_estimator.py.
+# and matches the exact estimator to well under 0.01 pp. The equivalence is
+# pinned in tests/test_fast_grid_estimator.py.
 FAST_GRID_N_F = 201
 FAST_GRID_N_RHO = 32
 
@@ -693,7 +693,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--error-rate", type=float, default=ERROR_RATE,
         help=f"Symmetric sequencing error rate (default {ERROR_RATE}). For a fair "
-             "overlay against the presence LoD (plot_lod_curves --presence-summary), "
+             "overlay against the presence LoD (plot_lod_grid --presence-summary), "
              "run BOTH sweeps at the same error rate: the presence test is far more "
              "error-sensitive, so comparing them at mismatched rates is misleading.",
     )

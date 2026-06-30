@@ -11,7 +11,9 @@ This is complementary to the fraction MLE in ``chimerism``: the MLE estimates
 the magnitude, this test guards the low end and answers "is host present?"
 directly. See ``claude/20_host_presence_detection_plan.md`` for the full
 rationale; the calibration evidence under realistic overdispersion lives in
-``paper/scripts/run_presence_lod.py``.
+``paper/scripts/run_presence_lod_validation.py`` (the simulated presence-LoD
+sweep behind Figure 1), and the unit-level gate checks in
+``tests/test_detect.py``.
 
 The two statistics computed here are:
 

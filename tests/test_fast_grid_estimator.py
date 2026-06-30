@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from allomix.chimerism import estimate_single_donor_bb
+from allomix.error_rates import MarkerErrorRates
 from allomix.likelihood import (
     PanelCalibration,
     _p_alt_for_f,
@@ -56,6 +57,24 @@ class TestGridEstimator:
         cal = PanelCalibration(
             biases={(m.chrom, m.pos, m.ref, m.alt): b for m, b in zip(markers, biases)}
         )
+        exact = estimate_single_donor_bb(markers, error_rate=0.01, grid_steps=201, calibration=cal)
+        grid = estimate_single_donor_bb_grid(markers, error_rate=0.01, calibration=cal)
+        assert abs(grid.donor_fraction - exact.donor_fraction) < 1e-4
+
+    def test_grid_with_asymmetric_error_table(self) -> None:
+        # Per-direction error table (PanelCalibration.errors): the grid must
+        # match the exact estimator on the asymmetric REF/ALT-only likelihood
+        # path, not just the symmetric error_rate fallback.
+        markers = _make_markers_for_fraction(0.02, n_markers=120, dp=1000, seed=17)
+        rng = random.Random(23)
+        errors = {
+            (m.chrom, m.pos, m.ref, m.alt): MarkerErrorRates(
+                e_refalt=0.0005 + rng.random() * 0.002,
+                e_altref=0.0005 + rng.random() * 0.002,
+            )
+            for m in markers
+        }
+        cal = PanelCalibration(errors=errors)
         exact = estimate_single_donor_bb(markers, error_rate=0.01, grid_steps=201, calibration=cal)
         grid = estimate_single_donor_bb_grid(markers, error_rate=0.01, calibration=cal)
         assert abs(grid.donor_fraction - exact.donor_fraction) < 1e-4

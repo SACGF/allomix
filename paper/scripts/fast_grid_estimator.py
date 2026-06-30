@@ -16,10 +16,11 @@ single 1-D bounded f-search bracketed around the grid argmax (with rho profiled
 out). This path replaces the per-f scipy calls of the grid search with one
 vectorized array pass and a short local refine.
 
-Accuracy is validated against the exact estimator in
-``paper/scripts/validate_grid_estimator.py``: across the LoD parameter space the
-fraction agrees to < 1e-4 and the resulting LoD-summary percentages to well under
-0.01 pp. The exact estimator remains the default; this is opt-in only.
+Accuracy is pinned against the exact estimator in
+``tests/test_fast_grid_estimator.py``: across the fraction, depth, bias,
+error-table and two-rho cases the fraction agrees to < 1e-4 (so the resulting
+LoD-summary percentages stay well under 0.01 pp). The exact estimator remains
+the default; this is opt-in only.
 """
 
 import math
@@ -186,15 +187,15 @@ def estimate_single_donor_bb_grid(
     argmax, profiling rho out at each candidate f (the same profile the exact
     estimator uses). Because the total log-likelihood is unimodal in f, this
     local solve lands on the exact estimator's fraction to < 1e-4 across the LoD
-    space (see ``paper/scripts/validate_grid_estimator.py``). The 1-D profiled
+    space (pinned in ``tests/test_fast_grid_estimator.py``). The 1-D profiled
     refine is both faster and tighter than a joint Nelder-Mead polish, which can
     stall in the very flat rho direction.
 
     The exact estimator (``estimate_single_donor_bb``) stays the default and is
     untouched; this path is selected explicitly by the caller.
 
-    Performance and accuracy (measured on the LoD sweep parameter space, see
-    ``paper/scripts/validate_grid_estimator.py``):
+    Performance and accuracy (measured on the LoD sweep parameter space during
+    development; the accuracy bound is pinned in tests/test_fast_grid_estimator.py):
 
       - About 6.5x faster per call than the exact estimator (~30 ms vs ~191 ms;
         4-7x depending on panel size, with the grid build dominating and the

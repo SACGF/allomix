@@ -1,7 +1,7 @@
 """Likelihood and weight model for chimerism estimation (no optimisation).
 
 The beta-binomial per-marker likelihood and the expected-weight model it is
-built on; ``allomix.chimerism`` imports these to build the MLE estimators.
+built on; ``allomix.estimate.chimerism`` imports these to build the MLE estimators.
 
 The beta-binomial handles overdispersion from per-marker amplification bias and
 depth variability. A binomial model assumes all variance is random sampling, but
@@ -19,9 +19,9 @@ from math import lgamma
 import numpy as np
 from scipy.special import expit, gammaln, logit
 
+from allomix.calibration.contamination_table import ContaminationCorrection
+from allomix.calibration.error_rates import MarkerErrorRates
 from allomix.constants import DEFAULT_ERROR_RATE, N_OTHER_BASES, PLOIDY
-from allomix.contamination_table import ContaminationCorrection
-from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey
 
 
@@ -31,13 +31,13 @@ class PanelCalibration:
 
     Bundles the optional per-marker tables the estimators consume:
 
-    - ``biases``: amplification bias per marker (see ``allomix.bias``). Positive
+    - ``biases``: amplification bias per marker (see ``allomix.calibration.bias``). Positive
       means the ALT allele is preferentially captured.
     - ``errors``: per-direction empirical substitution rates (see
-      ``allomix.error_rates``). Used for the asymmetric REF/ALT-only likelihood
+      ``allomix.calibration.error_rates``). Used for the asymmetric REF/ALT-only likelihood
       where both directions are known.
     - ``contamination_correction``: per-marker co-pooled contamination correction
-      (Step 30, see ``allomix.contamination_table``). Applied by
+      (Step 30, see ``allomix.calibration.contamination_table``). Applied by
       ``estimate_single_donor_bb`` before the MLE. None (the default) and a
       gated-out table both leave estimation byte-identical.
 

@@ -26,10 +26,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
 
-from allomix.bias import load_bias_table  # noqa: E402
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.calibration.bias import load_bias_table  # noqa: E402
+from allomix.estimate.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
-from allomix.likelihood import PanelCalibration  # noqa: E402
+from allomix.estimate.likelihood import PanelCalibration  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
     generate_marker_biases,

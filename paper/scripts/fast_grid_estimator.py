@@ -4,10 +4,10 @@ This is a speed optimisation used only by the paper's LoD sweep
 (``run_lod_validation.py``). It lives outside the ``allomix`` package on purpose:
 it is not part of the clinical tool and the core package should stay small enough
 to scrutinise thoroughly. It reuses the building blocks of the exact estimator in
-``allomix.chimerism`` (some of them private), so a refactor of those internals can
+``allomix.estimate.chimerism`` (some of them private), so a refactor of those internals can
 break this helper; that is an accepted cost of keeping it out of core.
 
-The exact estimator (``allomix.chimerism.estimate_single_donor_bb``) profiles rho
+The exact estimator (``allomix.estimate.chimerism.estimate_single_donor_bb``) profiles rho
 with ``minimize_scalar`` at every grid f and then runs a joint Nelder-Mead refine,
 so each call makes hundreds of scalar scipy optimisations. For the LoD sweep we
 only need ``donor_fraction``, and that is recovered to well within 1e-4 by
@@ -35,7 +35,7 @@ from scipy.stats import chi2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from allomix.chimerism import (  # noqa: E402
+from allomix.estimate.chimerism import (  # noqa: E402
     _RHO_MAX,
     MIN_CLASS_MARKERS,
     _donor_het_mask,
@@ -48,7 +48,7 @@ from allomix.constants import (  # noqa: E402
     N_OTHER_BASES,
 )
 from allomix.genotype import InformativeMarker  # noqa: E402
-from allomix.likelihood import (  # noqa: E402
+from allomix.estimate.likelihood import (  # noqa: E402
     W_EPS,
     PanelCalibration,
     _ll_from_p_alt,
@@ -339,7 +339,7 @@ def _estimate_single_donor_bb_grid_two_rho(
     per-class profiled-over-rho curves, and takes the f argmax. The optional
     refine and the reported per-class rhos reuse the exact estimator's 1-D rho
     profile (``_profile_rho_at_f`` / ``_two_rho_profile_ll`` from
-    ``allomix.chimerism``), so the polished fraction matches the exact two-rho MLE.
+    ``allomix.estimate.chimerism``), so the polished fraction matches the exact two-rho MLE.
     """
     hom_markers = [m for m, h in zip(markers, het_mask) if not h]
     het_markers = [m for m, h in zip(markers, het_mask) if h]

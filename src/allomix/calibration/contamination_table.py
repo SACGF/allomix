@@ -3,7 +3,7 @@
 On co-pooled panels (index hopping on a patterned flowcell) a donor-homozygous
 marker carries extra reads on the host (donor-absent) allele from co-pooled
 genomes that happen to carry that allele. The per-sample contamination scalar
-(``allomix.sample_contamination``) does not localize this: it taxes every donor-absent
+(``allomix.qc.sample_contamination``) does not localize this: it taxes every donor-absent
 marker by the average, while the inflation actually lands only on the markers a
 co-pooled genome carries, scaling with how many co-pooled individuals carry the
 host allele there. Left uncorrected this puts a positive floor under the MLE at
@@ -19,7 +19,7 @@ carrier count); only the contamination scales with it. So per marker:
 where ``slope`` is the per-carrier contamination rate and ``n_carriers`` is the
 capped number of co-pooled individuals carrying the host allele at that site.
 Only the dose-dependent part is subtracted; the flat error floor stays with the
-per-site error model (``allomix.error_rates``, issue #23), so it is not
+per-site error model (``allomix.calibration.error_rates``, issue #23), so it is not
 double-counted.
 
 Two pieces are measured per run, not hardcoded (see ``claude/step30_design.md``):
@@ -38,11 +38,11 @@ Two pieces are measured per run, not hardcoded (see ``claude/step30_design.md``)
   dose, weighted, pooled across a patient's serial timepoints to beat per-sample
   noise).
 
-This module mirrors ``allomix.bias`` / ``allomix.error_rates``: an estimator that
-builds a table from a training cohort, save/load of that table, and a lightweight
+This module mirrors ``allomix.calibration.bias`` / ``allomix.calibration.error_rates``:
+an estimator that builds a table from a training cohort, save/load of that table, and a lightweight
 runtime object (``ContaminationCorrection``) carried on a
-``allomix.likelihood.PanelCalibration`` and consumed by
-``allomix.chimerism.estimate_single_donor_bb``. Only donor-homozygous markers
+``allomix.estimate.likelihood.PanelCalibration`` and consumed by
+``allomix.estimate.chimerism.estimate_single_donor_bb``. Only donor-homozygous markers
 (Vynck types 0 and 1) are corrected; donor-het markers are left alone (smaller,
 near-balanced effect).
 """
@@ -81,7 +81,7 @@ DEFAULT_GATE_MIN_SLOPE = 0.0
 class ContaminationCorrection:
     """Runtime per-marker contamination correction consumed during estimation.
 
-    Carried on ``allomix.likelihood.PanelCalibration.contamination_correction``
+    Carried on ``allomix.estimate.likelihood.PanelCalibration.contamination_correction``
     and applied by ``apply_contamination_correction`` before the single-donor
     MLE. When ``gated`` is False or ``slope`` is non-positive the correction is a
     no-op, so loading a table built on a clean flowcell leaves the estimate

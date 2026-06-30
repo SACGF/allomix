@@ -41,9 +41,9 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.estimate.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
-from allomix.qc import assess_quality  # noqa: E402
+from allomix.qc.qc import assess_quality  # noqa: E402
 
 log = logging.getLogger(__name__)
 

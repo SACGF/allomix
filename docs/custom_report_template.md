@@ -47,8 +47,8 @@ Restyling is usually just CSS. Override only `styles.css`:
 ```bash
 mkdir mylab-template
 # copy the shipped stylesheet as a starting point, then edit it
-python -c "import allomix.html, pathlib, shutil; \
-  src = pathlib.Path(allomix.html.__file__).parent / 'templates' / 'styles.css'; \
+python -c "import allomix.report.html, pathlib, shutil; \
+  src = pathlib.Path(allomix.report.html.__file__).parent / 'templates' / 'styles.css'; \
   shutil.copy(src, 'mylab-template/styles.css')"
 ```
 

@@ -1,7 +1,7 @@
 """Jinja2 environment for the HTML report.
 
 Builds the template environment and registers the formatting helpers from
-``allomix.html.format`` as Jinja filters/globals, so templates do no analysis or
+``allomix.report.html.format`` as Jinja filters/globals, so templates do no analysis or
 number formatting of their own: they only place already-formatted, HTML-safe
 values. Autoescaping is on, so every value interpolated with ``{{ ... }}`` is
 escaped unless it is explicitly marked safe (only the status badge, which emits a
@@ -19,11 +19,11 @@ from pathlib import Path
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PackageLoader, select_autoescape
 from markupsafe import Markup
 
-from allomix.html import format as fmt
+from allomix.report.html import format as fmt
 
 # Templates (and the CSS/JS assets) ship as package data under this directory.
 _PACKAGE = "allomix"
-_TEMPLATE_PACKAGE_PATH = "html/templates"
+_TEMPLATE_PACKAGE_PATH = "report/html/templates"
 
 
 def make_environment(template_dir: str | Path | None = None) -> Environment:

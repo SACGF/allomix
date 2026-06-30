@@ -11,7 +11,7 @@ correction is integrated directly into the MLE likelihood by adjusting the
 expected reference allele weight for each marker. The adjustment is applied
 multiplicatively in logit space, not as a flat additive shift, so it stays
 valid at informative markers whose expected VAF is far from 0.5 (issue #20);
-see ``allomix.likelihood.apply_bias``.
+see ``allomix.estimate.likelihood.apply_bias``.
 """
 
 import csv

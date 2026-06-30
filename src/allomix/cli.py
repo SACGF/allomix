@@ -12,20 +12,14 @@ from cyvcf2 import VCF
 
 from allomix import __version__
 from allomix.analysis import analyse_sample
-from allomix.bias import (
+from allomix.calibration.bias import (
     biases_to_simple_dict,
     estimate_biases,
     estimate_biases_both_het,
     load_bias_table,
     save_bias_table,
 )
-from allomix.constants import (
-    DEFAULT_ERROR_RATE,
-    DEFAULT_MIN_DP,
-    DEFAULT_MIN_GQ,
-    ROBUST_K_DEFAULT,
-)
-from allomix.contamination_table import (
+from allomix.calibration.contamination_table import (
     DEFAULT_DOSE_CAP,
     DEFAULT_GATE_ALPHA,
     DEFAULT_GATE_MIN_SLOPE,
@@ -33,16 +27,23 @@ from allomix.contamination_table import (
     load_contamination_table,
     save_contamination_table,
 )
-from allomix.error_rates import (
+from allomix.calibration.error_rates import (
     estimate_error_rates,
     load_error_table,
     save_error_table,
 )
+from allomix.constants import (
+    DEFAULT_ERROR_RATE,
+    DEFAULT_MIN_DP,
+    DEFAULT_MIN_GQ,
+    ROBUST_K_DEFAULT,
+)
+from allomix.estimate.likelihood import PanelCalibration
 from allomix.genotype import parse_vcf
-from allomix.html.render import render_single
-from allomix.likelihood import PanelCalibration
-from allomix.relatedness import Relatedness
-from allomix.report import (
+from allomix.qc.relatedness import Relatedness
+from allomix.qc.runmeta import RunUnitInfo, read_run_units
+from allomix.report.html.render import render_single
+from allomix.report.report import (
     DonorMeta,
     ReportMeta,
     report_data,
@@ -50,7 +51,6 @@ from allomix.report import (
     to_marker_csv,
     to_tsv,
 )
-from allomix.runmeta import RunUnitInfo, read_run_units
 
 
 def _expected_relatedness_value(value: str) -> Relatedness | None:
@@ -260,7 +260,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--host-presence",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Run the host-presence detection test (see `allomix.host_presence`). On by "
+        help="Run the host-presence detection test (see `allomix.qc.host_presence`). On by "
         "default and cheap to run; use --no-host-presence to skip it",
     )
     parser.add_argument(
@@ -269,7 +269,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=True,
         help="Apply the read-level artifact filter in the host-presence test "
         "(strand/soft-clip/read-position bias), dropping alignment-artifact "
-        "markers (see `allomix.host_presence`). On by default; use --no-artifact-filter "
+        "markers (see `allomix.qc.host_presence`). On by default; use --no-artifact-filter "
         "to disable it",
     )
 
@@ -828,7 +828,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             # Deferred import: timeline.py imports matplotlib (the optional
             # `report` extra) at module top, so importing here, after the
             # capability check, keeps the json path on base deps alone.
-            from allomix.html.timeline import render_timeline
+            from allomix.report.html.timeline import render_timeline
 
             _write_text(
                 args.html,
@@ -859,7 +859,7 @@ def cmd_report(args: argparse.Namespace) -> int:
                 "chart: pip install 'allomix[report]'"
             )
         # Deferred import: keeps the single-sample path matplotlib-free.
-        from allomix.html.timeline import render_timeline
+        from allomix.report.html.timeline import render_timeline
 
         html = render_timeline(data, log_scale=args.log_scale, template_dir=args.template)
     else:

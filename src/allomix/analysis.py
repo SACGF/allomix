@@ -11,21 +11,21 @@ it does not print. Callers own I/O and messaging.
 
 from dataclasses import dataclass
 
-from allomix.chimerism import estimate_multi_donor, estimate_single_donor_bb
 from allomix.constants import ROBUST_K_DEFAULT
+from allomix.estimate.chimerism import estimate_multi_donor, estimate_single_donor_bb
+from allomix.estimate.likelihood import PanelCalibration
 from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
-from allomix.host_presence import DonorHomMarker, donor_hom_markers, host_presence_test
-from allomix.likelihood import PanelCalibration
-from allomix.qc import QCReport, assess_quality
-from allomix.relatedness import (
+from allomix.qc.host_presence import DonorHomMarker, donor_hom_markers, host_presence_test
+from allomix.qc.qc import QCReport, assess_quality
+from allomix.qc.relatedness import (
     Relatedness,
     RelatednessResult,
     admix_consistency,
     relatedness_coefficient,
 )
+from allomix.qc.runmeta import RunUnitInfo
+from allomix.qc.sample_contamination import estimate_contamination
 from allomix.results import ChimerismResult, MultiDonorResult
-from allomix.runmeta import RunUnitInfo
-from allomix.sample_contamination import estimate_contamination
 
 
 @dataclass
@@ -41,7 +41,7 @@ def _floor_detection_limits(
 ) -> None:
     """Floor LoB/LoD at the in-data contamination level (further_improvements.md, Obs 2).
 
-    Analytical limits (see ``allomix.chimerism.detection_limit``) come from
+    Analytical limits (see ``allomix.estimate.chimerism.detection_limit``) come from
     sequencing error and Fisher information alone; they ignore the co-pooled
     contamination floor, a second noise term competing with sub-1% host detection.
     No-op when the fraction is 0 or the result has no LoB/LoD fields (multi-donor).
@@ -76,7 +76,7 @@ def analyse_sample(
 
     Single-donor estimation when ``donors`` has one entry, multi-donor otherwise.
     The host-presence detector (on by default) is cheap and complementary to the
-    MLE; see ``allomix.host_presence``.
+    MLE; see ``allomix.qc.host_presence``.
 
     Args:
         admix: Parsed admixture markers (parse with ``min_dp=0``; filtering is

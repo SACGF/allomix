@@ -1,4 +1,4 @@
-"""Tests for allomix.error_rates — per-site empirical error rate estimation."""
+"""Tests for allomix.calibration.error_rates — per-site empirical error rate estimation."""
 
 import random
 import tempfile
@@ -6,9 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from allomix.chimerism import estimate_single_donor_bb
-from allomix.cli import main
-from allomix.error_rates import (
+from allomix.calibration.error_rates import (
     DEFAULT_ERROR_FLOOR,
     MarkerError,
     MarkerErrorRates,
@@ -17,12 +15,14 @@ from allomix.error_rates import (
     load_error_table,
     save_error_table,
 )
-from allomix.genotype import InformativeMarker, MarkerData
-from allomix.likelihood import (
+from allomix.cli import main
+from allomix.estimate.chimerism import estimate_single_donor_bb
+from allomix.estimate.likelihood import (
     PanelCalibration,
     log_likelihood_marker_bb,
     total_log_likelihood_bb,
 )
+from allomix.genotype import InformativeMarker, MarkerData
 
 # ---------------------------------------------------------------------------
 # Helpers

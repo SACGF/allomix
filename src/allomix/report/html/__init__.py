@@ -1,6 +1,6 @@
 """HTML chimerism report rendering (issue #27).
 
-The public entry points live in ``allomix.report`` (``to_html`` and
+The public entry points live in ``allomix.report.report`` (``to_html`` and
 ``timeline_html``), mirroring the existing ``to_json`` / ``to_tsv`` surface. This
 subpackage holds the rendering machinery:
 

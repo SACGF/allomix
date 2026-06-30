@@ -13,18 +13,18 @@ from typing import TextIO
 
 from allomix import __version__
 from allomix.genotype import MarkerType
-from allomix.host_presence import HostPresenceResult
-from allomix.html.meta import DonorMeta, ReportMeta
-from allomix.html.render import render_single
-from allomix.qc import QCReport
-from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.qc.host_presence import HostPresenceResult
+from allomix.qc.qc import QCReport
+from allomix.qc.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.qc.runmeta import RunUnitInfo
+from allomix.qc.sample_contamination import ContaminationResult
+from allomix.report.html.meta import DonorMeta, ReportMeta
+from allomix.report.html.render import render_single
 from allomix.results import ChimerismResult, MultiDonorResult
-from allomix.runmeta import RunUnitInfo
-from allomix.sample_contamination import ContaminationResult
 
-# Re-exported so the public surface is ``from allomix.report import ReportMeta``,
+# Re-exported so the public surface is ``from allomix.report.report import ReportMeta``,
 # matching where the other output types live. The dataclasses themselves sit in
-# ``allomix.html.meta`` to avoid a report.py <-> html.render import cycle.
+# ``allomix.report.html.meta`` to avoid a report.py <-> html.render import cycle.
 __all__ = [
     "DonorMeta",
     "ReportMeta",

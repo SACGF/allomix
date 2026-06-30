@@ -28,9 +28,9 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.estimate.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
-from allomix.likelihood import PanelCalibration  # noqa: E402
+from allomix.estimate.likelihood import PanelCalibration  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,
     generate_marker_biases_realistic,

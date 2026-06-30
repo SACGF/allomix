@@ -673,7 +673,7 @@ rule merge_admix:
     The merged stream is piped through ``bcftools annotate -h`` to stamp the
     ``##allomixRunUnit`` header lines (index-hopping check, issue #12) onto the
     admix VCF. The fragment is empty when no run unit was recoverable, so this is
-    a no-op in that case. allomix reads the header back via ``allomix.runmeta``.
+    a no-op in that case. allomix reads the header back via ``allomix.qc.runmeta``.
     """
     input:
         vcfs=lambda wc: expand(

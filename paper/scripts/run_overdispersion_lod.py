@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
 
-from allomix.chimerism import detection_limit, estimate_single_donor_bb  # noqa: E402
+from allomix.estimate.chimerism import detection_limit, estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import InformativeMarker  # noqa: E402
 from allomix.simulate import alt_dose, sample_allele_counts  # noqa: E402
 

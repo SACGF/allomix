@@ -32,8 +32,8 @@ import numpy as np
 from scipy.optimize import brentq, minimize_scalar
 from scipy.stats import chi2, poisson
 
+from allomix.calibration.error_rates import MarkerErrorRates
 from allomix.constants import CI_LEVEL, DEFAULT_ERROR_RATE, N_OTHER_BASES
-from allomix.error_rates import MarkerErrorRates
 from allomix.genotype import InformativeMarker, MarkerKey  # MarkerKey re-exported below
 
 # Direction of the per-site error rate we use at a donor-homozygous marker:
@@ -378,7 +378,7 @@ def _resolve_e_per_marker(
     Returns ``(e_per_marker, n_per_site, n_fallback)``. A per-direction value
     of ``None`` in the table (or a missing key, or no table at all) counts as
     a fallback. The ``error_floor`` is applied uniformly: both the per-site
-    loader (in ``allomix.error_rates``) and the fallback go through ``max(.,
+    loader (in ``allomix.calibration.error_rates``) and the fallback go through ``max(.,
     error_floor)`` so a zero rate cannot make a single stray read produce
     -inf log-likelihood.
     """
@@ -472,7 +472,7 @@ def host_presence_test(
         informative_markers: Informative markers from ``classify_markers``.
             The detector internally selects the donor-homozygous subset.
         marker_errors: Optional per-site, per-direction error table from
-            ``allomix.error_rates.load_error_table``. When provided, each
+            ``allomix.calibration.error_rates.load_error_table``. When provided, each
             marker uses its per-direction rate; when missing or ``None`` for
             the relevant direction the detector falls back to
             ``error_rate / 3`` (the per-direction floor implied by the
@@ -484,7 +484,7 @@ def host_presence_test(
             background rate. Prevents a zero rate from producing -inf
             log-likelihood on a single stray read.
         contamination_floor: In-data third-party contamination fraction (see
-            ``allomix.sample_contamination.estimate_contamination``) added to every
+            ``allomix.qc.sample_contamination.estimate_contamination``) added to every
             marker's H0 background rate. A co-pooled genome that carries the
             host's (donor-absent) allele inflates exactly the donor-absent
             counts this test reads, so the background a real host signal must

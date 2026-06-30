@@ -1,6 +1,6 @@
-"""Tests for allomix.runmeta — reading ##allomixRunUnit header lines."""
+"""Tests for allomix.qc.runmeta — reading ##allomixRunUnit header lines."""
 
-from allomix.runmeta import RunUnitInfo, read_run_units
+from allomix.qc.runmeta import RunUnitInfo, read_run_units
 
 _VCF_BODY = (
     "##fileformat=VCFv4.2\n"

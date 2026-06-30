@@ -108,7 +108,7 @@ class MarkerData:
     # Read-level bias annotations from bcftools mpileup INFO. Present on admix
     # samples; None for GATK-called panel samples (which do not emit them) and
     # at sites without contrasting reads. Consumed by the host-presence
-    # artifact filter in ``allomix.host_presence``.
+    # artifact filter in ``allomix.qc.host_presence``.
     dp4: tuple[int, int, int, int] | None = None  # ref_fwd, ref_rev, alt_fwd, alt_rev
     rpbz: float | None = None  # read-position bias z-score (|.| large => artifact)
     scbz: float | None = None  # soft-clip-length bias z-score
@@ -132,7 +132,7 @@ class InformativeMarker:
     marker_types: list[int | None] | None = None  # Vynck type per donor (None = non-informative)
     informative_for: list[bool] | None = None  # True per donor if informative
     # Admix-side read-level bias (copied from the admix MarkerData), passed to
-    # the host-presence artifact filter in ``allomix.host_presence``.
+    # the host-presence artifact filter in ``allomix.qc.host_presence``.
     admix_dp4: tuple[int, int, int, int] | None = None
     admix_rpbz: float | None = None
     admix_scbz: float | None = None
@@ -144,7 +144,7 @@ class MarkerCounts:
     """Per-input marker counts explaining how the informative set was reached.
 
     Diagnostic data only: produced as a byproduct of classification and
-    interpreted by ``allomix.qc``; the estimator never reads it.
+    interpreted by ``allomix.qc.qc``; the estimator never reads it.
     """
 
     n_host: int = 0
@@ -328,9 +328,9 @@ def parse_vcf(
 
 
 #: Marker key shape ``(chrom, pos, ref, alt)``. Canonical definition for the
-#: whole package: the bias table (``allomix.bias``), the error table
-#: (``allomix.error_rates``), and the host-presence detector (``allomix.host_presence``)
-#: all key markers by this tuple and import it from here.
+#: whole package: the bias table (``allomix.calibration.bias``), the error table
+#: (``allomix.calibration.error_rates``), and the host-presence detector
+#: (``allomix.qc.host_presence``) all key markers by this tuple and import it from here.
 MarkerKey = tuple[str, int, str, str]
 
 

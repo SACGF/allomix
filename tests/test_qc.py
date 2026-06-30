@@ -1,26 +1,26 @@
-"""Tests for allomix.qc — quality control assessment."""
+"""Tests for allomix.qc.qc — quality control assessment."""
 
 import math
 import random
 
 import pytest
 
-from allomix.chimerism import estimate_single_donor_bb
+from allomix.estimate.chimerism import estimate_single_donor_bb
 from allomix.genotype import InformativeMarker, MarkerCounts, MarkerGenotypes
-from allomix.qc import (
+from allomix.qc.qc import (
     ChimerismResult,
     MarkerResult,
     _compute_gof_pval,
     _marker_loss_diagnosis,
     assess_quality,
 )
-from allomix.relatedness import (
+from allomix.qc.relatedness import (
     AdmixConsistencyResult,
     Relatedness,
     RelatednessResult,
 )
-from allomix.runmeta import RunUnitInfo
-from allomix.sample_contamination import ContaminationResult
+from allomix.qc.runmeta import RunUnitInfo
+from allomix.qc.sample_contamination import ContaminationResult
 
 # ---------------------------------------------------------------------------
 # Helpers

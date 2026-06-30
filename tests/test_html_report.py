@@ -15,13 +15,13 @@ from pathlib import Path
 import pytest
 
 from allomix.cli import main
-from allomix.host_presence import HostPresenceResult
-from allomix.qc import QCReport
-from allomix.relatedness import AdmixConsistencyResult, RelatednessResult
-from allomix.report import DonorMeta, ReportMeta, to_html
+from allomix.qc.host_presence import HostPresenceResult
+from allomix.qc.qc import QCReport
+from allomix.qc.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.qc.runmeta import RunUnitInfo
+from allomix.qc.sample_contamination import ContaminationResult
+from allomix.report.report import DonorMeta, ReportMeta, to_html
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
-from allomix.runmeta import RunUnitInfo
-from allomix.sample_contamination import ContaminationResult
 
 TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 JOINT_VCF = TEST_DATA_DIR / "joint_single_donor.vcf"
@@ -441,7 +441,7 @@ class TestMarkerCSV:
         return rows[0], rows[1:]
 
     def test_single_sample_csv_columns_and_rows(self):
-        from allomix.report import to_marker_csv
+        from allomix.report.report import to_marker_csv
 
         buf = io.StringIO()
         to_marker_csv([("S1", _result())], buf)
@@ -455,7 +455,7 @@ class TestMarkerCSV:
         assert rows[0][label_idx] == "host 0/0, donor 1/1"
 
     def test_excluded_flag_round_trips(self):
-        from allomix.report import to_marker_csv
+        from allomix.report.report import to_marker_csv
 
         markers = _markers(5)
         markers[0].included = False
@@ -469,7 +469,7 @@ class TestMarkerCSV:
         assert rows[1][inc_idx] == "True"
 
     def test_multi_sample_csv_has_sample_column(self):
-        from allomix.report import to_marker_csv
+        from allomix.report.report import to_marker_csv
 
         buf = io.StringIO()
         to_marker_csv([("A", _result()), ("B", _result())], buf)
@@ -533,7 +533,7 @@ def _tp(name: str, donor_frac: float, status: str = "PASS"):
 
 
 def _render_timeline(results, *, meta=None, params=None, log_scale=False) -> str:
-    from allomix.html.timeline import timeline_html
+    from allomix.report.html.timeline import timeline_html
 
     buf = io.StringIO()
     timeline_html(

@@ -43,18 +43,33 @@ runs a separate detection test for whether the host is present at all.
 (`cli._run_single_sample`) and the `scripts/` diagnostics call it, so the
 classify -> estimate -> presence -> select path is defined in exactly one place.
 
+## Package layout
+
+The package groups modules by pipeline stage. Top-level modules are the
+cross-cutting pieces (constants, marker types, the result dataclasses, the
+orchestrator, the CLI, the simulator); the four subpackages each own one stage:
+
+- `calibration/` -- per-marker tables estimated from cohort data: `bias`,
+  `error_rates`, `contamination_table`.
+- `estimate/` -- the MLE model: `likelihood` and the `chimerism` estimators.
+- `qc/` -- quality / identity checks, detection, and metadata: `qc`,
+  `host_presence`, `sample_contamination`, `relatedness`, `runmeta`. Its
+  `__init__` is empty on purpose (`qc.qc` <-> `results` would otherwise form a
+  partial-initialisation cycle).
+- `report/` -- output formatting (`report`) and the `html/` rendering subpackage.
+
 ## Modules (dependency order)
 
 | Module | Owns | Key public surface |
 | --- | --- | --- |
 | `genotype.py` | VCF parsing (cyvcf2) and marker classification. The canonical home of `MarkerKey`/`marker_key`. | `parse_vcf`, `classify_markers`, `MarkerData`, `InformativeMarker`, `MarkerGenotypes`, `marker_type`, `MarkerKey` |
-| `chimerism.py` | The donor-fraction MLE: beta-binomial likelihood, grid + Brent (single donor) / Nelder-Mead (multi), profile-likelihood CIs. | `estimate_single_donor_bb`, `estimate_multi_donor`, `ChimerismResult`, `MultiDonorResult`, `detection_limit` |
-| `bias.py` | Per-marker amplification-bias table (median het-VAF deviation), used to shift the expected REF weight in the MLE. | `estimate_biases`, `save_bias_table`, `load_bias_table` |
-| `error_rates.py` | Per-site, per-direction empirical error table (panel of normals). Same key shape as `bias`. | `estimate_error_rates`, `save_error_table`, `load_error_table` |
-| `host_presence.py` | Host-presence detection at donor-homozygous markers, plus the read-level artifact filter. Independent of the fraction MLE. | `host_presence_test`, `donor_hom_markers`, `DonorHomMarker`, `HostPresenceResult`, `ArtifactThresholds` |
-| `qc.py` | Quality verdict: marker counts, beta-binomial goodness-of-fit, PASS/REVIEW/FAIL with reasons. | `assess_quality`, `QCReport` |
-| `analysis.py` | The shared single-sample pipeline that ties classify -> estimate -> presence -> QC together. | `analyse_sample`, `SampleAnalysis` |
-| `report.py` | Output formatting (TSV, JSON, timeline JSON) for single- and multi-donor results. | `to_tsv`, `to_json`, `timeline_json` |
+| `estimate/chimerism.py` | The donor-fraction MLE: beta-binomial likelihood, grid + Brent (single donor) / Nelder-Mead (multi), profile-likelihood CIs. | `estimate_single_donor_bb`, `estimate_multi_donor`, `ChimerismResult`, `MultiDonorResult`, `detection_limit` |
+| `calibration/bias.py` | Per-marker amplification-bias table (median het-VAF deviation), used to shift the expected REF weight in the MLE. | `estimate_biases`, `save_bias_table`, `load_bias_table` |
+| `calibration/error_rates.py` | Per-site, per-direction empirical error table (panel of normals). Same key shape as `bias`. | `estimate_error_rates`, `save_error_table`, `load_error_table` |
+| `qc/host_presence.py` | Host-presence detection at donor-homozygous markers, plus the read-level artifact filter. Independent of the fraction MLE. | `host_presence_test`, `donor_hom_markers`, `DonorHomMarker`, `HostPresenceResult`, `ArtifactThresholds` |
+| `qc/qc.py` | Quality verdict: marker counts, beta-binomial goodness-of-fit, PASS/REVIEW/FAIL with reasons. | `assess_quality`, `QCReport` |
+| `analysis.py` | The shared single-sample pipeline that ties classify -> estimate -> presence -> QC together. | `analyse_sample`, `AdmixtureSampleAnalysis` |
+| `report/report.py` | Output formatting (TSV, JSON, timeline JSON) for single- and multi-donor results. | `to_tsv`, `to_json`, `timeline_json` |
 | `cli.py` | Argument parsing and the `detect` / `timeline` / `estimate-bias` / `estimate-errors` commands. Thin: parses input, calls `analyse_sample`, formats output. | `main` |
 | `simulate.py` | Standalone synthetic-VCF generator for in-silico validation. Dependency-light, plain-text VCF I/O, so its parser is `parse_text_vcf` (not `genotype.parse_vcf`) and it keeps its own `alt_dose`. | `blend_vcfs`, `build_joint_vcf`, `parse_text_vcf` |
 

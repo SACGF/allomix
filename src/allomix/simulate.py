@@ -20,8 +20,8 @@ from allomix.constants import (
     HOM_REF_MAX_VAF,
     N_OTHER_BASES,
 )
+from allomix.estimate.likelihood import inject_bias
 from allomix.genotype import InformativeMarker, MarkerData
-from allomix.likelihood import inject_bias
 
 
 def _chrom_sort_key(chrom: str) -> tuple[int, int]:
@@ -489,7 +489,7 @@ def generate_marker_biases(
     Models the systematic REF/ALT capture efficiency difference of real
     hybridisation-capture and amplicon data (Vynck et al.). Bias is in het-site
     VAF units: +0.02 shifts a true het's observed ALT VAF to 0.52. Injected
-    multiplicatively in logit space (``allomix.likelihood.inject_bias``), so away
+    multiplicatively in logit space (``allomix.estimate.likelihood.inject_bias``), so away
     from VAF 0.5 the shift is proportional, not additive, matching how the
     estimator corrects for it (issue #20).
 

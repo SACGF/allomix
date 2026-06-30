@@ -230,7 +230,7 @@ def contamination_facts(two: list[dict], two_base: list[dict] | None) -> dict:
 
     # Step 30 gate outcome and slope range, from the saved per-mixture tables.
     if CONTAM_TABLE_DIR.exists():
-        from allomix.contamination_table import load_contamination_table
+        from allomix.calibration.contamination_table import load_contamination_table
 
         gated, slopes = 0, []
         tables = sorted(CONTAM_TABLE_DIR.glob("*.contam.tsv"))

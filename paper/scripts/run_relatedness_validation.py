@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
 
-from allomix.chimerism import estimate_single_donor_bb  # noqa: E402
+from allomix.estimate.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import (  # noqa: E402
     blend_vcfs,

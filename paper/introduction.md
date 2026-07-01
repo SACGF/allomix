@@ -14,10 +14,11 @@ well-characterized limitations: sensitivity of 1--5% for minor component detecti
 limited quantitative precision from the narrow dynamic range of fragment analysis, and
 stutter artifacts that complicate interpretation. STR chimerism also requires a
 dedicated laboratory workflow (separate sample handling, PCR, and capillary
-electrophoresis) that runs independently of other molecular testing. Chimerism is
+electrophoresis) that runs independently of the laboratory's NGS-based testing and so
+cannot share its economies of scale. Chimerism is
 intrinsically a property of a cell population rather than of whole blood per se, and
 clinical practice often incorporates lineage-specific testing of sorted cell subsets
-when whole-blood signal is uninformative or ambiguous.[@KharfanDabaja2021astct;
+when whole-blood signal is less informative or ambiguous.[@KharfanDabaja2021astct;
 @Clark2025bjh; @Kakodkar2023alloseq]
 
 Next-generation sequencing (NGS) approaches to chimerism monitoring offer the potential
@@ -44,7 +45,11 @@ respective assay kit.[@Vynck2021devyser; @Blouin2024comparison; @Kakodkar2023all
 This creates a missed opportunity. Many clinical laboratories already run targeted NGS
 panels for haematological malignancy characterisation, pharmacogenomics, or other
 diagnostic purposes that include biallelic polymorphic markers, often for sample
-identification or quality control. For example, the IDT rhAmpSeq Sample ID panel
+identification or quality control. The markers most useful for chimerism are common ones
+(high minor-allele frequency, so host and donor are more often genotypically different)
+that sit in low linkage disequilibrium with each other (so each adds independent
+information); panels designed for sample identification tend to have both properties
+already. For example, the IDT rhAmpSeq Sample ID panel
 includes {{ panel_specs.n_markers_panel }} SNPs designed for sample tracking, and
 similar marker sets are incorporated into numerous clinical capture and amplicon panels.
 These markers are sequenced at high depth as part of routine clinical workflows, and the
@@ -70,8 +75,9 @@ estimate (how much donor is present, with a confidence interval) and a residual-
 presence test (whether any host remains, even below the level the magnitude estimate can
 quantify). Because the tool is meant to run inside routine laboratory operations, it
 also carries a built-in set of quality and sample-integrity checks that flag sample
-swaps, third-genome contamination, and unexpected donor-host relatedness from the same
-marker data. We describe the approach in plain terms, present in silico validation
+swaps, contamination from a genome other than the host or donor (for example another
+patient co-pooled on the same flowcell), and unexpected donor-host relatedness from the
+same marker data. We describe the approach in plain terms, present in silico validation
 together with a demonstration on a public dataset of real titrated DNA mixtures, and
 discuss the practical considerations for integrating chimerism monitoring into existing
 NGS pipelines. The scope of this paper is the tool, its estimation method, and an

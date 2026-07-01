@@ -14,9 +14,9 @@ The authors declare no conflicts of interest.
 ## Data Sharing
 
 The allomix source code, synthetic test data, and validation scripts are available at
-https://github.com/SACGF/allomix under the MIT license. The simulation framework
-included with allomix can be used to reproduce all in silico validation results
-presented in this work.
+https://github.com/SACGF/allomix under the MIT license. The repository includes a
+Snakemake workflow that reproduces the entire paper from its raw inputs, including the in
+silico validation, the SRP434573 public-data analysis, and all figures.
 
 {% raw %}::: {#refs}
 :::{% endraw %}

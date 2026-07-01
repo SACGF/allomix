@@ -1,4 +1,15 @@
-# allomix: donor chimerism monitoring from existing clinical NGS panels
+---
+title: "allomix: donor chimerism monitoring from existing clinical NGS panels"
+author:
+  - David M Lawrence
+  - Xiaowen Wu
+  - Hamish S Scott
+  - Yasir Kusay
+  - Chung Hoow Kok
+  - David M Ross
+  - Anna L Brown
+  - Wendy T Parker
+---
 
 ## Abstract
 
@@ -27,9 +38,10 @@ mean absolute error stayed below 1% (from {{ depth_1000.mean_abs_error_pct | dp(
 at 1,000x to {{ depth_50.mean_abs_error_pct | dp(2) }}% at 50x), and a simulated
 six-timepoint engraftment trajectory was tracked accurately including a small dip. On a
 public dataset of real titrated DNA mixtures, allomix recovered known host fractions
-from 10% down to 1%, resolved a three-person mixture, and the residual-host presence
-test detected host down to 1%, with the scatter at lower fractions traced to a co-pooled
-contamination floor in that dataset. This paper presents the tool with its analytical
+accurately from 10% down to 1% and resolved a three-person mixture, and the residual-host
+presence test returned a positive call at every mixture. At the lowest 0.5% titration the
+point estimates scatter against a co-pooled contamination floor in that dataset, which the
+presence call there cannot be separated from. This paper presents the tool with its analytical
 characterization and a real-data demonstration; clinical validation against STR
 chimerism remains to be done and, because allomix is panel-agnostic, is necessarily
 carried out by each laboratory on its own panel rather than once for the tool.

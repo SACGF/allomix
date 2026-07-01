@@ -5,14 +5,15 @@ One 2x2 figure (real SRP434573 data only), laid out like the simulated Figure 1
 (``plot_lod_grid.py``):
 
   columns: MLE magnitude estimate (left) vs host-presence detection test (right)
-  rows:    all 10 two-person mixtures (top) vs the 3 mixtures titrated to 0.5%
-           (bottom)
+  rows:    the mixtures that stop at 1% (top) vs the mixtures titrated to 0.5%
+           (bottom), two disjoint sets
 
 Each panel plots LoD (%) vs panel size on log-log axes, one curve per mean depth,
 the 10th-90th percentile band across mixtures shaded, reference lines at 0.5% and
-1%. The bottom row exists because only 3 of the 10 mixtures were titrated below
-1%; the all-mixture median (top) is therefore pinned at 1% by the 7 that stop
-there, while the 0.5%-titrated subset (bottom) resolves down to 0.5%.
+1%. The two rows are disjoint: only 3 of the 10 mixtures were titrated below 1%,
+so the top row holds the 7 that stop at 1% and the bottom row the 3 that resolve
+down to 0.5%. Keeping them apart stops the 0.5%-reaching mixtures from being
+buried in a top-row median that the 1%-floored mixtures would otherwise pin at 1%.
 
 A cell is censored when its median mixture detected every titration point it was
 given: the true LoD is then at or below that mixture set's lowest dilution (1%
@@ -194,12 +195,14 @@ def _style_axis(ax, nmarkers: list[int]) -> None:
         ax.axhline(thr, color="black", linestyle="--", linewidth=0.7, alpha=0.35)
 
 
-def _subset_name(rows: list[dict]) -> str | None:
-    """Name of the overlaid 0.5%-titrated mixture set, if present."""
-    for r in rows:
-        if r.get("mixture_set", "all") != "all":
-            return r["mixture_set"]
-    return None
+def _set_pct(mixture_set: str) -> float:
+    """Titration floor (percent) encoded in a set name like 'to_1pct'; inf for 'all'."""
+    if mixture_set == "all":
+        return float("inf")
+    try:
+        return float(mixture_set.replace("to_", "").replace("pct", ""))
+    except ValueError:
+        return float("inf")
 
 
 def _set_nmix(rows: list[dict], mixture_set: str) -> int | None:
@@ -257,8 +260,16 @@ def plot_grid(rows: list[dict], out_path: Path, show_analytical: bool = False) -
         raise SystemExit("No plottable rows in summary")
     colors = _depth_colors(depths)
 
-    subset = _subset_name(rows)
-    row_sets = ["all"] + ([subset] if subset else [])
+    # Two disjoint rows, ordered by titration floor descending: the mixtures that
+    # stop at 1% (top) and those titrated to 0.5% (bottom). The "all" set stays in
+    # the CSV for the headline facts but is not drawn, so the rows do not overlap.
+    row_sets = sorted(
+        {r.get("mixture_set", "all") for r in rows} - {"all"},
+        key=_set_pct,
+        reverse=True,
+    )
+    if not row_sets:
+        row_sets = ["all"]
 
     fig, axes = plt.subplots(
         len(row_sets),

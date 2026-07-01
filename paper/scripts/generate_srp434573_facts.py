@@ -271,6 +271,40 @@ def contamination_facts(two: list[dict], two_base: list[dict] | None) -> dict:
     return facts
 
 
+def zero_host_facts(two: list[dict]) -> dict:
+    """True-0%-host detection specificity from the pure-donor endpoints.
+
+    Each two-person pair's admix VCF carries the donor's own reads as an endpoint
+    sample, piled through the same forced ``bcftools mpileup`` path as the titrated
+    mixtures. Feeding the donor as the admix is a genuine 0%-host case (real reads,
+    the real co-pooled contamination floor, no synthetic mixing), so these rows
+    measure host-detection specificity at true zero: the MLE host floor, and whether
+    the residual-host presence test correctly stays negative. Donor endpoints are the
+    blank-``known_pct`` rows whose MLE host is < 50% (the pure-host endpoints sit near
+    100%). Presence call is "absent" (correct) when its p-value is >= 0.05.
+    """
+    facts: dict[str, str] = {}
+    donor_ep = [
+        r for r in two
+        if _f(r["known_pct"]) is None and (_f(r.get("mle_pct")) or 0.0) < 50.0
+    ]
+    if not donor_ep:
+        return facts
+    mle = [(_f(r.get("mle_pct")) or 0.0) for r in donor_ep]
+    pres_pct = [(_f(r.get("presence_pct")) or 0.0) for r in donor_ep]
+    p_vals = [_f(r.get("presence_p")) for r in donor_ep]
+    absent_n = sum(1 for p in p_vals if p is not None and p >= 0.05)
+    called_n = sum(1 for p in p_vals if p is not None and p < 0.05)
+
+    facts["zero_host_n"] = str(len(donor_ep))
+    facts["zero_host_mle_max_pct"] = f"{max(mle):.3f}"
+    facts["zero_host_mle_median_pct"] = f"{float(np.median(mle)):.3f}"
+    facts["zero_host_presence_absent_n"] = str(absent_n)
+    facts["zero_host_presence_falsepos_n"] = str(called_n)
+    facts["zero_host_presence_max_pct"] = f"{max(pres_pct):.3f}"
+    return facts
+
+
 def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
     fig, (axA, axB) = plt.subplots(1, 2, figsize=(12.5, 5.4))
 
@@ -393,6 +427,7 @@ def main() -> int:
 
     facts = compute_facts(two, three)
     facts.update(contamination_facts(two, two_base))
+    facts.update(zero_host_facts(two))
     path = FACTS_DIR / "srp434573.csv"
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(facts.keys()))

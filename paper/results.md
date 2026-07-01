@@ -54,7 +54,7 @@ of both readouts. All LoD values refer to bulk extracted DNA; clinical sensitivi
 given specimen further depends on the proportion of the lineage of interest and the
 upstream cell-sorting workflow.
 
-![**Figure 1.** Limit of detection as a function of panel size and sequencing depth, for both readouts allomix runs on the same sample. Columns: the MLE magnitude estimate (left) and the host-presence detection test (right). Rows: unrelated donor-host pairs (top) and full-sibling pairs (bottom). Each coloured curve is the median LoD across donor/host pairs at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across pairs (the identity-by-descent spread, wide for siblings at small panels and narrowing as markers are added). The MLE panels also show the limit of blank (LoB) as a faint dashed line; the presence test has no blank because its null is the sequencing-error background (detection = host-presence likelihood-ratio test at p < 0.05). Dashed horizontal lines mark 0.5% and 1% minor (donor or residual-host) fraction. Both readouts come from the same simulated sweep (matched depths, panel sizes, donor/host pairs, and error model), so the columns are directly comparable. LoD was estimated per pair under the CLSI EP17-A2 workflow ({{ lod_headline.n_pairs_unrelated }} unrelated and {{ lod_headline.n_pairs_sibling }} sibling pairs, {{ lod_headline.n_seq_reps }} sequencing replicates each).]({{ facts_dir }}/fig5_lod_curves.png)
+![**Figure 1.** Limit of detection as a function of panel size and sequencing depth, for both readouts allomix runs on the same sample. Columns: the MLE magnitude estimate (left) and the host-presence detection test (right). Rows: unrelated donor-host pairs (top) and full-sibling pairs (bottom). Each coloured curve is the median LoD across donor/host pairs at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across pairs (the identity-by-descent spread, wide for siblings at small panels and narrowing as markers are added). The MLE panels also show the limit of blank (LoB) as a faint dashed line; the presence test has no blank because its null is the sequencing-error background (detection = host-presence likelihood-ratio test at p < 0.05). Dashed horizontal lines mark 0.5% and 1% minor (donor or residual-host) fraction. Both readouts come from the same simulated sweep (matched depths, panel sizes, donor/host pairs, and error model), so the columns are directly comparable. LoD was estimated per pair under the CLSI EP17-A2 workflow ({{ lod_headline.n_pairs_unrelated }} unrelated and {{ lod_headline.n_pairs_sibling }} sibling pairs, {{ lod_headline.n_seq_reps }} sequencing replicates each).]({{ facts_dir }}/fig_lod_curves.png)
 
 ### Longitudinal monitoring and accuracy
 
@@ -107,7 +107,7 @@ absolute error; RMSE = root mean square error. Error metrics are computed on int
 fractions (excluding 0% and 100%). Absolute-error boxplots and the depth-summary panels
 are in Supplementary Figures S10 and S11.
 
-![**Figure 3.** In silico accuracy across sequencing depths. Each panel shows true donor fraction (x-axis) versus estimated donor fraction (y-axis) at the indicated depth, all replicates (N={{ depth_50.n_replicates | dp(0) }}). Dashed line indicates perfect agreement.]({{ facts_dir }}/fig1_depth_scatter.png)
+![**Figure 3.** In silico accuracy across sequencing depths. Each panel shows true donor fraction (x-axis) versus estimated donor fraction (y-axis) at the indicated depth, all replicates (N={{ depth_50.n_replicates | dp(0) }}). Dashed line indicates perfect agreement.]({{ facts_dir }}/fig_depth_scatter.png)
 
 ### Validation on real titrated mixtures
 
@@ -246,7 +246,15 @@ donor-homozygous markers where the host carries the donor-absent allele (Methods
 SRP434573 dilution series it returned a positive call (p < 0.05) at all
 {{ srp434573.presence_n_detected | dp(0) }} of
 {{ srp434573.presence_n_total | dp(0) }} two-person admixtures, reading a median of
-{{ srp434573.presence_markers_median | dp(0) }} donor-homozygous markers per sample. At
+{{ srp434573.presence_markers_median | dp(0) }} donor-homozygous markers per sample. The
+same dataset supplies the specificity at true zero: each pair's pure-donor sample, the
+donor's own DNA piled through the identical mpileup path, is a genuine 0%-host input, and
+the test correctly withheld a host-present call at all
+{{ srp434573.zero_host_presence_absent_n | dp(0) }} of {{ srp434573.zero_host_n | dp(0) }}
+pure-donor controls (host-fraction estimate 0%), even with the real co-pooled
+contamination floor present in those reads. The magnitude estimator floored there too,
+with a maximum host estimate of {{ srp434573.zero_host_mle_max_pct }}% across those
+{{ srp434573.zero_host_n | dp(0) }} controls. At
 the 1% host level its host-fraction estimate ranged
 {{ srp434573.presence_onepct_min_pct | dp(2) }} to
 {{ srp434573.presence_onepct_max_pct | dp(2) }}%, tracking the dilution alongside the
@@ -269,10 +277,10 @@ the LoD rose into the measurable window, and characterised the LoD across panel 
 sequencing depth on real reads for both readouts
 ({{ subsample_lod_headline.n_mixtures | dp(0) }} two-person mixtures,
 {{ subsample_lod_headline.n_seeds | dp(0) }} sub-sampling replicates per cell; Figure
-5). As in simulation, the LoD fell with both panel size and depth. Across all mixtures
-the median LoD reached at or below 1%, the lowest dilution most of them carry; in the
-subset titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}% host, both
-the magnitude and presence-test LoD reached at or below that level. The dilution series
+5). As in simulation, the LoD fell with both panel size and depth. In the seven mixtures
+titrated only to 1% the median LoD reached at or below 1% (the lowest dilution they
+carry); in the three titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}%
+host, both the magnitude and presence-test LoD reached at or below that level. The dilution series
 stops at {{ subsample_lod_headline.min_titration_pct | dp(1) }}% (its lowest real
 titration), and the dataset's co-pooled contamination floor (a median
 {{ subsample_lod_headline.contamination_floor_pct | dp(2) }}% at the deepest, largest
@@ -281,7 +289,7 @@ These are pseudo-replicates sub-sampled from one library, not independent low-de
 libraries, so the result confirms that the real-data LoD tracks the simulation within
 the limits of the dilution grid rather than serving as an independent wet-lab LoD.
 
-![**Figure 5.** Real-data limit of detection on the SRP434573 titrated mixtures, the real-data counterpart of Figure 1. Reads and markers were sub-sampled from the high-depth mixtures to bring the LoD into the measurable window. Columns: MLE magnitude estimate (left) and host-presence detection test (right). Rows: all {{ subsample_lod_headline.n_mixtures | dp(0) }} two-person mixtures (top) and the subset titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}% host (bottom); only three mixtures were diluted below 1%, so the all-mixture median is floored at 1% by the rest. Each coloured curve is the median LoD across mixtures at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across mixtures. An X marks a cell where the LoD is at or below the lowest titration that mixture set carries (1% top row, 0.5% bottom row), not resolved lower. Per-mixture curves are constrained to be monotonic in panel size, which the nested marker panels justify. Points are jittered horizontally per depth. Sub-sampled pseudo-replicates, {{ subsample_lod_headline.n_seeds | dp(0) }} per cell, not independent libraries.]({{ facts_dir }}/fig_subsample_lod_grid.png)
+![**Figure 5.** Real-data limit of detection on the SRP434573 titrated mixtures, the real-data counterpart of Figure 1. Reads and markers were sub-sampled from the high-depth mixtures to bring the LoD into the measurable window. Columns: MLE magnitude estimate (left) and host-presence detection test (right). Rows: the seven mixtures titrated only to 1% (top) and the three titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}% host (bottom), two disjoint sets. Only three of the {{ subsample_lod_headline.n_mixtures | dp(0) }} mixtures were diluted below 1%; keeping the rows disjoint stops those three from being buried in a top-row median that the 1%-floored mixtures would otherwise pin at 1%. Each coloured curve is the median LoD across mixtures at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across mixtures. An X marks a cell where the LoD is at or below the lowest titration that mixture set carries (1% top row, 0.5% bottom row), not resolved lower. Per-mixture curves are constrained to be monotonic in panel size, which the nested marker panels justify. Points are jittered horizontally per depth. Sub-sampled pseudo-replicates, {{ subsample_lod_headline.n_seeds | dp(0) }} per cell, not independent libraries.]({{ facts_dir }}/fig_subsample_lod_grid.png)
 
 ### Stress tests (in silico): relatedness, multiple donors, and recipient copy-number changes
 
@@ -309,7 +317,7 @@ point-estimate accuracy, because the markers that remain are still unbiased.
 accuracy. Each level: {{ rel_unrelated.n_replicates }} replicate donor-host pairs,
 {{ rel_unrelated.n_markers }} markers, 500x depth.
 
-![**Figure 6.** Effect of donor-host relatedness on allomix performance. Left: informative markers by relatedness level (dots = replicates, bars = means). Centre: mean absolute error. Right: truth versus estimated donor fraction across all replicates. Simulated with {{ rel_unrelated.n_markers }} markers, 500x mean depth (CV = {{ sim_calibration.depth_cv }}), {{ sim_calibration.seq_error_pct }}% sequencing error, empirically calibrated per-marker bias, and {{ sim_calibration.locus_dropout_pct }}% locus dropout.]({{ facts_dir }}/fig4_relatedness.png)
+![**Figure 6.** Effect of donor-host relatedness on allomix performance. Left: informative markers by relatedness level (dots = replicates, bars = means). Centre: mean absolute error. Right: truth versus estimated donor fraction across all replicates. Simulated with {{ rel_unrelated.n_markers }} markers, 500x mean depth (CV = {{ sim_calibration.depth_cv }}), {{ sim_calibration.seq_error_pct }}% sequencing error, empirically calibrated per-marker bias, and {{ sim_calibration.locus_dropout_pct }}% locus dropout.]({{ facts_dir }}/fig_relatedness.png)
 
 **Multiple donors.** For the hardest multi-donor case, we generated a three-sibling
 scenario (host and two donors sharing both parents) across

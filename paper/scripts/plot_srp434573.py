@@ -291,7 +291,7 @@ def main() -> int:
     plot_scatter(two, OUT / "srp434573_scatter.png")
     # The log-Y CI dot plot is a paper supplementary figure (S12), so it goes to
     # output/facts; the scatter and three-person plots are internal/regenerable.
-    plot_logy(two, FACTS_DIR / "figS12_srp434573_logy.png")
+    plot_logy(two, FACTS_DIR / "fig_srp434573_logy.png")
     plot_three_person(_read(OUT / "srp434573_three_person.tsv"),
                       OUT / "srp434573_three_person.png")
     return 0

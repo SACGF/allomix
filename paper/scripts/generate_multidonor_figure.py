@@ -85,46 +85,46 @@ def plot_figure(results: list[dict]) -> None:
     # Panel A: per-donor accuracy scatter
     ax = axes[0]
 
+    # Log-log axes so the sub-1% donor points are spread out instead of piled at
+    # the origin. True 0% donor has no log position, so it (and any CI bound at or
+    # below the floor) is clamped to the axis floor.
+    floor = 0.1
+    lims = (0.06, 160)
+    ticks = [0.1, 1, 10, 100]
+
+    def _pt(true_f, est_f, ci_lo, ci_hi):
+        x = max(true_f * 100, floor)
+        y = max(est_f * 100, floor)
+        lo = max(ci_lo * 100, floor)
+        hi = max(ci_hi * 100, floor)
+        return x, y, [[y - lo], [hi - y]]
+
     for r in results:
+        x, y, ye = _pt(r["true_f1"], r["est_f1"], r["ci1_lo"], r["ci1_hi"])
         ax.errorbar(
-            r["true_f1"] * 100,
-            r["est_f1"] * 100,
-            yerr=[
-                [max(0, (r["est_f1"] - r["ci1_lo"]) * 100)],
-                [max(0, (r["ci1_hi"] - r["est_f1"]) * 100)],
-            ],
-            fmt="o",
-            color="steelblue",
-            markersize=5,
-            capsize=2,
-            elinewidth=0.8,
-            alpha=0.8,
-            zorder=3,
+            x, y, yerr=ye, fmt="o", color="steelblue",
+            markersize=5, capsize=2, elinewidth=0.8, alpha=0.8, zorder=3,
         )
+        x, y, ye = _pt(r["true_f2"], r["est_f2"], r["ci2_lo"], r["ci2_hi"])
         ax.errorbar(
-            r["true_f2"] * 100,
-            r["est_f2"] * 100,
-            yerr=[
-                [max(0, (r["est_f2"] - r["ci2_lo"]) * 100)],
-                [max(0, (r["ci2_hi"] - r["est_f2"]) * 100)],
-            ],
-            fmt="^",
-            color="darkorange",
-            markersize=5,
-            capsize=2,
-            elinewidth=0.8,
-            alpha=0.8,
-            zorder=3,
+            x, y, yerr=ye, fmt="^", color="darkorange",
+            markersize=5, capsize=2, elinewidth=0.8, alpha=0.8, zorder=3,
         )
 
-    ax.plot([0, 100], [0, 100], "k--", alpha=0.4, linewidth=1, label="Identity")
+    ax.plot(lims, lims, "k--", alpha=0.4, linewidth=1, label="Identity")
     ax.set_xlabel("True donor fraction (%)", fontsize=11)
     ax.set_ylabel("Estimated donor fraction (%)", fontsize=11)
     ax.set_title("A. Per-donor estimation accuracy", fontsize=12, fontweight="bold", loc="left")
-    ax.set_xlim(-3, 103)
-    ax.set_ylim(-3, 103)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlim(*lims)
+    ax.set_ylim(*lims)
+    ax.set_xticks(ticks)
+    ax.set_yticks(ticks)
+    ax.set_xticklabels([f"{t:g}" for t in ticks])
+    ax.set_yticklabels([f"{t:g}" for t in ticks])
     ax.set_aspect("equal")
-    ax.grid(True, alpha=0.2)
+    ax.grid(True, which="both", alpha=0.2)
 
     legend_elements = [
         Line2D(

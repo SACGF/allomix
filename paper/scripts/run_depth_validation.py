@@ -197,21 +197,32 @@ def plot_results(
 
     colors = plt.get_cmap("viridis_r")([i / (len(depths) - 1) for i in range(len(depths))])
 
+    # Log-log axes so the low-fraction points (1-5% donor) are spread out instead
+    # of crammed at the origin. True/estimated 0% donor (the pure-host endpoint)
+    # has no position on a log axis, so it is clamped to the axis floor.
+    floor = 0.1
+    lims = (0.06, 160)
+    ticks = [0.1, 1, 10, 100]
     for ax, depth, color in zip(axes, depths, colors):
         for rep_rows in all_results[depth]:
-            truths = [r["true_frac"] * 100 for r in rep_rows]
-            ests = [r["est_frac"] * 100 for r in rep_rows]
+            truths = [max(r["true_frac"] * 100, floor) for r in rep_rows]
+            ests = [max(r["est_frac"] * 100, floor) for r in rep_rows]
             ax.scatter(
                 truths, ests, c=[color], s=25, alpha=0.5,
                 edgecolors="white", linewidth=0.3, zorder=3,
             )
-        ax.plot([0, 100], [0, 100], "k--", alpha=0.4, linewidth=1)
+        ax.plot(lims, lims, "k--", alpha=0.4, linewidth=1)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
         ax.set_xlabel("True donor %")
         ax.set_title(f"{depth}x", fontsize=13, fontweight="bold")
-        ax.set_xlim(-2, 102)
-        ax.set_ylim(-2, 102)
+        ax.set_xlim(*lims)
+        ax.set_ylim(*lims)
+        ax.set_xticks(ticks)
+        ax.set_yticks(ticks)
+        ax.set_xticklabels([f"{t:g}" for t in ticks])
         ax.set_aspect("equal")
-        ax.grid(True, alpha=0.2)
+        ax.grid(True, which="both", alpha=0.2)
 
     axes[0].set_ylabel("Estimated donor %")
     n_reps = len(next(iter(all_results.values())))
@@ -220,7 +231,7 @@ def plot_results(
         fontsize=14, y=1.02,
     )
     fig.tight_layout()
-    fig.savefig(outdir / "fig1_depth_scatter.png", dpi=150, bbox_inches="tight")
+    fig.savefig(outdir / "fig_depth_scatter.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     # Figure 2: boxplots of absolute error by depth.
@@ -253,7 +264,7 @@ def plot_results(
     )
     ax.grid(True, alpha=0.3, axis="y")
     fig.tight_layout()
-    fig.savefig(outdir / "fig2_depth_boxplots.png", dpi=150, bbox_inches="tight")
+    fig.savefig(outdir / "fig_depth_boxplots.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     # Figure 3: summary metrics vs depth with error bars.
@@ -339,7 +350,7 @@ def plot_results(
         fontsize=14, y=1.02,
     )
     fig.tight_layout()
-    fig.savefig(outdir / "fig3_depth_summary.png", dpi=150, bbox_inches="tight")
+    fig.savefig(outdir / "fig_depth_summary.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     print(f"Figures saved to {outdir}/", file=sys.stderr)
@@ -484,7 +495,7 @@ def main(argv: list[str] | None = None) -> int:
 
     plot_results(all_results, all_metrics, outdir)
 
-    for fig in ["fig1_depth_scatter.png", "fig2_depth_boxplots.png", "fig3_depth_summary.png"]:
+    for fig in ["fig_depth_scatter.png", "fig_depth_boxplots.png", "fig_depth_summary.png"]:
         src = outdir / fig
         if src.exists():
             shutil.copy2(src, FACTS_DIR / fig)

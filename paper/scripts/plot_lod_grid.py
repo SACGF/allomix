@@ -19,7 +19,7 @@ Inputs:
   output/facts/presence_lod_curve_summary.csv  # presence-test LoD
 
 Output:
-  output/facts/fig5_lod_curves.png
+  output/facts/fig_lod_curves.png
 """
 
 import argparse
@@ -243,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--presence-summary", default=str(FACTS_DIR / "presence_lod_curve_summary.csv")
     )
-    parser.add_argument("--out", default=str(FACTS_DIR / "fig5_lod_curves.png"))
+    parser.add_argument("--out", default=str(FACTS_DIR / "fig_lod_curves.png"))
     args = parser.parse_args(argv)
     plot(Path(args.mle_summary), Path(args.presence_summary), Path(args.out))
     return 0

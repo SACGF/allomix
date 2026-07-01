@@ -21,7 +21,6 @@ Steps, in order:
 4. [Set marker inclusion thresholds](#4-set-marker-inclusion-thresholds)
 5. [Build the correction tables](#5-build-the-correction-tables)
 6. [Appendix: selecting a panel from scratch](#appendix-selecting-a-panel-from-scratch)
-7. [Known limitations](#known-limitations)
 
 ## 1. Do I have enough informative markers?
 
@@ -34,9 +33,12 @@ The literature gives a usable rule of thumb. Vynck et al. (2022, Clin Chim Acta
 532:123-129) showed that as few as three informative markers can support
 quantification, with accuracy improving as markers are added, and that a panel of
 about 20 markers with minor allele frequencies (MAFs) near 0.5 gives more than a
-95% chance of at least three informative markers even for sibling pairs. Sample-ID
-marker sets with tens of markers therefore have comfortable headroom for unrelated
-donors, and the margin narrows (but usually holds) for siblings. If you need to
+95% chance of at least three informative markers even for sibling pairs. Three
+markers only makes the estimate identifiable, though; the limit of detection keeps
+improving as informative markers are added, so reaching a low LoD needs many more
+than that minimum. Sample-ID marker sets with tens of markers therefore have
+comfortable headroom for unrelated donors, and the margin narrows (but usually
+holds) for siblings. If you need to
 know whether a specific panel will be sufficient for a specific donor-host pair
 before sequencing, the FABCASE tool assesses that prospectively (Vynck 2025, Int J
 Lab Hematol 47:690-697).
@@ -144,8 +146,9 @@ suggests how to turn them into a marker-inclusion list. **These are starting
 points, not validated cutoffs.** Tune them against your own cohort, and expect a
 sample-ID panel already validated for identity work to need little pruning.
 
-allomix has no built-in per-marker inclusion command yet (see
-[Known limitations](#known-limitations)); for now this is a manual pass over
+allomix has no built-in per-marker inclusion command yet (a `panel-qc` command to
+automate this is tracked in
+[#37](https://github.com/SACGF/allomix/issues/37)); for now this is a manual pass over
 `panel_stats_per_marker.tsv`. Candidate criteria for dropping a marker:
 
 - **Low call rate / high dropout.** Markers that frequently fail to genotype add
@@ -233,14 +236,3 @@ donor-host pair), use FABCASE (Vynck 2025) rather than re-deriving the statistic
 Designing a new panel is a larger exercise than this guide covers; the references
 above are the right starting points.
 
-## Known limitations
-
-Two things a guide can point at but the tool does not yet automate:
-
-- **No built-in per-marker inclusion command.** Step 4 is currently a manual pass
-  over the per-marker statistics. A convenience command (`allomix panel-qc`) that
-  applies recommended cutoffs and emits a marker-inclusion report is a candidate
-  follow-up, not yet implemented.
-- **No integrated panel-sufficiency check.** allomix reports informative-marker
-  counts per run but does not assess prospective per-pair sufficiency. Use FABCASE
-  and the ~20-marker rule of thumb for that.

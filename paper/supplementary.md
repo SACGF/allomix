@@ -16,19 +16,32 @@ $$w_i(f) = (1 - f)\,\frac{g_{h,i}}{2} + f\,\frac{g_{d,i}}{2}$$
 
 Markers are informative when host and donor genotypes differ. Following Vynck et
 al.,[@Vynck2023bias] each informative marker is assigned one of six types by host/donor
-alternative-allele dose:
+alternative-allele dose. The table below lists the six types and which parts of allomix
+use each.
 
-- **Type 0**: host 0/0, donor 1/1 (fully informative)
-- **Type 1**: host 1/1, donor 0/0 (fully informative)
-- **Type 10**: host 0/1, donor 0/0 (partially informative)
-- **Type 11**: host 0/1, donor 1/1 (partially informative)
-- **Type 20**: host 0/0, donor 0/1 (partially informative)
-- **Type 21**: host 1/1, donor 0/1 (partially informative)
+| Type | Host | Donor | Contrast | Fraction estimate | Residual-host presence (S7) | Contamination correction (S8) |
+|:--|:--|:--|:--|:--|:--|:--|
+| 0  | 0/0 | 1/1 | full | yes | yes | yes |
+| 1  | 1/1 | 0/0 | full | yes | yes | yes |
+| 10 | 0/1 | 0/0 | half | yes | yes | no  |
+| 11 | 0/1 | 1/1 | half | yes | yes | no  |
+| 20 | 0/0 | 0/1 | half | yes | no  | no  |
+| 21 | 1/1 | 0/1 | half | yes | no  | no  |
 
-Types 0 and 1 give the maximum allelic contrast (the minority allele has a single
-possible source); the heterozygous types give half the contrast. Markers where host and
-donor share a genotype are non-informative. Default filters: host and donor GQ $\geq$
-20, admixture DP $\geq$ 100, and at least three informative markers.
+**Marker genotype-contrast types and their uses.** Types 0 and 1 give the
+maximum allelic contrast (the minority allele has a single possible source); the
+heterozygous types give half the contrast. Every informative type feeds the donor-fraction
+estimate. The residual-host presence test needs a clean donor-absent allele to count, so
+it uses only the donor-homozygous types (0, 1, 10, 11); types 20 and 21 leave no
+donor-absent allele. The optional co-pool contamination correction acts only on the fully
+homozygous-contrast types (0, 1), where the host (donor-absent) allele reads are otherwise
+a clean background.
+
+Markers where host and donor share a genotype are non-informative for the fraction
+estimate and are not listed above; the consensus-homozygous subset (host and every donor
+homozygous for the same allele) instead feeds the contamination and sample-swap checks
+(S8). Default filters: host and donor GQ $\geq$ 20, admixture DP $\geq$ 100, and at least
+three informative markers.
 
 ### S2. Sequencing-error model
 

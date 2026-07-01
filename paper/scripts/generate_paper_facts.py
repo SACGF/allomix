@@ -197,8 +197,8 @@ def main():
         })
 
     # Simulation calibration inputs shared across the validation scripts
-    # (run_depth_validation.py, run_relatedness_validation.py,
-    # generate_timeline_figure.py, etc.), rounded from empirical panel_empirical
+    # (run_depth_validation.py, run_relatedness_validation.py, etc.), rounded
+    # from empirical panel_empirical
     # values (depth CV 0.429, no-call 1.6%). Exposing them as a fact keeps the
     # paper prose in sync with what the simulator actually ran.
     write_fact("sim_calibration", {

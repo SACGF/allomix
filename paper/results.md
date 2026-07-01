@@ -31,7 +31,7 @@ figures from the model's information on near-binomial simulated data, and a real
 LoD can only be higher, whereas the vendor numbers come from dilution series on real
 DNA. The honest limiter on real panels is overdispersion, not depth (Discussion), and
 the more defensible sensitivity number is the real-data LoD measured by subsampling the
-SRP434573 mixtures (Figure 5, below) rather than this analytical ceiling.
+SRP434573 mixtures (Figure 4, below) rather than this analytical ceiling.
 
 | Tool | Markers | LoD | Open Source | Panel Agnostic | Input |
 |:---|:---:|:---:|:---:|:---:|:---:|
@@ -56,58 +56,30 @@ upstream cell-sorting workflow.
 
 ![**Figure 1.** Limit of detection as a function of panel size and sequencing depth, for both readouts allomix runs on the same sample. Columns: the MLE magnitude estimate (left) and the host-presence detection test (right). Rows: unrelated donor-host pairs (top) and full-sibling pairs (bottom). Each coloured curve is the median LoD across donor/host pairs at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across pairs (the identity-by-descent spread, wide for siblings at small panels and narrowing as markers are added). The MLE panels also show the limit of blank (LoB) as a faint dashed line; the presence test has no blank because its null is the sequencing-error background (detection = host-presence likelihood-ratio test at p < 0.05). Dashed horizontal lines mark 0.5% and 1% minor (donor or residual-host) fraction. Both readouts come from the same simulated sweep (matched depths, panel sizes, donor/host pairs, and error model), so the columns are directly comparable. LoD was estimated per pair under the CLSI EP17-A2 workflow ({{ lod_headline.n_pairs_unrelated }} unrelated and {{ lod_headline.n_pairs_sibling }} sibling pairs, {{ lod_headline.n_seq_reps }} sequencing replicates each).]({{ facts_dir }}/fig_lod_curves.png)
 
-### Longitudinal monitoring and accuracy
+### Longitudinal monitoring
 
-A primary clinical use of chimerism testing is serial monitoring. We simulated a
-post-HSCT engraftment trajectory across {{ timeline.n_timepoints | dp(0) }} timepoints
-from day +14 to day +365 (Figure 2). The scenario runs from early engraftment (15% donor
-at day +14) through progressive engraftment to 95% donor by day +100, a clinically
-relevant dip to 92% donor at day +180, and recovery to 97% donor at day +365. allomix
-tracked the trajectory with mean absolute error {{ timeline.mae_pct | dp(2) }} ±
-{{ timeline.mae_sd_pct | dp(2) }}% across all timepoints (maximum
-{{ timeline.max_error_pct | dp(2) }} ± {{ timeline.max_error_sd_pct | dp(2) }}%), and
-the day +180 dip was recovered in all replicates with
-{{ timeline.dip_abs_error_pct | dp(2) }}% absolute error.
+A primary clinical use of chimerism testing is serial monitoring, following the donor
+fraction across timepoints so a rising host (or falling donor) trend is caught early. To
+show this on real reads rather than a simulated trajectory, we read one SRP434573
+titration ladder (the {{ srp434573_timeline.mixture_label }} mixture, the real reads and
+two-phase genotyping path of the next section) as a declining-chimerism series: with the
+minor contributor assigned to the host role, its dilution from
+{{ srp434573_timeline.host_start_pct }}% down to {{ srp434573_timeline.host_end_pct }}% host (donor
+chimerism rising from {{ srp434573_timeline.donor_start_pct }}% to
+{{ srp434573_timeline.donor_end_pct }}%) runs in the same direction as engraftment or, read as
+residual host, relapse surveillance (Figure 2). allomix followed the decline with
+{{ srp434573_timeline.mae_pct | dp(2) }}% mean absolute error across the
+{{ srp434573_timeline.n_timepoints | dp(0) }} rungs, tracking the known fraction down to 1%
+host before the estimate floors near the dataset's co-pooled contamination level
+(~{{ srp434573_timeline.floor_pct | dp(2) }}%) at the 0.5% rung, and the residual-host presence
+test returned a positive call at all {{ srp434573_timeline.presence_n_detected | dp(0) }}
+timepoints. These are independent titration samples read as a monitoring trajectory, not
+serial timepoints from one patient; the per-sample accuracy, the confidence intervals, and
+the contamination floor that sets the low-end limit are characterised next. The estimator's
+in silico accuracy across sequencing depths (mean absolute error below 1% from 50x to
+1,000x) is reported separately in Supplementary Table S4 and Supplementary Figure S14.
 
-The accuracy behind that trajectory holds across sequencing depths. We generated
-synthetic chimeric VCFs spanning 0% to 100% donor using 100 markers with empirically
-calibrated per-marker bias, non-uniform depth (CV = {{ sim_calibration.depth_cv }}), and
-{{ sim_calibration.locus_dropout_pct }}% locus dropout, at five depths from 50x to
-1,000x ({{ depth_50.n_replicates | dp(0) }} replicates each). Mean absolute error stayed
-below 1% at every depth, improving from {{ depth_50.mean_abs_error_pct | dp(2) }} ±
-{{ depth_50.mean_abs_error_sd_pct | dp(2) }}% at 50x to
-{{ depth_1000.mean_abs_error_pct | dp(2) }} ±
-{{ depth_1000.mean_abs_error_sd_pct | dp(2) }}% at 1,000x (Table 2, Figure 3). The 95%
-profile-likelihood intervals showed coverage of
-{{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}%, close to the nominal
-95% across the depth range, with the per-marker-type overdispersion model (separate
-donor-homozygous and donor-heterozygous concentration) absorbing the extra-binomial
-scatter that a single shared term left in the residuals. Per-marker bias correction is
-available but its effect is modest by design: in a 2,000x experiment it left the point
-estimate essentially unchanged (0% and 100% donor samples estimated at
-{{ bias_with_bias.est_0pct }}% and {{ bias_with_bias.est_100pct }}%) while narrowing the
-mean interval from {{ bias_no_bias.mean_ci_width_pct | dp(2) }}% to
-{{ bias_with_bias.mean_ci_width_pct | dp(2) }}%, because in logit space the correction
-is a small proportional adjustment at the extreme allele frequencies that dominate
-low-fraction samples (Supplementary Figure S4).
-
-![**Figure 2.** Simulated post-HSCT engraftment monitoring. True donor fraction trajectory (grey squares, dashed) versus allomix estimates (blue circles, solid) across six timepoints. Thin blue lines show individual replicates (N={{ timeline.n_replicates | dp(0) }}); the thick blue line is the mean estimate, and the shaded band is the mean 95% profile-likelihood CI. The trajectory includes a clinically relevant dip at day +180. Simulated with 100 markers, {{ timeline.depth | commas }}x depth, empirically calibrated per-marker bias, and {{ sim_calibration.locus_dropout_pct }}% locus dropout.]({{ facts_dir }}/fig_timeline.png)
-
-| Depth | MAE (%) | RMSE (%) | Max Error (%) | CI Coverage (%) | Mean CI Width (%) |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| 50x | {{ depth_50.mean_abs_error_pct | dp(2) }} ± {{ depth_50.mean_abs_error_sd_pct | dp(2) }} | {{ depth_50.rmse_pct | dp(2) }} ± {{ depth_50.rmse_sd_pct | dp(2) }} | {{ depth_50.max_abs_error_pct | dp(2) }} ± {{ depth_50.max_abs_error_sd_pct | dp(2) }} | {{ depth_50.ci_coverage_pct }} ± {{ depth_50.ci_coverage_sd_pct }} | {{ depth_50.mean_ci_width_pct | dp(2) }} ± {{ depth_50.mean_ci_width_sd_pct | dp(2) }} |
-| 100x | {{ depth_100.mean_abs_error_pct | dp(2) }} ± {{ depth_100.mean_abs_error_sd_pct | dp(2) }} | {{ depth_100.rmse_pct | dp(2) }} ± {{ depth_100.rmse_sd_pct | dp(2) }} | {{ depth_100.max_abs_error_pct | dp(2) }} ± {{ depth_100.max_abs_error_sd_pct | dp(2) }} | {{ depth_100.ci_coverage_pct }} ± {{ depth_100.ci_coverage_sd_pct }} | {{ depth_100.mean_ci_width_pct | dp(2) }} ± {{ depth_100.mean_ci_width_sd_pct | dp(2) }} |
-| 200x | {{ depth_200.mean_abs_error_pct | dp(2) }} ± {{ depth_200.mean_abs_error_sd_pct | dp(2) }} | {{ depth_200.rmse_pct | dp(2) }} ± {{ depth_200.rmse_sd_pct | dp(2) }} | {{ depth_200.max_abs_error_pct | dp(2) }} ± {{ depth_200.max_abs_error_sd_pct | dp(2) }} | {{ depth_200.ci_coverage_pct }} ± {{ depth_200.ci_coverage_sd_pct }} | {{ depth_200.mean_ci_width_pct | dp(2) }} ± {{ depth_200.mean_ci_width_sd_pct | dp(2) }} |
-| 500x | {{ depth_500.mean_abs_error_pct | dp(2) }} ± {{ depth_500.mean_abs_error_sd_pct | dp(2) }} | {{ depth_500.rmse_pct | dp(2) }} ± {{ depth_500.rmse_sd_pct | dp(2) }} | {{ depth_500.max_abs_error_pct | dp(2) }} ± {{ depth_500.max_abs_error_sd_pct | dp(2) }} | {{ depth_500.ci_coverage_pct }} ± {{ depth_500.ci_coverage_sd_pct }} | {{ depth_500.mean_ci_width_pct | dp(2) }} ± {{ depth_500.mean_ci_width_sd_pct | dp(2) }} |
-| 1,000x | {{ depth_1000.mean_abs_error_pct | dp(2) }} ± {{ depth_1000.mean_abs_error_sd_pct | dp(2) }} | {{ depth_1000.rmse_pct | dp(2) }} ± {{ depth_1000.rmse_sd_pct | dp(2) }} | {{ depth_1000.max_abs_error_pct | dp(2) }} ± {{ depth_1000.max_abs_error_sd_pct | dp(2) }} | {{ depth_1000.ci_coverage_pct }} ± {{ depth_1000.ci_coverage_sd_pct }} | {{ depth_1000.mean_ci_width_pct | dp(2) }} ± {{ depth_1000.mean_ci_width_sd_pct | dp(2) }} |
-
-**Table 2.** allomix accuracy and confidence-interval performance across sequencing
-depths (mean ± SD, N={{ depth_50.n_replicates | dp(0) }} replicates). MAE = mean
-absolute error; RMSE = root mean square error. Error metrics are computed on interior
-fractions (excluding 0% and 100%). Absolute-error boxplots and the depth-summary panels
-are in Supplementary Figures S10 and S11.
-
-![**Figure 3.** In silico accuracy across sequencing depths. Each panel shows true donor fraction (x-axis) versus estimated donor fraction (y-axis) at the indicated depth, all replicates (N={{ depth_50.n_replicates | dp(0) }}). Dashed line indicates perfect agreement.]({{ facts_dir }}/fig_depth_scatter.png)
+![**Figure 2.** Serial-monitoring trajectory on real titrated mixtures (SRP434573). One two-person dilution ladder ({{ srp434573_timeline.mixture_label }}) read as a declining-chimerism series: the titrated minor contributor is assigned to the host role, so its dilution from {{ srp434573_timeline.host_start_pct }}% down to {{ srp434573_timeline.host_end_pct }}% host (x-axis, high to low) runs in the direction of successful engraftment or, read as residual host, relapse surveillance. Grey squares (dashed) are the known host fraction; blue circles (solid) are the allomix maximum-likelihood estimate with 95% profile-likelihood CIs, on a log y-axis. The estimate tracks the known fraction down to 1% host and floors near the mixture's in-data co-pooled contamination level (red dotted line, ~{{ srp434573_timeline.floor_pct | dp(2) }}%) at the 0.5% rung; the residual-host presence test returned a positive call at all {{ srp434573_timeline.presence_n_detected | dp(0) }} timepoints. These are independent titration samples presented as a monitoring trajectory, not serial timepoints from one patient. Genotypes and admixture allele depths were produced with the two-phase pipeline (Methods), with the per-marker contamination correction enabled as in the next section.]({{ facts_dir }}/fig_srp434573_timeline.png)
 
 ### Validation on real titrated mixtures
 
@@ -140,7 +112,7 @@ recovered the known host fraction with {{ srp434573.mae_reliable_pct }}% mean ab
 error over
 the range at or above 2.5% (R^2 = {{ srp434573.r2_reliable }} for estimated versus
 known), the range where the dataset's contamination floor is small relative to the true
-fraction (Figure 4A). The maximum-likelihood host fraction tracked the dilution down to
+fraction (Figure 3A). The maximum-likelihood host fraction tracked the dilution down to
 1% host, with all {{ srp434573.n_onepct | dp(0) }} of the 1% admixtures estimated
 between {{ srp434573.mle_onepct_min_pct }}% and {{ srp434573.mle_onepct_max_pct }}%. At
 the lowest titration (0.5% host, {{ srp434573.n_lowest | dp(0) }} mixtures) the estimate
@@ -152,7 +124,7 @@ known fractions and ordered the two donors correctly: host F2 at
 {{ srp434573.three_f2_est_pct }}% (known {{ srp434573.three_f2_known_pct }}%), donor M1
 at {{ srp434573.three_m1_est_pct }}% (known {{ srp434573.three_m1_known_pct }}%), and
 donor M2 at {{ srp434573.three_m2_est_pct }}% (known
-{{ srp434573.three_m2_known_pct }}%) (Figure 4B).
+{{ srp434573.three_m2_known_pct }}%) (Figure 3B).
 
 This dataset carries a genuine low-level co-pooled contamination floor, most plausibly
 index hopping on the patterned flowcell, which the source study independently identified
@@ -203,7 +175,7 @@ individual is the titrated minor from the dataset's naming structure; the thesis
 not state it explicitly, and this affects only the host/donor labelling, not the
 genotyping.
 
-![**Figure 4.** allomix on the SRP434573 public titrated-mixture dataset (real reads). (A) Two-person dilution series: known host fraction versus allomix estimate (log-log) for the maximum-likelihood estimate (filled circles, 100 minus donor%, with the per-marker co-pooled contamination correction applied; Methods) and the residual-host presence test (open squares), across {{ srp434573.n_mixtures | dp(0) }} two-person mixtures ({{ srp434573.n_timepoints | dp(0) }} admixtures in total). Dashed line is perfect recovery. The 0.5% points still fall away from the line where the residual contamination floor competes with the true fraction. An alternative view of the same dilution series, with 95% confidence intervals on each estimate, is in Supplementary Figure S12. (B) The single three-person mixture (1:3:5 of F2:M1:M2): known versus estimated component fractions with 95% confidence intervals.]({{ facts_dir }}/fig_srp434573.png)
+![**Figure 3.** allomix on the SRP434573 public titrated-mixture dataset (real reads). (A) Two-person dilution series: known host fraction versus allomix estimate (log-log) for the maximum-likelihood estimate (filled circles, 100 minus donor%, with the per-marker co-pooled contamination correction applied; Methods) and the residual-host presence test (open squares), across {{ srp434573.n_mixtures | dp(0) }} two-person mixtures ({{ srp434573.n_timepoints | dp(0) }} admixtures in total). Dashed line is perfect recovery. The 0.5% points still fall away from the line where the residual contamination floor competes with the true fraction. An alternative view of the same dilution series, with 95% confidence intervals on each estimate, is in Supplementary Figure S12. (B) The single three-person mixture (1:3:5 of F2:M1:M2): known versus estimated component fractions with 95% confidence intervals.]({{ facts_dir }}/fig_srp434573.png)
 
 The real series floors at 0.5% host, where the co-pooled contamination competes with the
 signal. To probe below that without the contamination confound, we built a
@@ -258,7 +230,7 @@ with a maximum host estimate of {{ srp434573.zero_host_mle_max_pct }}% across th
 the 1% host level its host-fraction estimate ranged
 {{ srp434573.presence_onepct_min_pct | dp(2) }} to
 {{ srp434573.presence_onepct_max_pct | dp(2) }}%, tracking the dilution alongside the
-magnitude estimate (Figure 4A, open squares); at the lowest 0.5% titration it cannot
+magnitude estimate (Figure 3A, open squares); at the lowest 0.5% titration it cannot
 separate residual host from the co-pooled contamination floor (below), so a positive
 call there reflects both. We present this as a validated capability, not as a clinical
 relapse-detection result: the test is calibrated against the background-artifact floor
@@ -289,7 +261,7 @@ These are pseudo-replicates sub-sampled from one library, not independent low-de
 libraries, so the result confirms that the real-data LoD tracks the simulation within
 the limits of the dilution grid rather than serving as an independent wet-lab LoD.
 
-![**Figure 5.** Real-data limit of detection on the SRP434573 titrated mixtures, the real-data counterpart of Figure 1. Reads and markers were sub-sampled from the high-depth mixtures to bring the LoD into the measurable window. Columns: MLE magnitude estimate (left) and host-presence detection test (right). Rows: the seven mixtures titrated only to 1% (top) and the three titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}% host (bottom), two disjoint sets. Only three of the {{ subsample_lod_headline.n_mixtures | dp(0) }} mixtures were diluted below 1%; keeping the rows disjoint stops those three from being buried in a top-row median that the 1%-floored mixtures would otherwise pin at 1%. Each coloured curve is the median LoD across mixtures at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across mixtures. An X marks a cell where the LoD is at or below the lowest titration that mixture set carries (1% top row, 0.5% bottom row), not resolved lower. Per-mixture curves are constrained to be monotonic in panel size, which the nested marker panels justify. Points are jittered horizontally per depth. Sub-sampled pseudo-replicates, {{ subsample_lod_headline.n_seeds | dp(0) }} per cell, not independent libraries.]({{ facts_dir }}/fig_subsample_lod_grid.png)
+![**Figure 4.** Real-data limit of detection on the SRP434573 titrated mixtures, the real-data counterpart of Figure 1. Reads and markers were sub-sampled from the high-depth mixtures to bring the LoD into the measurable window. Columns: MLE magnitude estimate (left) and host-presence detection test (right). Rows: the seven mixtures titrated only to 1% (top) and the three titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}% host (bottom), two disjoint sets. Only three of the {{ subsample_lod_headline.n_mixtures | dp(0) }} mixtures were diluted below 1%; keeping the rows disjoint stops those three from being buried in a top-row median that the 1%-floored mixtures would otherwise pin at 1%. Each coloured curve is the median LoD across mixtures at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across mixtures. An X marks a cell where the LoD is at or below the lowest titration that mixture set carries (1% top row, 0.5% bottom row), not resolved lower. Per-mixture curves are constrained to be monotonic in panel size, which the nested marker panels justify. Points are jittered horizontally per depth. Sub-sampled pseudo-replicates, {{ subsample_lod_headline.n_seeds | dp(0) }} per cell, not independent libraries.]({{ facts_dir }}/fig_subsample_lod_grid.png)
 
 ### Stress tests (in silico): relatedness, multiple donors, and recipient copy-number changes
 
@@ -301,7 +273,7 @@ markers, 500x), the mean number of informative markers fell from
 (full sibling), yet mean absolute error stayed below 2% throughout:
 {{ rel_unrelated.mean_mae_pct }}% (unrelated), {{ rel_cousin.mean_mae_pct }}% (cousin),
 {{ rel_half_sibling.mean_mae_pct }}% (half-sibling), and {{ rel_sibling.mean_mae_pct }}%
-(sibling) (Table 3, Figure 6). Even with sibling donors the minimum informative-marker
+(sibling) (Table 2, Figure 5). Even with sibling donors the minimum informative-marker
 count observed ({{ rel_sibling.min_informative }}) stayed well above the three required.
 Relatedness costs sensitivity (fewer informative markers raise the LoD) but not
 point-estimate accuracy, because the markers that remain are still unbiased.
@@ -313,11 +285,11 @@ point-estimate accuracy, because the markers that remain are still unbiased.
 | Half-sibling | {{ rel_half_sibling.mean_informative }} | {{ rel_half_sibling.min_informative }}–{{ rel_half_sibling.max_informative }} | {{ rel_half_sibling.mean_mae_pct }} | {{ rel_half_sibling.mean_rmse_pct }} |
 | Full sibling | {{ rel_sibling.mean_informative }} | {{ rel_sibling.min_informative }}–{{ rel_sibling.max_informative }} | {{ rel_sibling.mean_mae_pct }} | {{ rel_sibling.mean_rmse_pct }} |
 
-**Table 3.** Effect of donor-host relatedness on marker informativity and chimerism
+**Table 2.** Effect of donor-host relatedness on marker informativity and chimerism
 accuracy. Each level: {{ rel_unrelated.n_replicates }} replicate donor-host pairs,
 {{ rel_unrelated.n_markers }} markers, 500x depth.
 
-![**Figure 6.** Effect of donor-host relatedness on allomix performance. Left: informative markers by relatedness level (dots = replicates, bars = means). Centre: mean absolute error. Right: truth versus estimated donor fraction across all replicates. Simulated with {{ rel_unrelated.n_markers }} markers, 500x mean depth (CV = {{ sim_calibration.depth_cv }}), {{ sim_calibration.seq_error_pct }}% sequencing error, empirically calibrated per-marker bias, and {{ sim_calibration.locus_dropout_pct }}% locus dropout.]({{ facts_dir }}/fig_relatedness.png)
+![**Figure 5.** Effect of donor-host relatedness on allomix performance. Left: informative markers by relatedness level (dots = replicates, bars = means). Centre: mean absolute error. Right: truth versus estimated donor fraction across all replicates. Simulated with {{ rel_unrelated.n_markers }} markers, 500x mean depth (CV = {{ sim_calibration.depth_cv }}), {{ sim_calibration.seq_error_pct }}% sequencing error, empirically calibrated per-marker bias, and {{ sim_calibration.locus_dropout_pct }}% locus dropout.]({{ facts_dir }}/fig_relatedness.png)
 
 **Multiple donors.** For the hardest multi-donor case, we generated a three-sibling
 scenario (host and two donors sharing both parents) across
@@ -327,7 +299,7 @@ Across {{ multidonor.n_samples | dp(0) }} chimeric samples spanning the simplex,
 per-donor mean absolute error was {{ multidonor.mae_d1_pct }}% (donor 1) and
 {{ multidonor.mae_d2_pct }}% (donor 2), the total donor fraction was estimated with
 {{ multidonor.mae_total_pct }}% MAE, and all {{ multidonor.n_asymmetric | dp(0) }}
-asymmetric mixes were correctly ranked (Table 4, Figure 7). Per-donor CI coverage was
+asymmetric mixes were correctly ranked (Table 3, Figure 6). Per-donor CI coverage was
 lower ({{ multidonor.ci_coverage_d1_pct }}% and {{ multidonor.ci_coverage_d2_pct }}%)
 because partitioning a mix between two related donors leaves few markers that separate
 one donor from the other; the total and the ranking stay accurate. Unrelated multi-donor
@@ -341,19 +313,19 @@ tighter per-donor intervals.
 | Max error (%) | {{ multidonor.max_error_d1_pct }} | {{ multidonor.max_error_d2_pct }} | {{ multidonor.max_error_total_pct }} |
 | CI coverage (%) | {{ multidonor.ci_coverage_d1_pct }} | {{ multidonor.ci_coverage_d2_pct }} | n/a |
 
-**Table 4.** Multi-donor accuracy with sibling donors.
+**Table 3.** Multi-donor accuracy with sibling donors.
 {{ multidonor.n_markers | dp(0) }} markers ({{ multidonor.n_informative_any | dp(0) }}
 informative), {{ multidonor.depth | commas }}x depth. Error metrics on interior
 fractions.
 
-![**Figure 7.** Multi-donor chimerism estimation. (A) Per-donor accuracy: true versus estimated fraction for donor 1 (circles) and donor 2 (triangles), with 95% profile-likelihood CIs. (B) Two-dimensional log-likelihood surface for a representative mixture (60% host, 30% donor 1, 10% donor 2); contours show delta log-likelihood from the maximum, dashed line marks the 95% joint CI, grey region is infeasible (f1 + f2 > 1). Star = true value, circle = MLE.]({{ facts_dir }}/fig_multidonor.png)
+![**Figure 6.** Multi-donor chimerism estimation. (A) Per-donor accuracy: true versus estimated fraction for donor 1 (circles) and donor 2 (triangles), with 95% profile-likelihood CIs. (B) Two-dimensional log-likelihood surface for a representative mixture (60% host, 30% donor 1, 10% donor 2); contours show delta log-likelihood from the maximum, dashed line marks the 95% joint CI, grey region is infeasible (f1 + f2 > 1). Star = true value, circle = MLE.]({{ facts_dir }}/fig_multidonor.png)
 
 **Recipient copy-number changes.** The relapsing recipient clone often carries
 copy-number changes, which the diploid mixture model does not represent. We simulated
 recipient copy-neutral loss of heterozygosity, deletion, and gain at controllable burden
 and measured the LoD in two directions ({{ cnv_loh_headline.ref_markers }} markers,
 {{ cnv_loh_headline.ref_depth }}x, {{ cnv_loh_headline.n_reps_per_frac }} replicates per
-cell; Figure 8). For detecting the recipient clone as the minor component (the relapse
+cell; Figure 7). For detecting the recipient clone as the minor component (the relapse
 direction), aberrations had little effect: the LoD was
 {{ cnv_loh_headline.relapse_lod_baseline_unrel_pct | dp(2) }}% (unrelated) at baseline
 and stayed at or below {{ cnv_loh_headline.relapse_lod_max_pct | dp(2) }}% across every
@@ -368,7 +340,7 @@ returning the high-burden gain donor LoD from
 aberration-free samples unchanged, and the estimator flags the cases it cannot recover
 for review (Methods).
 
-![**Figure 8.** Effect of recipient copy-number aberrations on the limit of detection, by direction. Columns are aberration type (CN-LoH, deletion, gain); x-axis is burden (fraction of eligible recipient markers affected). Y-axis is the LoD of the minor component as a donor percentage, log-scaled. Solid lines: standard estimator; dashed lines: one-sided outlier-resistant refit; colours: relatedness. Top row: relapse detection (recipient clone is the minor component, insensitive to the aberration). Bottom row: donor detection against an aberration-bearing recipient background, where CN-LoH and deletion inflate the donor LoD past the 20% ceiling (dotted line) and the refit partly recovers it. Simulated at {{ cnv_loh_headline.ref_markers }} markers, {{ cnv_loh_headline.ref_depth }}x, same noise model as Figure 1.]({{ facts_dir }}/fig_cnv_loh.png)
+![**Figure 7.** Effect of recipient copy-number aberrations on the limit of detection, by direction. Columns are aberration type (CN-LoH, deletion, gain); x-axis is burden (fraction of eligible recipient markers affected). Y-axis is the LoD of the minor component as a donor percentage, log-scaled. Solid lines: standard estimator; dashed lines: one-sided outlier-resistant refit; colours: relatedness. Top row: relapse detection (recipient clone is the minor component, insensitive to the aberration). Bottom row: donor detection against an aberration-bearing recipient background, where CN-LoH and deletion inflate the donor LoD past the 20% ceiling (dotted line) and the refit partly recovers it. Simulated at {{ cnv_loh_headline.ref_markers }} markers, {{ cnv_loh_headline.ref_depth }}x, same noise model as Figure 1.]({{ facts_dir }}/fig_cnv_loh.png)
 
 ### Built-in quality and sample-integrity checks
 

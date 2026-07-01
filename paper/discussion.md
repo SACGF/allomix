@@ -8,8 +8,10 @@ built from the same marker data.
 
 ### Accuracy and sensitivity
 
-The <1% mean absolute error across all depths is competitive with published performance
-for commercial tools: Kakodkar et al. reported 0.3--1.5% MAE for AlloSeq
+The <1% mean absolute error across simulated depths (Supplementary Table S4), together
+with the recovery of known fractions on the real SRP434573 titrated mixtures (Results),
+is competitive with published performance for commercial tools: Kakodkar et al. reported
+0.3--1.5% MAE for AlloSeq
 HCT,[@Kakodkar2023alloseq] Pedini et al. and Vynck et al. showed comparable precision
 for the Devyser system,[@Pedini2021devyser; @Vynck2021devyser] and Blouin et al.
 reported R^2 = 0.9987 across the full chimerism range for ScisGo.[@Blouin2024comparison]
@@ -253,7 +255,7 @@ performance, not a head-to-head benchmark on matched samples. The gap is expecte
 driven largely by overdispersion (above), and wetlab validation will set the floor
 allomix actually delivers in routine use. As a partial check against real reads, we
 sub-sampled the high-depth SRP434573 mixtures across depth and panel size and measured
-the LoD on those reads directly (Figure 5): it falls with depth and panel size as the
+the LoD on those reads directly (Figure 4): it falls with depth and panel size as the
 simulated curves do and tracks them within the dilution grid, but because these are
 pseudo-replicates from one library rather than independent dilutions it confirms the
 simulated trend rather than replacing the wetlab limit. Finally, the in silico work

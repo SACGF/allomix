@@ -4,6 +4,7 @@ import argparse
 import datetime
 import importlib.util
 import json
+import math
 import shlex
 import sys
 from pathlib import Path
@@ -40,6 +41,18 @@ from allomix.constants import (
 )
 from allomix.estimate.likelihood import PanelCalibration
 from allomix.genotype import parse_vcf
+from allomix.qc.panel_qc import (
+    DEFAULT_BIAS_P95_MULT,
+    DEFAULT_MAX_DEPTH_CV,
+    DEFAULT_MIN_CALL_RATE,
+    DEFAULT_MIN_HET_RATIO,
+    PanelQCThresholds,
+    assign_verdicts,
+    load_marker_stats,
+    summarize,
+    write_sites_bed,
+    write_verdict_tsv,
+)
 from allomix.qc.relatedness import Relatedness
 from allomix.qc.runmeta import RunUnitInfo, read_run_units
 from allomix.report.html.render import render_single
@@ -272,6 +285,20 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "markers (see `allomix.qc.host_presence`). On by default; use --no-artifact-filter "
         "to disable it",
     )
+    sites_group = parser.add_mutually_exclusive_group()
+    sites_group.add_argument(
+        "--exclude-sites",
+        metavar="BED",
+        help="BED of marker sites to drop from host, donor, and admix before "
+        "analysis (e.g. the --exclude-bed from `allomix panel-qc`). Mutually "
+        "exclusive with --include-sites.",
+    )
+    sites_group.add_argument(
+        "--include-sites",
+        metavar="BED",
+        help="BED of marker sites to restrict analysis to; all others are "
+        "dropped. Mutually exclusive with --exclude-sites.",
+    )
 
 
 def _add_report_meta_args(parser: argparse.ArgumentParser) -> None:
@@ -495,8 +522,7 @@ def _resolve_admix_samples(admix_vcfs: list[str], samples: list[str]) -> dict[st
         if not hits:
             available = sorted({n for names in samples_by_vcf.values() for n in names})
             raise SystemExit(
-                f"Sample {s!r} not found in any --admix-vcf ({admix_vcfs})\n"
-                f"Available: {available}"
+                f"Sample {s!r} not found in any --admix-vcf ({admix_vcfs})\nAvailable: {available}"
             )
         if len(hits) > 1:
             raise SystemExit(
@@ -525,6 +551,8 @@ def _run_single_sample(
     expected_relatedness: list[Relatedness | None] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
+    include_sites: set[tuple[str, int]] | None = None,
+    exclude_sites: set[tuple[str, int]] | None = None,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -534,7 +562,13 @@ def _run_single_sample(
 
     Returns (ChimerismResult | MultiDonorResult, QCReport, MarkerGenotypes).
     """
-    admix = parse_vcf(vcf_path, sample=admix_sample, min_dp=0)
+    admix = parse_vcf(
+        vcf_path,
+        sample=admix_sample,
+        min_dp=0,
+        include_sites=include_sites,
+        exclude_sites=exclude_sites,
+    )
 
     analysis = analyse_sample(
         host,
@@ -571,6 +605,40 @@ def _open_output(path: str):
     if path == "-":
         return sys.stdout
     return open(path, "w", encoding="utf-8")
+
+
+def _load_sites_bed(path: str) -> set[tuple[str, int]]:
+    """Load a sites BED into a set of ``(chrom, pos)`` 1-based positions.
+
+    Each BED interval (0-based half-open ``start end``) expands to every 1-based
+    position it covers, so a single-SNP row ``chrom P-1 P`` maps to ``pos = P``.
+    Blank lines and ``track``/``browser``/``#`` header lines are skipped.
+    """
+    sites: set[tuple[str, int]] = set()
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line or line.startswith(("#", "track", "browser")):
+                continue
+            fields = line.split("\t")
+            if len(fields) < 3:
+                raise ValueError(f"malformed BED line in {path}: {line!r}")
+            chrom = fields[0]
+            start = int(fields[1])
+            end = int(fields[2])
+            for pos in range(start + 1, end + 1):
+                sites.add((chrom, pos))
+    return sites
+
+
+def _resolve_sites(args: argparse.Namespace) -> tuple[set | None, set | None]:
+    """Build the (include_sites, exclude_sites) filters from the CLI BED flags.
+
+    argparse already enforces that at most one is given (mutually exclusive).
+    """
+    include = _load_sites_bed(args.include_sites) if args.include_sites else None
+    exclude = _load_sites_bed(args.exclude_sites) if args.exclude_sites else None
+    return include, exclude
 
 
 def _add_output_args(parser: argparse.ArgumentParser, *, allow_tsv: bool) -> None:
@@ -682,6 +750,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
         )
 
     calibration = _load_calibration(args)
+    include_sites, exclude_sites = _resolve_sites(args)
 
     # Parse host and donors once (same for every timepoint).
     # gt_ad_consistency=True is the panel-side miscall guard: drops markers where
@@ -689,10 +758,22 @@ def cmd_detect(args: argparse.Namespace) -> int:
     # reads in a 2-sample joint call). Without it the wider gnomAD-derived panel
     # recovers markers that bias the estimator toward false host signal (Step 23).
     host = parse_vcf(
-        args.genotype_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
+        args.genotype_vcf,
+        sample=args.host_sample,
+        min_gq=args.min_gq,
+        gt_ad_consistency=True,
+        include_sites=include_sites,
+        exclude_sites=exclude_sites,
     )
     donors = [
-        parse_vcf(args.genotype_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
+        parse_vcf(
+            args.genotype_vcf,
+            sample=d,
+            min_gq=args.min_gq,
+            gt_ad_consistency=True,
+            include_sites=include_sites,
+            exclude_sites=exclude_sites,
+        )
         for d in args.donor_sample
     ]
 
@@ -725,6 +806,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
             expected_relatedness=args.expected_relatedness,
             relatedness_tolerance=args.relatedness_tolerance,
             run_unit=run_units.get(sample_name),
+            include_sites=include_sites,
+            exclude_sites=exclude_sites,
         )
         results.append((genotypes.sample_name, result, qc))
         marker_rows.append((genotypes.sample_name, result))
@@ -778,13 +861,26 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     admix_by_sample = _resolve_admix_samples(args.admix_vcf, args.sample)
 
     calibration = _load_calibration(args)
+    include_sites, exclude_sites = _resolve_sites(args)
 
     # Parse host and donors once. See cmd_detect for gt_ad_consistency.
     host = parse_vcf(
-        args.genotype_vcf, sample=args.host_sample, min_gq=args.min_gq, gt_ad_consistency=True
+        args.genotype_vcf,
+        sample=args.host_sample,
+        min_gq=args.min_gq,
+        gt_ad_consistency=True,
+        include_sites=include_sites,
+        exclude_sites=exclude_sites,
     )
     donors = [
-        parse_vcf(args.genotype_vcf, sample=d, min_gq=args.min_gq, gt_ad_consistency=True)
+        parse_vcf(
+            args.genotype_vcf,
+            sample=d,
+            min_gq=args.min_gq,
+            gt_ad_consistency=True,
+            include_sites=include_sites,
+            exclude_sites=exclude_sites,
+        )
         for d in args.donor_sample
     ]
 
@@ -812,6 +908,8 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             expected_relatedness=args.expected_relatedness,
             relatedness_tolerance=args.relatedness_tolerance,
             run_unit=run_units.get(sample_name),
+            include_sites=include_sites,
+            exclude_sites=exclude_sites,
         )
         results.append((genotypes.sample_name, result, qc))
 
@@ -1043,6 +1141,45 @@ def cmd_build_contamination_table(args: argparse.Namespace) -> int:
         f"{correction.slope * 100:.4f}%/carrier -> {args.output}",
         file=sys.stderr,
     )
+    return 0
+
+
+def cmd_panel_qc(args: argparse.Namespace) -> int:
+    """Run the panel-qc subcommand (issue #37).
+
+    Reads the per-marker characterisation from ``scripts/measure_panel_bias.py``
+    and applies tunable inclusion cutoffs, emitting an auditable keep/drop
+    verdict per marker plus a panel-level summary. Optionally writes an
+    exclude/include sites BED for ``allomix detect --exclude-sites``.
+    """
+    thresholds = PanelQCThresholds(
+        min_call_rate=args.min_call_rate,
+        min_het_ratio=args.min_het_ratio,
+        bias_p95_mult=args.bias_p95_mult,
+        max_abs_bias=args.max_abs_bias,
+        max_depth_cv=args.max_depth_cv,
+    )
+    rows = load_marker_stats(args.per_marker_tsv)
+    verdicts, p95 = assign_verdicts(rows, thresholds)
+    write_verdict_tsv(verdicts, args.output)
+    summary = summarize(verdicts)
+
+    p95_text = "NA" if math.isnan(p95) else f"{p95:.4f}"
+    print(
+        f"panel-qc: {summary['n_keep']}/{summary['n_markers']} markers kept, "
+        f"{summary['n_drop']} dropped (panel p95 |bias| {p95_text})",
+        file=sys.stderr,
+    )
+    for reason in ("low_call_rate", "extreme_bias", "het_deficit", "unstable_depth"):
+        print(f"  {reason}: {summary[reason]}", file=sys.stderr)
+    print(f"Per-marker verdicts -> {args.output}", file=sys.stderr)
+
+    for which, path in (("drop", args.exclude_bed), ("keep", args.include_bed)):
+        if path is None:
+            continue
+        n = write_sites_bed(verdicts, path, which=which)
+        label = "excluded" if which == "drop" else "kept"
+        print(f"{n} {label} marker site(s) -> {path}", file=sys.stderr)
     return 0
 
 
@@ -1355,6 +1492,69 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Minimum host/donor GQ (default: {DEFAULT_MIN_GQ})",
     )
 
+    panel_qc_parser = subparsers.add_parser(
+        "panel-qc",
+        help="Apply per-marker inclusion cutoffs to a panel characterisation (issue #37)",
+    )
+    panel_qc_parser.add_argument(
+        "per_marker_tsv",
+        metavar="PER_MARKER_TSV",
+        help="Per-marker TSV from scripts/measure_panel_bias.py (panel_stats_per_marker.tsv)",
+    )
+    panel_qc_parser.add_argument(
+        "--output",
+        "-o",
+        default="panel_qc_verdicts.tsv",
+        help="Per-marker verdict TSV (input columns plus verdict/reasons; "
+        "default: panel_qc_verdicts.tsv)",
+    )
+    panel_qc_parser.add_argument(
+        "--exclude-bed",
+        metavar="BED",
+        help="Write a sites BED of dropped markers, for allomix detect "
+        "--exclude-sites (needs the TSV 'marker' coordinate column)",
+    )
+    panel_qc_parser.add_argument(
+        "--include-bed",
+        metavar="BED",
+        help="Write a sites BED of kept markers, for allomix detect "
+        "--include-sites (needs the TSV 'marker' coordinate column)",
+    )
+    panel_qc_parser.add_argument(
+        "--min-call-rate",
+        type=float,
+        default=DEFAULT_MIN_CALL_RATE,
+        help=f"Drop markers with call_rate below this (default: {DEFAULT_MIN_CALL_RATE})",
+    )
+    panel_qc_parser.add_argument(
+        "--min-het-ratio",
+        type=float,
+        default=DEFAULT_MIN_HET_RATIO,
+        help="Drop markers with het_ratio_vs_hwe below this het-deficit floor "
+        f"(default: {DEFAULT_MIN_HET_RATIO})",
+    )
+    panel_qc_parser.add_argument(
+        "--bias-p95-mult",
+        type=float,
+        default=DEFAULT_BIAS_P95_MULT,
+        help="Drop markers with |median_bias| beyond this multiple of the panel "
+        f"p95 |bias| (default: {DEFAULT_BIAS_P95_MULT})",
+    )
+    panel_qc_parser.add_argument(
+        "--max-abs-bias",
+        type=float,
+        default=None,
+        help="Absolute |median_bias| cap; overrides --bias-p95-mult when set",
+    )
+    panel_qc_parser.add_argument(
+        "--max-depth-cv",
+        type=float,
+        default=DEFAULT_MAX_DEPTH_CV,
+        help="depth_cv above this flags unstable_depth. Secondary: annotates a "
+        "marker already dropped by another criterion, never drops on its own "
+        f"(default: {DEFAULT_MAX_DEPTH_CV})",
+    )
+
     args = parser.parse_args(argv)
 
     # Record the analysis invocation for report provenance (stored in the JSON
@@ -1378,6 +1578,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_estimate_errors(args)
     if args.command == "build-contamination-table":
         return cmd_build_contamination_table(args)
+    if args.command == "panel-qc":
+        return cmd_panel_qc(args)
     parser.print_help()
     return 1
 

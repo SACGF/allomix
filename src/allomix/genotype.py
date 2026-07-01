@@ -196,6 +196,8 @@ def parse_vcf(
     min_dp: int = 0,
     min_gq: int = 0,
     gt_ad_consistency: bool = False,
+    include_sites: set[tuple[str, int]] | None = None,
+    exclude_sites: set[tuple[str, int]] | None = None,
 ) -> list[MarkerData]:
     """Read a VCF and extract MarkerData for a specific sample.
 
@@ -206,6 +208,11 @@ def parse_vcf(
             hom-alt VAF < 0.95). Use for reference samples (host/donor) whose GT
             must match their reads. Do NOT use for admix: a mixture's VAF is not
             expected to land at 0/0.5/1.
+        include_sites: If given, keep only markers whose ``(chrom, pos)`` is in
+            this set (1-based positions). Every other site is dropped.
+        exclude_sites: If given, drop markers whose ``(chrom, pos)`` is in this
+            set. Applied after ``include_sites``. Pass at most one of the two
+            (the CLI enforces mutual exclusivity via a panel-qc sites BED).
 
     Raises:
         ValueError: If a string sample name is not found in the VCF.
@@ -221,6 +228,11 @@ def parse_vcf(
         sample_idx = sample
 
     for variant in vcf:
+        if include_sites is not None and (variant.CHROM, variant.POS) not in include_sites:
+            continue
+        if exclude_sites is not None and (variant.CHROM, variant.POS) in exclude_sites:
+            continue
+
         if len(variant.ALT) > 1:
             continue
 

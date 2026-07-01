@@ -34,4 +34,24 @@ Default quality filters: `--min-dp 100`, `--min-gq 20`.
 - `panel_empirical.csv` — panel-wide summary statistics (one row)
 - `panel_per_marker.tsv` — per-marker statistics (one row per locus)
 
-Both files contain only summary statistics with no patient identifiers or genomic coordinates.
+Neither file contains any patient identifiers: every number is aggregated across
+the whole cohort, so no row can be traced to an individual.
+
+### About marker coordinates (read this before assuming "no coordinates")
+
+`scripts/measure_panel_bias.py` writes a leading `marker` column
+(`chrom:pos:ref:alt`) in `panel_per_marker.tsv`. Those are the panel's own design
+positions. They are **not patient data**: the panel is a fixed, published set of
+sites (the 76-marker IDT rhAmpSeq sample-ID panel here), so the coordinates are
+aggregate, non-sensitive, and reconstructable from the panel definition. They are
+emitted on purpose, because `allomix panel-qc` needs them to produce an
+exclude/include sites BED for `allomix detect`.
+
+The "no genomic coordinates" rule in CLAUDE.md is about what leaks off `/tau`
+into shared outputs and about what the **paper** publishes, not a restriction on
+these panel positions. The committed `panel_per_marker.tsv` in this directory
+predates the `marker` column and is therefore index-only, and Supplementary Table
+S2 presents markers by sequential index. That anonymisation is an editorial
+choice for the paper, not a data-sensitivity requirement. If you regenerate this
+file it will gain the `marker` column; drop that column here only if you want the
+committed artifact to keep matching the index-only supplementary table.

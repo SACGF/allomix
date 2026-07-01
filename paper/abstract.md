@@ -39,7 +39,9 @@ at 1,000x to {{ depth_50.mean_abs_error_pct | dp(2) }}% at 50x), and a simulated
 six-timepoint engraftment trajectory was tracked accurately including a small dip. On a
 public dataset of real titrated DNA mixtures, allomix recovered known host fractions
 accurately from 10% down to 1% and resolved a three-person mixture, and the residual-host
-presence test returned a positive call at every mixture. At the lowest 0.5% titration the
+presence test returned a positive call at all {{ srp434573.presence_n_total | dp(0) }}
+mixtures with no false-positive call at the {{ srp434573.zero_host_n | dp(0) }} pure-donor
+(true-0%-host) controls the same dataset provides. At the lowest 0.5% titration the
 point estimates scatter against a co-pooled contamination floor in that dataset, which the
 presence call there cannot be separated from. This paper presents the tool with its analytical
 characterization and a real-data demonstration; clinical validation against STR

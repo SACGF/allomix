@@ -688,7 +688,7 @@ def main():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
     plot_bias_distributions(empirical_biases, ax1, ax2, rng)
     fig.tight_layout()
-    fig.savefig(FACTS_DIR / "figS1_bias_distributions.png", dpi=150, bbox_inches="tight")
+    fig.savefig(FACTS_DIR / "fig_bias_distributions.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     print("Generating Figure S2: Depth distributions...", file=sys.stderr)
@@ -697,14 +697,14 @@ def main():
     marker_depth_cvs = [m["depth_cv"] for m in markers]
     plot_depth_distributions(marker_depths, marker_depth_cvs, ax1, ax2)
     fig.tight_layout()
-    fig.savefig(FACTS_DIR / "figS2_depth_distributions.png", dpi=150, bbox_inches="tight")
+    fig.savefig(FACTS_DIR / "fig_depth_distributions.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     print("Generating Figure S3: Het VAF violin...", file=sys.stderr)
     fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
     plot_het_vaf_violin([m["median_bias"] for m in markers], ax)
     fig.tight_layout()
-    fig.savefig(FACTS_DIR / "figS3_het_vaf.png", dpi=150, bbox_inches="tight")
+    fig.savefig(FACTS_DIR / "fig_het_vaf.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     print("Generating bias stability figure...", file=sys.stderr)
@@ -725,7 +725,7 @@ def main():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     plot_ablation(ablation_results, ax1, ax2)
     fig.tight_layout()
-    fig.savefig(FACTS_DIR / "figS4_ablation.png", dpi=150, bbox_inches="tight")
+    fig.savefig(FACTS_DIR / "fig_ablation.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     # Figure S5 merges the pre-computed calibration batches written by --calibration-batch.
@@ -741,7 +741,7 @@ def main():
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
         plot_calibration(cal_results, ax1, ax2)
         fig.tight_layout()
-        fig.savefig(FACTS_DIR / "figS5_ci_calibration.png", dpi=150, bbox_inches="tight")
+        fig.savefig(FACTS_DIR / "fig_ci_calibration.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
 
     print("Generating Figure S6: Residuals...", file=sys.stderr)
@@ -749,7 +749,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmpdir:
         plot_residuals(HOST_VCF, DONOR_VCF, ax1, ax2, Path(tmpdir))
     fig.tight_layout()
-    fig.savefig(FACTS_DIR / "figS6_residuals.png", dpi=150, bbox_inches="tight")
+    fig.savefig(FACTS_DIR / "fig_residuals.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
     write_supp_facts(

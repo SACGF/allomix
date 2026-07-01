@@ -252,7 +252,7 @@ bounds are reported for all simulated mixture levels.
 
 ### S1. Amplification Bias Distribution
 
-![Figure S1]({{ facts_dir }}/figS1_bias_distributions.png)
+![Figure S1]({{ facts_dir }}/fig_bias_distributions.png)
 
 **Figure S1.** Per-marker amplification bias distribution. (A) Histogram of empirical
 per-marker bias (median het VAF deviation from 0.5) measured across
@@ -266,7 +266,7 @@ underestimates extreme values.
 
 ### S2. Depth Distribution
 
-![Figure S2]({{ facts_dir }}/figS2_depth_distributions.png)
+![Figure S2]({{ facts_dir }}/fig_depth_distributions.png)
 
 **Figure S2.** Per-marker sequencing depth. (A) Empirical mean depth per marker vs
 log-normal model draws at the same mean and CV. (B) Within-marker depth CV across
@@ -274,7 +274,7 @@ samples for each marker, showing the range of per-marker depth variability.
 
 ### S3. Heterozygous VAF Comparison
 
-![Figure S3]({{ facts_dir }}/figS3_het_vaf.png)
+![Figure S3]({{ facts_dir }}/fig_het_vaf.png)
 
 **Figure S3.** Violin plots of median heterozygous VAF per marker: empirical
 measurements ({{ supp_synthetic.n_empirical_markers | dp(0) }} markers from
@@ -285,7 +285,7 @@ observed in real sequencing data.
 
 ### S4. Noise Component Ablation
 
-![Figure S4]({{ facts_dir }}/figS4_ablation.png)
+![Figure S4]({{ facts_dir }}/fig_ablation.png)
 
 **Figure S4.** Effect of individual noise components on estimation accuracy (500x depth,
 10 replicates per condition, 7 conditions). (A) Overall RMSE by noise condition. Under
@@ -307,7 +307,7 @@ for each condition. Dashed lines indicate conditions with bias correction applie
 
 ### S5. Confidence Interval Calibration
 
-![Figure S5]({{ facts_dir }}/figS5_ci_calibration.png)
+![Figure S5]({{ facts_dir }}/fig_ci_calibration.png)
 
 **Figure S5.** CI calibration under the full noise model (100 replicates per fraction,
 run as 10 parallel batches of 10 via Snakemake). (A) Observed 95% CI coverage rate by
@@ -316,7 +316,7 @@ Mean CI width by true donor fraction, with standard deviation bars.
 
 ### S6. Per-Marker Residuals
 
-![Figure S6]({{ facts_dir }}/figS6_residuals.png)
+![Figure S6]({{ facts_dir }}/fig_residuals.png)
 
 **Figure S6.** Per-marker residuals (observed minus expected VAF) from a simulated 30%
 donor mixture at 500x. (A) Residual histogram with normal fit. (B) Residuals plotted
@@ -372,7 +372,7 @@ the overdispersion term.
 
 ### S10. Absolute Error by Depth (Boxplots)
 
-![Figure S10]({{ facts_dir }}/fig2_depth_boxplots.png)
+![Figure S10]({{ facts_dir }}/fig_depth_boxplots.png)
 
 **Figure S10.** Distribution of absolute estimation error by sequencing depth
 (N={{ depth_50.n_replicates | dp(0) }} replicates per depth). Boxes show median and
@@ -382,14 +382,14 @@ main-text Table 2.
 
 ### S11. Depth-Performance Summary
 
-![Figure S11]({{ facts_dir }}/fig3_depth_summary.png)
+![Figure S11]({{ facts_dir }}/fig_depth_summary.png)
 
 **Figure S11.** allomix performance as a function of sequencing depth (mean ± SD,
 N={{ depth_50.n_replicates | dp(0) }} replicates). Left: accuracy metrics (MAE, RMSE,
 maximum error). Centre: 95% profile-likelihood CI coverage versus the nominal 95% level
 (dashed). Right: mean CI width.
 
-![Figure S12]({{ facts_dir }}/figS12_srp434573_logy.png)
+![Figure S12]({{ facts_dir }}/fig_srp434573_logy.png)
 
 **Figure S12.** Confidence-interval view of the SRP434573 two-person dilution series
 (main-text Figure 4A shows the same data as a log-log scatter). Each admixture is
@@ -407,7 +407,7 @@ levels the intervals are tight and bracket the known value; at the 0.5% level th
 toward the contamination line, where the residual floor competes with the true host
 signal (Results, Figure 4 caption).
 
-![Figure S13]({{ facts_dir }}/figS13_srp_contam.png)
+![Figure S13]({{ facts_dir }}/fig_srp_contam.png)
 
 **Figure S13.** Co-pooled contamination floor in SRP434573 as a dose-response, the
 figure behind the median values in Results. Consensus-homozygous sites are those where

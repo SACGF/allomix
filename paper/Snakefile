@@ -44,16 +44,16 @@ CAL_REPS_PER_BATCH = 3 if QUICK else 10
 
 DEPTH_FACTS = expand(f"{FACTS_DIR}/depth_{{d}}.csv", d=[50, 100, 200, 500, 1000])
 DEPTH_FIGS = [
-    f"{FACTS_DIR}/fig1_depth_scatter.png",
-    f"{FACTS_DIR}/fig2_depth_boxplots.png",
-    f"{FACTS_DIR}/fig3_depth_summary.png",
+    f"{FACTS_DIR}/fig_depth_scatter.png",
+    f"{FACTS_DIR}/fig_depth_boxplots.png",
+    f"{FACTS_DIR}/fig_depth_summary.png",
 ]
 
 RELATEDNESS_FACTS = expand(
     f"{FACTS_DIR}/rel_{{r}}.csv",
     r=["unrelated", "cousin", "half_sibling", "sibling"],
 )
-RELATEDNESS_FIGS = [f"{FACTS_DIR}/fig4_relatedness.png"]
+RELATEDNESS_FIGS = [f"{FACTS_DIR}/fig_relatedness.png"]
 
 MULTIDONOR_FACTS = [
     f"{FACTS_DIR}/multidonor.csv",
@@ -74,7 +74,7 @@ LOD_FACTS = [
     f"{FACTS_DIR}/lod_summary.csv",
     f"{FACTS_DIR}/lod_headline.csv",
 ]
-LOD_FIGS = [f"{FACTS_DIR}/fig5_lod_curves.png"]
+LOD_FIGS = [f"{FACTS_DIR}/fig_lod_curves.png"]
 
 # LoD vs depth saturation (consumes the lod_summary above; no extra simulation).
 LOD_SATURATION_FACTS = [f"{FACTS_DIR}/lod_saturation.csv"]
@@ -96,12 +96,12 @@ CNV_LOH_FACTS = [
 CNV_LOH_FIGS = [f"{FACTS_DIR}/fig_cnv_loh.png"]
 
 SUPP_SYNTHETIC_FIGS = [
-    f"{FACTS_DIR}/figS1_bias_distributions.png",
-    f"{FACTS_DIR}/figS2_depth_distributions.png",
-    f"{FACTS_DIR}/figS3_het_vaf.png",
-    f"{FACTS_DIR}/figS4_ablation.png",
-    f"{FACTS_DIR}/figS5_ci_calibration.png",
-    f"{FACTS_DIR}/figS6_residuals.png",
+    f"{FACTS_DIR}/fig_bias_distributions.png",
+    f"{FACTS_DIR}/fig_depth_distributions.png",
+    f"{FACTS_DIR}/fig_het_vaf.png",
+    f"{FACTS_DIR}/fig_ablation.png",
+    f"{FACTS_DIR}/fig_ci_calibration.png",
+    f"{FACTS_DIR}/fig_residuals.png",
     f"{FACTS_DIR}/fig_bias_stability.png",
 ]
 SUPP_SYNTHETIC_FACTS = [f"{FACTS_DIR}/supp_synthetic.csv"]
@@ -118,7 +118,7 @@ SRP434573_FACTS = [f"{FACTS_DIR}/srp434573.csv"]
 SRP434573_FIGS = [f"{FACTS_DIR}/fig_srp434573.png"]
 # Supplementary log-Y CI view of the same two-person dilution series (Figure S12);
 # reads the result TSVs, no sequencing or simulation.
-SRP434573_LOGY_FIGS = [f"{FACTS_DIR}/figS12_srp434573_logy.png"]
+SRP434573_LOGY_FIGS = [f"{FACTS_DIR}/fig_srp434573_logy.png"]
 # Optional per-patient error tables (issue #23), committed alongside the genotype
 # VCFs once built TAU-side by the pipeline's phase-1b reference pileup. Listed as
 # inputs only when present so the allomix rule reruns if they are added/updated;
@@ -142,7 +142,7 @@ SRP_CONTAM_FACTS = [
     f"{FACTS_DIR}/srp_contam.csv",
     f"{FACTS_DIR}/srp_contam_persite.csv",
 ]
-SRP_CONTAM_FIGS = [f"{FACTS_DIR}/figS13_srp_contam.png"]
+SRP_CONTAM_FIGS = [f"{FACTS_DIR}/fig_srp_contam.png"]
 
 # Real-data LoD curves by sub-sampling SRP434573 (issue #24). Throws away markers
 # and reads from the committed high-depth mixtures until the LoD rises into the

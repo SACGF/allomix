@@ -190,18 +190,23 @@ def plot_results(all_results: dict[str, list[dict]], outdir: Path) -> None:
     ax.set_title("Accuracy vs relatedness", fontsize=12)
     ax.grid(True, alpha=0.2, axis="y")
 
-    # Panel 3: Truth vs estimated across relatedness.
+    # Panel 3: Truth vs estimated across relatedness. Log-log so the low-fraction
+    # points are spread out instead of piled at the origin; true/estimated 0% donor
+    # has no log position, so it is clamped to the axis floor.
     ax = axes[2]
+    floor = 0.1
+    lims = (0.06, 160)
+    ticks = [0.1, 1, 10, 100]
     for rel in RELATEDNESS_LEVELS:
         reps = all_results[rel]
         for rep in reps:
-            truths = [r["true_frac"] * 100 for r in rep["frac_results"]
+            truths = [max(r["true_frac"] * 100, floor) for r in rep["frac_results"]
                       if not math.isnan(r.get("est_frac", float("nan")))]
-            ests = [r["est_frac"] * 100 for r in rep["frac_results"]
+            ests = [max(r["est_frac"] * 100, floor) for r in rep["frac_results"]
                     if not math.isnan(r.get("est_frac", float("nan")))]
             ax.scatter(truths, ests, c=colors[rel], s=15, alpha=0.3, zorder=3)
 
-    ax.plot([0, 100], [0, 100], "k--", alpha=0.4, linewidth=1)
+    ax.plot(lims, lims, "k--", alpha=0.4, linewidth=1)
     legend_elements = [Line2D([0], [0], marker="o", color="w",
                               markerfacecolor=colors[r], markersize=8, label=labels[r])
                        for r in RELATEDNESS_LEVELS]
@@ -209,10 +214,15 @@ def plot_results(all_results: dict[str, list[dict]], outdir: Path) -> None:
     ax.set_xlabel("True donor %", fontsize=11)
     ax.set_ylabel("Estimated donor %", fontsize=11)
     ax.set_title("Estimation across relatedness", fontsize=12)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
     ax.set_aspect("equal")
-    ax.set_xlim(-2, 102)
-    ax.set_ylim(-2, 102)
-    ax.grid(True, alpha=0.2)
+    ax.set_xlim(*lims)
+    ax.set_ylim(*lims)
+    ax.set_xticks(ticks)
+    ax.set_yticks(ticks)
+    ax.set_xticklabels([f"{t:g}" for t in ticks])
+    ax.grid(True, which="both", alpha=0.2)
 
     fig.suptitle(
         f"allomix performance by donor-host relatedness "
@@ -220,9 +230,9 @@ def plot_results(all_results: dict[str, list[dict]], outdir: Path) -> None:
         fontsize=13, y=1.02,
     )
     fig.tight_layout()
-    fig.savefig(outdir / "fig4_relatedness.png", dpi=150, bbox_inches="tight")
+    fig.savefig(outdir / "fig_relatedness.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"Figure saved: {outdir / 'fig4_relatedness.png'}", file=sys.stderr)
+    print(f"Figure saved: {outdir / 'fig_relatedness.png'}", file=sys.stderr)
 
 
 def main() -> int:
@@ -316,10 +326,10 @@ def main() -> int:
 
     plot_results(all_results, outdir)
 
-    src = outdir / "fig4_relatedness.png"
+    src = outdir / "fig_relatedness.png"
     if src.exists():
-        shutil.copy2(src, FACTS_DIR / "fig4_relatedness.png")
-        print(f"Copied to {FACTS_DIR / 'fig4_relatedness.png'}", file=sys.stderr)
+        shutil.copy2(src, FACTS_DIR / "fig_relatedness.png")
+        print(f"Copied to {FACTS_DIR / 'fig_relatedness.png'}", file=sys.stderr)
 
     return 0
 

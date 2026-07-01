@@ -3,7 +3,7 @@
 
 ``run_lod_validation.py`` sweeps the magnitude (MLE) estimator's limit of
 detection across panel size, depth, and relatedness and produces Figure 1
-(``fig5_lod_curves.png``). That figure is MLE-only. This script produces the
+(``fig_lod_curves.png``). That figure is MLE-only. This script produces the
 parallel curve for the host-presence detector (``allomix.qc.host_presence.host_presence_test``)
 so the simulated side is symmetric with the real-data subsample figures (issue
 #24), which already treat the MLE magnitude estimate and the presence test as

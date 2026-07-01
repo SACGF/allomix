@@ -38,8 +38,8 @@ bam_suffix: "hg38.bam"
 # REQUIRED capture-panel BED restricting GATK to the targeted loci. The thesis
 # publishes no coordinates/BED, so this BED is rebuilt from the BAM coverage:
 # the MIP amplicons self-recover as high-depth ~95 bp clusters. Regenerate with
-#   python scripts/build_srp434573_panel_bed.py --bam-glob 'output/bam/*.bam' \
-#       --out paper/public_data/SRP434573/SRP434573.bed
+#   paper/scripts/build_srp434573_panel_bed.sh
+# (a wrapper around the generic scripts/recover_panel_bed.py)
 # (1052 hg38 intervals recovered, matching the issue #16 probe's ~1053 and the
 # stated ~1062 SNPs). See README.md "Panel BED".
 intervals: "paper/public_data/SRP434573/SRP434573.bed"

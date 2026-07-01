@@ -713,9 +713,18 @@ def main(argv: list[str] | None = None) -> int:
         mix_fracs[r["mixture"]].add(r["fraction_pct"])
     lowdf_mixtures = {m for m, fs in mix_fracs.items() if min_frac_pct in fs}
     lowdf_set_name = f"to_{min_frac_pct:g}pct"
+    # Disjoint top-row set: the mixtures NOT titrated to the lowest fraction, named
+    # by their own lowest reached fraction (e.g. 1%). The figure draws these two
+    # subsets as its two rows so they are disjoint (top = stops at 1%, bottom =
+    # reaches 0.5%), instead of top=all overlapping bottom=subset.
+    highdf_mixtures = set(mix_fracs) - lowdf_mixtures
+    highdf_min_pct = min((min(mix_fracs[m]) for m in highdf_mixtures), default=min_frac_pct)
+    highdf_set_name = f"to_{highdf_min_pct:g}pct"
     print(
         f"Mixture subset reaching {min_frac_pct:g}%: {len(lowdf_mixtures)} of {len(mix_fracs)} "
-        f"({', '.join(sorted(lowdf_mixtures))})",
+        f"({', '.join(sorted(lowdf_mixtures))}); "
+        f"top subset stopping at {highdf_min_pct:g}%: {len(highdf_mixtures)} "
+        f"({', '.join(sorted(highdf_mixtures))})",
         file=sys.stderr,
     )
 
@@ -726,7 +735,14 @@ def main(argv: list[str] | None = None) -> int:
                 ps_list = pairs_by_summary.get((test, depth, nm), [])
                 if not ps_list:
                     continue
+                # "all" retained for the headline facts (read at mixture_set=="all"),
+                # not drawn; the figure uses the two disjoint subsets below.
                 summaries.append({**summarise_cell(test, depth, nm, ps_list), "mixture_set": "all"})
+                highset = [ps for ps in ps_list if ps.get("mixture") in highdf_mixtures]
+                if highset:
+                    summaries.append(
+                        {**summarise_cell(test, depth, nm, highset), "mixture_set": highdf_set_name}
+                    )
                 subset = [ps for ps in ps_list if ps.get("mixture") in lowdf_mixtures]
                 if subset:
                     summaries.append(

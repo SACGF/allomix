@@ -4,7 +4,7 @@ Reads the long-format per-site export written by probe_contam_median_srp434573.p
 (output/facts/srp_contam_persite.csv: one row per pooled consensus-homozygous site
 with n_carriers, n_alleles, minor_frac) and renders the contamination-floor boxplot:
 
-  output/facts/figS13_srp_contam.png   Supplementary Figure S13. x = n_carriers
+  output/facts/fig_srp_contam.png   Supplementary Figure S13. x = n_carriers
                                        (0..5): each other co-pooled individual
                                        carrying the minor allele counts 1.
 
@@ -151,7 +151,7 @@ def main() -> int:
         merge_last=False,
         xlabel="co-pooled individuals carrying the minor allele (het or hom = 1)",
         title="SRP434573 contamination floor by co-pooled carrier count",
-        out_path=FACTS_DIR / "figS13_srp_contam.png",
+        out_path=FACTS_DIR / "fig_srp_contam.png",
     )
 
     if args.allele_dose:

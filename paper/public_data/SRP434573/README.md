@@ -225,10 +225,12 @@ and the panel self-recovers as high-depth clusters (off-target background sits
 far below). `SRP434573.bed` (committed here, hg38) was built with:
 
 ```bash
-python paper/scripts/build_srp434573_panel_bed.py \
-    --bam-glob 'output/bam/*.bam' \
-    --out paper/public_data/SRP434573/SRP434573.bed
+paper/scripts/build_srp434573_panel_bed.sh
 ```
+
+That wrapper calls the generic `scripts/recover_panel_bed.py` with the
+SRP434573 paths and thresholds (see `docs/panel_guide.md` for using it on your
+own panel).
 
 It recovers 1052 intervals (1025 autosomal + 27 on chrX), in agreement with the
 issue #16 laptop probe (~1053) and the stated ~1062 SNPs. A position is kept

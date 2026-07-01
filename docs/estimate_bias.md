@@ -4,6 +4,8 @@ Capture and amplification panels introduce systematic per-marker shifts in obser
 
 Bias correction is optional. It targets per-marker amplification bias on panels where that bias is large; it does not address overdispersion, locus dropout, or cross-contamination, and on a well-behaved panel the uncorrected estimate is often already accurate. Validate that a table helps on your own data before relying on it.
 
+If you are bringing a new panel to allomix, start with the [Panel Guide](panel_guide.md), which covers qualifying the panel end to end; this document is the bias-table step in that workflow.
+
 ## How the correction is applied
 
 Each marker's bias is the median deviation of observed heterozygous VAF from 0.5, so it is measured where the expected reference weight is 0.5. allomix applies it multiplicatively, in logit space, rather than as a flat additive shift:

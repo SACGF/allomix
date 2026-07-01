@@ -261,6 +261,43 @@ Detailed per-sample validation results for each sequencing depth (50x, 100x, 200
 depth, the true donor fraction, estimated fraction, error, and 95% confidence interval
 bounds are reported for all simulated mixture levels.
 
+## Supplementary Table S4. In Silico Accuracy and CI Performance by Depth
+
+We generated synthetic chimeric VCFs spanning 0% to 100% donor using 100 markers with
+empirically calibrated per-marker bias, non-uniform depth (CV =
+{{ sim_calibration.depth_cv }}), and {{ sim_calibration.locus_dropout_pct }}% locus
+dropout, at five depths from 50x to 1,000x ({{ depth_50.n_replicates | dp(0) }}
+replicates each). Mean absolute error stayed below 1% at every depth, improving from
+{{ depth_50.mean_abs_error_pct | dp(2) }} ± {{ depth_50.mean_abs_error_sd_pct | dp(2) }}%
+at 50x to {{ depth_1000.mean_abs_error_pct | dp(2) }} ±
+{{ depth_1000.mean_abs_error_sd_pct | dp(2) }}% at 1,000x. The 95% profile-likelihood
+intervals showed coverage of
+{{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}%, close to the nominal
+95% across the depth range, with the per-marker-type overdispersion model (separate
+donor-homozygous and donor-heterozygous concentration) absorbing the extra-binomial
+scatter that a single shared term left in the residuals. Per-marker bias correction is
+available but its effect is modest by design: in a 2,000x experiment it left the point
+estimate essentially unchanged (0% and 100% donor samples estimated at
+{{ bias_with_bias.est_0pct }}% and {{ bias_with_bias.est_100pct }}%) while narrowing the
+mean interval from {{ bias_no_bias.mean_ci_width_pct | dp(2) }}% to
+{{ bias_with_bias.mean_ci_width_pct | dp(2) }}%, because in logit space the correction is
+a small proportional adjustment at the extreme allele frequencies that dominate
+low-fraction samples (Figure S4).
+
+| Depth | MAE (%) | RMSE (%) | Max Error (%) | CI Coverage (%) | Mean CI Width (%) |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 50x | {{ depth_50.mean_abs_error_pct | dp(2) }} ± {{ depth_50.mean_abs_error_sd_pct | dp(2) }} | {{ depth_50.rmse_pct | dp(2) }} ± {{ depth_50.rmse_sd_pct | dp(2) }} | {{ depth_50.max_abs_error_pct | dp(2) }} ± {{ depth_50.max_abs_error_sd_pct | dp(2) }} | {{ depth_50.ci_coverage_pct }} ± {{ depth_50.ci_coverage_sd_pct }} | {{ depth_50.mean_ci_width_pct | dp(2) }} ± {{ depth_50.mean_ci_width_sd_pct | dp(2) }} |
+| 100x | {{ depth_100.mean_abs_error_pct | dp(2) }} ± {{ depth_100.mean_abs_error_sd_pct | dp(2) }} | {{ depth_100.rmse_pct | dp(2) }} ± {{ depth_100.rmse_sd_pct | dp(2) }} | {{ depth_100.max_abs_error_pct | dp(2) }} ± {{ depth_100.max_abs_error_sd_pct | dp(2) }} | {{ depth_100.ci_coverage_pct }} ± {{ depth_100.ci_coverage_sd_pct }} | {{ depth_100.mean_ci_width_pct | dp(2) }} ± {{ depth_100.mean_ci_width_sd_pct | dp(2) }} |
+| 200x | {{ depth_200.mean_abs_error_pct | dp(2) }} ± {{ depth_200.mean_abs_error_sd_pct | dp(2) }} | {{ depth_200.rmse_pct | dp(2) }} ± {{ depth_200.rmse_sd_pct | dp(2) }} | {{ depth_200.max_abs_error_pct | dp(2) }} ± {{ depth_200.max_abs_error_sd_pct | dp(2) }} | {{ depth_200.ci_coverage_pct }} ± {{ depth_200.ci_coverage_sd_pct }} | {{ depth_200.mean_ci_width_pct | dp(2) }} ± {{ depth_200.mean_ci_width_sd_pct | dp(2) }} |
+| 500x | {{ depth_500.mean_abs_error_pct | dp(2) }} ± {{ depth_500.mean_abs_error_sd_pct | dp(2) }} | {{ depth_500.rmse_pct | dp(2) }} ± {{ depth_500.rmse_sd_pct | dp(2) }} | {{ depth_500.max_abs_error_pct | dp(2) }} ± {{ depth_500.max_abs_error_sd_pct | dp(2) }} | {{ depth_500.ci_coverage_pct }} ± {{ depth_500.ci_coverage_sd_pct }} | {{ depth_500.mean_ci_width_pct | dp(2) }} ± {{ depth_500.mean_ci_width_sd_pct | dp(2) }} |
+| 1,000x | {{ depth_1000.mean_abs_error_pct | dp(2) }} ± {{ depth_1000.mean_abs_error_sd_pct | dp(2) }} | {{ depth_1000.rmse_pct | dp(2) }} ± {{ depth_1000.rmse_sd_pct | dp(2) }} | {{ depth_1000.max_abs_error_pct | dp(2) }} ± {{ depth_1000.max_abs_error_sd_pct | dp(2) }} | {{ depth_1000.ci_coverage_pct }} ± {{ depth_1000.ci_coverage_sd_pct }} | {{ depth_1000.mean_ci_width_pct | dp(2) }} ± {{ depth_1000.mean_ci_width_sd_pct | dp(2) }} |
+
+**Table S4.** allomix accuracy and confidence-interval performance across sequencing
+depths (mean ± SD, N={{ depth_50.n_replicates | dp(0) }} replicates). MAE = mean absolute
+error; RMSE = root mean square error. Error metrics are computed on interior fractions
+(excluding 0% and 100%). The per-depth agreement scatter is Figure S14, and the
+absolute-error boxplots and depth-summary panels are Figures S10 and S11.
+
 ## Supplementary Figures: Simulation Model Validation
 
 ### S1. Amplification Bias Distribution
@@ -391,7 +428,7 @@ the overdispersion term.
 (N={{ depth_50.n_replicates | dp(0) }} replicates per depth). Boxes show median and
 interquartile range for interior fractions (excluding 0% and 100% donor). Whiskers
 extend to 1.5× IQR. This is the per-fraction distribution behind the summary metrics in
-main-text Table 2.
+Supplementary Table S4.
 
 ### S11. Depth-Performance Summary
 
@@ -405,7 +442,7 @@ maximum error). Centre: 95% profile-likelihood CI coverage versus the nominal 95
 ![Figure S12]({{ facts_dir }}/fig_srp434573_logy.png)
 
 **Figure S12.** Confidence-interval view of the SRP434573 two-person dilution series
-(main-text Figure 4A shows the same data as a log-log scatter). Each admixture is
+(main-text Figure 3A shows the same data as a log-log scatter). Each admixture is
 plotted on a log host-fraction axis grouped by mixture, with the maximum-likelihood
 estimate (filled circle, 100 minus donor%, with the per-marker contamination correction
 applied) and the residual-host presence-test estimate (open square) each shown with its
@@ -418,7 +455,7 @@ pure-donor (true-0%-host) endpoints, at the right of each group, sit at or near 
 row after correction, at or below their contamination line. At the higher titration
 levels the intervals are tight and bracket the known value; at the 0.5% level they widen
 toward the contamination line, where the residual floor competes with the true host
-signal (Results, Figure 4 caption).
+signal (Results, Figure 3 caption).
 
 ![Figure S13]({{ facts_dir }}/fig_srp_contam.png)
 
@@ -439,3 +476,14 @@ The median rises monotonically from the no-carrier floor (sequencing error,
 {{ srp_contam.nocarrier_floor_pct | dp(3) }}%) through the carrier bins, the signature
 of real reads from co-pooled material (most plausibly index hopping) rather than flat
 sequencing error, which would not scale with co-pooled dose.
+
+### S14. In Silico Accuracy Across Sequencing Depths
+
+![Figure S14]({{ facts_dir }}/fig_depth_scatter.png)
+
+**Figure S14.** In silico accuracy across sequencing depths, the per-depth agreement
+behind Supplementary Table S4. Each panel shows true donor fraction (x-axis) versus
+estimated donor fraction (y-axis) at the indicated depth, all replicates
+(N={{ depth_50.n_replicates | dp(0) }}). Dashed line indicates perfect agreement. This is
+the estimator's controlled-simulation accuracy across depth; the real-data accuracy is in
+main-text Figures 2 and 3.

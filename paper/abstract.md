@@ -35,10 +35,10 @@ host for the presence test, within the range reported for commercial NGS chimeri
 with the caveat that these are best-case figures from near-binomial simulated data
 rather than wetlab assay limits. Across simulated panels at depths from 50x to 1,000x,
 mean absolute error stayed below 1% (from {{ depth_1000.mean_abs_error_pct | dp(2) }}%
-at 1,000x to {{ depth_50.mean_abs_error_pct | dp(2) }}% at 50x), and a simulated
-six-timepoint engraftment trajectory was tracked accurately including a small dip. On a
+at 1,000x to {{ depth_50.mean_abs_error_pct | dp(2) }}% at 50x). On a
 public dataset of real titrated DNA mixtures, allomix recovered known host fractions
-accurately from 10% down to 1% and resolved a three-person mixture, and the residual-host
+accurately from 10% down to 1%, tracked a dilution ladder read as a declining-chimerism
+monitoring trajectory, and resolved a three-person mixture, and the residual-host
 presence test returned a positive call at all {{ srp434573.presence_n_total | dp(0) }}
 mixtures with no false-positive call at the {{ srp434573.zero_host_n | dp(0) }} pure-donor
 (true-0%-host) controls the same dataset provides. At the lowest 0.5% titration the

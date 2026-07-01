@@ -64,9 +64,6 @@ MULTIDONOR_FIGS = [f"{FACTS_DIR}/fig_multidonor.png"]
 
 BIAS_FIGS = ["output/bias_comparison/bias_correction_comparison.png"]
 
-TIMELINE_FACTS = [f"{FACTS_DIR}/timeline.csv"]
-TIMELINE_FIGS = [f"{FACTS_DIR}/fig_timeline.png"]
-
 CALIBRATION_BATCHES = expand("output/calibration/batch_{i}.csv", i=range(N_CAL_BATCHES))
 
 LOD_FACTS = [
@@ -119,6 +116,10 @@ SRP434573_FIGS = [f"{FACTS_DIR}/fig_srp434573.png"]
 # Supplementary log-Y CI view of the same two-person dilution series (Figure S12);
 # reads the result TSVs, no sequencing or simulation.
 SRP434573_LOGY_FIGS = [f"{FACTS_DIR}/fig_srp434573_logy.png"]
+# Real-data monitoring trajectory (main-text Figure 2): one mixture's titration
+# ladder read as a declining-chimerism trajectory. Reads the two-person TSV.
+SRP434573_TIMELINE_FACTS = [f"{FACTS_DIR}/srp434573_timeline.csv"]
+SRP434573_TIMELINE_FIGS = [f"{FACTS_DIR}/fig_srp434573_timeline.png"]
 # Optional per-patient error tables (issue #23), committed alongside the genotype
 # VCFs once built TAU-side by the pipeline's phase-1b reference pileup. Listed as
 # inputs only when present so the allomix rule reruns if they are added/updated;
@@ -203,7 +204,6 @@ ALL_FACTS = (
     DEPTH_FACTS
     + RELATEDNESS_FACTS
     + MULTIDONOR_FACTS
-    + TIMELINE_FACTS
     + PAPER_FACTS
     + SUPP_SYNTHETIC_FACTS
     + LOD_FACTS
@@ -211,6 +211,7 @@ ALL_FACTS = (
     + OVERDISP_FACTS
     + CNV_LOH_FACTS
     + SRP434573_FACTS
+    + SRP434573_TIMELINE_FACTS
     + SRP_CONTAM_FACTS
     + SUBSAMPLE_LOD_FACTS
     + SYNTHETIC_FACTS  # results.md now cites the semi-synthetic sub-0.5% facts (#5)
@@ -221,7 +222,6 @@ ALL_FIGS = (
     + RELATEDNESS_FIGS
     + MULTIDONOR_FIGS
     + BIAS_FIGS
-    + TIMELINE_FIGS
     + SUPP_SYNTHETIC_FIGS
     + LOD_FIGS
     + LOD_SATURATION_FIGS
@@ -229,6 +229,7 @@ ALL_FIGS = (
     + CNV_LOH_FIGS
     + SRP434573_FIGS
     + SRP434573_LOGY_FIGS
+    + SRP434573_TIMELINE_FIGS
     + SRP_CONTAM_FIGS
     + SUBSAMPLE_LOD_FIGS
 )
@@ -304,17 +305,6 @@ rule paper_facts:
         PAPER_FACTS,
     shell:
         "python paper/scripts/generate_paper_facts.py"
-
-
-rule timeline_figure:
-    input:
-        "tests/test_data/host.vcf",
-        "tests/test_data/donor.vcf",
-    output:
-        TIMELINE_FACTS,
-        TIMELINE_FIGS,
-    shell:
-        "python paper/scripts/generate_timeline_figure.py"
 
 
 rule multidonor_figure:
@@ -474,6 +464,20 @@ rule srp434573_logy_plot:
         SRP434573_LOGY_FIGS,
     shell:
         "python paper/scripts/plot_srp434573.py"
+
+
+rule srp434573_timeline_plot:
+    # Real-data monitoring trajectory (main-text Figure 2): one mixture's titration
+    # ladder (host 10% down to 0.5%) read as a declining-chimerism trajectory, known
+    # vs allomix estimate with CIs. Reads the two-person TSV from srp434573_allomix.
+    input:
+        "output/srp434573_two_person.tsv",
+        "paper/scripts/plot_srp434573_timeline.py",
+    output:
+        SRP434573_TIMELINE_FACTS,
+        SRP434573_TIMELINE_FIGS,
+    shell:
+        "python paper/scripts/plot_srp434573_timeline.py"
 
 
 rule srp_contam_facts:

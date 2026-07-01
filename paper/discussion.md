@@ -147,12 +147,17 @@ loci included for quality control or diagnosis can serve double duty for chimeri
 eliminating a separate dedicated assay. Lee et al. demonstrated the principle with 121
 SNPs in a myeloid panel but required custom scripting with no reusable
 tool;[@Lee2019snp] allomix generalises this into a deployable tool. Vynck et al. showed
-that as few as three informative markers suffice for quantification, with accuracy
-improving as markers are added, and that panels of about 20 markers with MAFs near 0.5
-give a >95% chance of at least three informative markers even for sibling pairs; their
-FABCASE tool can assess panel sufficiency prospectively for a specific donor-host
-pair.[@Vynck2022markers; @Vynck2025fabcase] Sample-ID marker sets with tens of
-polymorphic markers are therefore expected to be adequate for most clinical scenarios.
+that three informative markers are enough to make a quantification identifiable, with
+accuracy improving as markers are added, and that panels of about 20 markers with MAFs
+near 0.5 give a >95% chance of at least three informative markers even for sibling pairs;
+their FABCASE tool can assess panel sufficiency prospectively for a specific donor-host
+pair.[@Vynck2022markers; @Vynck2025fabcase] Three markers is the floor for producing an
+estimate at all, not a target for sensitivity: the limit of detection keeps falling as
+informative markers are added (Figure 1), so reaching the low fractions that matter
+clinically needs tens of informative markers, not a handful. Sample-ID marker sets with
+tens of polymorphic markers are therefore expected to be adequate for most clinical
+scenarios, with the achievable LoD improving as more of them fall informative for the
+pair.
 
 ### Multi-donor chimerism
 

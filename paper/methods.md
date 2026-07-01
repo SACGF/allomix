@@ -62,12 +62,12 @@ never carries (for example host A/A, donor G/G), the marker is fully informative
 minority allele can come from only one of the two people. When one party is
 heterozygous, the marker is partially informative: that party already contributes the
 allele on its own, so the other party only nudges the count and the per-marker signal is
-roughly half the size (Box 1, Marker 2). allomix classifies every informative marker
-into one of six genotype-contrast types and tracks them per donor; the full taxonomy,
-following Vynck et al.,[@Vynck2023bias] is in the Supplementary Methods. By default a
-site is used only if host and donor genotype quality is at least 20 and the admixture
-depth is at least 100, and at least three informative markers are required to report an
-estimate.
+roughly half the size (Box 1, Marker 2). allomix sorts every informative marker into one
+of six genotype-contrast types and tracks them per donor; the Supplementary Methods table
+lists the six types, following Vynck et al.,[@Vynck2023bias] and which check (fraction
+estimate, residual-host presence, contamination correction) uses each. By default a site
+is used only if host and donor genotype quality is at least 20 and the admixture depth is
+at least 100, and at least three informative markers are required to report an estimate.
 
 #### Box 1. Reading the residual host off the counts
 

@@ -7,6 +7,8 @@ allomix needs two distinct things from upstream:
 
 These two needs have different best-in-class tools. The pipeline in `pipeline/Snakefile` runs them in two phases against per-patient CSVs (all CSVs in `pipeline/sample_csvs/` are processed in one DAG by default).
 
+If you are bringing a new panel to allomix, see the [Panel Guide](panel_guide.md) first for defining and qualifying the panel; this document covers the genotyping step it hands off to.
+
 ## Why not GATK joint calling for everything?
 
 The original version of this pipeline used GATK joint calling for all samples (host, donor, every admixture timepoint) on the theory that joint calling propagates donor-discovered ALT alleles into the admixture sample's `AD`, preserving the rare ALT reads that carry the low-fraction signal.

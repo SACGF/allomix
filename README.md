@@ -69,6 +69,7 @@ Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even whe
 
 ## Documentation
 
+- [Panel guide](docs/panel_guide.md) — qualifying your own panel for chimerism use (start here for a new panel)
 - [CLI usage](docs/cli.md) — all subcommands, options, and input/output reference
 - [Reports and structured output](docs/reports.md) — the JSON envelope, HTML report, and worked examples
 - [Joint Calling Guide](docs/joint_calling.md) — two-phase upstream pipeline and rationale

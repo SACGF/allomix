@@ -13,7 +13,7 @@ for commercial tools: Kakodkar et al. reported 0.3--1.5% MAE for AlloSeq
 HCT,[@Kakodkar2023alloseq] Pedini et al. and Vynck et al. showed comparable precision
 for the Devyser system,[@Pedini2021devyser; @Vynck2021devyser] and Blouin et al.
 reported R^2 = 0.9987 across the full chimerism range for ScisGo.[@Blouin2024comparison]
-Qama et al. validated the Devyser assay at a limit of detection of 0.06% with high STR
+Qama et al. validated the Devyser assay at a LoD of 0.06% with high STR
 concordance (R^2 = 0.998), and found that NGS detected residual host DNA (>0.1%) in 85%
 of samples called full donor chimerism (>95%) by STR, against 5% by
 STR.[@Qama2026devyser] That gap suggests STR-based definitions of full donor chimerism
@@ -31,7 +31,7 @@ sampling noise dominates. Clinical targeted panels run at 500--2,000x or higher,
 per-marker systematic effects (amplification efficiency, GC content, capture-probe
 affinity) become the dominant source of variance, which is why allomix adds per-marker
 bias correction and overdispersion modelling that the original derivation does not.
-Overdispersion is also the dominant control on the limit of detection at high depth: as
+Overdispersion is also the dominant control on the LoD at high depth: as
 depth grows, the per-marker variance stops falling and the effective depth is capped, so
 the LoD saturates at a floor rather than continuing to improve as 1/√n (Supplementary
 Figures S7, S8). At a fitted overdispersion consistent with our panel the in silico LoD
@@ -50,9 +50,9 @@ idealised in silico LoD and real-panel performance, and it is the same overdispe
 that drives the goodness-of-fit REVIEW flags on the real SRP434573 mixtures.
 
 Across the simulated depths the 95% intervals cover close to nominal
-({{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}%) once overdispersion
-is fit separately for the donor-heterozygous and donor-homozygous marker classes rather
-than as a single shared parameter. A residual calibration gap remains on the real
+({{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}%) with overdispersion
+fit separately for the donor-heterozygous and donor-homozygous marker classes (the default
+per-marker-type model). A residual calibration gap remains on the real
 titrated ladder, where the intervals mildly undercover the nominal fraction. The driver
 is the co-pooled donor-homozygous contamination background, a dose-dependent excess of
 host-allele reads that the per-marker correction reduces but does not fully remove,
@@ -88,7 +88,10 @@ precisely so each marker is an independent identity bit, and both panels used he
 76-SNP rhAmpSeq sample-ID set and the {{ srp434573.panel_n_snps | commas }}-SNP MIP
 panel) are of that design. LD only becomes a concern on panels with deliberately
 clustered markers (several SNPs per amplicon, or dense tiling), which is a panel choice
-a laboratory controls. Residual correlation does not fail silently: it inflates
+a laboratory controls. A laboratory whose panel does carry clustered markers can restrict
+allomix to an LD-pruned subset with a simple BED file or marker list, keeping one marker
+per linked cluster, so the independence assumption holds without changing the panel.
+Residual correlation does not fail silently: it inflates
 per-marker variance in the same way overdispersion does, so it is partly absorbed by the
 per-class overdispersion model and surfaces in the goodness-of-fit check that drives the
 REVIEW flag, the same mechanism that flagged the overdispersed SRP434573 mixtures. A
@@ -107,7 +110,7 @@ The clinical motivation for sensitivity below the STR threshold is early detecti
 relapse, where residual or returning host DNA appears at fractions a magnitude estimate
 cannot yet quantify. allomix addresses this with a separate residual-host presence test
 that reads donor-homozygous markers where the host carries the donor-absent allele,
-asking only whether that host-only allele exceeds the sequencing-error background. We
+asking only whether that host-only allele exceeds the background-artifact floor. We
 validated it as a capability (in silico, and on SRP434573 down to 1% host) but we do not
 present it as a demonstrated relapse-detection result: the clinical thresholds that
 would turn a positive presence call into an action, and its operating characteristics on
@@ -164,13 +167,17 @@ informative markers and better per-donor precision.
 
 ### Clinical workflow and cellular composition
 
-By accepting standard VCFs, allomix decouples chimerism analysis from upstream alignment
-and variant calling. The one requirement is the two-phase calling in Methods: genotypes
-from joint germline calling (for example with GATK), and admixture allele depths from a
-forced bcftools pileup at the panel sites rather than from that germline caller, so the
-minority alternative reads carrying the low-fraction signal are retained rather than
-stripped. Both phases use standard tools, but the admixture pileup must be configured as
-a separate step rather than reusing one joint-calling pass for every sample.
+By accepting standard VCFs, allomix is not tied to a single upstream alignment and
+variant-calling pipeline, though it does impose specific requirements on how those VCFs
+are produced. The requirement is the two-phase calling in Methods: genotypes from joint
+germline calling (any joint germline caller, for example GATK), and admixture allele
+depths from a forced bcftools pileup at the panel sites rather than from that germline
+caller, so the minority alternative reads carrying the low-fraction signal are retained
+rather than stripped. The germline-calling phase can use whichever joint caller a
+laboratory already runs, but the admixture pileup must be configured as a separate step
+rather than reusing one joint-calling pass for every sample. We have not validated
+alternative callers against this workflow, so a laboratory substituting its own would
+confirm the low-fraction reads survive, as documented for the pileup step in Methods.
 
 Chimerism is a property of a cell population, not of whole blood per se. A donor
 fraction measured in unfractionated blood is a lineage-abundance-weighted average, so a
@@ -179,11 +186,11 @@ change. Lineage-specific testing on sorted subsets is recommended in some clinic
 contexts, though no quantitative intervention threshold has been standardised for
 sub-STR detection.[@Clark2025bjh; @KharfanDabaja2021astct; @Kakodkar2023alloseq] allomix
 is lineage-agnostic by design: it estimates the donor fraction in whatever DNA the input
-VCF represents, and the same validation applies to sorted inputs. Where whole-blood
+VCF represents, and the same validation applies to cell-sorted inputs. Where whole-blood
 signal is adequate, sensitivity better than STR can reduce the need for cell sorting and
 its associated cost and turnaround; where a clinically important change is confined to a
-small lineage, sorting is still required, and the same analysis applies to the sorted
-input. Specimen choice is a clinical and workflow decision outside the tool; the tool's
+small lineage, sorting may still be required, and the same analysis applies to the
+cell-sorted input. Specimen choice is a clinical and workflow decision outside the tool; the tool's
 analytical sensitivity is necessary but not sufficient for adequate clinical sensitivity
 in any given monitoring scenario.
 
@@ -213,7 +220,9 @@ above, which estimates the per-carrier contamination rate from the run's own
 consensus-homozygous markers and removes it before the fit.
 
 Clinical validation against STR chimerism, with
-controlled cell-line dilution series, is a separate study. Because allomix is
+controlled cell-line dilution series, is a separate study. We are planning such a
+validation at SA Pathology, running allomix in tandem with the accredited STR chimerism
+assay across a patient cohort, to be reported separately. Because allomix is
 panel-agnostic, that validation does not transfer between panels: a laboratory adopting
 the tool validates it on its own panel and specimen types, as for any
 laboratory-developed test, rather than relying on a single validation done once for the
@@ -222,7 +231,7 @@ is meant to serve. Blouin et al. describe a practical framework for such validat
 including run-level metrics and sample-level acceptance criteria, that is a useful model
 for future allomix studies.[@Blouin2024comparison]
 
-The limit of detection reported here is a best-case analytical figure, not a validated
+The LoD reported here is a best-case analytical figure, not a validated
 assay limit (a real assay's LoD can only be higher). It is the CLSI EP17-A2
 95%-detection criterion[@CLSIEP17A2] applied to simulated data under a noise model
 calibrated from empirical panel data, with reads drawn from a binomial. The in silico

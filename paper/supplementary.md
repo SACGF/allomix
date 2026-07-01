@@ -41,7 +41,7 @@ where $\varepsilon$ is the per-base error rate (default 0.01) and the factor of 
 distributes error among the three non-observed bases. Because VCF allele-depth fields
 count only reference and alternative, the likelihood uses the conditional $\tilde{p}_i =
 p_{alt,i} / (p_{ref,i} + p_{alt,i})$. This is the mixture genotype likelihood of Crysup
-and Woerner[@CrysupWoerner2022] applied in the inverse direction (estimating the
+and Woerner[@CrysupWoerner2022] applied to the reverse problem (estimating the
 fraction from known genotypes rather than genotyping at a known fraction). The single
 rate $\varepsilon$ may be replaced per marker by a measured per-site, per-direction
 empirical rate when an error table is supplied (S7, Methods); each marker then uses its
@@ -136,8 +136,8 @@ model nor this single public dataset provides a calibrated per-site table.
 ### S8. In-data contamination estimation
 
 Contamination is measured at consensus-homozygous markers, where host and every donor
-are homozygous for the same allele, so the minor allele can only be sequencing error or
-foreign DNA. The headline estimate is the background-subtracted median per-site
+are homozygous for the same allele, so the minor allele can only be a background artifact
+or foreign DNA. The headline estimate is the background-subtracted median per-site
 minor-allele fraction: the median is used rather than a pooled mean so a few gross
 miscall sites do not dominate, sites above 10% minor fraction are capped as miscalls,
 and the error floor is the 10th percentile of per-site minor fractions (the
@@ -146,7 +146,7 @@ uniform error floor (a uniform error elevation lifts the floor too and is correc
 called contamination). Contamination is distinguished from real low-level chimerism by
 marker geometry rather than magnitude: a dose-response in which the minor fraction rises
 with the number of co-pooled panel individuals carrying that allele indicates foreign
-reads, whereas a flat elevation indicates error. A separate sample-swap / third-genome
+reads, whereas a flat elevation indicates error. A separate sample-swap / foreign-genome
 test runs at the same consensus sites: a per-site binomial tail at the error rate flags
 sites where the minor allele is individually significant, combined into a swap p-value
 over discordant sites, catching a wrong-patient VCF that the informative-marker
@@ -163,8 +163,8 @@ each donor-homozygous host-allele count before the fit, leaving the flat error f
 the per-site error model so it is not double-counted. Two quantities are measured per
 run, not assumed. The gate is the per-flowcell consensus-homozygous dose-response: the
 minor-allele fraction at consensus-homozygous sites is regressed on the co-pooled
-carrier count (weighted by depth, pooled across the run's serial timepoints with a
-per-timepoint intercept), and the correction is applied only when that slope is
+carrier count (weighted by depth, pooled across the run's admixtures with a
+per-admixture intercept), and the correction is applied only when that slope is
 significantly positive; a clean run has a flat slope and the correction is a no-op. The
 magnitude is calibrated separately on the informative donor-homozygous markers
 themselves (the same weighted dose regression), because the consensus-homozygous slope
@@ -189,7 +189,7 @@ frequencies, MAF 0.2--0.5) and per-marker bias reused across all depths and pane
 with panels strictly nested (a smaller panel is a bit-identical prefix of a larger one);
 each pair then has {{ lod_headline.n_seq_reps }} sequencing replicates per cell that
 vary only read-sampling noise. Holding the pair fixed isolates sequencing noise within a
-pair and makes each pair's LoD curve monotone in panel size, while the across-pair
+pair and makes each pair's LoD curve monotonic in panel size, while the across-pair
 identity-by-descent spread is reported as a band rather than leaking into the central
 estimate. Seeds are SHA-256-derived for process-stable reproducibility. For recipient
 copy-number aberrations, the recipient is modelled as a mixture of normal diploid cells
@@ -301,7 +301,7 @@ no-overdispersion baseline. Adding per-marker overdispersion to that full model
 intermediate-VAF markers where amplification jitter is physical) raises RMSE to
 {{ supp_synthetic.ablation_rmse_overdispersion_pct }}%, a larger effect than any single
 bias, depth, or sequencing-error component. This is consistent with overdispersion,
-rather than depth, being the dominant control on accuracy and on the limit of detection
+rather than depth, being the dominant control on accuracy and on the LoD
 at clinical coverage (Figures S7, S8). (B) Mean absolute error by true donor fraction
 for each condition. Dashed lines indicate conditions with bias correction applied.
 
@@ -392,7 +392,7 @@ maximum error). Centre: 95% profile-likelihood CI coverage versus the nominal 95
 ![Figure S12]({{ facts_dir }}/figS12_srp434573_logy.png)
 
 **Figure S12.** Confidence-interval view of the SRP434573 two-person dilution series
-(main-text Figure 4A shows the same data as a log-log scatter). Each timepoint is
+(main-text Figure 4A shows the same data as a log-log scatter). Each admixture is
 plotted on a log host-fraction axis grouped by mixture, with the maximum-likelihood
 estimate (filled circle, 100 minus donor%, with the per-marker contamination correction
 applied) and the residual-host presence-test estimate (open square) each shown with its

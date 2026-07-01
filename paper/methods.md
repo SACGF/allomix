@@ -13,13 +13,13 @@ per-marker amplification bias, and run a panel of quality and sample-integrity c
 The tool works with any set of biallelic markers (SNPs or indels) and makes no
 assumption about the specific panel.
 
-The one idea a reader needs is the mixture model. At each marker, host and donor
+The method rests on a single idea, the mixture model. At each marker, host and donor
 genotypes are already known, so the allele reads expected in a mixed sample are a
 weighted blend of the two known genotypes: the more donor in the sample, the more the
 read counts shift from the host's expected pattern toward the donor's. allomix inverts
 that forward model: it finds the single donor fraction whose weighted blend best matches
 the observed allele counts across all informative markers at once. Box 1 walks through
-this by counting reads at two markers (Marker 1 and Marker 2), with no algebra.
+this by counting reads at two markers (Marker 1 and Marker 2).
 
 ### Input requirements and two-phase upstream calling
 
@@ -41,19 +41,22 @@ from GATK. HaplotypeCaller in GVCF mode is a local-reassembly caller that, at
 homozygous-reference blocks, keeps only reads supporting the called allele, so the
 minority alternative reads that carry the low-fraction donor signal are discarded before
 joint calling and never reach the AD field. Forcing a pileup at the known panel sites
-keeps them. The full rationale, including an empirical check on the rhAmpSeq panel where
-zero alternative reads survived in joint-called admixture AD, is documented on the
-allomix GitHub page.
+keeps them. This is not specific to GATK: any caller that applies low-level artifact
+filtering, including somatic callers tuned to suppress low-frequency noise, is built to
+remove exactly the minority reads that carry the low-fraction signal we are trying to
+measure. A forced pileup applies no such filtering. The full rationale, including an
+empirical check on the rhAmpSeq panel where zero alternative reads survived in
+joint-called admixture AD, is documented on the allomix GitHub page.
 
 ### Which markers are informative
 
-A marker is informative only when host and donor have different genotypes there; markers
-where they match carry no information about the mixing fraction and are dropped from the
-donor-fraction estimate. The matched markers are not discarded from the analysis, but
-they feed a separate readout. The consensus-homozygous matches (where host and donor are
-homozygous for the same allele) are kept aside for the contamination and sample-swap
-checks, which are independent of the fraction estimate and are described under Quality
-control and sample-integrity checks. Among informative markers, the size of the signal
+A marker is informative only when host and donor have different genotypes: those markers
+carry the mixing-fraction signal and drive the donor-fraction estimate. Markers where
+host and donor match carry no fraction information and are set aside, but they are not
+wasted. The consensus-homozygous matches (where host and donor are homozygous for the
+same allele) feed the contamination and sample-swap checks instead, which are independent
+of the fraction estimate and are described under Quality control and sample-integrity
+checks. Among informative markers, the size of the signal
 depends on the genotype contrast. When one party is homozygous for an allele the other
 never carries (for example host A/A, donor G/G), the marker is fully informative: the
 minority allele can come from only one of the two people. When one party is
@@ -66,37 +69,41 @@ site is used only if host and donor genotype quality is at least 20 and the admi
 depth is at least 100, and at least three informative markers are required to report an
 estimate.
 
-#### Box 1. Reading the donor fraction off the counts, with no algebra
+#### Box 1. Reading the residual host off the counts
 
-Take two markers in one post-transplant sample. At each, host and donor genotypes were
-fixed before transplant, so we know which person can make which allele.
+Take two markers in one post-transplant sample from a patient near full donor chimerism,
+the usual clinical situation, where the sample is mostly donor and the question is how
+much host remains. At each marker, host and donor genotypes were fixed before transplant,
+so we know which person can make which allele.
 
-**Marker 1 is fully informative: host is A/A, donor is G/G.** The host never makes a G
-read and the donor makes nothing but G, so the fraction of G reads simply *is* the donor
-fraction.
+**Marker 1 is fully informative: host is A/A, donor is G/G.** The donor makes nothing but
+G and the host never makes G, so every A read can only have come from the host. In a
+near-full-donor sample the minority of A reads is the residual host fraction, and the
+majority of G reads is the donor.
 
 | Counts at Marker 1 | A | G | Reading |
 |:---|--:|--:|:---|
-| High donor fraction sample | 30 | 970 | 970/1000 G reads = **97% donor** |
-| Same sample, flipped question | 30 | 970 | 30 A reads can only be host = **3% residual host** |
+| Residual-host reading (minority allele) | 30 | 970 | 30 A reads can only be host = **3% residual host** |
+| Magnitude reading (majority allele) | 30 | 970 | 970/1000 G reads = **97% donor** |
 
-The same marker answers two different questions. Looking at the majority shift tells you
-*how much donor* is present. Looking at the minority allele, the one only the host could
-have produced, tells you *whether any host is still there*. These are the two
-complementary tests allomix runs.
+The same marker answers two questions. The minority allele, the one only the host could
+have produced, tells you *whether any host remains*, which is the clinically urgent
+question near full donor chimerism. The majority shift tells you *how much donor* is
+present. These are the two complementary tests allomix runs.
 
-**Marker 2 is partially informative: host is A/G, donor is G/G.** The host already
-supplies G from one of its two alleles, so half the reads are G before the donor
-contributes anything. The donor can only push the G fraction up from that 50% starting
-point.
+**Marker 2 is partially informative: host is A/G, donor is G/G.** The host carries the
+donor-absent allele A on only one of its two alleles, so a residual host puts A reads into
+the sample at half its true fraction. The host signal is real but half the size of a
+fully informative marker.
 
 | Counts at Marker 2 | A | G | Reading |
 |:---|--:|--:|:---|
-| Same 97% donor sample | 15 | 985 | 98.5% G, up 48.5 percentage points from the 50% het baseline = **97% donor, at half the signal size** |
+| Residual-host reading (minority allele) | 15 | 985 | 15 A reads = 1.5% observed, doubled for the half-signal = **3% residual host** |
 
-This has three consequences. A pure-host sample still shows a low background of reads
-carrying the donor allele, produced by sequencing error, which is why there is a
-measured error floor rather than a clean zero. One marker on its own is noisy, which is
+This has three consequences. A pure-donor sample still shows a low background of reads
+carrying the host-only allele, produced by background artifacts (miscalled bases and, on
+co-pooled runs, index hopping and low-level cross-sample contamination), which is why
+there is a measured floor rather than a clean zero. One marker on its own is noisy, which is
 why allomix pools dozens of markers into a single estimate with a confidence interval.
 And markers sometimes disagree by more than simple read-counting would predict, which is
 why the interval is widened to reflect that extra scatter.
@@ -108,14 +115,13 @@ Woerner,[@CrysupWoerner2022] the framework that also underlies the forensic mixt
 Demixtify.[@Woerner2024demixtify] It estimates the donor fraction by maximum likelihood:
 it scans candidate fractions and keeps the one under which the observed allele counts
 are most probable, given the known host and donor genotypes. Three mechanisms make that
-estimate realistic for clinical data, each replacing a piece of algebra given in full in
-the Supplementary Methods.
+estimate realistic for clinical data; the full formulas are in the Supplementary Methods.
 
-First, a sequencing-error term. A small fraction of reads are miscalled bases, so even a
-marker where one allele should be absent shows a low background of that allele. allomix
-models this with a fixed per-base error rate (default 1%) spread across the possible
-miscalls, which sets the expected floor of stray reads and keeps the estimate from
-reading pure error as real signal.
+First, a background-artifact term. Even a marker where one allele should be absent shows a
+low background of that allele, from miscalled bases and, on co-pooled runs, index hopping
+and low-level cross-sample contamination. allomix models this floor with a fixed per-base
+rate (default 1%) spread across the possible miscalls, which sets the expected level of
+stray reads and keeps the estimate from reading pure background as real signal.
 
 Second, the allele counts are modeled so that marker-to-marker scatter can exceed simple
 read-sampling noise. Capture and amplification do not treat every marker identically, so
@@ -127,44 +133,47 @@ on sensitivity at clinical coverage (Results, Discussion). The scatter is not un
 across markers: at markers where the donor is heterozygous the background allele
 fraction sits near one half, where capture and amplification scatter is largest and
 symmetric, whereas at markers where the donor is homozygous the background sits near
-zero or one. A single shared overdispersion parameter lets the symmetric scatter at the
-donor-heterozygous markers rectify into a small positive donor (or host) fraction at
-very low mixtures, a near-constant offset of about 0.2 percentage points that sets a
-floor below roughly half a percent. allomix therefore fits a separate overdispersion
-parameter for each of the two marker classes (donor-heterozygous and donor-homozygous).
-At a low mixture the heterozygous class is close to pure noise, so its fitted
-overdispersion is small, its effective weight drops toward zero, and the floor is
-removed; as the mixture rises the donor signal pulls those markers off one half, their
-residual scatter shrinks, their overdispersion rises, and they regain weight and
-contribute precision. When a class has too few informative markers to identify its own
-parameter (fewer than 30 here), allomix falls back to a single shared parameter for that
-sample.
+zero or one, which is where a low-fraction host or donor signal appears. Because the two
+classes carry different amounts of scatter, allomix fits a separate overdispersion
+parameter for each (donor-heterozygous and donor-homozygous) rather than one shared
+value. At a low mixture the near-0.5 heterozygous class is close to pure noise, so its
+fitted overdispersion is small and its effective weight drops toward zero, which keeps its
+symmetric scatter from rectifying into a spurious low-fraction signal; the
+donor-homozygous class, where the real low-fraction signal sits, keeps its weight. When a
+class has too few informative markers to identify its own parameter (fewer than 30 here),
+allomix falls back to a single shared parameter for that sample.
 
 Third, the fraction and the overdispersion are fit together. allomix tries many
 candidate donor fractions spread across the full 0% to 100% range, finds the best
 overdispersion for each marker class at each candidate, and keeps the fraction whose
 combined fit is best, then fine-tunes around that best-fitting fraction. The reported
 confidence interval is a profile-likelihood interval: the range of fractions that the
-data cannot confidently rule out. Because chimerism is routinely near 0% or 100%, the
-interval is constructed to respect those hard boundaries rather than running past them,
-which a simpler symmetric interval would do (Supplementary Methods).[@Wilks1938]
+data cannot confidently rule out. The donor fraction is a proportion bounded at 0% and
+100%, and the clinically important samples sit right against the upper bound (near full
+donor, with a small residual host), so the interval is constructed to respect those hard
+boundaries rather than running past them, which a simpler symmetric interval would do
+(Supplementary Methods).[@Wilks1938]
 
-allomix applies this likelihood in the inverse direction: Crysup and Woerner genotyped
-unknown contributors at a known mixture fraction, whereas allomix estimates the mixture
-fraction from known contributor genotypes, the simplification the clinical setting
-allows.
+allomix uses the same likelihood for the reverse problem: Crysup and Woerner estimate
+unknown contributor genotypes at a known mixture fraction, whereas allomix estimates the
+mixture fraction from contributor genotypes already known from the pre-transplant samples,
+the simplification the clinical setting allows.
 
 ### The residual-host presence test
 
-The magnitude estimate above answers "how much donor?" A separate test answers "is any
-host left?", which is the question that matters when a patient is near full donor
-chimerism and the clinical concern is early relapse. The two tests read different
-markers on purpose.
+The magnitude estimate above answers "how much donor?" Near full donor chimerism its
+confidence interval widens and it cannot cleanly separate a small residual host from zero,
+yet that is exactly where the clinical concern (early relapse) sits. A separate presence
+test answers the narrower question "is any host left?", and is built to stay sensitive at
+and near zero, where the magnitude estimate loses precision. The two tests emphasise
+different markers: the magnitude estimate uses all informative markers, while the presence
+test reads only the subset that gives a one-sided host signal, so the presence-test
+markers are a subset of the magnitude estimate's rather than a disjoint set.
 
 The presence test looks only at markers where the donor is homozygous and the host
-carries an allele the donor does not (Box 1, Marker 1 flipped). At such a marker, in a
-pure-donor sample, that host-only allele should appear at no more than the
-sequencing-error background. Any consistent excess across these markers is residual host
+carries an allele the donor does not (Box 1, Marker 1, residual-host reading). At such a
+marker, in a pure-donor sample, that host-only allele should appear at no more than the
+background-artifact floor. Any consistent excess across these markers is residual host
 DNA. allomix combines the host-only allele counts across all such markers into a
 one-sided test against the per-marker error background and reports a p-value, a
 host-fraction estimate, and a confidence interval. Because the honest answer when no
@@ -178,8 +187,8 @@ estimate reliably quantifies.
 Capture and amplicon panels have small systematic per-marker biases that pull observed
 allele frequencies away from their true values.[@Vynck2023bias] allomix can correct
 these using a per-marker bias table measured at heterozygous sites, where the true
-frequency is known to be 0.5. The correction is applied proportionally (in logit space)
-rather than as a flat additive shift, because an additive shift overcorrects at the
+frequency is known to be 0.5. The correction is applied proportionally (on the log-odds
+scale) rather than as a flat additive shift, because an additive shift overcorrects at the
 extreme expected frequencies that dominate low-fraction samples; the formula is in the
 Supplementary Methods. The table can be built from reference samples called the same way
 as the admixture, or from a patient cohort at markers where host and every donor are
@@ -218,15 +227,17 @@ from the other.
 
 ### Outlier-resistant refit for aberrant markers
 
-A few markers can sit far off the fit, most often because the recipient clone carries a
-copy-number change there (below). allomix optionally re-estimates the fraction after
+A few markers can sit far off the fit, most often because the recipient's malignant clone
+carries a copy-number change there, which is common in the haematological cancers that
+bring patients to transplant (see Recipient copy-number aberrations below). allomix
+optionally re-estimates the fraction after
 down-weighting such markers, using a median-based outlier-resistant scale. The trim is
 deliberately one-sided: it removes markers whose deviation points *away* from host
 presence, and it protects markers whose deviation points *toward* host presence. This
 matters at low host fraction, where the handful of markers carrying the real low-level
 host signal sit off a donor-dominated fit and a symmetric outlier rule would discard
-exactly those markers, collapsing the estimate to zero when the truth is around 1%. The
-trade is explicit: at the limit of detection we would rather keep a few artifacts than
+exactly those markers, collapsing a real low-fraction host signal to zero. The
+trade is explicit: at the LoD we would rather keep a few artifacts than
 throw away a real low-fraction host signal. The refit engages only when the number of
 off-fit markers exceeds chance expectation, so clean samples are unchanged, and it is
 floored so it does not over-trim small panels. When too many markers are excluded, the
@@ -236,8 +247,7 @@ sample is flagged for review rather than reported as a confident estimate.
 
 allomix is meant to run inside routine laboratory operations, so it reports a
 three-level verdict per sample: PASS, REVIEW (an estimate is produced but a reliability
-flag should be checked), or FAIL (the result is not usable). REVIEW versus FAIL is a
-deliberate clinical distinction rather than a single pass/fail bit. Basic checks cover
+flag should be checked), or FAIL (the result is not usable). Basic checks cover
 marker sufficiency, sequencing depth, and confidence-interval width. A goodness-of-fit
 check compares the marker-to-marker scatter against what the model expects and is
 computed both before and after the outlier-resistant refit, gated on the worse of the
@@ -255,9 +265,10 @@ magnitude estimate at all:
 
 - **Residual host** shows up at donor-homozygous markers where the host carries the
   donor-absent allele (the presence test above).
-- **Third-genome contamination** shows up at markers where host and every donor are
-  homozygous for the same allele, so the minor allele cannot come from any expected
-  contributor and can only be sequencing error or foreign DNA. allomix estimates
+- **Contamination by a non-host, non-donor genome** shows up at markers where host and
+  every donor are homozygous for the same allele, so the minor allele cannot come from any
+  expected contributor and can only be a background artifact or foreign DNA (for example
+  another patient co-pooled on the same flowcell via index hopping). allomix estimates
   contamination as the excess minor-allele signal over a data-internal error floor (the
   low percentile of per-site minor fractions), using the median across sites so that a
   few gross miscall sites do not dominate, and capping clearly miscalled sites; the full
@@ -276,7 +287,7 @@ magnitude estimate at all:
   flag, from metadata alone, when an admixture sample shares a sequencing run with the
   host (an index-hopping risk), kept separate from the in-data contamination
   estimate.[@Costello2018indexswap]
-- **A sample swap or unexpected third genome** shows up when those same
+- **A sample swap or contaminating genome** shows up when those same
   consensus-homozygous markers carry a minority allele that is individually significant
   rather than a faint background. allomix runs a consistency test across these sites
   that catches a wrong-patient VCF the magnitude estimate cannot see, because the
@@ -294,8 +305,13 @@ relatedness shift only triggers review. Separately, a read-level artifact filter
 donor-homozygous markers for soft-clip, read-position, and strand-bias artifacts using
 bcftools mpileup annotations, judging strand bias by effect size rather than statistical
 significance (at high depth a real allele's mild strand skew is highly significant but
-harmless, whereas an artifact is extreme regardless of depth); this filter auto-disables
-on single-strand amplicon panels, where almost every marker is read from one strand.
+harmless, whereas an artifact is extreme regardless of depth). These checks are run as a
+screen on the pileup output rather than delegated to a variant caller's built-in read
+filtering, for the same reason the admixture is piled up rather than called: a caller
+applies its filters before we ever see the reads and would strip the low-fraction signal
+along with the artifacts, whereas screening here flags a suspect marker without discarding
+minority reads elsewhere. The filter auto-disables on single-strand amplicon panels, where
+almost every marker is read from one strand.
 Finally, a genotype/allele-depth consistency guard drops reference-sample markers whose
 called genotype contradicts their own allele depths, so a marginally rescued
 heterozygous call in a small joint call does not feed systematic bias into the estimate;
@@ -309,14 +325,17 @@ blending two genotype VCFs at a specified donor fraction. The simulated fraction
 donor proportion in the analysed DNA. One caveat applies to every in silico result that
 follows. The simulator draws reads from the same mixture and error model the estimator
 fits, so the estimator is being tested partly against its own assumptions. In silico
-accuracy and limit of detection are therefore best-case figures that show the estimator
+accuracy and LoD are therefore best-case figures that show the estimator
 recovers the truth when the data match its model, not evidence that the model matches
 real sequencing. The independent check is the real-read SRP434573 analysis (Results),
 produced on a panel, platform, and noise process the simulator did not generate. In
 particular, overdispersion is the part the simulator cannot claim to have solved: the
 main runs draw reads from a binomial, so any noise the shared model omits, of which
 overdispersion is the dominant one at clinical depth (Discussion), is absent from the
-simulated data by construction rather than handled by the estimator.
+simulated data by construction rather than handled by the estimator. The simulator
+likewise does not generate index hopping or co-pooled cross-sample contamination, so the
+background artifacts those produce on real data (Results) are not present in the simulated
+results.
 
 On top of the shared mixture and error model, the simulator layers four sources of
 measurement noise calibrated from empirical panel data:
@@ -337,7 +356,7 @@ measurement noise calibrated from empirical panel data:
 
 Reads are drawn from a binomial by default; the simulator can instead draw from an
 overdispersed (beta-binomial) distribution at a chosen concentration, which is used to
-characterise how the limit of detection depends on overdispersion (Supplementary Figures
+characterise how the LoD depends on overdispersion (Supplementary Figures
 S7, S8) but not in the main validation. To evaluate longitudinal monitoring we simulated
 a six-timepoint post-HSCT trajectory (day +14 to day +365) with true donor fractions
 from 15% (early engraftment) to 97% (full donor), including a clinically relevant
@@ -387,8 +406,7 @@ study SRP434573, BioProject PRJNA960854), companion data to a doctoral thesis (C
 Huazhong University of Science and Technology, 2024) with no associated journal article.
 These are artificial mixtures of DNA from unrelated individuals, not post-transplant
 patient samples, so they exercise the estimator on real reads at known mixing fractions
-but do not carry the biology of clinical chimerism (a single donor engrafting against a
-recipient, lineage structure, or a recipient clone). The dataset is
+but do not carry the biology of clinical chimerism. The dataset is
 {{ srp434573.n_individuals }} unrelated individuals captured on a
 {{ srp434573.panel_n_snps | commas }}-SNP molecular inversion probe (MIP)
 sample-identification panel on an {{ srp434573.platform }}, with reads merged to
@@ -400,9 +418,10 @@ We assigned the minor (titrated) contributor to the host (recipient) role and th
 contributor to the donor. This mirrors the usual clinical situation, where a patient is
 near full donor chimerism and the recipient is the small residual fraction the assay is
 trying to measure, so the monitored quantity is the host fraction and each dilution
-series reads as a declining-chimerism (relapse) trajectory. The thesis does not label
-which contributor is which, so this assignment is our convention for the analysis and
-affects only the host/donor labelling, not the genotyping or the recovered fractions.
+series reads as a declining-chimerism (relapse) trajectory. These samples are not
+biological host and donor, and the thesis does not label which contributor is which; the
+assignment is purely a labelling convention based on mixing fraction and affects only the
+host/donor labelling, not the genotyping or the recovered fractions.
 Reads were aligned to hg38 with bwa-mem;[@LiDurbin2009bwa; @Li2013bwamem] because every
 MIP amplicon shares start and end coordinates, duplicate marking was not applied (it
 would discard almost all coverage). Because the thesis publishes no panel coordinates,
@@ -411,27 +430,28 @@ clusters ({{ srp434573.n_intervals | commas }} intervals:
 {{ srp434573.n_intervals_autosomal | commas }} autosomal and
 {{ srp434573.n_intervals_chrx }} on chrX), and genotypes and admixture allele depths
 were generated with the two-phase pipeline above. allomix was run with default
-parameters and no panel-specific tuning; on this single-strand panel the strand-bias
+parameters; on this single-strand panel the strand-bias
 artifact filter auto-disables. The dataset covers the unrelated-donor case only (no
 related or sibling donors) and carries a co-pooled contamination floor characterised in
 Results.
 
 ### Real-data limit of detection by subsampling
 
-To obtain a limit of detection on real reads rather than simulation, we degraded the
+To obtain a LoD on real reads rather than simulation, we subsampled the
 high-depth SRP434573 mixtures until their LoD rose into the dilution series' measurable
 window. From each two-person mixture we sub-sampled reads to a target mean depth (100x
 to 2,000x) by a single per-sample binomial keep rate applied uniformly across markers,
 which is the statistical analogue of FASTQ read subsampling and preserves the real
 locus-to-locus depth variation, then re-applied the depth filter so low-depth loci drop
 out. Panel size was set by nested random subsets of the informative markers (prefixes of
-one permutation per mixture and replicate, so each curve is monotone in panel size), and
+one permutation per mixture and replicate, so each curve is monotonic in panel size), and
 multiple sub-sampling replicates were drawn per depth-and-panel cell. For each cell we
 read the LoD off the same logistic fit as the simulated sweep, separately for the
 magnitude estimate (a sample is detected when its 95% confidence interval for the host
 fraction excludes zero) and the residual-host presence test (detected when the
 presence-test p-value is below 0.05). Both use blank-free per-sample detection rules, so
-neither needs the EP17 pure-host blank, which real data does not provide. Because these
+neither needs an EP17 blank sample, which this dataset does not provide as used here.
+Because these
 are pseudo-replicates sub-sampled from one library rather than independent low-depth
 libraries, the result shows whether the real-data LoD tracks the simulated curves within
 the dilution grid rather than serving as an independent wet-lab limit.

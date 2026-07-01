@@ -39,18 +39,34 @@ SRP434573 mixtures (Figure 4, below) rather than this analytical ceiling.
 | Devyser Chimerism | {{ tool_landscape.devyser_n_markers }} indels | {{ tool_landscape.devyser_lod }}% | No | No | Proprietary |
 | NGStrack | 34 indels | 0.1% | No | No | Proprietary |
 | ScisGo Chimerism MD | >200 SNPs + indels | 0.2% (single) / 0.5% (multi) | No | No | Proprietary |
-| **allomix** | **Any biallelic** | **{{ presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct }}% (in silico, 100 markers, 1,000x)** | **Yes (MIT)** | **Yes** | **VCF** |
+| **allomix** | **Any biallelic** | **~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | dp(0) }}% real (ref) → ≤0.5% real (best panel/depth) → ~0.1% semi-synthetic → ~0.2% simulated** | **Yes (MIT)** | **Yes** | **VCF** |
+
+<!-- The allomix ≤0.5% and ~0.1% cell values are literals: ≤0.5% is the best resolved
+cell in subsample_lod_summary.csv (to_0.5pct, 400 markers, ≥1000x depth); ~0.1% is the
+lowest tracked rung in srp434573_synthetic.csv (mle_med_0p1). The ~1% and ~0.2% values
+use fact tokens (subsample_lod_headline, lod_headline, presence_lod_curve_headline). -->
 
 **Table 1.** NGS-based chimerism monitoring tools. LoD = limit of detection. Commercial
 specifications are from published evaluations.[@Blouin2024comparison;
 @Pedini2021devyser; @Kakodkar2023alloseq; @Qama2026devyser] *The AlloSeq HCT figure is
 the vendor-stated LoD; the analytical sensitivity reported in independent evaluation
-varies.[@Kakodkar2023alloseq] The allomix value shown is the residual-host detection LoD
-(presence test) at the reference operating point (unrelated donor, 100 markers, 1,000x
-mean depth), the readout comparable to the vendor detection limits; the
-magnitude-estimate LoD at the same point is
-{{ lod_headline.unrelated_lod_1000x_100markers_pct }}%. See Figure 1 for the full sweep
-of both readouts. All LoD values refer to bulk extracted DNA; clinical sensitivity in a
+varies.[@Kakodkar2023alloseq] The allomix cell lists the LoD by evidence class, from most
+to least real: ~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | dp(0) }}% on
+real titrated mixtures (SRP434573) at the reference operating point (100 markers, 1,000x
+mean depth), an EP17-A2 LoD; ≤0.5% on the same mixtures subsampled to the largest panel
+and deepest coverage, an EP17-A2 LoD bounded by the dataset's 0.5% dilution floor; ~0.1%
+on a semi-synthetic remix of the same real reads with the co-pooled contamination
+confound removed (the lowest fraction tracked, not an EP17-A2 LoD); and, in near-binomial
+simulation, an analytical EP17-A2 LoD of
+{{ lod_headline.unrelated_lod_1000x_100markers_pct }}% for the magnitude estimate and
+{{ presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct }}% residual
+host for the presence test (unrelated donor, same operating point). The
+real-reads-minus-contamination (~0.1%) and pure-simulation (~0.2%) figures agree,
+indicating the ~1% real-data ceiling reflects this dataset's index-hop contamination
+floor and 0.5% dilution limit rather than the estimator. Vendor LoDs are
+clinically-validated dilution-series figures, so the comparison is not head-to-head. See
+Figure 1 for the full sweep of both simulated readouts and Figures 3 and 4 for the
+real-data results. All LoD values refer to bulk extracted DNA; clinical sensitivity in a
 given specimen further depends on the proportion of the lineage of interest and the
 upstream cell-sorting workflow.
 
@@ -173,7 +189,9 @@ fraction is recovered accurately, the same overdispersion gap quantified in the
 limit-of-detection analysis (Supplementary Figures S7, S8). We inferred which named
 individual is the titrated minor from the dataset's naming structure; the thesis does
 not state it explicitly, and this affects only the host/donor labelling, not the
-genotyping.
+genotyping. As a further reproducibility caveat, the amplicon panel intervals were
+reconstructed from the reads rather than supplied by the panel vendor, which could shift
+which marginal markers are included but not the genotypes at the markers that are.
 
 ![**Figure 3.** allomix on the SRP434573 public titrated-mixture dataset (real reads). (A) Two-person dilution series: known host fraction versus allomix estimate (log-log) for the maximum-likelihood estimate (filled circles, 100 minus donor%, with the per-marker co-pooled contamination correction applied; Methods) and the residual-host presence test (open squares), across {{ srp434573.n_mixtures | dp(0) }} two-person mixtures ({{ srp434573.n_timepoints | dp(0) }} admixtures in total). Dashed line is perfect recovery. The 0.5% points still fall away from the line where the residual contamination floor competes with the true fraction. An alternative view of the same dilution series, with 95% confidence intervals on each estimate, is in Supplementary Figure S12. (B) The single three-person mixture (1:3:5 of F2:M1:M2): known versus estimated component fractions with 95% confidence intervals.]({{ facts_dir }}/fig_srp434573.png)
 
@@ -264,6 +282,11 @@ the limits of the dilution grid rather than serving as an independent wet-lab Lo
 ![**Figure 4.** Real-data limit of detection on the SRP434573 titrated mixtures, the real-data counterpart of Figure 1. Reads and markers were sub-sampled from the high-depth mixtures to bring the LoD into the measurable window. Columns: MLE magnitude estimate (left) and host-presence detection test (right). Rows: the seven mixtures titrated only to 1% (top) and the three titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}% host (bottom), two disjoint sets. Only three of the {{ subsample_lod_headline.n_mixtures | dp(0) }} mixtures were diluted below 1%; keeping the rows disjoint stops those three from being buried in a top-row median that the 1%-floored mixtures would otherwise pin at 1%. Each coloured curve is the median LoD across mixtures at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across mixtures. An X marks a cell where the LoD is at or below the lowest titration that mixture set carries (1% top row, 0.5% bottom row), not resolved lower. Per-mixture curves are constrained to be monotonic in panel size, which the nested marker panels justify. Points are jittered horizontally per depth. Sub-sampled pseudo-replicates, {{ subsample_lod_headline.n_seeds | dp(0) }} per cell, not independent libraries.]({{ facts_dir }}/fig_subsample_lod_grid.png)
 
 ### Stress tests (in silico): relatedness, multiple donors, and recipient copy-number changes
+
+All three stress tests in this section (donor-host relatedness, multiple donors, and
+recipient copy-number changes) are in silico only, with no real-data support, because the
+one real dataset used here (SRP434573) is unrelated-donor, non-transplant material that
+does not exercise these cases.
 
 **Donor-host relatedness.** Related donors share genotypes with the host, reducing the
 number of informative markers. Across four relatedness levels

@@ -238,6 +238,13 @@ is meant to serve. Blouin et al. describe a practical framework for such validat
 including run-level metrics and sample-level acceptance criteria, that is a useful model
 for future allomix studies.[@Blouin2024comparison]
 
+The residual-host presence test is a per-sample test. Under serial monitoring, applying
+its per-timepoint p < 0.05 threshold repeatedly across a patient's timeline does not
+control a family-wise or trend-level error rate, so the per-sample specificity does not
+carry over unchanged to a multi-timepoint decision. A monitoring-context decision rule,
+such as confirmation on a repeat draw or a trend test across timepoints, is a
+clinical-validation-stage choice we leave to the adopting laboratory.
+
 The LoD reported here is a best-case analytical figure, not a validated
 assay limit (a real assay's LoD can only be higher). It is the CLSI EP17-A2
 95%-detection criterion[@CLSIEP17A2] applied to simulated data under a noise model

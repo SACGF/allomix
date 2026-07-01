@@ -62,6 +62,15 @@ MULTIDONOR_FACTS = [
 
 MULTIDONOR_FIGS = [f"{FACTS_DIR}/fig_multidonor.png"]
 
+# Display-ready table CSVs assembled from the single-row fact CSVs above, so the
+# paper imports each multi-row table with one include-csv directive instead of
+# building it cell by cell (paper/scripts/build_tables.py).
+TABLE_FACTS = [
+    f"{FACTS_DIR}/table_depth.csv",
+    f"{FACTS_DIR}/table_relatedness.csv",
+    f"{FACTS_DIR}/table_multidonor.csv",
+]
+
 BIAS_FIGS = ["output/bias_comparison/bias_correction_comparison.png"]
 
 CALIBRATION_BATCHES = expand("output/calibration/batch_{i}.csv", i=range(N_CAL_BATCHES))
@@ -204,6 +213,7 @@ ALL_FACTS = (
     DEPTH_FACTS
     + RELATEDNESS_FACTS
     + MULTIDONOR_FACTS
+    + TABLE_FACTS
     + PAPER_FACTS
     + SUPP_SYNTHETIC_FACTS
     + LOD_FACTS
@@ -284,6 +294,17 @@ rule multidonor_validation:
         MULTIDONOR_FACTS,
     shell:
         "python paper/scripts/run_multidonor_validation.py"
+
+
+rule build_tables:
+    input:
+        DEPTH_FACTS,
+        RELATEDNESS_FACTS,
+        MULTIDONOR_FACTS,
+    output:
+        TABLE_FACTS,
+    shell:
+        "python paper/scripts/build_tables.py"
 
 
 rule bias_comparison:

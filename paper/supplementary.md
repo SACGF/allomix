@@ -284,13 +284,10 @@ mean interval from {{ bias_no_bias.mean_ci_width_pct | dp(2) }}% to
 a small proportional adjustment at the extreme allele frequencies that dominate
 low-fraction samples (Figure S4).
 
-| Depth | MAE (%) | RMSE (%) | Max Error (%) | CI Coverage (%) | Mean CI Width (%) |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| 50x | {{ depth_50.mean_abs_error_pct | dp(2) }} ± {{ depth_50.mean_abs_error_sd_pct | dp(2) }} | {{ depth_50.rmse_pct | dp(2) }} ± {{ depth_50.rmse_sd_pct | dp(2) }} | {{ depth_50.max_abs_error_pct | dp(2) }} ± {{ depth_50.max_abs_error_sd_pct | dp(2) }} | {{ depth_50.ci_coverage_pct }} ± {{ depth_50.ci_coverage_sd_pct }} | {{ depth_50.mean_ci_width_pct | dp(2) }} ± {{ depth_50.mean_ci_width_sd_pct | dp(2) }} |
-| 100x | {{ depth_100.mean_abs_error_pct | dp(2) }} ± {{ depth_100.mean_abs_error_sd_pct | dp(2) }} | {{ depth_100.rmse_pct | dp(2) }} ± {{ depth_100.rmse_sd_pct | dp(2) }} | {{ depth_100.max_abs_error_pct | dp(2) }} ± {{ depth_100.max_abs_error_sd_pct | dp(2) }} | {{ depth_100.ci_coverage_pct }} ± {{ depth_100.ci_coverage_sd_pct }} | {{ depth_100.mean_ci_width_pct | dp(2) }} ± {{ depth_100.mean_ci_width_sd_pct | dp(2) }} |
-| 200x | {{ depth_200.mean_abs_error_pct | dp(2) }} ± {{ depth_200.mean_abs_error_sd_pct | dp(2) }} | {{ depth_200.rmse_pct | dp(2) }} ± {{ depth_200.rmse_sd_pct | dp(2) }} | {{ depth_200.max_abs_error_pct | dp(2) }} ± {{ depth_200.max_abs_error_sd_pct | dp(2) }} | {{ depth_200.ci_coverage_pct }} ± {{ depth_200.ci_coverage_sd_pct }} | {{ depth_200.mean_ci_width_pct | dp(2) }} ± {{ depth_200.mean_ci_width_sd_pct | dp(2) }} |
-| 500x | {{ depth_500.mean_abs_error_pct | dp(2) }} ± {{ depth_500.mean_abs_error_sd_pct | dp(2) }} | {{ depth_500.rmse_pct | dp(2) }} ± {{ depth_500.rmse_sd_pct | dp(2) }} | {{ depth_500.max_abs_error_pct | dp(2) }} ± {{ depth_500.max_abs_error_sd_pct | dp(2) }} | {{ depth_500.ci_coverage_pct }} ± {{ depth_500.ci_coverage_sd_pct }} | {{ depth_500.mean_ci_width_pct | dp(2) }} ± {{ depth_500.mean_ci_width_sd_pct | dp(2) }} |
-| 1,000x | {{ depth_1000.mean_abs_error_pct | dp(2) }} ± {{ depth_1000.mean_abs_error_sd_pct | dp(2) }} | {{ depth_1000.rmse_pct | dp(2) }} ± {{ depth_1000.rmse_sd_pct | dp(2) }} | {{ depth_1000.max_abs_error_pct | dp(2) }} ± {{ depth_1000.max_abs_error_sd_pct | dp(2) }} | {{ depth_1000.ci_coverage_pct }} ± {{ depth_1000.ci_coverage_sd_pct }} | {{ depth_1000.mean_ci_width_pct | dp(2) }} ± {{ depth_1000.mean_ci_width_sd_pct | dp(2) }} |
+<!-- include-csv: output/facts/table_depth.csv
+  align: center
+-->
+
 
 **Table S4.** allomix accuracy and confidence-interval performance across sequencing
 depths (mean ± SD, N={{ depth_50.n_replicates | dp(0) }} replicates). MAE = mean absolute

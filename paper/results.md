@@ -278,12 +278,15 @@ count observed ({{ rel_sibling.min_informative }}) stayed well above the three r
 Relatedness costs sensitivity (fewer informative markers raise the LoD) but not
 point-estimate accuracy, because the markers that remain are still unbiased.
 
-| Relatedness | Mean Informative | Range | MAE (%) | RMSE (%) |
-|:---|:---:|:---:|:---:|:---:|
-| Unrelated | {{ rel_unrelated.mean_informative }} | {{ rel_unrelated.min_informative }}–{{ rel_unrelated.max_informative }} | {{ rel_unrelated.mean_mae_pct }} | {{ rel_unrelated.mean_rmse_pct }} |
-| 1st cousin | {{ rel_cousin.mean_informative }} | {{ rel_cousin.min_informative }}–{{ rel_cousin.max_informative }} | {{ rel_cousin.mean_mae_pct }} | {{ rel_cousin.mean_rmse_pct }} |
-| Half-sibling | {{ rel_half_sibling.mean_informative }} | {{ rel_half_sibling.min_informative }}–{{ rel_half_sibling.max_informative }} | {{ rel_half_sibling.mean_mae_pct }} | {{ rel_half_sibling.mean_rmse_pct }} |
-| Full sibling | {{ rel_sibling.mean_informative }} | {{ rel_sibling.min_informative }}–{{ rel_sibling.max_informative }} | {{ rel_sibling.mean_mae_pct }} | {{ rel_sibling.mean_rmse_pct }} |
+<!-- include-csv: output/facts/table_relatedness.csv
+align:
+  Relatedness: left
+  Mean Informative: center
+  Range: center
+  "MAE (%)": center
+  "RMSE (%)": center
+-->
+
 
 **Table 2.** Effect of donor-host relatedness on marker informativity and chimerism
 accuracy. Each level: {{ rel_unrelated.n_replicates }} replicate donor-host pairs,
@@ -306,12 +309,15 @@ one donor from the other; the total and the ranking stay accurate. Unrelated mul
 settings (such as cord-blood transplants) would yield more informative markers and
 tighter per-donor intervals.
 
-| Metric | Donor 1 | Donor 2 | Total |
-|:---|:---:|:---:|:---:|
-| MAE (%) | {{ multidonor.mae_d1_pct }} | {{ multidonor.mae_d2_pct }} | {{ multidonor.mae_total_pct }} |
-| RMSE (%) | {{ multidonor.rmse_d1_pct }} | {{ multidonor.rmse_d2_pct }} | {{ multidonor.rmse_total_pct }} |
-| Max error (%) | {{ multidonor.max_error_d1_pct }} | {{ multidonor.max_error_d2_pct }} | {{ multidonor.max_error_total_pct }} |
-| CI coverage (%) | {{ multidonor.ci_coverage_d1_pct }} | {{ multidonor.ci_coverage_d2_pct }} | n/a |
+<!-- include-csv: output/facts/table_multidonor.csv
+na_rep: "n/a"
+align:
+  Metric: left
+  Donor 1: center
+  Donor 2: center
+  Total: center
+-->
+
 
 **Table 3.** Multi-donor accuracy with sibling donors.
 {{ multidonor.n_markers | dp(0) }} markers ({{ multidonor.n_informative_any | dp(0) }}

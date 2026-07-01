@@ -216,6 +216,18 @@ goals are well established and the same across sample-ID panels:
   that a single copy-number or loss-of-heterozygosity event in the recipient
   distorts many markers at once.
 
+A practical shortcut is to adopt the sites list distributed with
+[Somalier](https://github.com/brentp/somalier), a widely used relatedness and
+sample-swap QC tool. Its released sites VCFs (a curated set of about 17,700 common
+SNPs, provided for hg19, GRCh37, hg38, and a CHM13/T2T build) were selected for
+allele frequencies near 0.5 and spread across the genome, so they already match
+the design goals above. Using the same sites has a second payoff: you can run
+Somalier itself on the sequenced host, donor, and admixture samples for
+relatedness and sample-swap checks, a useful independent cross-check on
+donor/host identity before chimerism analysis. Pull the sites file for your build
+from the Somalier [releases page](https://github.com/brentp/somalier/releases) and
+feed it into the site-definition step above.
+
 For prospective per-pair sufficiency (will this panel resolve this specific
 donor-host pair), use FABCASE (Vynck 2025) rather than re-deriving the statistics.
 Designing a new panel is a larger exercise than this guide covers; the references

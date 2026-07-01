@@ -186,6 +186,71 @@ class TestCLIIntegration:
         content = out.read_text()
         assert "donor_pct" in content
 
+    def test_detect_exclude_sites(self, tmp_path):
+        """--exclude-sites drops the BED marker positions before analysis."""
+        markers = parse_vcf(JOINT_VCF, sample="HOST", min_dp=0, min_gq=0)
+        n_total = len(markers)
+        bed = tmp_path / "exclude.bed"
+        # Exclude the first two marker positions (BED is 0-based half-open).
+        bed.write_text(
+            "".join(f"{m.chrom}\t{m.pos - 1}\t{m.pos}\n" for m in markers[:2]),
+            encoding="utf-8",
+        )
+        out = tmp_path / "excl.tsv"
+        rc = main(
+            [
+                "detect",
+                "--genotype-vcf",
+                str(JOINT_VCF),
+                "--admix-vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.10",
+                "--tsv",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+                "--exclude-sites",
+                str(bed),
+            ]
+        )
+        assert rc == 0
+        rows = out.read_text().splitlines()
+        header = rows[0].split("\t")
+        values = rows[1].split("\t")
+        n_total_col = header.index("n_total_markers")
+        assert int(values[n_total_col]) == n_total - 2
+
+    def test_detect_exclude_and_include_mutually_exclusive(self, tmp_path):
+        bed = tmp_path / "sites.bed"
+        bed.write_text("chr1\t0\t1\n", encoding="utf-8")
+        with pytest.raises(SystemExit):
+            main(
+                [
+                    "detect",
+                    "--genotype-vcf",
+                    str(JOINT_VCF),
+                    "--admix-vcf",
+                    str(JOINT_VCF),
+                    "--host-sample",
+                    "HOST",
+                    "--donor-sample",
+                    "DONOR",
+                    "--sample",
+                    "ADMIX_F0.10",
+                    "--exclude-sites",
+                    str(bed),
+                    "--include-sites",
+                    str(bed),
+                ]
+            )
+
     def test_monitor_estimate_bias_inline(self, tmp_path):
         """--estimate-bias runs bias estimation inline (issue #11), no table file."""
         out = tmp_path / "cli_bias.tsv"
@@ -439,16 +504,26 @@ class TestCLIIntegration:
         rc = main(
             [
                 "detect",
-                "--genotype-vcf", str(JOINT_VCF),
-                "--admix-vcf", str(vcf_a),
-                "--admix-vcf", str(vcf_b),
-                "--host-sample", "HOST",
-                "--donor-sample", "DONOR",
-                "--sample", "ADMIX_F0.10",
-                "--sample", "ADMIX_F0.50",
-                "--tsv", str(out),
-                "--min-dp", "0",
-                "--min-gq", "0",
+                "--genotype-vcf",
+                str(JOINT_VCF),
+                "--admix-vcf",
+                str(vcf_a),
+                "--admix-vcf",
+                str(vcf_b),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.10",
+                "--sample",
+                "ADMIX_F0.50",
+                "--tsv",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
             ]
         )
         assert rc == 0
@@ -463,13 +538,20 @@ class TestCLIIntegration:
             main(
                 [
                     "detect",
-                    "--genotype-vcf", str(JOINT_VCF),
-                    "--admix-vcf", str(JOINT_VCF),
-                    "--host-sample", "HOST",
-                    "--donor-sample", "DONOR",
-                    "--sample", "NO_SUCH_TIMEPOINT",
-                    "--min-dp", "0",
-                    "--min-gq", "0",
+                    "--genotype-vcf",
+                    str(JOINT_VCF),
+                    "--admix-vcf",
+                    str(JOINT_VCF),
+                    "--host-sample",
+                    "HOST",
+                    "--donor-sample",
+                    "DONOR",
+                    "--sample",
+                    "NO_SUCH_TIMEPOINT",
+                    "--min-dp",
+                    "0",
+                    "--min-gq",
+                    "0",
                 ]
             )
 

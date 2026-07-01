@@ -115,10 +115,12 @@ python scripts/measure_panel_bias.py vcf_list.txt --output output/panel_stats
 
 It writes two files:
 
-- `output/panel_stats_per_marker.tsv` — one row per marker, with `call_rate`,
-  `n_nocall`, `mean_depth`, `depth_cv`, `median_bias` / `mean_bias` (het VAF
-  deviation from 0.5), `het_ratio_vs_hwe` (an allele-dropout signal), and the het
-  count available for bias estimation.
+- `output/panel_stats_per_marker.tsv` — one row per marker, keyed by a `marker`
+  column (`chrom:pos:ref:alt`) with `call_rate`, `n_nocall`, `mean_depth`,
+  `depth_cv`, `median_bias` / `mean_bias` (het VAF deviation from 0.5),
+  `het_ratio_vs_hwe` (an allele-dropout signal), and the het count available for
+  bias estimation. The `marker` coordinates are the panel's own design
+  positions, which `panel-qc` (step 4) uses to emit an exclude/include sites BED.
 - `output/panel_stats_facts.csv` — one row of panel-wide summaries
   (`mean_nocall_rate`, `markers_gt5pct_nocall`, `mean_depth`, `p95_abs_bias`,
   `max_abs_bias`, `markers_low_het`, an `ado_estimate`, and so on).
@@ -141,41 +143,47 @@ list feeds the bias estimation in step 5 below.
 
 ## 4. Set marker inclusion thresholds
 
-The characterization in step 3 produces statistics, not decisions. This section
-suggests how to turn them into a marker-inclusion list. **These are starting
-points, not validated cutoffs.** Tune them against your own cohort, and expect a
-sample-ID panel already validated for identity work to need little pruning.
+The characterization in step 3 produces statistics, not decisions. The `panel-qc`
+subcommand turns them into a keep/drop verdict per marker. **The cutoffs are
+starting points, not validated thresholds.** Every one is a flag; tune them
+against your own cohort, and expect a sample-ID panel already validated for
+identity work to need little pruning.
 
-allomix has no built-in per-marker inclusion command yet (a `panel-qc` command to
-automate this is tracked in
-[#37](https://github.com/SACGF/allomix/issues/37)); for now this is a manual pass over
-`panel_stats_per_marker.tsv`. Candidate criteria for dropping a marker:
+```bash
+allomix panel-qc output/panel_stats_per_marker.tsv \
+    --output output/panel_qc_verdicts.tsv \
+    --exclude-bed output/panel_exclude.bed
+```
 
-- **Low call rate / high dropout.** Markers that frequently fail to genotype add
-  no signal and inflate noise. A reasonable starting cutoff is dropping markers
-  with `call_rate` below about 0.90 (equivalently no-call rate above ~0.10, the
-  default `qc_bias_samples.py` uses at the sample level). The
-  `markers_gt5pct_nocall` panel-level count tells you how many markers are even
-  near this line.
-- **Extreme amplification bias.** A large, consistent het-VAF offset from 0.5
-  (`mean_bias` / `median_bias`) means the marker systematically over- or
-  under-calls one allele. Bias correction (step 5) handles moderate bias, so you
-  do not need to drop markers just because they are biased. Reserve exclusion for
-  the extreme tail (for example `|mean_bias|` well beyond the panel `p95_abs_bias`),
-  where the correction is least reliable.
-- **Allele dropout.** A `het_ratio_vs_hwe` well below 1 (a het deficit relative to
-  Hardy-Weinberg expectation) suggests one allele drops out at that marker, which
-  biases fractions in a way bias correction does not fully fix. Treat a strong het
-  deficit as a reason to drop.
-- **Unstable depth.** A very high `depth_cv` at a marker means its depth swings
-  widely across samples, which weakens the per-marker weighting. This is usually a
-  secondary criterion; combine it with the above rather than dropping on depth
-  variability alone.
+It writes a per-marker verdict TSV (the input columns plus a `verdict` and a
+`reasons` column, one auditable reason per dropped marker), prints a panel-level
+summary (markers kept/dropped, broken down by reason), and optionally a sites BED
+of the dropped markers. The BED needs the `marker` coordinate column that step 3
+writes; feed it straight into analysis with `allomix detect --exclude-sites
+output/panel_exclude.bed` (or `--include-sites` with the kept-marker BED from
+`--include-bed`). The drop criteria, each a flag:
 
-Keep the excluded-marker list under version control with a one-line reason per
-marker, so the panel definition is auditable. Re-running step 3 after pruning
-confirms the panel-level summaries (mean call rate, bias percentiles) improved as
-expected.
+- **Low call rate / high dropout** (`--min-call-rate`, default 0.90). Markers that
+  frequently fail to genotype add no signal and inflate noise. The default matches
+  the ~0.10 no-call rate `qc_bias_samples.py` uses at the sample level.
+- **Extreme amplification bias** (`--bias-p95-mult`, default 2.0, or an absolute
+  `--max-abs-bias`). A large, consistent het-VAF offset from 0.5 means the marker
+  systematically over- or under-calls one allele. Bias correction (step 5) handles
+  moderate bias, so only the extreme tail is excluded: by default `|median_bias|`
+  beyond 2x the panel `p95_abs_bias`, where the correction is least reliable.
+- **Allele dropout** (`--min-het-ratio`, default 0.80). A `het_ratio_vs_hwe` well
+  below 1 (a het deficit relative to Hardy-Weinberg expectation) suggests one
+  allele drops out at that marker, which biases fractions in a way bias correction
+  does not fully fix.
+- **Unstable depth** (`--max-depth-cv`, default 1.0). A very high `depth_cv` means
+  the marker's depth swings widely across samples, weakening the per-marker
+  weighting. This is a secondary criterion: it is recorded as an extra reason on a
+  marker already dropped by one of the criteria above, but never drops a marker on
+  its own.
+
+Keep the verdict TSV (or the exclude BED) under version control, so the panel
+definition is auditable. Re-running step 3 after pruning confirms the panel-level
+summaries (mean call rate, bias percentiles) improved as expected.
 
 ## 5. Build the correction tables
 

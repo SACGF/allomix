@@ -1,8 +1,10 @@
 # CLI Usage
 
-`allomix` has four subcommands: `detect` (single timepoint), `timeline`
-(serial timepoints), `report` (render HTML from a saved JSON), and
-`estimate-bias` (build a per-marker bias table).
+`allomix` has these subcommands: `detect` (single timepoint), `timeline`
+(serial timepoints), `report` (render HTML from a saved JSON), `estimate-bias`
+(build a per-marker bias table), and `panel-qc` (per-marker inclusion QC). The
+calibration commands `estimate-errors` and `build-contamination-table` are
+covered in the [Panel Guide](panel_guide.md).
 
 ## Two-VCF input
 
@@ -122,6 +124,22 @@ pipeline plus sample-level QC. See
 [Building a training cohort from BAMs](estimate_bias.md#building-a-training-cohort-from-bams)
 in the bias guide.
 
+## panel-qc
+
+Apply per-marker inclusion cutoffs to the panel characterization from
+`scripts/measure_panel_bias.py`, emitting an auditable keep/drop verdict per
+marker. See [Panel Guide, step 4](panel_guide.md#4-set-marker-inclusion-thresholds)
+for the criteria and defaults.
+
+```bash
+allomix panel-qc output/panel_stats_per_marker.tsv \
+    --output output/panel_qc_verdicts.tsv \
+    --exclude-bed output/panel_exclude.bed
+
+# Feed the dropped-marker BED straight into analysis
+allomix detect ... --exclude-sites output/panel_exclude.bed
+```
+
 ## Common options
 
 Both `detect` and `timeline` accept these additional options:
@@ -133,6 +151,8 @@ Both `detect` and `timeline` accept these additional options:
 | `--error-rate` | 0.01 | Sequencing error rate for the likelihood model |
 | `--bias-table` | none | Per-marker bias table TSV (from `estimate-bias`; see [Bias Estimation Guide](estimate_bias.md)) |
 | `--no-bias-correction` | off | Disable bias correction even when a bias table is provided |
+| `--exclude-sites` | none | BED of marker sites to drop before analysis (e.g. `panel-qc --exclude-bed`) |
+| `--include-sites` | none | BED of marker sites to restrict analysis to (mutually exclusive with `--exclude-sites`) |
 | `--verbose` | off | Include per-marker detail in output |
 
 Output is selected by per-artifact flags that can be combined in one run:

@@ -15,6 +15,11 @@ Input: a text file listing VCF paths (one per line), from e.g.:
 Output (to stdout): summary statistics (no patient identifiers,
 no genomic coordinates — safe to share outside /tau).
 
+The per-marker TSV written with --output additionally carries a `marker`
+column with the panel coordinates (chrom:pos:ref:alt). Those are the panel's
+own design positions, aggregate and non-sensitive, and `allomix panel-qc`
+needs them to emit an exclude/include sites BED for `allomix detect`.
+
 Usage:
     python scripts/measure_panel_bias.py vcf_list.txt
     python scripts/measure_panel_bias.py vcf_list.txt --min-dp 100 --min-gq 20
@@ -419,7 +424,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  5th pct het ratio:         {p5_hr:.3f}")
         print(f"  Min het ratio:             {min_hr:.3f}")
         print(
-            f"  Markers with ratio < {LOW_HET_RATIO_THRESHOLD}:  {markers_low_het}/{n_het_ratio_markers}"
+            f"  Markers with ratio < {LOW_HET_RATIO_THRESHOLD}:  "
+            f"{markers_low_het}/{n_het_ratio_markers}"
         )
 
     print("\n--- SIMULATION PARAMETERS ---")
@@ -438,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
 
         with open(per_marker_path, "w", encoding="utf-8") as f:
             header = [
+                "marker",
                 "marker_index",
                 "total_obs",
                 "n_called",
@@ -455,8 +462,10 @@ def main(argv: list[str] | None = None) -> int:
                 "sd_within",
             ]
             f.write("\t".join(header) + "\n")
-            for i, s in enumerate(marker_stats):
+            for i, (key, s) in enumerate(zip(all_markers, marker_stats)):
+                chrom, pos, ref, alt = key
                 vals = [
+                    f"{chrom}:{pos}:{ref}:{alt}",
                     str(i),
                     str(s["total_obs"]),
                     str(s["n_called"]),

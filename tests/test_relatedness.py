@@ -13,6 +13,7 @@ from allomix.qc.relatedness import (
     admix_consistency,
     evaluate_expected,
     relatedness_coefficient,
+    shared_het_balance,
 )
 from allomix.simulate import (
     blend_vcfs,
@@ -329,6 +330,73 @@ class TestAdmixConsistency:
         assert res.n_consensus_hom == 0
 
 
+class TestSharedHetBalance:
+    def _consensus_het(self, n: int):
+        """n markers heterozygous in host and one donor."""
+        host = [_md(i, (0, 1)) for i in range(n)]
+        donor = [_md(i, (0, 1)) for i in range(n)]
+        return host, [donor]
+
+    def test_balanced_admix_low_imbalance(self):
+        n = 40
+        host, donors = self._consensus_het(n)
+        # Admix VAF sits at 0.5 at every shared-het site.
+        admix = [_md(i, (0, 1), ad_ref=500, ad_alt=500, dp=1000) for i in range(n)]
+        res = shared_het_balance(host, donors, admix)
+        assert res.n_shared_het == n
+        assert res.n_imbalanced == 0
+        assert res.imbalanced_fraction == 0.0
+        assert res.pooled_vaf == pytest.approx(0.5, abs=1e-6)
+        assert res.pooled_skew == pytest.approx(0.0, abs=1e-6)
+
+    def test_skewed_admix_flagged(self):
+        n = 40
+        host, donors = self._consensus_het(n)
+        # Every shared-het site skewed to 80:20, outside the 70:30 band.
+        admix = [_md(i, (0, 1), ad_ref=200, ad_alt=800, dp=1000) for i in range(n)]
+        res = shared_het_balance(host, donors, admix)
+        assert res.n_shared_het == n
+        assert res.n_imbalanced == n
+        assert res.imbalanced_fraction == 1.0
+        assert res.pooled_vaf == pytest.approx(0.8, abs=1e-6)
+        assert res.pooled_skew == pytest.approx(0.3, abs=1e-6)
+
+    def test_band_edges_inclusive(self):
+        # VAF exactly at the band edges (0.30 and 0.70) is not imbalanced.
+        host, donors = self._consensus_het(2)
+        admix = [
+            _md(0, (0, 1), ad_ref=700, ad_alt=300, dp=1000),
+            _md(1, (0, 1), ad_ref=300, ad_alt=700, dp=1000),
+        ]
+        res = shared_het_balance(host, donors, admix, band=0.30)
+        assert res.n_shared_het == 2
+        assert res.n_imbalanced == 0
+
+    def test_hom_and_informative_sites_ignored(self):
+        # Host het but donor hom -> not consensus-het, so never counted.
+        host = [_md(i, (0, 1)) for i in range(20)]
+        donor = [_md(i, (0, 0)) for i in range(20)]
+        admix = [_md(i, (0, 1), ad_ref=100, ad_alt=900, dp=1000) for i in range(20)]
+        res = shared_het_balance(host, [donor], admix)
+        assert res.n_shared_het == 0
+        assert res.imbalanced_fraction == 0.0
+        assert res.pooled_vaf == 0.0
+
+    def test_low_depth_sites_skipped(self):
+        n = 25
+        host, donors = self._consensus_het(n)
+        admix = [_md(i, (0, 1), ad_ref=5, ad_alt=5, dp=10) for i in range(n)]
+        res = shared_het_balance(host, donors, admix, min_dp=100)
+        assert res.n_shared_het == 0
+
+    def test_sex_chroms_excluded(self):
+        host = [_md(i, (0, 1), chrom="chrX") for i in range(20)]
+        donor = [_md(i, (0, 1), chrom="chrX") for i in range(20)]
+        admix = [_md(i, (0, 1), ad_ref=100, ad_alt=900, dp=1000, chrom="chrX") for i in range(20)]
+        res = shared_het_balance(host, [donor], admix)
+        assert res.n_shared_het == 0
+
+
 # ---------------------------------------------------------------------------
 # End-to-end: synthetic related VCFs through the real pipeline
 # ---------------------------------------------------------------------------
@@ -358,8 +426,13 @@ def _analyse_related(tmp_path, relatedness: str, *, seed: int = 7, n: int = 300,
     markers = generate_related_genotypes(n, relatedness, rng, maf_range=(0.2, 0.5))
     host_path, donor_path = _write_panel(tmp_path, markers, "HOST", "DONOR")
     blended = blend_vcfs(
-        host_path, donor_path, donor_fraction=0.3, target_depth=1000,
-        sample_name="ADMIX", seed=1, error_rate=0.01,
+        host_path,
+        donor_path,
+        donor_fraction=0.3,
+        target_depth=1000,
+        sample_name="ADMIX",
+        seed=1,
+        error_rate=0.01,
     )
     admix_path = tmp_path / "admix.vcf"
     write_vcf(blended, admix_path)
@@ -367,9 +440,7 @@ def _analyse_related(tmp_path, relatedness: str, *, seed: int = 7, n: int = 300,
     host = parse_vcf(host_path, sample="HOST", min_gq=0)
     donor = parse_vcf(donor_path, sample="DONOR", min_gq=0)
     admix = parse_vcf(admix_path, sample="ADMIX", min_dp=0)
-    return analyse_sample(
-        host, [donor], admix, min_dp=50, min_gq=0, error_rate=0.01, **kwargs
-    )
+    return analyse_sample(host, [donor], admix, min_dp=50, min_gq=0, error_rate=0.01, **kwargs)
 
 
 class TestEndToEndSyntheticRelated:
@@ -421,8 +492,12 @@ class TestEndToEndSyntheticRelated:
         write_genotype_vcf(markers, host_path, "HOST", key="host_gt", depth=1000)
         write_genotype_vcf(markers, donor_path, "DONOR", key="host_gt", depth=1000)
         blended = blend_vcfs(
-            host_path, donor_path, donor_fraction=0.3, target_depth=1000,
-            sample_name="ADMIX", seed=1,
+            host_path,
+            donor_path,
+            donor_fraction=0.3,
+            target_depth=1000,
+            sample_name="ADMIX",
+            seed=1,
         )
         admix_path = tmp_path / "admix.vcf"
         write_vcf(blended, admix_path)
@@ -442,7 +517,10 @@ class TestEndToEndSyntheticRelated:
         # worst it is REVIEW.
         for seed in range(8):
             analysis = _analyse_related(
-                tmp_path, "cousin", seed=seed, n=300,
+                tmp_path,
+                "cousin",
+                seed=seed,
+                n=300,
                 expected_relatedness=[Relatedness.RELATED],
             )
             fails = [w for w in analysis.qc.warnings if "relatedness check FAIL" in w]
@@ -453,7 +531,10 @@ class TestEndToEndSyntheticRelated:
         statuses = set()
         for seed in range(8):
             analysis = _analyse_related(
-                tmp_path, "cousin", seed=seed, n=300,
+                tmp_path,
+                "cousin",
+                seed=seed,
+                n=300,
                 expected_relatedness=[Relatedness.THIRD_DEGREE],
             )
             verdicts = [w for w in analysis.qc.warnings if "relatedness check" in w]
@@ -471,8 +552,13 @@ class TestEndToEndSyntheticRelated:
         m_wrong = generate_related_genotypes(n, "unrelated", random.Random(999))
         wrong_host, wrong_donor = _write_panel(tmp_path, m_wrong, "WH", "WD")
         blended = blend_vcfs(
-            wrong_host, wrong_donor, donor_fraction=0.4, target_depth=1000,
-            sample_name="ADMIX", seed=3, error_rate=0.01,
+            wrong_host,
+            wrong_donor,
+            donor_fraction=0.4,
+            target_depth=1000,
+            sample_name="ADMIX",
+            seed=3,
+            error_rate=0.01,
         )
         admix_path = tmp_path / "swap_admix.vcf"
         write_vcf(blended, admix_path)
@@ -501,12 +587,18 @@ class TestCliRejectsIdentical:
     def _base_argv(self, rel: str) -> list[str]:
         return [
             "detect",
-            "--genotype-vcf", "x.vcf",
-            "--admix-vcf", "x.vcf",
-            "--host-sample", "H",
-            "--donor-sample", "D",
-            "--sample", "S",
-            "--expected-relatedness", rel,
+            "--genotype-vcf",
+            "x.vcf",
+            "--admix-vcf",
+            "x.vcf",
+            "--host-sample",
+            "H",
+            "--donor-sample",
+            "D",
+            "--sample",
+            "S",
+            "--expected-relatedness",
+            rel,
         ]
 
     def test_identical_is_rejected_at_parse(self, capsys):
@@ -527,13 +619,20 @@ class TestCliRejectsIdentical:
         # Two donors but one declaration: clear error, before any VCF is opened.
         argv = [
             "detect",
-            "--genotype-vcf", "x.vcf",
-            "--admix-vcf", "x.vcf",
-            "--host-sample", "H",
-            "--donor-sample", "D1",
-            "--donor-sample", "D2",
-            "--sample", "S",
-            "--expected-relatedness", "unrelated",
+            "--genotype-vcf",
+            "x.vcf",
+            "--admix-vcf",
+            "x.vcf",
+            "--host-sample",
+            "H",
+            "--donor-sample",
+            "D1",
+            "--donor-sample",
+            "D2",
+            "--sample",
+            "S",
+            "--expected-relatedness",
+            "unrelated",
         ]
         with pytest.raises(SystemExit) as exc:
             main(argv)

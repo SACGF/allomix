@@ -15,7 +15,11 @@ from allomix import __version__
 from allomix.genotype import MarkerType
 from allomix.qc.host_presence import HostPresenceResult
 from allomix.qc.qc import QCReport
-from allomix.qc.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.qc.relatedness import (
+    AdmixConsistencyResult,
+    RelatednessResult,
+    SharedHetBalanceResult,
+)
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
 from allomix.report.html.meta import DonorMeta, ReportMeta
@@ -270,6 +274,27 @@ def _contamination_tsv_cells(contamination: ContaminationResult | None) -> list[
     ]
 
 
+# Shared-het allele-balance columns, appended after the contamination block. The
+# check tests admix VAF at sites het in all parties (issue #38).
+_SHARED_HET_TSV_COLS = [
+    "shared_het_imbalanced_frac",
+    "shared_het_markers",
+]
+
+
+def _shared_het_tsv_cells(shb: SharedHetBalanceResult | None) -> list[str]:
+    """Format the shared-het balance columns. Order matches the cols above.
+
+    ``NA`` for both columns when the check did not run; per-column ``NA`` for the
+    fraction when there were no shared-het markers.
+    """
+    if shb is None:
+        return [_NA] * len(_SHARED_HET_TSV_COLS)
+    if shb.n_shared_het == 0:
+        return [_NA, str(shb.n_shared_het)]
+    return [f"{shb.imbalanced_fraction:.6f}", str(shb.n_shared_het)]
+
+
 # Run-unit / index-hopping columns, appended after the contamination block. The
 # metadata is optional (read from the admix VCF header), so these are ``NA`` when
 # it is absent. ``index_hop_risk`` is the host-share flag.
@@ -336,6 +361,20 @@ def _admix_consistency_json(ac: AdmixConsistencyResult | None) -> dict | None:
     }
 
 
+def _shared_het_json(shb: SharedHetBalanceResult | None) -> dict | None:
+    """JSON view of the consensus-het allele-balance check."""
+    if shb is None:
+        return None
+    return {
+        "n_shared_het": shb.n_shared_het,
+        "n_imbalanced": shb.n_imbalanced,
+        "imbalanced_fraction": round(shb.imbalanced_fraction, 6),
+        "pooled_vaf": round(shb.pooled_vaf, 6),
+        "pooled_skew": round(shb.pooled_skew, 6),
+        "band": shb.band,
+    }
+
+
 def _is_multi_donor(result: object) -> bool:
     """Check whether result is a MultiDonorResult."""
     return hasattr(result, "donor_fractions")
@@ -398,6 +437,7 @@ def _write_tsv(
         *_HOST_PRESENCE_TSV_COLS,
         *_RELATEDNESS_TSV_COLS,
         *_CONTAMINATION_TSV_COLS,
+        *_SHARED_HET_TSV_COLS,
         *_RUNMETA_TSV_COLS,
     ]
     fh.write("\t".join(summary_cols) + "\n")
@@ -424,6 +464,7 @@ def _write_tsv(
         *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
         *_relatedness_tsv_cells(getattr(result, "relatedness", None)),
         *_contamination_tsv_cells(getattr(result, "contamination", None)),
+        *_shared_het_tsv_cells(getattr(result, "shared_het_balance", None)),
         *_runmeta_tsv_cells(getattr(result, "run_unit", None)),
     ]
     fh.write("\t".join(summary_vals) + "\n")
@@ -493,6 +534,7 @@ def _write_tsv_multi(
             *_HOST_PRESENCE_TSV_COLS,
             *_RELATEDNESS_TSV_COLS,
             *_CONTAMINATION_TSV_COLS,
+            *_SHARED_HET_TSV_COLS,
             *_RUNMETA_TSV_COLS,
         ]
     )
@@ -523,6 +565,7 @@ def _write_tsv_multi(
             *_host_presence_tsv_cells(getattr(result, "host_presence", None)),
             *_relatedness_tsv_cells(getattr(result, "relatedness", None)),
             *_contamination_tsv_cells(getattr(result, "contamination", None)),
+            *_shared_het_tsv_cells(getattr(result, "shared_het_balance", None)),
             *_runmeta_tsv_cells(getattr(result, "run_unit", None)),
         ]
     )
@@ -601,6 +644,7 @@ def _qc_common_json(result: ChimerismResult | MultiDonorResult, qc: QCReport) ->
         "mean_depth": round(qc.mean_depth, 1),
         "median_depth": round(qc.median_depth, 1),
         "min_depth": qc.min_depth,
+        "coverage_uniformity": round(qc.coverage_uniformity, 4),
         "gof_pval": (
             round(qc.goodness_of_fit_pval, 4) if qc.goodness_of_fit_pval is not None else None
         ),
@@ -617,6 +661,7 @@ def _qc_common_json(result: ChimerismResult | MultiDonorResult, qc: QCReport) ->
         "host_presence": _host_presence_json(getattr(result, "host_presence", None)),
         "relatedness": _relatedness_json(qc.relatedness),
         "admix_consistency": _admix_consistency_json(qc.admix_consistency),
+        "shared_het_balance": _shared_het_json(qc.shared_het_balance),
         "contamination": _contamination_json(qc.contamination),
         "run_unit": _runmeta_json(qc.run_unit),
     }

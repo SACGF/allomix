@@ -18,6 +18,7 @@ from allomix.qc.relatedness import (
     AdmixConsistencyResult,
     Relatedness,
     RelatednessResult,
+    SharedHetBalanceResult,
 )
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
@@ -184,6 +185,83 @@ class TestContaminationFlag:
         result.contamination = self._contamination(0.0, p=1.0, n=0)
         qc = assess_quality(result, _make_genotypes())
         assert not any("Contamination" in w for w in qc.warnings)
+
+
+class TestCoverageUniformity:
+    """QC computes coverage uniformity from per-marker depths and warns (softly)."""
+
+    def test_uniform_depth_no_warning(self):
+        # All markers at the same depth: uniformity 1.0.
+        result = _make_chimerism_result(n_informative=20)
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.coverage_uniformity == pytest.approx(1.0)
+        assert not any("Uneven coverage" in w for w in qc.warnings)
+        assert qc.status == "PASS"
+
+    def test_lopsided_depth_warns(self):
+        # A few markers carry most reads; most sit far below 20% of the mean.
+        pm = [_make_marker_result(pos=i * 100, dp=5) for i in range(18)]
+        pm += [_make_marker_result(pos=i * 100, dp=5000) for i in range(18, 20)]
+        result = _make_chimerism_result(n_informative=20, per_marker=pm)
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.coverage_uniformity < 0.8
+        assert any("Uneven coverage" in w for w in qc.warnings)
+        assert qc.status == "PASS"  # warning-only, does not change status
+
+    def test_no_markers_defaults_uniform(self):
+        result = _make_chimerism_result(n_informative=0, per_marker=[])
+        qc = assess_quality(result, _make_genotypes(), min_informative=0)
+        assert qc.coverage_uniformity == pytest.approx(1.0)
+        assert not any("Uneven coverage" in w for w in qc.warnings)
+
+
+class TestSharedHetBalanceFlag:
+    """QC reads result.shared_het_balance and REVIEWs above the gate."""
+
+    @staticmethod
+    def _balance(frac: float, n: int = 100, pooled_vaf: float = 0.5) -> SharedHetBalanceResult:
+        return SharedHetBalanceResult(
+            n_shared_het=n,
+            n_imbalanced=int(frac * n),
+            imbalanced_fraction=frac,
+            pooled_vaf=pooled_vaf,
+            pooled_skew=abs(pooled_vaf - 0.5),
+            band=0.30,
+        )
+
+    def test_balanced_no_warning(self):
+        result = _make_chimerism_result()
+        result.shared_het_balance = self._balance(0.02)  # 2%: below gate
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Shared-het" in w for w in qc.warnings)
+        assert qc.status == "PASS"
+
+    def test_imbalanced_promotes_review(self):
+        result = _make_chimerism_result()
+        result.shared_het_balance = self._balance(0.25, pooled_vaf=0.6)  # 25%: REVIEW
+        qc = assess_quality(result, _make_genotypes())
+        assert any("Shared-het" in w for w in qc.warnings)
+        assert qc.status == "REVIEW"
+
+    def test_too_few_sites_not_flagged(self):
+        # Above the fraction gate but below MIN_SHARED_HET markers: not acted on.
+        result = _make_chimerism_result()
+        result.shared_het_balance = self._balance(0.5, n=10)
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Shared-het" in w for w in qc.warnings)
+        assert qc.status == "PASS"
+
+    def test_no_markers_not_flagged(self):
+        result = _make_chimerism_result()
+        result.shared_het_balance = self._balance(0.0, n=0)
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Shared-het" in w for w in qc.warnings)
+
+    def test_absent_not_flagged(self):
+        result = _make_chimerism_result()  # shared_het_balance defaults to None
+        qc = assess_quality(result, _make_genotypes())
+        assert not any("Shared-het" in w for w in qc.warnings)
+        assert qc.shared_het_balance is None
 
 
 class TestIndexHoppingFlag:

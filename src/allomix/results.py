@@ -10,7 +10,11 @@ of which import this module, so there is no import cycle.
 from dataclasses import dataclass
 
 from allomix.qc.host_presence import HostPresenceResult
-from allomix.qc.relatedness import AdmixConsistencyResult, RelatednessResult
+from allomix.qc.relatedness import (
+    AdmixConsistencyResult,
+    RelatednessResult,
+    SharedHetBalanceResult,
+)
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
 
@@ -72,6 +76,9 @@ class ChimerismResult:
     # computed.
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
+    # Shared-het (consensus-het) allele-balance check (see ``allomix.qc.relatedness``).
+    # None when not computed.
+    shared_het_balance: SharedHetBalanceResult | None = None
     # In-data contamination estimate (see ``allomix.qc.sample_contamination``). None when
     # not computed.
     contamination: ContaminationResult | None = None
@@ -101,5 +108,6 @@ class MultiDonorResult:
     # includes donor-vs-donor pairs.
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
+    shared_het_balance: SharedHetBalanceResult | None = None
     contamination: ContaminationResult | None = None
     run_unit: RunUnitInfo | None = None

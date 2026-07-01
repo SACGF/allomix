@@ -18,6 +18,7 @@ from allomix.qc.relatedness import (
     AdmixConsistencyResult,
     Relatedness,
     RelatednessResult,
+    SharedHetBalanceResult,
     evaluate_expected,
 )
 from allomix.qc.runmeta import RunUnitInfo
@@ -52,6 +53,23 @@ LOW_MEAN_DEPTH_WARN = 100  # mean admixture depth below this
 WIDE_CI_WARN_PCT = 20  # donor-fraction CI wider than this (%)
 GOF_REVIEW_P = 0.01  # goodness-of-fit p below this -> REVIEW
 
+# Coverage uniformity: fraction of the sample's per-marker depths that must clear
+# UNIFORMITY_DEPTH_FRACTION * mean depth. A lopsided depth distribution (partial
+# capture failure, a few markers carrying most reads) can pass the mean-depth check
+# while most markers are starved; warn when too few markers clear the bar. Healthy
+# panel data keeps >= 0.88 of markers above the bar (SRP434573), so the floor sits
+# below that. Warning-only (does not change status).
+UNIFORMITY_DEPTH_FRACTION = 0.2
+UNIFORMITY_MIN_PASS_FRACTION = 0.8
+
+# Shared-het allele balance (see ``allomix.qc.relatedness.shared_het_balance``). Below
+# MIN_SHARED_HET markers the imbalanced fraction is too noisy to act on. At/above
+# SHARED_HET_REVIEW_FRACTION imbalanced -> REVIEW (contamination, CNV/allelic
+# imbalance, or a sample mix-up). Healthy panel data sits <= 0.07 imbalanced at ~170
+# sites (SRP434573), so the gate keeps ~2x margin over sampling noise.
+MIN_SHARED_HET = 20
+SHARED_HET_REVIEW_FRACTION = 0.15
+
 # Clamp keeping the expected VAF strictly inside (0, 1) so the GoF variance never
 # collapses to zero at homozygous markers (see _error_adjusted_p_alt rationale).
 _VAF_EPS = 1e-6
@@ -84,9 +102,13 @@ class QCReport:
             "REVIEW" means it was computed but a reliability check failed (poor
             model fit or wide CI), so it needs manual interpretation rather than
             being trusted or discarded automatically.
+        coverage_uniformity: Fraction of per-marker depths above
+            ``UNIFORMITY_DEPTH_FRACTION`` of the sample mean. 1.0 when there are no
+            markers. A low value means a lopsided depth distribution.
         per_donor_n_informative: Per-donor informative marker counts (multi-donor).
         relatedness: Estimated relatedness per reference-sample pair, or None.
         admix_consistency: Consensus-homozygote swap check result, or None.
+        shared_het_balance: Consensus-het allele-balance check result, or None.
         contamination: In-data third-party contamination estimate, or None.
         run_unit: Sequencing run-unit metadata for the sample, or None.
     """
@@ -105,9 +127,11 @@ class QCReport:
     goodness_of_fit_pval_pretrim: float | None = None
     warnings: list[str] = field(default_factory=list)
     status: str = "PASS"
+    coverage_uniformity: float = 1.0
     per_donor_n_informative: list[int] | None = None
     relatedness: list[RelatednessResult] | None = None
     admix_consistency: AdmixConsistencyResult | None = None
+    shared_het_balance: SharedHetBalanceResult | None = None
     contamination: ContaminationResult | None = None
     run_unit: RunUnitInfo | None = None
 
@@ -192,6 +216,23 @@ def _compute_gof_pval(
         return None
     pval: float = chi2.sf(chi_sq, df)
     return pval
+
+
+def _coverage_uniformity(depths: list[int], depth_fraction: float) -> float:
+    """Fraction of ``depths`` exceeding ``depth_fraction`` of the mean depth.
+
+    An evenness metric complementary to mean/median/min: a sample can hold an
+    acceptable mean while a lopsided distribution (partial capture failure) starves
+    most markers. Returns 1.0 for an empty list or a non-positive mean (nothing to
+    flag).
+    """
+    if not depths:
+        return 1.0
+    mean = statistics.mean(depths)
+    if mean <= 0:
+        return 1.0
+    cutoff = depth_fraction * mean
+    return sum(1 for d in depths if d > cutoff) / len(depths)
 
 
 def _mle_host_estimate(result: ChimerismResult) -> float:
@@ -342,6 +383,16 @@ def assess_quality(
     if mean_depth < LOW_MEAN_DEPTH_WARN:
         warnings.append(f"Low mean depth: {mean_depth:.0f}x < 100x")
 
+    # Coverage uniformity: a lopsided depth distribution can pass the mean-depth
+    # check while most markers are starved (partial capture failure). Warning-only.
+    coverage_uniformity = _coverage_uniformity(depths, UNIFORMITY_DEPTH_FRACTION)
+    if depths and coverage_uniformity < UNIFORMITY_MIN_PASS_FRACTION:
+        warnings.append(
+            f"Uneven coverage: only {coverage_uniformity:.0%} of markers exceed "
+            f"{UNIFORMITY_DEPTH_FRACTION:.0%} of the mean depth "
+            f"(< {UNIFORMITY_MIN_PASS_FRACTION:.0%}); possible partial capture failure"
+        )
+
     per_donor_n_inf = None
     if hasattr(result, "donor_fraction_cis"):
         for i, (ci_lo, ci_hi) in enumerate(result.donor_fraction_cis):
@@ -491,6 +542,27 @@ def assess_quality(
         if contamination.contamination_fraction >= CONTAMINATION_REVIEW_FRACTION:
             contamination_review = True
 
+    # Shared-het allele balance: at sites het in host and every donor the admix VAF
+    # sits near 0.5 whatever the mixing fraction, so a raised imbalanced fraction is
+    # orthogonal signal (contamination, CNV/allelic imbalance, or a sample mix-up)
+    # the consensus-hom checks miss. REVIEW above the gate; needs enough sites.
+    shared_het_review = False
+    shb: SharedHetBalanceResult | None = getattr(result, "shared_het_balance", None)
+    if (
+        shb is not None
+        and shb.n_shared_het >= MIN_SHARED_HET
+        and shb.imbalanced_fraction >= SHARED_HET_REVIEW_FRACTION
+    ):
+        shared_het_review = True
+        warnings.append(
+            f"Shared-het allele imbalance: {shb.n_imbalanced}/{shb.n_shared_het} "
+            f"markers het in all parties fall outside the "
+            f"{shb.band:.0%}:{1 - shb.band:.0%} balance band "
+            f"(imbalanced={shb.imbalanced_fraction:.0%}, pooled VAF "
+            f"{shb.pooled_vaf:.3f}); possible contamination, CNV/allelic imbalance, "
+            "or sample mix-up"
+        )
+
     # Index-hopping provenance: shares a sequencing run unit with the host, so
     # hopped host reads could leak in. Soft warning only (a risk, not a defect;
     # the contamination estimate above measures whether it bit). Silent when the
@@ -506,7 +578,12 @@ def assess_quality(
     # A computed-but-questionable result (poor fit, imprecise, heavily trimmed, or
     # a softer identity flag) is flagged for review rather than passed or failed.
     if status != "FAIL" and (
-        poor_gof or wide_ci or high_robust_drop or identity_review or contamination_review
+        poor_gof
+        or wide_ci
+        or high_robust_drop
+        or identity_review
+        or contamination_review
+        or shared_het_review
     ):
         status = "REVIEW"
 
@@ -525,9 +602,11 @@ def assess_quality(
         goodness_of_fit_pval_pretrim=gof_pval_pretrim,
         warnings=warnings,
         status=status,
+        coverage_uniformity=coverage_uniformity,
         per_donor_n_informative=per_donor_n_inf,
         relatedness=relatedness,
         admix_consistency=ac,
+        shared_het_balance=shb,
         contamination=contamination,
         run_unit=run_unit,
     )

@@ -141,6 +141,13 @@ SITE_ALPHA = 1e-3
 # meaningful; below this the check is reported but not acted on.
 MIN_CONSENSUS = 20
 
+# Shared-het (consensus-het) allele balance. A marker is "imbalanced" when the
+# admix ALT VAF falls outside [SHARED_HET_BAND, 1 - SHARED_HET_BAND] (a 70:30
+# band at the default 0.30). At sites het in host and every donor the admix VAF
+# sits near 0.5 whatever the mixing fraction, so a raised imbalanced fraction is
+# orthogonal signal for contamination / CNV / a sample mix-up.
+SHARED_HET_BAND = 0.30
+
 # Two-sided normal critical value at CI_LEVEL (z_0.975 ~= 1.9600 for 95%) for the
 # Wald CI: upper tail 1 - (1 - CI_LEVEL) / 2.
 _Z_TWO_SIDED = float(norm.ppf(1.0 - (1.0 - CI_LEVEL) / 2.0))
@@ -203,6 +210,36 @@ class AdmixConsistencyResult:
     n_discordant: int
     discordant_fraction: float
     swap_pval: float
+
+
+@dataclass
+class SharedHetBalanceResult:
+    """Admixture allele balance at consensus-heterozygous markers.
+
+    At markers heterozygous in the host and every donor, the admixture ALT VAF
+    should sit near 0.5 regardless of the mixing fraction, because every
+    contributor is heterozygous. A systematic skew flags contamination, copy-number
+    / allelic imbalance, or a sample mix-up. Complementary to the consensus-*homo*
+    zygote swap and contamination checks, which never touch these sites.
+
+    Attributes:
+        n_shared_het: Markers heterozygous in host and all donors with usable
+            admix depth.
+        n_imbalanced: Shared-het markers whose admix ALT VAF falls outside the
+            balance band.
+        imbalanced_fraction: ``n_imbalanced / n_shared_het`` (0.0 if none).
+        pooled_vaf: Read-weighted ALT fraction over the shared-het markers.
+        pooled_skew: ``abs(pooled_vaf - 0.5)``, the aggregate directional skew.
+        band: Lower edge of the balance band; a marker is imbalanced when its VAF
+            is ``< band`` or ``> 1 - band``.
+    """
+
+    n_shared_het: int
+    n_imbalanced: int
+    imbalanced_fraction: float
+    pooled_vaf: float
+    pooled_skew: float
+    band: float
 
 
 @dataclass
@@ -402,6 +439,83 @@ def admix_consistency(
     )
 
 
+def shared_het_balance(
+    host: list[MarkerData],
+    donors: list[list[MarkerData]],
+    admix: list[MarkerData],
+    band: float = SHARED_HET_BAND,
+    min_dp: int = 1,
+) -> SharedHetBalanceResult:
+    """Check admixture allele balance at consensus-heterozygous markers.
+
+    At markers heterozygous in the host and every donor, every contributor carries
+    one ref and one alt allele, so the admixture ALT VAF is ~0.5 whatever the
+    mixing fraction. A marker is counted imbalanced when its VAF lands outside
+    ``[band, 1 - band]`` (the default 0.30 gives a 70:30 band). The overall skew is
+    also summarised as the read-weighted pooled VAF's distance from 0.5.
+
+    Only autosomal, clean biallelic genotypes with admix depth ``>= min_dp`` are
+    used; allele frequencies are not needed. Complementary to ``admix_consistency``
+    (consensus-*hom* swap) and the contamination estimate, neither of which tests
+    these het sites.
+
+    Args:
+        host: Parsed host markers.
+        donors: One parsed marker list per donor.
+        admix: Parsed admixture markers (raw allele depths).
+        band: Lower edge of the balance band; a marker is imbalanced when its VAF
+            is ``< band`` or ``> 1 - band``.
+        min_dp: Minimum admixture depth for a marker to be used.
+
+    Returns:
+        A ``SharedHetBalanceResult``. ``n_shared_het == 0`` (with zero counts and a
+        pooled VAF of 0.0) when no consensus-het markers survive.
+    """
+    donor_maps = [{marker_key(m): m for m in d} for d in donors]
+    admix_map = {marker_key(m): m for m in admix}
+
+    n_shared_het = 0
+    n_imbalanced = 0
+    tot_alt = 0
+    tot_dp = 0
+    for mh in host:
+        if is_sex_chrom(mh.chrom):
+            continue
+        if _clean_dose(mh.gt) != 1:
+            continue  # host must be heterozygous
+        key = marker_key(mh)
+        consensus = True
+        for dm in donor_maps:
+            md = dm.get(key)
+            if md is None or _clean_dose(md.gt) != 1:
+                consensus = False
+                break
+        if not consensus:
+            continue
+        ma = admix_map.get(key)
+        if ma is None or ma.dp < min_dp or ma.dp <= 0:
+            continue
+        n_shared_het += 1
+        tot_alt += ma.ad_alt
+        tot_dp += ma.dp
+        vaf = ma.ad_alt / ma.dp
+        if vaf < band or vaf > 1.0 - band:
+            n_imbalanced += 1
+
+    if n_shared_het == 0:
+        return SharedHetBalanceResult(0, 0, 0.0, 0.0, 0.0, band)
+
+    pooled_vaf = tot_alt / tot_dp if tot_dp else 0.0
+    return SharedHetBalanceResult(
+        n_shared_het=n_shared_het,
+        n_imbalanced=n_imbalanced,
+        imbalanced_fraction=n_imbalanced / n_shared_het,
+        pooled_vaf=pooled_vaf,
+        pooled_skew=abs(pooled_vaf - 0.5),
+        band=band,
+    )
+
+
 def _verdict_status(
     declared_relatedness: Relatedness, detected_relatedness: Relatedness, tolerance: int
 ) -> str:
@@ -514,9 +628,11 @@ def evaluate_expected(
 __all__ = [
     "RelatednessResult",
     "AdmixConsistencyResult",
+    "SharedHetBalanceResult",
     "RelatednessVerdict",
     "Relatedness",
     "relatedness_coefficient",
     "admix_consistency",
+    "shared_het_balance",
     "evaluate_expected",
 ]

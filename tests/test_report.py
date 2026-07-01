@@ -411,3 +411,59 @@ class TestOutputConsistency:
         assert json_out["donor_pct"] == pytest.approx(float(tsv_cols[1]), abs=0.01)
         assert json_out["sample"] == "patient_001"
         assert tsv_cols[0] == "patient_001"
+
+
+class TestSharedHetBalanceOutput:
+    """Shared-het balance and coverage uniformity appear in TSV and JSON."""
+
+    def test_tsv_columns_present(self):
+        from allomix.qc.relatedness import SharedHetBalanceResult
+
+        result = _make_chimerism_result()
+        result.shared_het_balance = SharedHetBalanceResult(
+            n_shared_het=120,
+            n_imbalanced=30,
+            imbalanced_fraction=0.25,
+            pooled_vaf=0.58,
+            pooled_skew=0.08,
+            band=0.30,
+        )
+        qc = _make_qc_report()
+        buf = io.StringIO()
+        to_tsv(result, qc, buf, sample_name="s")
+        lines = buf.getvalue().strip().split("\n")
+        header = lines[0].split("\t")
+        vals = dict(zip(header, lines[1].split("\t"), strict=True))
+        assert vals["shared_het_imbalanced_frac"] == "0.250000"
+        assert vals["shared_het_markers"] == "120"
+
+    def test_tsv_na_when_absent(self):
+        result = _make_chimerism_result()  # shared_het_balance defaults to None
+        qc = _make_qc_report()
+        buf = io.StringIO()
+        to_tsv(result, qc, buf, sample_name="s")
+        lines = buf.getvalue().strip().split("\n")
+        header = lines[0].split("\t")
+        vals = dict(zip(header, lines[1].split("\t"), strict=True))
+        assert vals["shared_het_imbalanced_frac"] == "NA"
+        assert vals["shared_het_markers"] == "NA"
+
+    def test_json_has_shared_het_and_uniformity(self):
+        from allomix.qc.relatedness import SharedHetBalanceResult
+
+        result = _make_chimerism_result()
+        qc = _make_qc_report()
+        qc.shared_het_balance = SharedHetBalanceResult(
+            n_shared_het=120,
+            n_imbalanced=30,
+            imbalanced_fraction=0.25,
+            pooled_vaf=0.58,
+            pooled_skew=0.08,
+            band=0.30,
+        )
+        qc.coverage_uniformity = 0.91
+        d = to_json(result, qc, sample_name="s")
+        assert d["coverage_uniformity"] == pytest.approx(0.91)
+        assert d["shared_het_balance"]["n_shared_het"] == 120
+        assert d["shared_het_balance"]["imbalanced_fraction"] == pytest.approx(0.25)
+        json.dumps(d)  # serialisable

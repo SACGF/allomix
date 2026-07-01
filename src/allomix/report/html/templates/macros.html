@@ -165,6 +165,20 @@ limit.</p>
 </tbody>
 </table>
 
+<h3 class="subhead">Shared-het balance</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+{% if a.shared_het_balance is none or a.shared_het_balance.n_shared_het == 0 %}
+<tr><td>Shared-het balance</td><td class="num">not assessed</td><td class="muted small"></td></tr>
+{% else %}
+<tr><td>Imbalanced fraction</td><td class="num">{{ a.shared_het_balance.imbalanced_fraction | pct(1) }}</td><td class="muted small">{{ refs.shared_het }}</td></tr>
+<tr><td>Pooled VAF</td><td class="num">{{ a.shared_het_balance.pooled_vaf | num(3) }}</td><td class="muted small"></td></tr>
+<tr><td>Shared-het markers</td><td class="num">{{ a.shared_het_balance.n_shared_het | count }}</td><td class="muted small"></td></tr>
+{% endif %}
+</tbody>
+</table>
+
 {% if a.run_unit is not none %}
 {% set shares = a.run_unit.shares_run_with_host %}
 <h3 class="subhead">Run provenance</h3>
@@ -201,6 +215,10 @@ estimates contamination (for example index hopping or cross-contamination).</p>
 <p><strong>Sample-swap</strong> counts those same shared-homozygote sites where
 the minor allele is individually significant; many such sites indicate a whole
 extra genome (a swap or wrong-patient VCF).</p>
+<p><strong>Shared-het balance</strong> checks the admixture allele fraction at
+markers heterozygous in the host and every donor, where it should sit near 50%
+whatever the mixing fraction. Many sites skewed away from balance point to
+contamination, copy-number or allelic imbalance, or a sample mix-up.</p>
 <p><strong>Relatedness</strong> is a kinship coefficient between the reference
 samples, compared against the declared relationship to catch mislabelled or
 unexpectedly related inputs.</p>

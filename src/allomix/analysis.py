@@ -22,6 +22,7 @@ from allomix.qc.relatedness import (
     RelatednessResult,
     admix_consistency,
     relatedness_coefficient,
+    shared_het_balance,
 )
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import estimate_contamination
@@ -169,6 +170,10 @@ def analyse_sample(
     result.admix_consistency = admix_consistency(
         host, donors, admix, error_rate=error_rate, min_dp=min_dp
     )
+    # Consensus-het allele balance: orthogonal to the consensus-hom swap and
+    # contamination checks above (issue #38). Flags contamination, CNV/allelic
+    # imbalance, or a sample mix-up via VAF skew at sites het in all parties.
+    result.shared_het_balance = shared_het_balance(host, donors, admix, min_dp=min_dp)
     # Run-unit metadata (index-hopping provenance); attached before QC so the
     # shared-run flag can be reported.
     result.run_unit = run_unit

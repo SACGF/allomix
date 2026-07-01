@@ -22,6 +22,7 @@ from allomix.qc.qc import (
     HOST_PRESENCE_REVIEW_P,
     LOW_MEAN_DEPTH_WARN,
     ROBUST_REVIEW_FRACTION,
+    SHARED_HET_REVIEW_FRACTION,
     SWAP_REVIEW_P,
 )
 from allomix.report.html.meta import ReportMeta
@@ -40,6 +41,7 @@ REVIEW_REFS = {
     "gof": f"review if < {GOF_REVIEW_P}",
     "contamination": f"review if > {CONTAMINATION_REVIEW_FRACTION * 100:.0f}%",
     "swap": f"review if < {SWAP_REVIEW_P:g}",
+    "shared_het": f"review if > {SHARED_HET_REVIEW_FRACTION * 100:.0f}%",
 }
 
 # P-value below which the host-presence callout is treated as a detection.

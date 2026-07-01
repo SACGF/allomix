@@ -339,6 +339,16 @@ limit.</p>
 </tbody>
 </table>
 
+<h3 class="subhead">Shared-het balance</h3>
+<table class="metrics">
+<thead><tr><th>Check</th><th class="num">Value</th><th>Reference</th></tr></thead>
+<tbody>
+<tr><td>Imbalanced fraction</td><td class="num">2.3%</td><td class="muted small">review if &gt; 15%</td></tr>
+<tr><td>Pooled VAF</td><td class="num">0.489</td><td class="muted small"></td></tr>
+<tr><td>Shared-het markers</td><td class="num">171</td><td class="muted small"></td></tr>
+</tbody>
+</table>
+
 
 <h3 class="subhead">Reference-sample relatedness</h3>
 <table class="metrics">
@@ -359,6 +369,10 @@ estimates contamination (for example index hopping or cross-contamination).</p>
 <p><strong>Sample-swap</strong> counts those same shared-homozygote sites where
 the minor allele is individually significant; many such sites indicate a whole
 extra genome (a swap or wrong-patient VCF).</p>
+<p><strong>Shared-het balance</strong> checks the admixture allele fraction at
+markers heterozygous in the host and every donor, where it should sit near 50%
+whatever the mixing fraction. Many sites skewed away from balance point to
+contamination, copy-number or allelic imbalance, or a sample mix-up.</p>
 <p><strong>Relatedness</strong> is a kinship coefficient between the reference
 samples, compared against the declared relationship to catch mislabelled or
 unexpectedly related inputs.</p>

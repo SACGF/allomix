@@ -248,7 +248,9 @@ sample is flagged for review rather than reported as a confident estimate.
 allomix is meant to run inside routine laboratory operations, so it reports a
 three-level verdict per sample: PASS, REVIEW (an estimate is produced but a reliability
 flag should be checked), or FAIL (the result is not usable). Basic checks cover
-marker sufficiency, sequencing depth, and confidence-interval width. A goodness-of-fit
+marker sufficiency, sequencing depth, coverage uniformity (whether enough markers reach a
+set share of the sample's mean depth, catching an uneven capture that an acceptable mean
+would otherwise hide), and confidence-interval width. A goodness-of-fit
 check compares the marker-to-marker scatter against what the model expects and is
 computed both before and after the outlier-resistant refit, gated on the worse of the
 two, so the refit cannot hide a genuinely bad fit by discarding its own outliers. The
@@ -256,11 +258,13 @@ presence test is cross-checked against the magnitude estimate, and a warning is 
 when residual host is detected below the level the magnitude estimate resolves; this
 stays a soft warning because its behaviour on real samples is still being characterised.
 
-Three of these checks look for low-fraction signals that the magnitude estimate alone
-cannot see, and they are separated by genotype geometry rather than by re-thresholding
-one number. The residual-host markers (donor-homozygous, host carrying the donor-absent
-allele) are distinct from the consensus-homozygous markers that the contamination and
-swap checks both read, and the consensus-homozygous markers are never used by the
+Four of these checks are separated by genotype geometry rather than by re-thresholding
+one number, each reading a marker class the magnitude estimate never uses. Three look for
+low-fraction signals the magnitude estimate alone cannot see; a fourth checks allele
+balance where every party is heterozygous. The residual-host markers (donor-homozygous,
+host carrying the donor-absent allele), the consensus-homozygous markers that the
+contamination and swap checks both read, and the consensus-heterozygous markers behind the
+allele-balance check are distinct sets, and the consensus markers are never used by the
 magnitude estimate at all:
 
 - **Residual host** shows up at donor-homozygous markers where the host carries the
@@ -293,6 +297,12 @@ magnitude estimate at all:
   that catches a wrong-patient VCF the magnitude estimate cannot see, because the
   magnitude estimate only ever looks at informative markers and never at the consensus
   sites.
+- **Allele imbalance at shared-heterozygous markers** shows up where host and every donor
+  are heterozygous, so the admixture alternative-allele fraction should sit near 0.5
+  whatever the mixing fraction. A systematic skew across these markers flags contamination,
+  copy-number or allelic imbalance, or a sample mix-up, and promotes the sample to review.
+  It is orthogonal to the consensus-homozygous checks, which never test balance at
+  heterozygous sites (full test in the Supplementary Methods).
 
 Two further checks guard sample identity and marker quality. A relatedness check
 estimates the kinship between each pair of input samples directly from the genotypes,

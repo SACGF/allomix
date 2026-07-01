@@ -14,21 +14,27 @@ a blend of the two known genotypes:
 
 $$w_i(f) = (1 - f)\,\frac{g_{h,i}}{2} + f\,\frac{g_{d,i}}{2}$$
 
-Markers are informative when host and donor genotypes differ. Following Vynck et
-al.,[@Vynck2023bias] each informative marker is assigned one of six types by host/donor
-alternative-allele dose. The table below lists the six types and which parts of allomix
-use each.
+Markers are informative for the fraction estimate when host and donor genotypes differ.
+Following Vynck et al.,[@Vynck2023bias] each informative marker is assigned one of six
+types by host/donor alternative-allele dose. Markers where host and every donor share a
+genotype are non-informative for the fraction but feed the QC checks (S8): the
+consensus-homozygous class (all parties homozygous for the same allele) drives
+contamination and sample-swap detection, and the consensus-heterozygous class (all
+parties heterozygous) drives the shared-het allele-balance check. The table lists every
+class and which parts of allomix use it.
 
-| Type | Host | Donor | Contrast | Fraction estimate | Residual-host presence (S7) | Contamination correction (S8) |
-|:--|:--|:--|:--|:--|:--|:--|
-| 0  | 0/0 | 1/1 | full | yes | yes | yes |
-| 1  | 1/1 | 0/0 | full | yes | yes | yes |
-| 10 | 0/1 | 0/0 | half | yes | yes | no  |
-| 11 | 0/1 | 1/1 | half | yes | yes | no  |
-| 20 | 0/0 | 0/1 | half | yes | no  | no  |
-| 21 | 1/1 | 0/1 | half | yes | no  | no  |
+| Type | Host | Donor | Contrast | Fraction estimate | Residual-host presence (S7) | Contamination correction (S8) | Consensus QC (S8) |
+|:--|:--|:--|:--|:--|:--|:--|:--|
+| 0  | 0/0 | 1/1 | full | yes | yes | yes | no |
+| 1  | 1/1 | 0/0 | full | yes | yes | yes | no |
+| 10 | 0/1 | 0/0 | half | yes | yes | no  | no |
+| 11 | 0/1 | 1/1 | half | yes | yes | no  | no |
+| 20 | 0/0 | 0/1 | half | yes | no  | no  | no |
+| 21 | 1/1 | 0/1 | half | yes | no  | no  | no |
+| cons-hom | hom | hom (same) | none | no | no | no | contamination + swap |
+| cons-het | 0/1 | 0/1 | none | no | no | no | shared-het balance |
 
-**Marker genotype-contrast types and their uses.** Types 0 and 1 give the
+**Marker classes and their uses.** Among the informative types, 0 and 1 give the
 maximum allelic contrast (the minority allele has a single possible source); the
 heterozygous types give half the contrast. Every informative type feeds the donor-fraction
 estimate. The residual-host presence test needs a clean donor-absent allele to count, so
@@ -37,11 +43,15 @@ donor-absent allele. The optional co-pool contamination correction acts only on 
 homozygous-contrast types (0, 1), where the host (donor-absent) allele reads are otherwise
 a clean background.
 
-Markers where host and donor share a genotype are non-informative for the fraction
-estimate and are not listed above; the consensus-homozygous subset (host and every donor
-homozygous for the same allele) instead feeds the contamination and sample-swap checks
-(S8). Default filters: host and donor GQ $\geq$ 20, admixture DP $\geq$ 100, and at least
-three informative markers.
+The last two rows are the non-informative consensus classes, which carry no
+fraction signal but back the QC checks (S8). At consensus-homozygous markers (host and
+every donor homozygous for the same allele) the minority allele can only be a background
+artifact or foreign DNA, which drives contamination estimation and the sample-swap test.
+At consensus-heterozygous markers (host and every donor heterozygous) the admixture
+alternative-allele fraction should sit near 0.5 whatever the mixing fraction, so a
+systematic skew is a separate signal for contamination, allelic imbalance, or a sample
+mix-up. Default filters: host and donor GQ $\geq$ 20, admixture DP $\geq$ 100, and at
+least three informative markers.
 
 ### S2. Sequencing-error model
 
@@ -163,8 +173,14 @@ reads, whereas a flat elevation indicates error. A separate sample-swap / foreig
 test runs at the same consensus sites: a per-site binomial tail at the error rate flags
 sites where the minor allele is individually significant, combined into a swap p-value
 over discordant sites, catching a wrong-patient VCF that the informative-marker
-goodness-of-fit never sees. An optional `##allomixRunUnit` VCF header (flowcell:lane)
-supports a pure-metadata index-hopping flag, kept separate from the in-data estimate.
+goodness-of-fit never sees. A complementary allele-balance check runs at
+consensus-heterozygous markers instead (host and every donor heterozygous), where the
+admixture alternative-allele fraction should sit near 0.5 whatever the mixing fraction;
+the fraction of markers skewed outside a 70:30 band is reported and promotes the sample
+to manual review above a set count, flagging contamination, copy-number or allelic
+imbalance, or a sample mix-up that the consensus-homozygous checks do not test. An
+optional `##allomixRunUnit` VCF header (flowcell:lane) supports a pure-metadata
+index-hopping flag, kept separate from the in-data estimate.
 
 The optional per-marker contamination correction (off by default) acts on the magnitude
 estimate rather than the contamination report. On a co-pooled run a donor-homozygous

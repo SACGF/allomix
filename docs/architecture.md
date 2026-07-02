@@ -64,7 +64,7 @@ orchestrator, the CLI, the simulator); the four subpackages each own one stage:
 
 | Module | Owns | Key public surface |
 | --- | --- | --- |
-| `genotype.py` | VCF parsing (cyvcf2) and marker classification. The canonical home of `MarkerKey`/`marker_key`. | `parse_vcf`, `classify_markers`, `MarkerData`, `InformativeMarker`, `MarkerGenotypes`, `marker_type`, `MarkerKey` |
+| `genotype.py` | VCF parsing (cyvcf2) and marker classification (the eight marker classes are described in [Marker types](marker_types.md)). The canonical home of `MarkerKey`/`marker_key`. | `parse_vcf`, `classify_markers`, `MarkerData`, `InformativeMarker`, `MarkerGenotypes`, `marker_type`, `MarkerKey` |
 | `estimate/chimerism.py` | The donor-fraction MLE: beta-binomial likelihood, grid + Brent (single donor) / Nelder-Mead (multi), profile-likelihood CIs. | `estimate_single_donor_bb`, `estimate_multi_donor`, `ChimerismResult`, `MultiDonorResult`, `detection_limit` |
 | `calibration/bias.py` | Per-marker amplification-bias table (median het-VAF deviation), used to shift the expected REF weight in the MLE. | `estimate_biases`, `save_bias_table`, `load_bias_table` |
 | `calibration/error_rates.py` | Per-site, per-direction empirical error table (panel of normals). Same key shape as `bias`. | `estimate_error_rates`, `save_error_table`, `load_error_table` |

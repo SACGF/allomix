@@ -47,7 +47,7 @@ analysis makes the same point on point-estimate accuracy: adding overdispersion 
 full noise model raises RMSE more than amplification bias, depth non-uniformity, or
 sequencing error individually ({{ supp_synthetic.ablation_rmse_overdispersion_pct }}%
 versus {{ supp_synthetic.ablation_rmse_full_pct }}% for the otherwise-identical binomial
-model; Supplementary Figure S4). This is the honest explanation for the gap between an
+model; Supplementary Figure S4). This is what explains the gap between an
 idealised in silico LoD and real-panel performance, and it is the same overdispersion
 that raises the goodness-of-fit statistic on the real SRP434573 mixtures, though the QC
 layer promotes a fit to REVIEW only when that misfit is large rather than merely
@@ -67,17 +67,14 @@ recalibration from training data is one route to closing that gap.
 
 ### Outlier-resistant estimation at the limit of detection
 
-The relapsing recipient clone often carries copy-number changes, so a few markers sit
-far off the diploid fit and an outlier-resistant refit is needed to recover the estimate
-(Results, copy-number stress test). The trim is deliberately one-sided: it protects
-markers whose deviation points toward host presence and removes only those pointing
-away. The reason is specific to the low-fraction regime. When the true host fraction is
-around 1%, the handful of markers actually carrying that signal sit off a
-donor-dominated fit and read as outliers, so a symmetric outlier rule would discard
-exactly the markers of interest and collapse the estimate to zero. At the limit of
-detection, keeping a few artifacts is the safer trade than throwing away a real
-low-fraction host signal, and this asymmetry is what recovers the donor LoD against an
-aberration-bearing recipient background while leaving aberration-free samples unchanged.
+The one-sided outlier-resistant refit (Methods) matters most at the limit of detection.
+When the true host fraction is around 1%, the handful of markers actually carrying that
+signal sit off a donor-dominated fit and read as outliers, so a symmetric outlier rule
+would discard exactly the markers of interest and collapse the estimate to zero. Removing
+only the markers whose deviation points away from host presence, while protecting those
+pointing toward it, is what recovers the donor LoD against an aberration-bearing recipient
+background while leaving aberration-free samples unchanged (Results, copy-number stress
+test).
 
 ### Marker independence and linkage disequilibrium
 
@@ -131,17 +128,15 @@ table, so its benefit is a real-cohort question still to be measured.
 
 ### A safety suite for routine deployment
 
-A quantitative chimerism number is dangerous if it is computed on the wrong sample, so
-allomix turns the same marker data into a set of integrity checks: a relatedness check
-that flags sample swaps from unexpected kinship, a consensus-site consistency test that
-catches a wrong-patient VCF the fraction estimate cannot see, and an in-data
-contamination estimate that separates a real low-fraction signal from co-pooled or
-foreign DNA. These three low-fraction signals (residual host, contamination, gross swap)
-are kept distinct by reading disjoint marker sets defined by genotype geometry rather
-than by re-thresholding one statistic, which is what makes them independent rather than
-competing interpretations of the same number. For a clinical laboratory, aggressive
-detection of sample mix-ups is a desirable property, and building these checks from data
-already in hand adds no extra cost at the bench.
+For a clinical laboratory, catching sample mix-ups matters, because a quantitative
+chimerism number is misleading if it is computed on the wrong sample. allomix turns the
+same marker data into a set of integrity checks: a relatedness check that flags sample
+swaps from unexpected kinship, a consensus-site consistency test that catches a
+wrong-patient VCF the fraction estimate cannot see, and an in-data contamination estimate
+that separates a real low-fraction signal from co-pooled or foreign DNA. These are kept
+distinct by reading marker sets defined by genotype geometry rather than by
+re-thresholding one statistic (Methods), so they act as independent checks rather than
+competing interpretations of the same number, all from data the assay already produces.
 
 ### Repurposing existing panels
 
@@ -149,8 +144,8 @@ The central advantage of allomix is that it works with markers laboratories alre
 sequence. Sample-identification SNPs, pharmacogenomic markers, and other polymorphic
 loci included for quality control or diagnosis can serve double duty for chimerism,
 eliminating a separate dedicated assay. Lee et al. demonstrated the principle with 121
-SNPs in a myeloid panel but required custom scripting with no reusable
-tool;[@Lee2019snp] allomix generalises this into a deployable tool. Vynck et al. showed
+SNPs in a myeloid panel but released no reusable tool;[@Lee2019snp] allomix generalises
+this into a deployable tool. Vynck et al. showed
 that three informative markers are enough to make a quantification identifiable, with
 accuracy improving as markers are added, and that panels of about 20 markers with MAFs
 near 0.5 give a >95% chance of at least three informative markers even for sibling pairs;
@@ -158,10 +153,9 @@ their FABCASE tool can assess panel sufficiency prospectively for a specific don
 pair.[@Vynck2022markers; @Vynck2025fabcase] Three markers is the floor for producing an
 estimate at all, not a target for sensitivity: the limit of detection keeps falling as
 informative markers are added (Figure 4), so reaching the low fractions that matter
-clinically needs tens of informative markers, not a handful. Sample-ID marker sets with
-tens of polymorphic markers are therefore expected to be adequate for most clinical
-scenarios, with the achievable LoD improving as more of them fall informative for the
-pair.
+clinically needs a panel on the order of 100 markers, within the roughly 24 to 202
+markers commercial chimerism assays carry (Table 1), which yields the tens of informative
+markers the low fractions require rather than a handful.
 
 ### Multi-donor chimerism
 
@@ -251,12 +245,10 @@ assay limit (a real assay's LoD can only be higher). It is the CLSI EP17-A2
 95%-detection criterion[@CLSIEP17A2] applied to simulated data under a noise model
 calibrated from empirical panel data, with reads drawn from a binomial. Table 1 lays out
 the full evidence ladder, from the ~1% real-data LoD on the SRP434573 mixtures to the
-sub-0.2% analytical figures in near-binomial simulation, and where each sits relative to
-the commercial assays: the simulated figures fall within the vendor range (0.06--0.5%)
-but come from a different kind of experiment, so the comparison is not a head-to-head
-benchmark on matched samples. The gap between the analytical figure and real-panel
-performance is expected to be driven largely by overdispersion (above), and wetlab
-validation will set the floor allomix actually delivers in routine use. As a partial
+sub-0.2% analytical figures in near-binomial simulation, and places each against the
+commercial assays. The gap between the analytical figure and real-panel performance is
+expected to be driven largely by overdispersion (above), and wetlab validation will set
+the floor allomix actually delivers in routine use. As a partial
 check against real reads, we
 sub-sampled the high-depth SRP434573 mixtures across depth and panel size and measured
 the LoD on those reads directly (Figure 3): it falls with depth and panel size as the
@@ -284,5 +276,10 @@ allomix lets laboratories repurpose polymorphic markers already present in their
 clinical NGS panels for donor chimerism monitoring after HSCT, reporting both how much
 donor is present and whether any host remains, with built-in sample-integrity checks and
 <1% mean absolute error in silico, without a dedicated assay, additional reagents, or
-proprietary software. Clinical validation on patient cohorts is the planned next study,
-carried out per panel by each adopting laboratory before clinical use.
+proprietary software. Two lines of clinical validation follow. We are running our own
+validation study at SA Pathology, in tandem with the accredited STR chimerism assay, to
+be reported separately; and because allomix is panel-agnostic, each adopting laboratory
+validates it on its own panel and specimen types as a laboratory-developed test before
+clinical use. We encourage both, and will support laboratories running their own
+validation; where a laboratory can release titrated mixtures we will run allomix on them
+and return the results, as we have done here with the public SRP434573 data.

@@ -4,7 +4,7 @@ NGS-based donor chimerism monitoring for hematopoietic stem cell transplantation
 
 **allomix** calculates donor chimerism percentages from NGS data, replacing traditional STR-based analysis with a higher-sensitivity SNP-based approach. It is panel-agnostic: it operates on whatever bi-allelic markers (SNPs or indels) are present in the input VCFs, whether that is 24 indels, 76 SNPs, 202 SNPs, or any other set of loci with sufficient depth.
 
-> **Results are highly panel specific: do your own validation.** Sensitivity and limit of detection depend on your marker set, sequencing depth, and noise profile. Qualify the tool on your own panel before clinical use (see the [Panel guide](docs/panel_guide.md)).
+> **Results are highly panel specific: do your own validation.** Sensitivity and limit of detection depend on your marker set, sequencing depth, and noise profile. Qualify the tool on your own panel before clinical use (see the [Panel guide](https://github.com/SACGF/allomix/blob/main/docs/panel_guide.md)).
 
 Chimerism MLE methodology is based on [Crysup & Woerner](https://pubmed.ncbi.nlm.nih.gov/36152508/) (2022).
 
@@ -44,7 +44,7 @@ allomix detect \
     --html report.html
 ```
 
-See the [CLI usage guide](docs/cli.md) for multi-donor runs, timelines, bias correction, output options, and input/output reference.
+See the [CLI usage guide](https://github.com/SACGF/allomix/blob/main/docs/cli.md) for multi-donor runs, timelines, bias correction, output options, and input/output reference.
 
 ## Workflow
 
@@ -67,20 +67,20 @@ See the [CLI usage guide](docs/cli.md) for multi-donor runs, timelines, bias cor
    allomix report        Render HTML/PDF from a saved detect/timeline JSON
 ```
 
-Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even when one sample is hom-ref; pileup of the admix samples preserves raw per-allele counts needed for host fractions below ~5%. See the [Joint Calling Guide](docs/joint_calling.md) for the full rationale.
+Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even when one sample is hom-ref; pileup of the admix samples preserves raw per-allele counts needed for host fractions below ~5%. See the [Joint Calling Guide](https://github.com/SACGF/allomix/blob/main/docs/joint_calling.md) for the full rationale.
 
 ## Documentation
 
-- [Panel guide](docs/panel_guide.md) — qualifying your own panel for chimerism use (start here for a new panel)
-- [Marker types](docs/marker_types.md) — how allomix classifies markers and what each class is used for
-- [CLI usage](docs/cli.md) — all subcommands, options, and input/output reference
-- [Reports and structured output](docs/reports.md) — the JSON envelope, HTML/PDF report, and worked examples
-- [Joint Calling Guide](docs/joint_calling.md) — two-phase upstream pipeline and rationale
-- [Bias Estimation Guide](docs/estimate_bias.md) — per-marker bias tables (and building a training cohort from BAMs)
-- [Custom report templates](docs/custom_report_template.md) — branding the HTML/PDF report for your lab
-- [Architecture](docs/architecture.md) — module-by-module code map and data flow
-- [Scripts](docs/scripts.md) — developer and validation utilities
-- [Building the paper](docs/paper.md) — Snakemake validation and figure build
+- [Panel guide](https://github.com/SACGF/allomix/blob/main/docs/panel_guide.md) — qualifying your own panel for chimerism use (start here for a new panel)
+- [Marker types](https://github.com/SACGF/allomix/blob/main/docs/marker_types.md) — how allomix classifies markers and what each class is used for
+- [CLI usage](https://github.com/SACGF/allomix/blob/main/docs/cli.md) — all subcommands, options, and input/output reference
+- [Reports and structured output](https://github.com/SACGF/allomix/blob/main/docs/reports.md) — the JSON envelope, HTML/PDF report, and worked examples
+- [Joint Calling Guide](https://github.com/SACGF/allomix/blob/main/docs/joint_calling.md) — two-phase upstream pipeline and rationale
+- [Bias Estimation Guide](https://github.com/SACGF/allomix/blob/main/docs/estimate_bias.md) — per-marker bias tables (and building a training cohort from BAMs)
+- [Custom report templates](https://github.com/SACGF/allomix/blob/main/docs/custom_report_template.md) — branding the HTML/PDF report for your lab
+- [Architecture](https://github.com/SACGF/allomix/blob/main/docs/architecture.md) — module-by-module code map and data flow
+- [Scripts](https://github.com/SACGF/allomix/blob/main/docs/scripts.md) — developer and validation utilities
+- [Building the paper](https://github.com/SACGF/allomix/blob/main/docs/paper.md) — Snakemake validation and figure build
 
 ## Comparison with commercial products
 
@@ -94,7 +94,7 @@ Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even whe
 
 ## Validation and status
 
-allomix has been validated in silico (synthetic chimeric VCFs with realistic noise models: per-marker bias, depth CV, locus dropout) and on real reads from a public dataset of titrated DNA mixtures (SRA study [SRP434573](https://www.ebi.ac.uk/ena/browser/view/PRJNA960854)). On the real mixtures it recovered known host fractions from 10% down to 1%, resolved a three-person mixture, and called residual host with no false positives on the pure-donor controls. Full validation, including the real-data limit of detection, is in the [paper build guide](docs/paper.md).
+allomix has been validated in silico (synthetic chimeric VCFs with realistic noise models: per-marker bias, depth CV, locus dropout) and on real reads from a public dataset of titrated DNA mixtures (SRA study [SRP434573](https://www.ebi.ac.uk/ena/browser/view/PRJNA960854)). On the real mixtures it recovered known host fractions from 10% down to 1%, resolved a three-person mixture, and called residual host with no false positives on the pure-donor controls. Full validation, including the real-data limit of detection, is in the [paper build guide](https://github.com/SACGF/allomix/blob/main/docs/paper.md).
 
 These are analytical bounds, not wet-lab limits. Wet-lab validation against STR chimerism on real patient samples is planned, and is a per-laboratory step for any new panel.
 
@@ -109,7 +109,7 @@ paper/scripts/        # Publication-specific analysis and figures
 tests/                # pytest tests
 ```
 
-`src/allomix/` is everything a user gets from `pip install allomix`: the core library (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point. `scripts/` and `paper/scripts/` are developer-facing and not part of the installed package. See the [Architecture Guide](docs/architecture.md), [Scripts Guide](docs/scripts.md), and [paper build guide](docs/paper.md).
+`src/allomix/` is everything a user gets from `pip install allomix`: the core library (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point. `scripts/` and `paper/scripts/` are developer-facing and not part of the installed package. See the [Architecture Guide](https://github.com/SACGF/allomix/blob/main/docs/architecture.md), [Scripts Guide](https://github.com/SACGF/allomix/blob/main/docs/scripts.md), and [paper build guide](https://github.com/SACGF/allomix/blob/main/docs/paper.md).
 
 ## License
 

@@ -1,5 +1,6 @@
 # allomix
 
+[![PyPi version](https://img.shields.io/pypi/v/allomix.svg)](https://pypi.org/project/allomix/) [![Python versions](https://img.shields.io/pypi/pyversions/allomix.svg)](https://pypi.org/project/allomix/)
 [![tests](https://github.com/SACGF/allomix/actions/workflows/tests.yml/badge.svg)](https://github.com/SACGF/allomix/actions/workflows/tests.yml)
 
 NGS-based donor chimerism monitoring for hematopoietic stem cell transplantation (HSCT).

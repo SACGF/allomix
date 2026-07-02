@@ -88,18 +88,15 @@ The QC layer promotes {{ srp434573.n_review | dp(0) }} of
 fractions ({{ srp434573.dilution_min_pct }}% to 1%), where the outlier-resistant refit
 sets aside a large share of markers (Methods). That is the sub-limit-of-detection regime
 where a call should be confirmed by eye, so the flags fall where they are useful, while
-the accurate 2.5% to 100% estimates pass. The flags are gated on effect size rather than
-bare significance. At panel depth (>1000x) a chi-squared goodness-of-fit test and a
-discordant-site count reach significance for a misfit far too small to change the result:
-the goodness-of-fit p-value is below 0.01 for {{ qc_gating.gof_p_significant }} of
-{{ qc_gating.n_timepoints }} mixtures even though the beta-binomial model fits (post-trim
-reduced chi-squared median {{ qc_gating.gof_reduced_median }}, maximum
-{{ qc_gating.gof_reduced_max }}). Promoting to REVIEW instead requires the misfit to be
-large (reduced chi-squared above {{ qc_gating.gof_reduced_threshold }}, a discordant
-fraction above {{ qc_gating.swap_review_fraction_pct }}%, or a fraction within
-{{ qc_gating.pretrim_lod_multiple }}x the detection limit), which holds the flag count at
-{{ qc_gating.n_review_clinical }} rather than the {{ qc_gating.n_review_legacy }} a
-p-value-only rule raises on the same fits (Supplementary Methods S10).
+the accurate 2.5% to 100% estimates pass. This depends on gating the flags on effect size
+rather than bare significance: at panel depth (>1000x) a chi-squared goodness-of-fit test
+reaches significance (p < 0.01 for {{ qc_gating.gof_p_significant }} of
+{{ qc_gating.n_timepoints }} mixtures) for a misfit far too small to change the result,
+even though the beta-binomial model fits (post-trim reduced chi-squared median
+{{ qc_gating.gof_reduced_median }}). Requiring the misfit to be large instead holds the
+flag count at {{ qc_gating.n_review_clinical }} rather than the
+{{ qc_gating.n_review_legacy }} a p-value-only rule raises on the same fits (Supplementary
+Methods S10).
 
 One reproducibility caveat applies to the labelling. The amplicon panel intervals were
 reconstructed from the reads rather than supplied by the panel vendor, and which named
@@ -189,14 +186,12 @@ the 1% host level its host-fraction estimate ranged
 {{ srp434573.presence_onepct_max_pct | dp(2) }}%, tracking the dilution alongside the
 magnitude estimate (Figure 1A, open squares); at the lowest 0.5% titration it cannot
 separate residual host from the co-pooled contamination floor (below), so a positive
-call there reflects both. We present this as a validated capability, not as a clinical
-relapse-detection result: the test is calibrated against the background-artifact floor
-and demonstrated in silico and on this titrated panel down to 1% host, but its operating
-characteristics on real patient samples, and the clinical thresholds that would turn a
-positive presence call into an action, remain to be established (Discussion). Its value
-is that it is a separate readout from the magnitude estimate, designed to surface
-residual host below the level the magnitude estimate can quantify, which is exactly the
-regime where early relapse would first appear.
+call there reflects both. We present this as a validated capability, not a clinical relapse-detection result: it is
+demonstrated in silico and on this titrated panel down to 1% host, but its operating
+characteristics on real patient samples and the clinical thresholds for action remain to
+be established (Discussion). Its value is a separate readout from the magnitude estimate,
+surfacing residual host below the level the magnitude estimate can quantify, the regime
+where early relapse would first appear.
 
 ### Real-data limit of detection
 
@@ -217,10 +212,9 @@ host, both the magnitude and presence-test LoD reached at or below that level. T
 stops at {{ subsample_lod_headline.min_titration_pct | dp(1) }}% (its lowest real
 titration), and the dataset's co-pooled contamination floor (a median
 {{ subsample_lod_headline.contamination_floor_pct | dp(2) }}% at the deepest, largest
-panel) sits beneath it, so sub-1% cells are upper bounds rather than resolved values.
-These are pseudo-replicates sub-sampled from one library, not independent low-depth
-libraries, so the result confirms that the real-data LoD tracks the simulation within
-the limits of the dilution grid rather than serving as an independent wet-lab LoD.
+panel) sits beneath it, so sub-1% cells are upper bounds rather than resolved values. The
+result confirms that the real-data LoD tracks the simulation within the dilution grid
+rather than serving as an independent wet-lab LoD.
 
 ![**Figure 3.** Real-data limit of detection on the SRP434573 titrated mixtures, the real-data counterpart of Figure 4. Reads and markers were sub-sampled from the high-depth mixtures to bring the LoD into the measurable window. Columns: MLE magnitude estimate (left) and host-presence detection test (right). Rows: the seven mixtures titrated only to 1% (top) and the three titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}% host (bottom), two disjoint sets. Only three of the {{ subsample_lod_headline.n_mixtures | dp(0) }} mixtures were diluted below 1%; keeping the rows disjoint stops those three from being buried in a top-row median that the 1%-floored mixtures would otherwise pin at 1%. Each coloured curve is the median LoD across mixtures at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across mixtures. An X marks a cell where the LoD is at or below the lowest titration that mixture set carries (1% top row, 0.5% bottom row), not resolved lower. Per-mixture curves are constrained to be monotonic in panel size, which the nested marker panels justify. Points are jittered horizontally per depth. Sub-sampled pseudo-replicates, {{ subsample_lod_headline.n_seeds | dp(0) }} per cell, not independent libraries.]({{ facts_dir }}/fig_subsample_lod_grid.png)
 
@@ -265,13 +259,6 @@ subsampling the SRP434573 mixtures (Figure 3, above) rather than this analytical
 | NGStrack | 34 indels | 0.1% | No | No | Proprietary |
 | ScisGo Chimerism MD | >200 SNPs + indels | 0.2% (single) / 0.5% (multi) | No | No | Proprietary |
 | **allomix** | **Any biallelic** | **~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | dp(0) }}% real; method floor ~0.1-0.2%** | **Yes (MIT)** | **Yes** | **VCF** |
-
-<!-- The allomix cell summarises the full evidence ladder given in the caption below. The
-~1% real figure uses fact token subsample_lod_headline; the ~0.1-0.2% method floor spans
-the semi-synthetic (~0.1%, lowest tracked rung mle_med_0p1 in srp434573_synthetic.csv)
-and near-binomial simulation (~0.2%, lod_headline/presence_lod_curve_headline) estimates.
-The intermediate ≤0.5% best-resolved subsample cell (to_0.5pct, 400 markers, ≥1000x depth
-in subsample_lod_summary.csv) is stated in the caption. -->
 
 **Table 1.** NGS-based chimerism monitoring tools. LoD = limit of detection. Commercial
 specifications are from published evaluations.[@Blouin2024comparison;

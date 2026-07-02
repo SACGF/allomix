@@ -55,10 +55,8 @@ idealised in silico LoD and real-panel performance, and it is the same overdispe
 that raises the goodness-of-fit statistic on the real SRP434573 mixtures, though the QC
 layer promotes a fit to REVIEW only when that misfit is large rather than merely
 significant at depth (Supplementary Methods S10). For the same reason allomix does not
-weight marker contributions by per-base or per-genotype quality: on a Q30+ panel above
-1000x those reduce to the flat error model already in the likelihood, and the residual
-low-fraction limit is overdispersion and contamination rather than per-read or
-per-genotype quality (Supplementary Methods S11).
+weight marker contributions by per-base or per-genotype quality (Supplementary Methods
+S11).
 
 Across the simulated depths the 95% intervals cover close to nominal
 ({{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}%) with overdispersion
@@ -189,20 +187,17 @@ rather than reusing one joint-calling pass for every sample. We have not validat
 alternative callers against this workflow, so a laboratory substituting its own would
 confirm the low-fraction reads survive, as documented for the pileup step in Methods.
 
-Chimerism is a property of a cell population, not of whole blood per se. A donor
-fraction measured in unfractionated blood is a lineage-abundance-weighted average, so a
-meaningful change confined to a small lineage may show only a fractional whole-blood
-change. Lineage-specific testing on sorted subsets is recommended in some clinical
-contexts, though no quantitative intervention threshold has been standardised for
-sub-STR detection.[@Clark2025bjh; @KharfanDabaja2021astct; @Kakodkar2023alloseq] allomix
-is lineage-agnostic by design: it estimates the donor fraction in whatever DNA the input
-VCF represents, and the same validation applies to cell-sorted inputs. Where whole-blood
-signal is adequate, sensitivity better than STR can reduce the need for cell sorting and
-its associated cost and turnaround; where a clinically important change is confined to a
-small lineage, sorting may still be required, and the same analysis applies to the
-cell-sorted input. Specimen choice is a clinical and workflow decision outside the tool; the tool's
-analytical sensitivity is necessary but not sufficient for adequate clinical sensitivity
-in any given monitoring scenario.
+Chimerism is a property of a cell population, not of whole blood per se. A donor fraction
+measured in unfractionated blood is a lineage-abundance-weighted average, so a meaningful
+change confined to a small lineage may show only a fractional whole-blood change, which
+is why lineage-specific testing on sorted subsets is recommended in some clinical
+contexts.[@Clark2025bjh; @KharfanDabaja2021astct; @Kakodkar2023alloseq] allomix is
+lineage-agnostic by design: it estimates the donor fraction in whatever DNA the input VCF
+represents, so the same validation applies to cell-sorted inputs. Where whole-blood
+signal is adequate, sensitivity better than STR can reduce the need for sorting; where a
+change is confined to a small lineage, sorting may still be required. Specimen choice is a
+clinical decision outside the tool, and the tool's analytical sensitivity is necessary
+but not sufficient for clinical sensitivity in any given scenario.
 
 ### Limitations and future directions
 
@@ -259,9 +254,8 @@ the floor allomix actually delivers in routine use. As a partial
 check against real reads, we
 sub-sampled the high-depth SRP434573 mixtures across depth and panel size and measured
 the LoD on those reads directly (Figure 3): it falls with depth and panel size as the
-simulated curves do and tracks them within the dilution grid, but because these are
-pseudo-replicates from one library rather than independent dilutions it confirms the
-simulated trend rather than replacing the wetlab limit. Finally, the in silico work
+simulated curves do and tracks them within the dilution grid, a confirmation of the
+simulated trend rather than a replacement for the wetlab limit. Finally, the in silico work
 characterises the estimator on bulk DNA mixtures and does not address the cellular
 composition of the source specimen; clinical validation should include matched
 whole-blood and lineage-sorted samples.

@@ -2,6 +2,7 @@
 
 import random
 
+import numpy as np
 import pytest
 
 from allomix.calibration.bias import (
@@ -377,8 +378,9 @@ class TestEstimateSingleDonorWithBias:
             # True ALT VAF at this marker = true_f. Inject bias the same
             # (multiplicative, logit-space) way the estimator corrects for it.
             obs_vaf = float(inject_bias(true_f, bias))
-            # Sample allele counts
-            ad_alt = rng.binomialvariate(depth, obs_vaf)
+            # Sample allele counts (numpy binomial for cross-version stability;
+            # random.Random.binomialvariate is Python 3.12+ only).
+            ad_alt = int(np.random.default_rng(rng.getrandbits(32)).binomial(depth, obs_vaf))
             ad_ref = depth - ad_alt
             markers.append(
                 _make_informative_marker(

@@ -461,8 +461,18 @@ sampling ($\rho \to \infty$) to {{ overdispersion_lod_headline.lod_rho100_pct }}
 $\rho = 100$ (a {{ overdispersion_lod_headline.fold_rho100_vs_binomial }}-fold increase)
 and {{ overdispersion_lod_headline.lod_rho30_pct }}% at $\rho = 30$. At clinical
 coverage the overdispersion, not the depth, is the dominant control on the achievable
-LoD, which is why a simulated $\rho$ calibrated from real per-sample fits is needed
-before the in silico LoD is taken as a performance figure.
+LoD. Fitting the estimator on the real SRP434573 mixtures
+({{ overdispersion_lod_headline.n_real_mixed_samples }} two-component samples) gives a
+median heterozygous-class concentration of $\rho \approx$
+{{ overdispersion_lod_headline.real_rho_het_median }} (homozygous class $\rho \approx$
+{{ overdispersion_lod_headline.real_rho_hom_median }}); the dashed line marks that fitted
+value. At the fitted $\rho$ the in silico LoD is
+{{ overdispersion_lod_headline.lod_at_real_rho_pct }}%, a
+{{ overdispersion_lod_headline.fold_real_rho_vs_binomial }}-fold increase over the
+pure-binomial value and close to the ~1% measured directly by subsampling the same
+mixtures (Figure 3). Calibrating the simulation to the real per-sample fits, rather than
+leaving it at the pure binomial, is what makes the in silico LoD a defensible performance
+figure.
 
 ### S9. Fixed-Bias-Per-Marker Stability
 

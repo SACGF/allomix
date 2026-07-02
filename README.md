@@ -4,6 +4,8 @@ NGS-based donor chimerism monitoring for hematopoietic stem cell transplantation
 
 **allomix** calculates donor chimerism percentages from NGS data, replacing traditional STR-based analysis with a higher-sensitivity SNP-based approach. It is panel-agnostic: it operates on whatever bi-allelic markers (SNPs or indels) are present in the input VCFs, whether that is 24 indels, 76 SNPs, 202 SNPs, or any other set of loci with sufficient depth.
 
+> **Results are highly panel specific: do your own validation.** Sensitivity and limit of detection depend on your marker set, sequencing depth, and noise profile. Qualify the tool on your own panel before clinical use (see the [Panel guide](docs/panel_guide.md)).
+
 Chimerism MLE methodology is based on [Crysup & Woerner](https://pubmed.ncbi.nlm.nih.gov/36152508/) (2022).
 
 ## Clinical context
@@ -105,7 +107,6 @@ src/allomix/          # Installable library and CLI, the shipped product
 scripts/              # Development and validation utilities
 paper/scripts/        # Publication-specific analysis and figures
 tests/                # pytest tests
-data/                 # De-identified example VCFs
 ```
 
 `src/allomix/` is everything a user gets from `pip install allomix`: the core library (genotyping, chimerism estimation, simulation, QC, reporting) and the CLI entry point. `scripts/` and `paper/scripts/` are developer-facing and not part of the installed package. See the [Architecture Guide](docs/architecture.md), [Scripts Guide](docs/scripts.md), and [paper build guide](docs/paper.md).

@@ -93,18 +93,22 @@ These are built from the public SRP434573 mixtures (a public-data
 demonstration, not patient data). The titrated minor contributor (F2) is
 assigned the host role, so the monitored quantity is the host fraction:
 
-- [Single-sample report, 1%](examples/srp434573_single_sample_1pct.html)
+The reports below are hosted on [GitHub Pages](https://sacgf.github.io/allomix/)
+so they render in the browser (the raw `.html` files in `docs/examples/` show as
+source if opened directly on GitHub).
+
+- [Single-sample report, 1%](https://sacgf.github.io/allomix/srp434573_single_sample_1pct.html)
   (the headline example): the 1% titration `1_99_F2-M1`, with its
-  [per-marker CSV](examples/srp434573_single_sample_1pct.markers.csv).
+  [per-marker CSV](https://sacgf.github.io/allomix/srp434573_single_sample_1pct.markers.csv).
   The estimate recovers the 1% host fraction cleanly.
-- [Single-sample report, 0.5%](examples/srp434573_single_sample.html)
+- [Single-sample report, 0.5%](https://sacgf.github.io/allomix/srp434573_single_sample.html)
   (near the panel's contamination floor): the 0.5% titration `1_199_F2-M1`,
   with its
-  [per-marker CSV](examples/srp434573_single_sample.markers.csv). The
+  [per-marker CSV](https://sacgf.github.io/allomix/srp434573_single_sample.markers.csv). The
   MLE reads slightly low because of a donor-homozygous contamination background
   in this public dataset; the host-presence test still detects the residual host
   signal.
-- [Dilution series timeline](examples/srp434573_dilution_series.html):
+- [Dilution series timeline](https://sacgf.github.io/allomix/srp434573_dilution_series.html):
   the whole F2-into-M1 titration ladder fed to the timeline mode to show the
   trend chart. These are a titration series, not serial timepoints from one
   patient.

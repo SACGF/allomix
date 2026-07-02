@@ -11,13 +11,13 @@ built from the same marker data.
 The <1% mean absolute error across simulated depths (Supplementary Table S4), together
 with the recovery of known fractions on the real SRP434573 titrated mixtures (Results),
 is competitive with published performance for commercial tools: Kakodkar et al. reported
-0.3--1.5% MAE for AlloSeq
+an analytical LoD of 0.3% for AlloSeq
 HCT,[@Kakodkar2023alloseq] Pedini et al. and Vynck et al. showed comparable precision
 for the Devyser system,[@Pedini2021devyser; @Vynck2021devyser] and Blouin et al.
 reported R^2 = 0.9987 across the full chimerism range for ScisGo.[@Blouin2024comparison]
 Qama et al. validated the Devyser assay at a LoD of 0.06% with high STR
 concordance (R^2 = 0.998), and found that NGS detected residual host DNA (>0.1%) in 85%
-of samples called full donor chimerism (>95%) by STR, against 5% by
+of samples with >95% donor chimerism, against 5% by
 STR.[@Qama2026devyser] That gap suggests STR-based definitions of full donor chimerism
 can miss residual host haematopoiesis, and it is the clinical reason a sensitive method,
 and a dedicated residual-host test, are worth having. Per-marker bias correction in

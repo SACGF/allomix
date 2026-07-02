@@ -71,6 +71,8 @@ It cannot use GATK for the same reason phase 2 does not: the GVCF reassembly str
 
 The two phases live in one Snakefile and share one DAG. Snakemake skips phase-1 work that already exists when only new admix timepoints are added.
 
+As a guard against feeding the wrong file in, `allomix detect`/`timeline` sniff the caller from each VCF header and warn on stderr if the admix VCF looks GATK-called rather than mpileup, or if bias correction is on with a table estimated from a different caller than the admix (per-marker bias is caller-specific). Both are soft warnings and do not stop the run. See the [CLI reference](cli.md#two-vcf-input).
+
 ## Why force a genotype at every panel site
 
 When a `panel_alleles_vcf` is configured, phase 1 runs `GenotypeGVCFs --force-output-intervals panel.vcf` so the output VCF has a host/donor genotype at every panel position, not just the positions GATK called as variant.

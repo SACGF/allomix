@@ -18,6 +18,7 @@ from allomix.calibration.bias import (
     estimate_biases,
     estimate_biases_both_het,
     load_bias_table,
+    read_bias_table_caller,
     save_bias_table,
 )
 from allomix.calibration.contamination_table import (
@@ -41,6 +42,7 @@ from allomix.constants import (
 )
 from allomix.estimate.likelihood import PanelCalibration
 from allomix.genotype import parse_vcf
+from allomix.qc.caller import Caller, caller_from_token, detect_caller
 from allomix.qc.panel_qc import (
     DEFAULT_BIAS_P95_MULT,
     DEFAULT_MAX_DEPTH_CV,
@@ -764,6 +766,75 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     )
 
 
+def _bias_source_caller(args: argparse.Namespace) -> tuple[Caller, str] | None:
+    """Caller the active bias correction was estimated from, or None if inactive.
+
+    Mirrors the bias branches in ``_load_calibration``: inline ``--estimate-bias``
+    reads the panel genotype VCF, a ``--bias-table`` file carries a recorded caller
+    token (``UNKNOWN`` when the table predates provenance stamping).
+    """
+    if not args.bias_correction:
+        return None
+    if getattr(args, "estimate_bias", False):
+        info = detect_caller(args.genotype_vcf)
+        return info.caller, f"inline --estimate-bias from the panel VCF ({info.evidence})"
+    if args.bias_table:
+        token = read_bias_table_caller(args.bias_table)
+        if token is None:
+            return Caller.UNKNOWN, f"{args.bias_table} (no caller recorded)"
+        return caller_from_token(token), f"{args.bias_table} (recorded caller '{token}')"
+    return None
+
+
+def _warn_caller_provenance(args: argparse.Namespace, admix_paths: list[str]) -> None:
+    """Warn on caller mismatches that silently degrade results (issue #42).
+
+    Two independent, best-effort stderr warnings:
+      1. An admix VCF not produced by bcftools mpileup (GATK and similar callers
+         strip the minority ALT reads low-fraction chimerism detection needs).
+      2. Bias correction whose table was estimated from a different caller than
+         the admix data, since per-marker amplification bias is caller-specific.
+    Unknown callers stay silent rather than guess.
+    """
+    admix_callers = {path: detect_caller(path) for path in dict.fromkeys(admix_paths)}
+
+    # (1) Admix should always be mpileup.
+    for path, info in admix_callers.items():
+        if info.caller is Caller.GATK:
+            sys.stderr.write(
+                f"WARNING: admix VCF {path} looks GATK-called ({info.evidence}), not "
+                "bcftools mpileup. GATK applies low-level filters that drop the "
+                "minority ALT reads low-fraction chimerism detection depends on; "
+                "force-pileup the admix at the panel sites (see docs/joint_calling.md).\n"
+            )
+
+    # (2) Bias table caller should match the admix caller.
+    bias_source = _bias_source_caller(args)
+    if bias_source is None:
+        return
+    source_caller, source_desc = bias_source
+    for path, info in admix_callers.items():
+        if info.caller is Caller.UNKNOWN:
+            continue
+        if source_caller is Caller.UNKNOWN:
+            sys.stderr.write(
+                f"WARNING: cannot confirm the bias table caller ({source_desc}). "
+                "Per-marker bias is caller-specific, so make sure it was estimated "
+                f"from the same caller as the admix ({info.caller.value}); a mismatch "
+                "can make the estimate worse.\n"
+            )
+            return
+        if source_caller is not info.caller:
+            sys.stderr.write(
+                f"WARNING: bias correction uses a {source_caller.value} table "
+                f"({source_desc}) against {info.caller.value} admix data ({path}). "
+                "Per-marker amplification bias is caller-specific; a mismatched table "
+                "can make the estimate worse, not better. Estimate bias from the same "
+                "caller as the admix (e.g. 'allomix estimate-bias --both-het').\n"
+            )
+            return
+
+
 def cmd_detect(args: argparse.Namespace) -> int:
     """Run the detect subcommand."""
     _validate_expected_relatedness(args)
@@ -826,6 +897,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
     run_units = {}
     for path in dict.fromkeys(admix_by_sample.values()):
         run_units.update(read_run_units(path))
+
+    _warn_caller_provenance(args, list(admix_by_sample.values()))
 
     results: list[tuple[str, object, object]] = []
     marker_rows: list[tuple[str, object]] = []
@@ -942,6 +1015,8 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     run_units = {}
     for path in dict.fromkeys(admix_by_sample.values()):
         run_units.update(read_run_units(path))
+
+    _warn_caller_provenance(args, list(admix_by_sample.values()))
 
     results = []
     for sample_name in args.sample:
@@ -1076,8 +1151,11 @@ def cmd_estimate_bias(args: argparse.Namespace) -> int:
             marker_lists.append(markers)
         n_source = f"{len(args.genotype_vcfs)} VCFs"
 
+    # Record the source caller so a later run can warn if the table is applied to
+    # differently-called admix data (issue #42); bias is caller-specific.
+    source_vcf = joint if samples else args.genotype_vcfs[0]
     biases = estimate_biases(marker_lists, min_het=args.min_het)
-    save_bias_table(biases, args.output)
+    save_bias_table(biases, args.output, caller=detect_caller(source_vcf).caller.value)
     print(
         f"Estimated bias for {len(biases)} markers from {n_source} -> {args.output}",
         file=sys.stderr,
@@ -1118,8 +1196,10 @@ def _cmd_estimate_bias_both_het(args: argparse.Namespace) -> int:
         for sample in VCF(vcf_path).samples:
             admix_lists.append(parse_vcf(vcf_path, sample=sample, min_dp=args.min_dp, min_gq=0))
 
+    # The bias comes from the admix samples themselves, so stamp their caller
+    # (issue #42): applying this table to same-caller admix is the matched case.
     biases = estimate_biases_both_het(host, donors, admix_lists, min_het=args.min_het)
-    save_bias_table(biases, args.output)
+    save_bias_table(biases, args.output, caller=detect_caller(args.admix_vcfs[0]).caller.value)
     print(
         f"Estimated both-het bias for {len(biases)} markers from "
         f"{len(admix_lists)} admix sample(s) in {len(args.admix_vcfs)} VCF(s) "

@@ -27,6 +27,19 @@ rationale and how to run it. When a new timepoint arrives, re-run the admix-only
 pileup for it (the panel does not need rebuilding), then re-run allomix on the
 updated admix VCF.
 
+`detect` and `timeline` sniff each VCF header for the caller that produced it and
+print a stderr warning in two cases (soft warnings only, they do not stop the
+run):
+
+- the admix VCF looks GATK-called rather than `bcftools mpileup` (GATK's
+  low-level filters drop the minority ALT reads a low host fraction needs), or
+- bias correction is on and the bias table was estimated from a different caller
+  than the admix data. Per-marker amplification bias is caller-specific, so a
+  mismatched table can make the estimate worse. `estimate-bias` records its
+  source caller in the table header (`# allomixCaller=`) so this check can run;
+  building the table with `estimate-bias --both-het` from the same mpileup admix
+  data avoids the mismatch entirely.
+
 ## detect
 
 ```bash

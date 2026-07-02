@@ -74,7 +74,7 @@ Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even whe
 - [Panel guide](https://github.com/SACGF/allomix/blob/main/docs/panel_guide.md) — qualifying your own panel for chimerism use (start here for a new panel)
 - [Marker types](https://github.com/SACGF/allomix/blob/main/docs/marker_types.md) — how allomix classifies markers and what each class is used for
 - [CLI usage](https://github.com/SACGF/allomix/blob/main/docs/cli.md) — all subcommands, options, and input/output reference
-- [Reports and structured output](https://github.com/SACGF/allomix/blob/main/docs/reports.md) — the JSON envelope, HTML/PDF report, and worked examples
+- [Reports and structured output](https://github.com/SACGF/allomix/blob/main/docs/reports.md) — the JSON envelope, HTML/PDF report, and worked examples ([live example reports](https://sacgf.github.io/allomix/))
 - [Joint Calling Guide](https://github.com/SACGF/allomix/blob/main/docs/joint_calling.md) — two-phase upstream pipeline and rationale
 - [Bias Estimation Guide](https://github.com/SACGF/allomix/blob/main/docs/estimate_bias.md) — per-marker bias tables (and building a training cohort from BAMs)
 - [Custom report templates](https://github.com/SACGF/allomix/blob/main/docs/custom_report_template.md) — branding the HTML/PDF report for your lab

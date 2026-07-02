@@ -144,11 +144,30 @@ def estimate_biases_both_het(
     return biases
 
 
-def save_bias_table(biases: dict[MarkerKey, MarkerBias], path: Path | str) -> None:
-    """Write bias estimates to a TSV file."""
+#: Leading comment recording the caller the bias was estimated from. Per-marker
+#: bias is caller-specific, so applying a table to differently-called admix data
+#: degrades the estimate (issue #42); the CLI reads this back to warn on a
+#: mismatch. Optional and backward-compatible: tables without it read as unknown.
+_CALLER_COMMENT_PREFIX = "# allomixCaller="
+
+
+def save_bias_table(
+    biases: dict[MarkerKey, MarkerBias],
+    path: Path | str,
+    caller: str | None = None,
+) -> None:
+    """Write bias estimates to a TSV file.
+
+    Args:
+        caller: Caller the bias was estimated from (e.g. ``"gatk"``, ``"mpileup"``),
+            recorded as a leading ``# allomixCaller=`` comment so the CLI can warn
+            when the table is applied to differently-called admix data (issue #42).
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as fh:
+        if caller:
+            fh.write(f"{_CALLER_COMMENT_PREFIX}{caller}\n")
         writer = csv.writer(fh, delimiter="\t")
         writer.writerow(["chrom", "pos", "ref", "alt", "bias", "n_het"])
         for key in sorted(biases.keys()):
@@ -156,15 +175,35 @@ def save_bias_table(biases: dict[MarkerKey, MarkerBias], path: Path | str) -> No
             writer.writerow([mb.chrom, mb.pos, mb.ref, mb.alt, f"{mb.bias:.6f}", mb.n_het])
 
 
+def _uncommented(fh) -> "list[str]":
+    """Return the file's lines with ``#``-prefixed comment lines removed."""
+    return [line for line in fh if not line.lstrip().startswith("#")]
+
+
 def load_bias_table(path: Path | str) -> dict[MarkerKey, float]:
-    """Load a bias table TSV into a dict of marker key -> bias value."""
+    """Load a bias table TSV into a dict of marker key -> bias value.
+
+    Leading ``#`` comment lines (e.g. the recorded caller) are ignored.
+    """
     biases: dict[MarkerKey, float] = {}
     with open(path, encoding="utf-8") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
+        reader = csv.DictReader(_uncommented(fh), delimiter="\t")
         for row in reader:
             key: MarkerKey = (row["chrom"], int(row["pos"]), row["ref"], row["alt"])
             biases[key] = float(row["bias"])
     return biases
+
+
+def read_bias_table_caller(path: Path | str) -> str | None:
+    """Read the recorded caller token from a bias table, or None if not recorded."""
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            stripped = line.strip()
+            if stripped.startswith(_CALLER_COMMENT_PREFIX):
+                return stripped[len(_CALLER_COMMENT_PREFIX) :].strip() or None
+            if not stripped.startswith("#") and stripped:
+                break  # data started; no comment present
+    return None
 
 
 def biases_to_simple_dict(biases: dict[MarkerKey, MarkerBias]) -> dict[MarkerKey, float]:

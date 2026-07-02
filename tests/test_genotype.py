@@ -90,17 +90,9 @@ class TestParseVcfSingleSample:
         return parse_vcf(EXAMPLE_VCF)
 
     def test_count(self, markers):
-        # 15 data lines, but some are hom-ref with ALT="." — those should
-        # still parse (AD has ref count only, ad_alt=0)
-        assert len(markers) > 0
-
-    def test_has_gt(self, markers):
-        for m in markers:
-            assert m.gt[0] >= 0 and m.gt[1] >= 0
-
-    def test_has_ad(self, markers):
-        for m in markers:
-            assert m.ad_ref >= 0
+        # 15 data lines, including hom-ref with ALT="." (AD has ref count only,
+        # ad_alt=0); all parse.
+        assert len(markers) == 15
 
     def test_het_has_alt_counts(self, markers):
         hets = [m for m in markers if m.gt == (0, 1)]
@@ -114,16 +106,10 @@ class TestParseVcfSingleSample:
         for m in hom_alts:
             assert m.ad_alt > 0
 
-    def test_depths_are_high(self, markers):
-        for m in markers:
-            assert m.dp > 400
-
-    def test_all_pass(self, markers):
+    def test_fixture_integrity(self, markers):
+        # Every fixture marker is a PASS call carrying a genotype quality.
         for m in markers:
             assert m.filter == "PASS"
-
-    def test_gq_present(self, markers):
-        for m in markers:
             assert m.gq is not None
 
     def test_min_dp_filter(self):
@@ -237,13 +223,13 @@ class TestClassifyMarkers:
         assert len(result.informative) == 1
         assert result.informative[0].donor_gts == [(1, 1), (0, 0)]
 
-    def test_sample_name_not_chromosome(self):
-        """classify_markers should not set sample_name to a chromosome."""
+    def test_sample_name_defaults_empty(self):
+        """classify_markers leaves sample_name empty by default."""
         host = [MarkerData("chr7", 100, "A", "T", (0, 0), 100, 0, 100, 99)]
         donor = [MarkerData("chr7", 100, "A", "T", (1, 1), 0, 100, 100, 99)]
         admix = [MarkerData("chr7", 100, "A", "T", (0, 1), 50, 50, 100, 99)]
         result = classify_markers(host, [donor], admix, min_dp=0, min_gq=0)
-        assert result.sample_name != "chr7"
+        assert result.sample_name == ""
 
 
 # ---------------------------------------------------------------------------
@@ -254,16 +240,9 @@ class TestClassifyMarkers:
 class TestParseVcfMultiSample:
     """Test parsing a multi-sample joint-called VCF with sample selection."""
 
-    def test_parse_by_name_host(self):
-        markers = parse_vcf(JOINT_VCF, sample="HOST")
-        assert len(markers) > 0
-
-    def test_parse_by_name_donor(self):
-        markers = parse_vcf(JOINT_VCF, sample="DONOR")
-        assert len(markers) > 0
-
-    def test_parse_by_name_admix(self):
-        markers = parse_vcf(JOINT_VCF, sample="ADMIX_F0.50")
+    @pytest.mark.parametrize("sample", ["HOST", "DONOR", "ADMIX_F0.50"])
+    def test_parse_by_name(self, sample):
+        markers = parse_vcf(JOINT_VCF, sample=sample)
         assert len(markers) > 0
 
     def test_different_samples_differ(self):

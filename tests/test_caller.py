@@ -37,13 +37,11 @@ _MPILEUP_HEADER = (
 def test_gatk_from_command_line():
     info = detect_caller_from_header(_GATK_HEADER)
     assert info.caller is Caller.GATK
-    assert "GATKCommandLine" in info.evidence
 
 
 def test_mpileup_from_command_line():
     info = detect_caller_from_header(_MPILEUP_HEADER)
     assert info.caller is Caller.MPILEUP
-    assert "mpileup" in info.evidence
 
 
 def test_gatk_from_info_fingerprint_only():

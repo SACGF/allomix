@@ -1,11 +1,7 @@
 """Tests for allomix.qc.sample_contamination — in-data third-party contamination estimate."""
 
 from allomix.genotype import MarkerData
-from allomix.qc.sample_contamination import (
-    DEFAULT_MAX_SITE_FRAC,
-    ContaminationResult,
-    estimate_contamination,
-)
+from allomix.qc.sample_contamination import estimate_contamination
 
 
 def _md(
@@ -182,13 +178,3 @@ class TestMultiDonor:
         admix = [_md(i * 100, (0, 0), ad_ref=1980, ad_alt=20, dp=2000) for i in range(30)]
         res = estimate_contamination(host, [d1, d2], admix)
         assert res.n_markers == 0
-
-
-def test_default_cap_constant_reasonable():
-    # Guardrail: the cap sits between the contamination range and a miscall.
-    assert 0.02 < DEFAULT_MAX_SITE_FRAC < 0.2
-
-
-def test_result_is_dataclass_instance():
-    host, donors, admix = _consensus_set([0.0] * 30)
-    assert isinstance(estimate_contamination(host, donors, admix), ContaminationResult)

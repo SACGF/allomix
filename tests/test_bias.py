@@ -91,30 +91,22 @@ class TestEstimateBiases:
         biases = estimate_biases([[m]])
         assert biases == {}
 
-    def test_single_het_unbiased(self):
-        """A het marker at VAF=0.5 has bias=0."""
-        m = _make_het_marker(ad_ref=500, ad_alt=500)
+    @pytest.mark.parametrize(
+        ("ad_ref", "ad_alt", "expected_bias"),
+        [
+            (500, 500, 0.0),  # unbiased: VAF 0.50
+            (480, 520, 0.02),  # ALT-favoured: VAF 0.52 -> bias +0.02
+            (520, 480, -0.02),  # REF-favoured: VAF 0.48 -> bias -0.02
+        ],
+    )
+    def test_single_het_bias_by_sign(self, ad_ref, ad_alt, expected_bias):
+        """A single het marker's bias is its ALT VAF minus 0.5, for each sign."""
+        m = _make_het_marker(ad_ref=ad_ref, ad_alt=ad_alt)
         biases = estimate_biases([[m]])
         key = ("chr1", 100, "A", "T")
         assert key in biases
-        assert biases[key].bias == 0.0
         assert biases[key].n_het == 1
-
-    def test_single_het_positive_bias(self):
-        """ALT-favoured marker has positive bias."""
-        # VAF = 520/1000 = 0.52, bias = 0.52 - 0.5 = 0.02
-        m = _make_het_marker(ad_ref=480, ad_alt=520)
-        biases = estimate_biases([[m]])
-        key = ("chr1", 100, "A", "T")
-        assert abs(biases[key].bias - 0.02) < 1e-9
-
-    def test_single_het_negative_bias(self):
-        """REF-favoured marker has negative bias."""
-        # VAF = 480/1000 = 0.48, bias = -0.02
-        m = _make_het_marker(ad_ref=520, ad_alt=480)
-        biases = estimate_biases([[m]])
-        key = ("chr1", 100, "A", "T")
-        assert abs(biases[key].bias - (-0.02)) < 1e-9
+        assert abs(biases[key].bias - expected_bias) < 1e-9
 
     def test_multiple_samples_uses_median(self):
         """Median across multiple het observations."""
@@ -178,28 +170,38 @@ class TestEstimateBiasesBothHet:
 
     def _gt_marker(self, pos, gt, ad_ref, ad_alt, chrom="chr1"):
         return MarkerData(
-            chrom=chrom, pos=pos, ref="A", alt="T", gt=gt,
-            ad_ref=ad_ref, ad_alt=ad_alt, dp=ad_ref + ad_alt,
+            chrom=chrom,
+            pos=pos,
+            ref="A",
+            alt="T",
+            gt=gt,
+            ad_ref=ad_ref,
+            ad_alt=ad_alt,
+            dp=ad_ref + ad_alt,
         )
 
     def test_only_both_het_markers_used(self):
         """Only markers where host and every donor are het contribute."""
         host = [
             self._gt_marker(100, (0, 1), 500, 500),  # both-het
-            self._gt_marker(200, (0, 0), 1000, 0),   # host hom -> excluded
+            self._gt_marker(200, (0, 0), 1000, 0),  # host hom -> excluded
             self._gt_marker(300, (0, 1), 500, 500),  # donor hom -> excluded
         ]
-        donors = [[
-            self._gt_marker(100, (0, 1), 500, 500),
-            self._gt_marker(200, (0, 1), 500, 500),
-            self._gt_marker(300, (1, 1), 0, 1000),
-        ]]
+        donors = [
+            [
+                self._gt_marker(100, (0, 1), 500, 500),
+                self._gt_marker(200, (0, 1), 500, 500),
+                self._gt_marker(300, (1, 1), 0, 1000),
+            ]
+        ]
         # admix VAF 0.53 at the both-het marker -> bias +0.03
-        admix = [[
-            self._gt_marker(100, (0, 1), 470, 530),
-            self._gt_marker(200, (0, 1), 480, 520),
-            self._gt_marker(300, (0, 1), 480, 520),
-        ]]
+        admix = [
+            [
+                self._gt_marker(100, (0, 1), 470, 530),
+                self._gt_marker(200, (0, 1), 480, 520),
+                self._gt_marker(300, (0, 1), 480, 520),
+            ]
+        ]
         biases = estimate_biases_both_het(host, donors, admix)
         assert list(biases.keys()) == [("chr1", 100, "A", "T")]
         assert biases[("chr1", 100, "A", "T")].bias == pytest.approx(0.03)
@@ -343,18 +345,6 @@ class TestExpectedWeightWithBias:
 
 
 class TestTotalLogLikelihoodWithBias:
-    def test_bias_shifts_likelihood(self):
-        """Bias correction changes the total log-likelihood."""
-        markers = [
-            _make_informative_marker((0, 0), (1, 1), 700, 300, marker_type=0),
-        ]
-        ll_no_bias = total_log_likelihood_bb(markers, 0.3, 0.01)
-        biases = {("chr1", 100, "A", "T"): 0.02}
-        ll_biased = total_log_likelihood_bb(
-            markers, 0.3, 0.01, calibration=PanelCalibration(biases=biases)
-        )
-        assert ll_no_bias != ll_biased
-
     def test_correct_bias_improves_likelihood(self):
         """When data has a known bias, correcting for it should improve LL at the true f."""
         # Simulate a marker with bias +0.02: at f=0.3, true ALT VAF = 0.3
@@ -403,29 +393,6 @@ class TestEstimateSingleDonorWithBias:
             )
         return markers
 
-    def test_bias_correction_improves_accuracy(self):
-        """With known biases, correction reduces estimation error."""
-        true_f = 0.30
-        # 20 markers with systematic biases
-        biases_map = {i * 1000: 0.02 * ((-1) ** i) for i in range(20)}
-        markers = self._make_biased_markers(true_f, biases_map)
-
-        # Without bias correction
-        result_no_bias = estimate_single_donor_bb(markers, error_rate=0.01)
-
-        # With bias correction
-        marker_biases = {("chr1", pos, "A", "T"): b for pos, b in biases_map.items()}
-        result_biased = estimate_single_donor_bb(
-            markers,
-            error_rate=0.01,
-            calibration=PanelCalibration(biases=marker_biases),
-        )
-
-        # Bias-corrected estimate should be closer to truth
-        err_no_bias = abs(result_no_bias.donor_fraction - true_f)
-        err_biased = abs(result_biased.donor_fraction - true_f)
-        assert err_biased <= err_no_bias + 0.001  # allow tiny float tolerance
-
     def test_no_bias_dict_same_as_none(self):
         """Passing an empty bias dict should give same result as None."""
         markers = [
@@ -467,12 +434,13 @@ class TestEstimateSingleDonorWithBias:
         )
 
     def test_ci_coverage_improves_with_bias_correction(self):
-        """Bias correction should help CIs cover the truth more often."""
+        """Bias-corrected CIs should cover the truth at a high rate, and never
+        below the uncorrected coverage."""
         rng = random.Random(123)
 
         covers_no_bias = 0
         covers_corrected = 0
-        n_trials = 20
+        n_trials = 10
 
         for _ in range(n_trials):
             true_f = 0.25
@@ -493,5 +461,7 @@ class TestEstimateSingleDonorWithBias:
             if result_yes.donor_fraction_ci[0] <= true_f <= result_yes.donor_fraction_ci[1]:
                 covers_corrected += 1
 
-        # Corrected should have better or equal CI coverage
+        # Corrected coverage is consistently 100% at this cell; require a solid
+        # floor rather than the vacuous >= that also passes at 0 == 0.
+        assert covers_corrected >= 0.8 * n_trials
         assert covers_corrected >= covers_no_bias

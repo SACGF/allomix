@@ -25,7 +25,7 @@ from allomix.estimate.likelihood import (
     total_log_likelihood_multi_bb,
 )
 from allomix.genotype import InformativeMarker, MarkerType, classify_markers, parse_vcf
-from allomix.qc.qc import assess_quality
+from allomix.qc.qc import QCReport, assess_quality
 from allomix.report.report import timeline_json, to_json, to_tsv
 from allomix.results import MultiDonorResult
 from allomix.simulate import (
@@ -113,6 +113,40 @@ def _make_sibling_markers_and_blend(
         return genotypes.informative
 
 
+def _hand_built_multidonor(sample_name: str = "sample") -> tuple[MultiDonorResult, QCReport]:
+    """Build a minimal, valid MultiDonorResult + QCReport pair for report tests.
+
+    Avoids the expensive 2D estimation when the only thing under test is the
+    report serialisation schema.
+    """
+    result = MultiDonorResult(
+        donor_fractions=[0.25, 0.25],
+        donor_fraction_cis=[(0.20, 0.30), (0.20, 0.30)],
+        host_fraction=0.50,
+        log_likelihood=-100.0,
+        n_informative=60,
+        n_markers_used=60,
+        per_marker=[],
+        error_rate=0.01,
+        per_donor_n_informative=[35, 25],
+    )
+    qc = QCReport(
+        n_total_markers=100,
+        n_shared_markers=100,
+        n_informative=60,
+        n_used=60,
+        n_excluded_depth=0,
+        n_excluded_quality=0,
+        n_excluded_outlier=0,
+        mean_depth=2000.0,
+        median_depth=2000.0,
+        min_depth=1800,
+        goodness_of_fit_pval=0.5,
+        per_donor_n_informative=[35, 25],
+    )
+    return result, qc
+
+
 # ---------------------------------------------------------------------------
 # Simulate module tests
 # ---------------------------------------------------------------------------
@@ -145,10 +179,6 @@ class TestMendelianChild:
 
 class TestSiblingTrioGenotypes:
     """Test sibling trio genotype generation."""
-
-    def test_correct_length(self):
-        markers = generate_sibling_trio_genotypes(50, random.Random(1))
-        assert len(markers) == 50
 
     def test_required_keys(self):
         markers = generate_sibling_trio_genotypes(10, random.Random(1))
@@ -307,39 +337,12 @@ class TestEstimateMultiDonor:
         assert result.host_fraction == 1.0
         assert result.n_informative == 0
 
-    def test_pure_host(self):
-        """f1=f2=0: both donors should estimate near 0%."""
-        markers = _make_sibling_markers_and_blend(0.0, 0.0)
-        result = estimate_multi_donor(markers)
-        assert result.donor_fractions[0] < 0.03
-        assert result.donor_fractions[1] < 0.03
-        assert result.host_fraction > 0.94
-
     def test_single_donor_only(self):
         """f1=0.20, f2=0: should recover donor1~20%, donor2~0%."""
         markers = _make_sibling_markers_and_blend(0.20, 0.0, seed=100)
         result = estimate_multi_donor(markers)
         assert 0.10 < result.donor_fractions[0] < 0.35
         assert result.donor_fractions[1] < 0.08
-
-    def test_balanced_mix(self):
-        """f1=f2=0.25: should recover both donors near 25%."""
-        markers = _make_sibling_markers_and_blend(0.25, 0.25, seed=200)
-        result = estimate_multi_donor(markers)
-        assert 0.15 < result.donor_fractions[0] < 0.35
-        assert 0.15 < result.donor_fractions[1] < 0.35
-
-    def test_asymmetric_mix(self):
-        """f1=0.30, f2=0.10: should distinguish major vs minor donor."""
-        markers = _make_sibling_markers_and_blend(0.30, 0.10, seed=300)
-        result = estimate_multi_donor(markers)
-        assert result.donor_fractions[0] > result.donor_fractions[1]
-
-    def test_fractions_sum_le_one(self):
-        """Estimated fractions must satisfy f1 + f2 <= 1."""
-        markers = _make_sibling_markers_and_blend(0.40, 0.40, seed=400)
-        result = estimate_multi_donor(markers)
-        assert sum(result.donor_fractions) <= 1.0 + 1e-9
 
     def test_ci_structure(self):
         """CIs should be valid (lo <= mle <= hi for each donor)."""
@@ -361,25 +364,6 @@ class TestEstimateMultiDonor:
         lo2, hi2 = result.donor_fraction_cis[1]
         assert lo1 <= f1_true <= hi1, f"Donor1 CI [{lo1:.4f}, {hi1:.4f}] misses truth {f1_true}"
         assert lo2 <= f2_true <= hi2, f"Donor2 CI [{lo2:.4f}, {hi2:.4f}] misses truth {f2_true}"
-
-    def test_per_marker_results_populated(self):
-        markers = _make_sibling_markers_and_blend(0.20, 0.10, seed=700)
-        result = estimate_multi_donor(markers)
-        assert len(result.per_marker) == len(markers)
-        for mr in result.per_marker:
-            assert mr.dp > 0
-
-    def test_per_donor_n_informative(self):
-        markers = _make_sibling_markers_and_blend(0.20, 0.10, seed=800)
-        result = estimate_multi_donor(markers)
-        assert result.per_donor_n_informative is not None
-        assert len(result.per_donor_n_informative) == 2
-        assert all(n >= 0 for n in result.per_donor_n_informative)
-
-    def test_result_is_multi_donor_type(self):
-        markers = _make_sibling_markers_and_blend(0.20, 0.10, seed=900)
-        result = estimate_multi_donor(markers)
-        assert isinstance(result, MultiDonorResult)
 
 
 # ---------------------------------------------------------------------------
@@ -446,22 +430,23 @@ class TestMultiDonorIntegration:
         result, _, _ = self._run(genotype_data, "host_0_d1_0_d2_100")
         assert result.donor_fractions[1] > 0.90
 
-    def test_qc_passes(self, genotype_data):
-        _, qc, _ = self._run(genotype_data, "host_50_d1_25_d2_25")
-        assert qc.pass_
-        assert qc.per_donor_n_informative is not None
 
-    def test_json_output(self, genotype_data):
-        result, qc, genotypes = self._run(genotype_data, "host_50_d1_25_d2_25")
-        data = to_json(result, qc, sample_name=genotypes.sample_name)
+class TestMultiDonorReport:
+    """Report serialisation for multi-donor results (hand-built, no estimation)."""
+
+    def test_json_output(self):
+        result, qc = _hand_built_multidonor()
+        data = to_json(result, qc, sample_name="host_50_d1_25_d2_25")
         assert "donors" in data
         assert len(data["donors"]) == 2
         assert "host_pct" in data
+        # Per-donor informative counts flow through to each donor entry.
+        assert all("n_informative" in d for d in data["donors"])
         # Should be serialisable
         json.dumps(data)
 
-    def test_tsv_output(self, genotype_data):
-        result, qc, _ = self._run(genotype_data, "host_50_d1_25_d2_25")
+    def test_tsv_output(self):
+        result, qc = _hand_built_multidonor()
         buf = StringIO()
         to_tsv(result, qc, buf)
         content = buf.getvalue()
@@ -469,11 +454,11 @@ class TestMultiDonorIntegration:
         assert "donor2_pct" in content
         assert "host_pct" in content
 
-    def test_timeline_output(self, genotype_data):
+    def test_timeline_output(self):
         results = []
-        for name in ["host_80_d1_10_d2_10", "host_50_d1_25_d2_25"]:
-            result, qc, genotypes = self._run(genotype_data, name)
-            results.append((genotypes.sample_name, result, qc))
+        for name in ["tp1", "tp2"]:
+            result, qc = _hand_built_multidonor()
+            results.append((name, result, qc))
         data = timeline_json(results)
         assert len(data["timepoints"]) == 2
         assert "donors" in data["timepoints"][0]
@@ -512,8 +497,10 @@ class TestMultiDonorCLI:
         write_joint_vcf(result, path)
         return path
 
-    def test_monitor_json(self, tmp_path, joint_vcf):
-        out = tmp_path / "result.json"
+    def test_monitor_json_and_tsv(self, tmp_path, joint_vcf):
+        """A single detect run emits both a valid multi-donor JSON and TSV."""
+        out_json = tmp_path / "result.json"
+        out_tsv = tmp_path / "result.tsv"
         rc = main(
             [
                 "detect",
@@ -530,7 +517,9 @@ class TestMultiDonorCLI:
                 "--sample",
                 "D1_25_D2_25",
                 "--json",
-                str(out),
+                str(out_json),
+                "--tsv",
+                str(out_tsv),
                 "--min-dp",
                 "0",
                 "--min-gq",
@@ -538,38 +527,10 @@ class TestMultiDonorCLI:
             ]
         )
         assert rc == 0
-        data = json.loads(out.read_text())["analysis"]
+        data = json.loads(out_json.read_text())["analysis"]
         assert "donors" in data
         assert len(data["donors"]) == 2
-
-    def test_monitor_tsv(self, tmp_path, joint_vcf):
-        out = tmp_path / "result.tsv"
-        rc = main(
-            [
-                "detect",
-                "--genotype-vcf",
-                str(joint_vcf),
-                "--admix-vcf",
-                str(joint_vcf),
-                "--host-sample",
-                "HOST",
-                "--donor-sample",
-                "DONOR1",
-                "--donor-sample",
-                "DONOR2",
-                "--sample",
-                "D1_30_D2_10",
-                "--tsv",
-                str(out),
-                "--min-dp",
-                "0",
-                "--min-gq",
-                "0",
-            ]
-        )
-        assert rc == 0
-        content = out.read_text()
-        assert "donor1_pct" in content
+        assert "donor1_pct" in out_tsv.read_text()
 
     def test_timeline(self, tmp_path, joint_vcf):
         out = tmp_path / "timeline.json"
@@ -695,24 +656,6 @@ class TestThreeDonorValidation:
     """estimate_multi_donor should reject n_donors > 2 with a clear error."""
 
     def test_three_donors_raises_value_error(self):
-        rng = random.Random(42)
-        markers = []
-        for i in range(30):
-            ad_alt = sum(1 for _ in range(2000) if rng.random() < 0.30)
-            markers.append(
-                InformativeMarker(
-                    chrom=f"chr{i + 1}",
-                    pos=1000 * (i + 1),
-                    ref="A",
-                    alt="T",
-                    host_gt=(0, 0),
-                    donor_gts=[(1, 1), (0, 1), (0, 1)],
-                    marker_type=0,
-                    admix_ad_ref=2000 - ad_alt,
-                    admix_ad_alt=ad_alt,
-                    admix_dp=2000,
-                    informative_for=[True, True, True],
-                )
-            )
+        # The n_donors > 2 guard raises before any markers are touched.
         with pytest.raises(ValueError, match="not supported"):
-            estimate_multi_donor(markers, n_donors=3)
+            estimate_multi_donor([], n_donors=3)

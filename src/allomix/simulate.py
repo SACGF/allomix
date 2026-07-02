@@ -381,11 +381,12 @@ def sample_allele_counts(
     if apply_rho and math.isfinite(rho) and 0.0 < p < 1.0:
         p = rng.betavariate(p * rho, (1.0 - p) * rho)
 
-    if hasattr(rng, "binomialvariate"):
-        alt_count = rng.binomialvariate(depth, p)
-    else:
-        seed = rng.getrandbits(32)
-        alt_count = int(np.random.default_rng(seed).binomial(depth, p))
+    # Always sample the binomial through numpy's PCG64 generator (seeded from the
+    # caller's Random), not random.Random.binomialvariate: the latter only exists
+    # on Python 3.12+, so mixing the two paths makes simulated data differ across
+    # interpreter versions. numpy's default_rng stream is stable across versions.
+    seed = rng.getrandbits(32)
+    alt_count = int(np.random.default_rng(seed).binomial(depth, p))
     ref_count = depth - alt_count
     return (ref_count, alt_count)
 

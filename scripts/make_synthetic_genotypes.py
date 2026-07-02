@@ -18,6 +18,8 @@ import random
 import sys
 from pathlib import Path
 
+import numpy as np
+
 log = logging.getLogger(__name__)
 
 N_MARKERS = 100
@@ -71,17 +73,22 @@ GT_COMBOS = [
 ]
 
 
+def _binomial(rng: random.Random, n: int, p: float) -> int:
+    """Cross-version binomial draw (random.Random.binomialvariate is 3.12+ only)."""
+    return int(np.random.default_rng(rng.getrandbits(32)).binomial(n, p))
+
+
 def gt_to_ad(gt: str, depth: int, rng: random.Random) -> str:
     """Generate realistic AD field for a genotype at a given depth."""
     if gt == "0/0":
-        alt = rng.binomialvariate(depth, HOM_SEQUENCING_ERROR_RATE)
+        alt = _binomial(rng, depth, HOM_SEQUENCING_ERROR_RATE)
         return f"{depth - alt},{alt}"
     elif gt == "1/1":
-        ref = rng.binomialvariate(depth, HOM_SEQUENCING_ERROR_RATE)
+        ref = _binomial(rng, depth, HOM_SEQUENCING_ERROR_RATE)
         return f"{ref},{depth - ref}"
     else:  # 0/1
         bias = rng.uniform(-HET_ALLELIC_IMBALANCE, HET_ALLELIC_IMBALANCE)
-        alt = rng.binomialvariate(depth, EXPECTED_HET_VAF + bias)
+        alt = _binomial(rng, depth, EXPECTED_HET_VAF + bias)
         return f"{depth - alt},{alt}"
 
 

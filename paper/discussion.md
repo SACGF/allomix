@@ -51,7 +51,11 @@ model; Supplementary Figure S4). This is what explains the gap between an
 idealised in silico LoD and real-panel performance, and it is the same overdispersion
 that raises the goodness-of-fit statistic on the real SRP434573 mixtures, though the QC
 layer promotes a fit to REVIEW only when that misfit is large rather than merely
-significant at depth (Supplementary Methods S10).
+significant at depth (Supplementary Methods S10). For the same reason allomix does not
+weight marker contributions by per-base or per-genotype quality: on a Q30+ panel above
+1000x those reduce to the flat error model already in the likelihood, and the residual
+low-fraction limit is overdispersion and contamination rather than per-read or
+per-genotype quality (Supplementary Methods S11).
 
 Across the simulated depths the 95% intervals cover close to nominal
 ({{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}%) with overdispersion

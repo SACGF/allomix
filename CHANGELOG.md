@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- **PDF report output** #35
+- **`panel-qc` subcommand** #37
+- **Variant-caller mismatch warnings** #42
+- **Per-sample uniformity and shared het balance QC** #38
+- **Run command stored in reports**
+
+### Changed
+
+- **Renamed `monitor` subcommand to `detect`**
+- **`--admix-vcf` now repeatable** across VCFs
+- **Renamed CLI args** (`--panel-vcf` -> `--genotype-vcf`, `--samples` -> `--sample`)
+- **QC review flag made less sensitive** #40
+
 ## [0.3.0] - 2026-06-29
 
 ### Added

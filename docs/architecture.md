@@ -2,9 +2,7 @@
 
 A reading guide for the `src/allomix/` package. The goal is to let a reviewer
 walk the code in dependency order and know what each module owns before opening
-it. For the project history and the rationale behind each design decision, see
-`claude/allomix_overall_plan.md`; for the upstream pipeline rationale, see
-`docs/joint_calling.md`.
+it. For the upstream pipeline rationale, see `docs/joint_calling.md`.
 
 ## What the tool does
 
@@ -88,7 +86,7 @@ allomix answers two different questions, kept deliberately separate:
    carries the donor-absent allele. That allele sits at the sequencing-error
    background in a pure-donor sample, so its pooled read counts give a p-value
    and a separate low-level host-fraction estimate, more sensitive than the MLE
-   CI near full donor. See `claude/20_host_presence_detection_plan.md`.
+   CI near full donor.
 
 ## Marker keys and tables
 

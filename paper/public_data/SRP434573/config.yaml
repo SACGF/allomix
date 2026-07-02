@@ -44,7 +44,7 @@ bam_suffix: "hg38.bam"
 # stated ~1062 SNPs). See README.md "Panel BED".
 intervals: "paper/public_data/SRP434573/SRP434573.bed"
 # panel_alleles_vcf:  # optional — only needed if you want a fixed REF/ALT panel
-                      # forced at every site (see doc/joint_calling.md). Not
+                      # forced at every site (see docs/joint_calling.md). Not
                       # required here; host+donor joint calling discovers the
                       # informative sites within `intervals`.
 

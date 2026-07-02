@@ -9,8 +9,8 @@ measurable 0.5-10% window, keeping what a simulator cannot fully reproduce (true
 per-marker capture bias, real between-marker overdispersion, and this dataset's
 known co-pooled contamination floor).
 
-Two complementary readouts run in the same pass over every cell (see
-``claude/public_data_subsample_plan.md`` section 5); neither is primary:
+Two complementary readouts run in the same pass over every cell; neither is
+primary:
 
   - Magnitude (MLE) LoD: the beta-binomial donor/host-fraction estimate
     (``estimate_single_donor_bb``). A cell is detected when the 95% CI for the

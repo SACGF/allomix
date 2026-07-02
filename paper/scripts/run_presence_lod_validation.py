@@ -28,9 +28,8 @@ Two deliberate differences from the MLE sweep:
      simulator adds bias to the expected VAF before drawing reads, so at a
      donor-homozygous marker (where vaf is 0 or 1) bias injects a real per-marker
      ALT/REF excess on top of the e/3 error background and miscalibrates the
-     presence null (see ``claude/20_host_presence_detection_plan.md``). The MLE
-     figure keeps realistic bias; the two tests therefore need different blends
-     and cannot share one pass.
+     presence null. The MLE figure keeps realistic bias; the two tests therefore
+     need different blends and cannot share one pass.
      depth_cv and locus_dropout are kept (they do not add background).
 
 Overdispersion: like Figure 1 this runs binomial (``rho=inf``) by default. A

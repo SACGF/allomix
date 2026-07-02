@@ -155,7 +155,7 @@ near 0.5 give a >95% chance of at least three informative markers even for sibli
 their FABCASE tool can assess panel sufficiency prospectively for a specific donor-host
 pair.[@Vynck2022markers; @Vynck2025fabcase] Three markers is the floor for producing an
 estimate at all, not a target for sensitivity: the limit of detection keeps falling as
-informative markers are added (Figure 1), so reaching the low fractions that matter
+informative markers are added (Figure 4), so reaching the low fractions that matter
 clinically needs tens of informative markers, not a handful. Sample-ID marker sets with
 tens of polymorphic markers are therefore expected to be adequate for most clinical
 scenarios, with the achievable LoD improving as more of them fall informative for the
@@ -233,8 +233,7 @@ assay across a patient cohort, to be reported separately. Because allomix is
 panel-agnostic, that validation does not transfer between panels: a laboratory adopting
 the tool validates it on its own panel and specimen types, as for any
 laboratory-developed test, rather than relying on a single validation done once for the
-tool. A validation on one panel would not establish performance on the others the tool
-is meant to serve. Blouin et al. describe a practical framework for such validation,
+tool. Blouin et al. describe a practical framework for such validation,
 including run-level metrics and sample-level acceptance criteria, that is a useful model
 for future allomix studies.[@Blouin2024comparison]
 
@@ -248,21 +247,17 @@ clinical-validation-stage choice we leave to the adopting laboratory.
 The LoD reported here is a best-case analytical figure, not a validated
 assay limit (a real assay's LoD can only be higher). It is the CLSI EP17-A2
 95%-detection criterion[@CLSIEP17A2] applied to simulated data under a noise model
-calibrated from empirical panel data, with reads drawn from a binomial. The in silico
-LoD at 1,000x and 100 markers (magnitude estimate
-{{ lod_headline.unrelated_lod_1000x_100markers_pct }}% unrelated,
-{{ lod_headline.sibling_lod_1000x_100markers_pct }}% sibling; residual-host detection
-{{ presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct }}%
-unrelated, {{ presence_lod_curve_headline.presence_sibling_lod_1000x_100markers_pct }}%
-sibling) sits within the range reported for commercial NGS chimerism assays (0.06% for
-Devyser,[@Qama2026devyser] 0.3% for AlloSeq HCT,[@Kakodkar2023alloseq] 0.2--0.5% for
-ScisGo[@Blouin2024comparison]), but those vendor figures come from dilution series on
-real DNA, so the comparison is between a best-case analytical figure and reported wetlab
-performance, not a head-to-head benchmark on matched samples. The gap is expected to be
-driven largely by overdispersion (above), and wetlab validation will set the floor
-allomix actually delivers in routine use. As a partial check against real reads, we
+calibrated from empirical panel data, with reads drawn from a binomial. Table 1 lays out
+the full evidence ladder, from the ~1% real-data LoD on the SRP434573 mixtures to the
+sub-0.2% analytical figures in near-binomial simulation, and where each sits relative to
+the commercial assays: the simulated figures fall within the vendor range (0.06--0.5%)
+but come from a different kind of experiment, so the comparison is not a head-to-head
+benchmark on matched samples. The gap between the analytical figure and real-panel
+performance is expected to be driven largely by overdispersion (above), and wetlab
+validation will set the floor allomix actually delivers in routine use. As a partial
+check against real reads, we
 sub-sampled the high-depth SRP434573 mixtures across depth and panel size and measured
-the LoD on those reads directly (Figure 4): it falls with depth and panel size as the
+the LoD on those reads directly (Figure 3): it falls with depth and panel size as the
 simulated curves do and tracks them within the dilution grid, but because these are
 pseudo-replicates from one library rather than independent dilutions it confirms the
 simulated trend rather than replacing the wetlab limit. Finally, the in silico work

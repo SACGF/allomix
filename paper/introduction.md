@@ -83,10 +83,6 @@ discuss the practical considerations for integrating chimerism monitoring into e
 NGS pipelines. The scope of this paper is the tool, its estimation method, and an
 analytical characterization of how it behaves under controlled noise, with the
 real-mixture analysis as an independent check on reads we did not simulate. Clinical
-validation against STR chimerism on patient cohorts is a separate study and is
-deliberately out of scope here. Because allomix is panel-agnostic, there is no single
-assay to validate once: clinical performance depends on the specific marker set,
-sequencing chemistry, and specimen type a laboratory uses, so validation is necessarily
-done per laboratory and per panel, in the same way any laboratory-developed test is
-validated locally before use. A single validation on one panel would not transfer to the
-others the tool is meant to serve.
+validation against STR chimerism on patient cohorts is a separate study, out of scope
+here, and because allomix is panel-agnostic it is necessarily carried out by each
+laboratory on its own panel rather than once for the tool (Discussion).

@@ -92,18 +92,11 @@ Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even whe
 
 ## Validation and status
 
-Validation follows a two-phase approach: **in silico** (current) with synthetic chimeric VCFs and realistic noise models (per-marker bias, depth CV, locus dropout) calibrated from empirical panel data, all using multiple independent replicates (N>=5); and **wet-lab** (planned) with real patient samples and controlled dilution series.
+allomix has been validated in silico (synthetic chimeric VCFs with realistic noise models: per-marker bias, depth CV, locus dropout) and on real reads from a public dataset of titrated DNA mixtures (SRA study [SRP434573](https://www.ebi.ac.uk/ena/browser/view/PRJNA960854)). On the real mixtures it recovered known host fractions from 10% down to 1%, resolved a three-person mixture, and called residual host with no false positives on the pure-donor controls. Full validation, including the real-data limit of detection, is in the [paper build guide](docs/paper.md).
 
-Single-donor and multi-donor (up to 2 donors) chimerism estimation is implemented and validated in silico:
+These are analytical bounds, not wet-lab limits. Wet-lab validation against STR chimerism on real patient samples is planned, and is a per-laboratory step for any new panel.
 
-- MLE-based estimation using the Crysup & Woerner likelihood framework with known genotypes
-- Grid search + Brent refinement, profile-likelihood 95% confidence intervals
-- Multi-donor support with triangular grid search under the f1 + f2 <= 1 constraint
-- QC assessment (marker counts, depth, goodness-of-fit, outlier detection)
-- TSV and JSON output, including multi-timepoint timeline
-- 274 automated tests, in-silico validation at 0-100% donor fractions (RMSE ~0.3%)
-
-This project is under active development. The repository is currently private; an empty package is published to [PyPI](https://pypi.org/project/allomix/) to reserve the name. **Not yet implemented:** VariantGrid integration. See the [Changelog](CHANGELOG.md) for release history.
+This project is under active development.
 
 ## Project structure
 

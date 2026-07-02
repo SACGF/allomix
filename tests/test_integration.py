@@ -298,8 +298,9 @@ class TestCLIIntegration:
             ]
         )
         assert rc == 0
-        # Header plus at least one both-het marker row.
-        lines = out.read_text().splitlines()
+        # Header plus at least one both-het marker row (a leading # allomixCaller
+        # comment may precede the column header, issue #42).
+        lines = [ln for ln in out.read_text().splitlines() if not ln.startswith("#")]
         assert lines[0].split("\t") == ["chrom", "pos", "ref", "alt", "bias", "n_het"]
 
     def test_estimate_bias_both_het_requires_inputs(self):
@@ -326,7 +327,9 @@ class TestCLIIntegration:
         )
         assert rc == 0
         # File contributed HOST, --sample added DONOR: a joint-mode run over both.
-        assert out.read_text().splitlines()[0].split("\t") == [
+        # A leading # allomixCaller comment may precede the header (issue #42).
+        lines = [ln for ln in out.read_text().splitlines() if not ln.startswith("#")]
+        assert lines[0].split("\t") == [
             "chrom",
             "pos",
             "ref",

@@ -1,5 +1,7 @@
 # allomix
 
+[![tests](https://github.com/SACGF/allomix/actions/workflows/tests.yml/badge.svg)](https://github.com/SACGF/allomix/actions/workflows/tests.yml)
+
 NGS-based donor chimerism monitoring for hematopoietic stem cell transplantation (HSCT).
 
 **allomix** calculates donor chimerism percentages from NGS data, replacing traditional STR-based analysis with a higher-sensitivity SNP-based approach. It is panel-agnostic: it operates on whatever bi-allelic markers (SNPs or indels) are present in the input VCFs, whether that is 24 indels, 76 SNPs, 202 SNPs, or any other set of loci with sufficient depth.

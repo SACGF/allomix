@@ -39,14 +39,38 @@ from matplotlib.ticker import FuncFormatter  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import cyvcf2  # noqa: E402
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+from srp434573_common import SRP434573_COMMITTED_GENOTYPES  # noqa: E402
 
 from allomix.estimate.chimerism import detection_limit, estimate_single_donor_bb  # noqa: E402
-from allomix.genotype import InformativeMarker  # noqa: E402
+from allomix.genotype import InformativeMarker, classify_markers, parse_vcf  # noqa: E402
 from allomix.simulate import alt_dose, sample_allele_counts  # noqa: E402
 
 FACTS_DIR = Path("output/facts")
 ERROR_RATE = 0.01
+
+# Real per-sample rho fit (calibration). The committed SRP434573 dilution mixtures
+# (HiSeq 3000, ~1700x) are the real-data anchor for the overdispersion the binomial
+# simulation ignores. Map is the two-person subset of run_srp434573_allomix.MIXES
+# (name -> host, donor); three-person mixtures are excluded (single-donor fit only).
+REAL_MIX_HOST_DONOR = {
+    "mix_F1_into_F3": ("F1", "F3"),
+    "mix_F2_into_F1": ("F2", "F1"),
+    "mix_F2_into_M1": ("F2", "M1"),
+    "mix_F2_into_M2": ("F2", "M2"),
+    "mix_F3_into_F2": ("F3", "F2"),
+    "mix_M1_into_M2": ("M1", "M2"),
+    "mix_M3_into_F1": ("M3", "F1"),
+    "mix_M3_into_F2": ("M3", "F2"),
+    "mix_M3_into_F3": ("M3", "F3"),
+    "mix_M3_into_M4": ("M3", "M4"),
+}
+# Below this estimated donor fraction a sample is a pure-host blank: its donor-het
+# informative markers carry no ALT, so rho_het is unidentified (fits in the 100s to
+# 1000s). Fit rho only on genuine two-component samples above the cut.
+REAL_FIT_MIN_DONOR = 0.05
+REAL_FIT_ERROR_RATE = 0.001  # matches the per-patient error scale of the real runs
 
 
 def build_panel(n_markers: int, rng: random.Random) -> list[dict]:
@@ -129,16 +153,74 @@ def simulate_blank(
     return markers
 
 
+def fit_real_rho() -> dict:
+    """Fit per-class overdispersion on the committed real SRP434573 mixtures.
+
+    Runs the standard estimator on every admix sample of each two-person mixture
+    and takes the median fitted rho_het and rho_hom over genuine two-component
+    samples (estimated donor fraction above ``REAL_FIT_MIN_DONOR``). Returns a dict
+    with the medians, the calibration cut, and the sample count, or NaNs (with a
+    warning) if the committed genotypes are absent.
+    """
+    gen = SRP434573_COMMITTED_GENOTYPES
+    empty = {
+        "rho_het_median": float("nan"),
+        "rho_hom_median": float("nan"),
+        "n_samples": 0,
+    }
+    if not gen.exists():
+        print(f"WARNING: {gen} absent; skipping real-rho calibration", file=sys.stderr)
+        return empty
+    het_vals, hom_vals = [], []
+    for name, (host, donor) in REAL_MIX_HOST_DONOR.items():
+        panel = gen / f"{name}.SRP434573.vcf.gz"
+        admix = gen / f"{name}.admix.vcf.gz"
+        if not (panel.exists() and admix.exists()):
+            continue
+        host_mk = parse_vcf(panel, sample=host, min_gq=20, gt_ad_consistency=True)
+        donor_mk = parse_vcf(panel, sample=donor, min_gq=20, gt_ad_consistency=True)
+        for s in cyvcf2.VCF(str(admix)).samples:
+            geno = classify_markers(host_mk, [donor_mk], parse_vcf(admix, sample=s), sample_name=s)
+            if not geno.informative:
+                continue
+            r = estimate_single_donor_bb(geno.informative, error_rate=REAL_FIT_ERROR_RATE)
+            if r.donor_fraction < REAL_FIT_MIN_DONOR:
+                continue  # pure-host blank: rho_het unidentified
+            if math.isfinite(r.rho_het):
+                het_vals.append(r.rho_het)
+            if math.isfinite(r.rho_hom):
+                hom_vals.append(r.rho_hom)
+    if not het_vals:
+        print("WARNING: no real samples fit; skipping real-rho calibration", file=sys.stderr)
+        return empty
+    het_median = float(np.median(het_vals))
+    hom_median = float(np.median(hom_vals)) if hom_vals else float("nan")
+    print(
+        f"real fit: rho_het median={het_median:.1f} (n={len(het_vals)}), "
+        f"rho_hom median={hom_median:.1f}"
+    )
+    return {
+        "rho_het_median": het_median,
+        "rho_hom_median": hom_median,
+        "n_samples": len(het_vals),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--depth", type=int, default=1000, help="Mean depth (default 1000)")
     parser.add_argument(
-        "--markers", type=int, default=150, help="Informative markers (default 150)"
+        "--markers",
+        type=int,
+        default=100,
+        help="Informative markers (default 100, the paper's reference operating point)",
     )
     parser.add_argument(
-        "--n-reps", type=int, default=qval(60, 10),
+        "--n-reps",
+        type=int,
+        default=qval(60, 10),
         help="Blank replicates per rho (default 60; 10 in quick-build mode)",
     )
     parser.add_argument(
@@ -160,7 +242,13 @@ def main() -> None:
     panel = build_panel(args.markers, rng)
     info_markers = _markers_for_panel(panel, args.depth)
 
-    rhos = [*sorted(args.rhos), float("inf")]
+    # Anchor the sweep to real data: fit rho on the committed SRP434573 mixtures and
+    # add the fitted rho_het to the grid so its LoD is simulated exactly (not
+    # interpolated), giving the calibrated point the caption cites.
+    real_fit = fit_real_rho()
+    fitted = real_fit["rho_het_median"]
+    extra = [round(fitted)] if math.isfinite(fitted) else []
+    rhos = [*sorted({*args.rhos, *extra}), float("inf")]
     rows = []
     for rho in rhos:
         est_fracs, tool_lods = [], []
@@ -189,12 +277,12 @@ def main() -> None:
             f"analytic_LoD={an_lod * 100:.3f}%"
         )
 
-    _plot(rows, args)
+    _plot(rows, args, real_fit)
     _write_facts(rows, args)
-    _write_headline(rows, args)
+    _write_headline(rows, args, real_fit)
 
 
-def _plot(rows: list[dict], args: argparse.Namespace) -> None:
+def _plot(rows: list[dict], args: argparse.Namespace, real_fit: dict) -> None:
     finite = [r for r in rows if math.isfinite(r["rho"])]
     rho_x = [r["rho"] for r in finite]
     fig, ax = plt.subplots(figsize=(8.0, 6.0))
@@ -222,6 +310,21 @@ def _plot(rows: list[dict], args: argparse.Namespace) -> None:
         fontsize=8,
         va="bottom",
     )
+
+    # Mark the rho fitted on the real SRP434573 mixtures (the calibrated operating point).
+    fitted = real_fit["rho_het_median"]
+    if math.isfinite(fitted):
+        ax.axvline(fitted, color="#9467bd", ls="--", lw=1.2)
+        ax.text(
+            fitted,
+            ax.get_ylim()[1],
+            f"real fit rho≈{fitted:.0f} ",
+            color="#9467bd",
+            fontsize=8,
+            ha="right",
+            va="top",
+            rotation=90,
+        )
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -271,14 +374,23 @@ def _write_facts(rows: list[dict], args: argparse.Namespace) -> None:
     print(f"Wrote {args.facts}")
 
 
-def _write_headline(rows: list[dict], args: argparse.Namespace) -> None:
-    """Single-row headline facts for the paper (tool LoD at a few reference rhos)."""
+def _write_headline(rows: list[dict], args: argparse.Namespace, real_fit: dict) -> None:
+    """Single-row headline facts for the paper (tool LoD at a few reference rhos).
+
+    ``real_fit`` carries the median rho fitted on the real SRP434573 mixtures; its
+    calibrated LoD point (``lod_at_real_rho_pct``) is the tool LoD simulated at the
+    fitted rho_het, which was added to the sweep grid so it is exact, not interpolated.
+    """
 
     def lod_at(rho_target: float) -> float:
         return min(rows, key=lambda r: abs(r["rho"] - rho_target))["tool_lod_pct"]
 
     binom = next(r for r in rows if math.isinf(r["rho"]))["tool_lod_pct"]
     lod100 = lod_at(100)
+    fitted = real_fit["rho_het_median"]
+    hom = real_fit["rho_hom_median"]
+    real_ok = math.isfinite(fitted)
+    lod_real = lod_at(fitted) if real_ok else float("nan")
     with args.headline.open("w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(
@@ -290,6 +402,11 @@ def _write_headline(rows: list[dict], args: argparse.Namespace) -> None:
                 "lod_rho100_pct",
                 "lod_rho30_pct",
                 "fold_rho100_vs_binomial",
+                "real_rho_het_median",
+                "real_rho_hom_median",
+                "n_real_mixed_samples",
+                "lod_at_real_rho_pct",
+                "fold_real_rho_vs_binomial",
             ]
         )
         w.writerow(
@@ -301,6 +418,11 @@ def _write_headline(rows: list[dict], args: argparse.Namespace) -> None:
                 f"{lod100:.3f}",
                 f"{lod_at(30):.3f}",
                 f"{lod100 / binom:.1f}",
+                f"{fitted:.0f}" if real_ok else "nan",
+                f"{hom:.0f}" if math.isfinite(hom) else "nan",
+                real_fit["n_samples"],
+                f"{lod_real:.3f}" if real_ok else "nan",
+                f"{lod_real / binom:.1f}" if real_ok else "nan",
             ]
         )
     print(f"Wrote {args.headline}")

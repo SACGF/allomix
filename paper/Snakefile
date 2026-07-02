@@ -140,6 +140,10 @@ QC_GATING_FACTS = [f"{FACTS_DIR}/qc_gating.csv"]
 # their absence leaves the build unchanged (run_srp434573_allomix.py falls back to
 # the default error model).
 SRP434573_ERROR_TABLES = sorted(glob.glob(f"{SRP434573_GENOTYPES}/*.error_table.tsv"))
+# Committed real genotype + admix VCFs. The overdispersion_lod rule fits rho on
+# these mixtures to calibrate its simulated sweep, so it reruns if the snapshot
+# changes; absent (fresh checkout), run_overdispersion_lod.py skips the fit.
+SRP434573_GENOTYPE_VCFS = sorted(glob.glob(f"{SRP434573_GENOTYPES}/*.vcf.gz"))
 # Semi-synthetic sub-0.5% admix VCFs (issue #5), committed under genotypes_synthetic
 # once generated TAU-side. Listed as optional inputs so srp434573_allomix reruns
 # (and writes output/srp434573_synthetic.tsv) when they are added/updated; their
@@ -388,6 +392,13 @@ rule lod_saturation:
 
 
 rule overdispersion_lod:
+    # Simulated LoD-vs-rho sweep, calibrated to the overdispersion fitted on the
+    # committed real SRP434573 mixtures (the fitted rho is added to the swept grid
+    # so its LoD point is exact). Reads VCFs only; the sweep itself is self-contained.
+    input:
+        "paper/scripts/run_overdispersion_lod.py",
+        "paper/scripts/srp434573_common.py",
+        *SRP434573_GENOTYPE_VCFS,
     output:
         OVERDISP_FACTS,
         OVERDISP_FIGS,

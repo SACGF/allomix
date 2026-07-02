@@ -36,9 +36,12 @@ bias correction and overdispersion modelling that the original derivation does n
 Overdispersion is also the dominant control on the LoD at high depth: as
 depth grows, the per-marker variance stops falling and the effective depth is capped, so
 the LoD saturates at a floor rather than continuing to improve as 1/√n (Supplementary
-Figures S7, S8). At a fitted overdispersion consistent with our panel the in silico LoD
-is roughly {{ overdispersion_lod_headline.fold_rho100_vs_binomial }}-fold higher than
-the pure-binomial value, so beyond that regime adding depth buys little and the panel's
+Figures S7, S8). At the overdispersion fitted from our real mixtures (heterozygous-class
+$\rho \approx$ {{ overdispersion_lod_headline.real_rho_het_median }}) the in silico LoD is
+roughly {{ overdispersion_lod_headline.fold_real_rho_vs_binomial }}-fold higher than the
+pure-binomial value (rising to
+{{ overdispersion_lod_headline.lod_at_real_rho_pct }}%, near the ~1% measured directly on
+the same mixtures), so beyond that regime adding depth buys little and the panel's
 overdispersion, not its coverage, sets the achievable LoD. Marker count is a separate
 hard limit: depth and overdispersion act on the markers a panel already has, and no
 amount of depth compensates for too few informative markers, so panel size floors the

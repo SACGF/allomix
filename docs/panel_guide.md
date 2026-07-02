@@ -27,7 +27,8 @@ Steps, in order:
 A marker is informative for a given transplant only if it distinguishes host from
 donor, so informative-marker counts are **pair-specific**: the same panel gives
 different counts for different host/donor pairs, and unrelated pairs share more
-informative markers than siblings.
+informative markers than siblings. For how allomix classifies markers and what
+each class is used for, see [Marker types](marker_types.md).
 
 The literature gives a usable rule of thumb. Vynck et al. (2022, Clin Chim Acta
 532:123-129) showed that as few as three informative markers can support

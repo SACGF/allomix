@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-02
+
 ### Added
 
 - **PDF report output** #35
@@ -30,5 +32,6 @@
   etc. are installed, set once per machine) and per-run configuration (#30). Tool
   paths no longer need to be re-specified for every run.
 
-[Unreleased]: https://github.com/SACGF/allomix/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/SACGF/allomix/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/SACGF/allomix/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SACGF/allomix/compare/v0.2.0...v0.3.0

@@ -147,7 +147,7 @@ FACTS_DIR = Path("output/facts")
 WORK_DIR = Path("output/lod_validation")
 
 LOGIT_95 = math.log(0.95 / 0.05)  # 2.944...
-# Sentinels for the two edge cells the plan asks us to stop on.
+# Sentinels for the two edge cells: LoD below or above the probed range.
 LOD_BELOW_RANGE = -1.0
 LOD_ABOVE_RANGE = float("inf")
 # Probed-fraction bounds clamping per-pair sentinel LoDs before the across-pair
@@ -427,7 +427,7 @@ def compute_pair_lod(cell_rows: list[dict]) -> dict:
     fit = fit_lod(fractions, rates, weights)
     note = ""
     if fit is None:
-        # Two saturated cases the plan asks us to stop on.
+        # Two saturated cases: every cell detected, or none detected.
         if all(r >= 0.95 for r in rates):
             lod = LOD_BELOW_RANGE
             note = "all_detected"

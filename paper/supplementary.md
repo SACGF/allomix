@@ -17,17 +17,14 @@ $$w_i(f) = (1 - f)\,\frac{g_{h,i}}{2} + f\,\frac{g_{d,i}}{2}$$
 Markers are informative for the fraction estimate when host and donor genotypes differ.
 Following Vynck et al.,[@Vynck2023bias] each informative marker is assigned one of six
 types by host/donor alternative-allele dose (the six types and which part of allomix uses
-each are tabulated in the main Methods, "Which markers are informative"). Markers where
-host and every donor share a genotype are non-informative for the fraction but feed the QC
-checks (S8): the consensus-homozygous class (all parties homozygous for the same allele)
-drives contamination and sample-swap detection, and the consensus-heterozygous class (all
-parties heterozygous) drives the shared-het allele-balance check.
+each are tabulated in the main Methods, "Which markers are informative").
 
-At consensus-homozygous markers (host and every donor homozygous for the same allele) the
-minority allele can only be a background artifact or foreign DNA, which drives
-contamination estimation and the sample-swap test. At consensus-heterozygous markers (host
-and every donor heterozygous) the admixture alternative-allele fraction should sit near
-0.5 whatever the mixing fraction, so a systematic skew is a separate signal for
+Markers where host and every donor share a genotype are non-informative for the fraction
+but feed the QC checks (S8). At consensus-homozygous markers (all parties homozygous for
+the same allele) the minority allele can only be a background artifact or foreign DNA,
+which drives contamination estimation and the sample-swap test. At consensus-heterozygous
+markers (all parties heterozygous) the admixture alternative-allele fraction should sit
+near 0.5 whatever the mixing fraction, so a systematic skew is a separate signal for
 contamination, allelic imbalance, or a sample mix-up. Default filters: host and donor GQ
 $\geq$ 20, admixture DP $\geq$ 100, and at least three informative markers.
 
@@ -136,9 +133,9 @@ model nor this single public dataset provides a calibrated per-site table.
 
 ### S8. In-data contamination estimation
 
-Contamination is measured at consensus-homozygous markers, where host and every donor
-are homozygous for the same allele, so the minor allele can only be a background artifact
-or foreign DNA. The headline estimate is the background-subtracted median per-site
+Contamination is measured at the consensus-homozygous markers (S1), where the minor
+allele can only be a background artifact or foreign DNA. The headline estimate is the
+background-subtracted median per-site
 minor-allele fraction: the median is used rather than a pooled mean so a few gross
 miscall sites do not dominate, sites above 10% minor fraction are capped as miscalls,
 and the error floor is the 10th percentile of per-site minor fractions (the
@@ -152,8 +149,7 @@ test runs at the same consensus sites: a per-site binomial tail at the error rat
 sites where the minor allele is individually significant, combined into a swap p-value
 over discordant sites, catching a wrong-patient VCF that the informative-marker
 goodness-of-fit never sees. A complementary allele-balance check runs at
-consensus-heterozygous markers instead (host and every donor heterozygous), where the
-admixture alternative-allele fraction should sit near 0.5 whatever the mixing fraction;
+the consensus-heterozygous markers (S1) instead;
 the fraction of markers skewed outside a 70:30 band is reported and promotes the sample
 to manual review above a set count, flagging contamination, copy-number or allelic
 imbalance, or a sample mix-up that the consensus-homozygous checks do not test. An
@@ -184,29 +180,26 @@ rather than applied unconditionally.
 
 ### S9. Simulation, limit of detection, and copy-number model
 
-The simulator draws each marker's expected alternative-allele frequency from the same
-mixture and error model used by the estimator, $\text{VAF}_{expected} = [(1-f)a_h + f
-a_d]/2$ (with $a_h, a_d$ the alternative doses), then applies per-marker bias,
-log-normal depth, sequencing error, and locus dropout (main Methods), and draws counts
-from a binomial (or, for the overdispersion characterisation, a beta-binomial at
-concentration $\rho$). The LoD sweep uses a nested design: for each relatedness level,
-multiple donor/host pairs ({{ lod_headline.n_pairs_unrelated | int }} unrelated,
-{{ lod_headline.n_pairs_sibling | int }} sibling) have fixed genotypes (population allele
-frequencies, MAF 0.2--0.5) and per-marker bias reused across all depths and panel sizes,
-with panels strictly nested (a smaller panel is a bit-identical prefix of a larger one);
-each pair then has {{ lod_headline.n_seq_reps | int }} sequencing replicates per cell that
-vary only read-sampling noise. Holding the pair fixed isolates sequencing noise within a
-pair and makes each pair's LoD curve monotonic in panel size, while the across-pair
-identity-by-descent spread is reported as a band rather than leaking into the central
-estimate. Seeds are SHA-256-derived for process-stable reproducibility. For recipient
-copy-number aberrations, the recipient is modelled as a mixture of normal diploid cells
+The simulator draws each marker's expected alternative-allele frequency as
+$\text{VAF}_{expected} = [(1-f)a_h + f a_d]/2$ (with $a_h, a_d$ the alternative doses),
+applies the four noise sources of the main Methods, and draws counts from a binomial (or
+a beta-binomial at concentration $\rho$ for the overdispersion characterisation). The LoD
+sweep uses a nested design: for each relatedness level, multiple donor/host pairs
+({{ lod_headline.n_pairs_unrelated | int }} unrelated,
+{{ lod_headline.n_pairs_sibling | int }} sibling) have fixed genotypes (MAF 0.2--0.5) and
+per-marker bias reused across all depths and panel sizes, panels strictly nested (a
+smaller panel is a bit-identical prefix of a larger one), and
+{{ lod_headline.n_seq_reps | int }} sequencing replicates per cell varying only
+read-sampling noise. Holding the pair fixed makes each pair's LoD curve monotonic in
+panel size while the across-pair identity-by-descent spread is reported as a band rather
+than leaking into the central estimate; seeds are SHA-256-derived for reproducibility.
+For recipient copy-number aberrations the recipient is a mixture of normal diploid cells
 and an aberrant clone at a clonal fraction, with the expected allele fraction a
 copy-number-weighted average over normal recipient, recipient clone, and donor; three
-aberration types are produced by mutating one germline homolog of the clone
-(copy-neutral LoH: retained homolog duplicated, two copies, heterozygous sites only;
-deletion: one copy; gain: three copies), with deletion and gain also changing the locus
-DNA contribution at homozygous sites. The aberration is applied only to the admixture
-sample, matching the two-phase workflow.
+aberration types are produced by mutating one clone homolog (copy-neutral LoH: retained
+homolog duplicated, heterozygous sites only; deletion: one copy; gain: three copies),
+deletion and gain also changing the locus DNA contribution at homozygous sites. The
+aberration is applied only to the admixture sample.
 
 ### S10. QC gating on effect size, not significance
 
@@ -339,13 +332,11 @@ intervals showed coverage of
 95% across the depth range, with the per-marker-type overdispersion model (separate
 donor-homozygous and donor-heterozygous concentration) absorbing the extra-binomial
 scatter that a single shared term left in the residuals. Per-marker bias correction is
-available but its effect is modest by design: in a 2,000x experiment it left the point
-estimate essentially unchanged (0% and 100% donor samples estimated at
-{{ bias_with_bias.est_0pct }}% and {{ bias_with_bias.est_100pct }}%) while narrowing the
-mean interval from {{ bias_no_bias.mean_ci_width_pct | dp(2) }}% to
-{{ bias_with_bias.mean_ci_width_pct | dp(2) }}%, because in logit space the correction is
-a small proportional adjustment at the extreme allele frequencies that dominate
-low-fraction samples (Figure S4).
+available but modest by design: in a 2,000x experiment it left the point estimate
+essentially unchanged (0% and 100% donor estimated at {{ bias_with_bias.est_0pct }}% and
+{{ bias_with_bias.est_100pct }}%) while narrowing the mean interval from
+{{ bias_no_bias.mean_ci_width_pct | dp(2) }}% to
+{{ bias_with_bias.mean_ci_width_pct | dp(2) }}% (Supplementary Methods S6, Figure S4).
 
 <!-- include-csv: output/facts/table_depth.csv
   align: center
@@ -364,15 +355,12 @@ absolute-error boxplots and depth-summary panels are Figures S10 and S11.
 
 ![Figure S1]({{ facts_dir }}/fig_bias_distributions.png)
 
-**Figure S1.** Per-marker amplification bias distribution. (A) Histogram of empirical
-per-marker bias (median het VAF deviation from 0.5) measured across
-{{ supp_synthetic.n_empirical_markers | dp(0) }} markers, with kernel density estimates
-from a simple Gaussian model and the heavy-tailed mixture model used in allomix
-simulations. The mixture model (95% N(0, 0.012), 5% N(0, 0.08)) captures the heavy tails
-observed in the empirical data, where the 95th percentile of |bias| reaches
-{{ supp_synthetic.empirical_p95_abs_bias }}. (B) Cumulative distribution of |bias|
-showing the mixture model tracks the empirical tail while the simple Gaussian
-underestimates extreme values.
+**Figure S1.** Per-marker amplification bias distribution across
+{{ supp_synthetic.n_empirical_markers | dp(0) }} markers (median het VAF deviation from
+0.5). The heavy-tailed mixture model used in simulation (95% N(0, 0.012), 5% N(0, 0.08))
+tracks the empirical tail (95th percentile of |bias|
+{{ supp_synthetic.empirical_p95_abs_bias }}), which a simple Gaussian underestimates. (A)
+Histogram with kernel density estimates; (B) cumulative distribution of |bias|.
 
 ### S2. Depth Distribution
 
@@ -386,34 +374,28 @@ samples for each marker, showing the range of per-marker depth variability.
 
 ![Figure S3]({{ facts_dir }}/fig_het_vaf.png)
 
-**Figure S3.** Violin plots of median heterozygous VAF per marker: empirical
-measurements ({{ supp_synthetic.n_empirical_markers | dp(0) }} markers from
-{{ panel_specs.n_markers_panel }}-SNP rhAmpSeq panel) vs simulated values drawn from the
-heavy-tailed mixture bias model. Both distributions are centred on 0.5 with comparable
-spread, confirming that the simulation reproduces the per-marker VAF displacement
-observed in real sequencing data.
+**Figure S3.** Violin plots of median heterozygous VAF per marker, empirical
+({{ supp_synthetic.n_empirical_markers | dp(0) }} markers) versus simulated: both centred
+on 0.5 with comparable spread, so the simulation reproduces the per-marker VAF
+displacement seen in real data.
 
 ### S4. Noise Component Ablation
 
 ![Figure S4]({{ facts_dir }}/fig_ablation.png)
 
-**Figure S4.** Effect of individual noise components on estimation accuracy (500x depth,
-10 replicates per condition, 7 conditions). (A) Overall RMSE by noise condition. Under
-ideal conditions RMSE is {{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification
-bias alone raises it to {{ supp_synthetic.ablation_rmse_bias_only_pct }}%, and bias
-correction leaves it essentially unchanged at this depth
-({{ supp_synthetic.ablation_rmse_bias_corrected_pct }}%), since the injected biases
-average near zero and their spread is largely absorbed by the overdispersion term. The
-full realistic model with binomial read sampling (all noise sources, bias corrected)
-produces {{ supp_synthetic.ablation_rmse_full_pct }}% RMSE; this is the
-no-overdispersion baseline. Adding per-marker overdispersion to that full model
-(beta-binomial read sampling at the fitted concentration rho = 100, applied at
-intermediate-VAF markers where amplification jitter is physical) raises RMSE to
+**Figure S4.** Effect of individual noise components on estimation accuracy (500x, 10
+replicates, 7 conditions). (A) Overall RMSE by condition: ideal
+{{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification bias alone
+{{ supp_synthetic.ablation_rmse_bias_only_pct }}%, essentially unchanged by bias
+correction ({{ supp_synthetic.ablation_rmse_bias_corrected_pct }}%) since injected biases
+average near zero and their spread is absorbed by the overdispersion term. The full
+binomial model (all noise sources, bias corrected) gives
+{{ supp_synthetic.ablation_rmse_full_pct }}%, the no-overdispersion baseline; adding
+per-marker overdispersion (beta-binomial at fitted rho = 100) raises it to
 {{ supp_synthetic.ablation_rmse_overdispersion_pct }}%, a larger effect than any single
-bias, depth, or sequencing-error component. This is consistent with overdispersion,
-rather than depth, being the dominant control on accuracy and on the LoD
-at clinical coverage (Figures S7, S8). (B) Mean absolute error by true donor fraction
-for each condition. Dashed lines indicate conditions with bias correction applied.
+bias, depth, or sequencing-error component: the accuracy-side counterpart to
+overdispersion controlling the LoD (Figures S7, S8). (B) Mean absolute error by true
+donor fraction; dashed lines are bias-corrected conditions.
 
 ### S5. Confidence Interval Calibration
 
@@ -478,17 +460,13 @@ figure.
 
 ![Figure S9]({{ facts_dir }}/fig_bias_stability.png)
 
-**Figure S9.** Validation of the fixed-bias-per-marker assumption used by the simulator
-and the bias-correction model. Each point is one of the
-{{ supp_synthetic.n_empirical_markers | dp(0) }} panel markers: the x-axis is its
-absolute median amplification bias (the systematic, marker-specific component), and the
-y-axis is its within-marker standard deviation of heterozygous VAF across samples (the
-random, sample-to-sample component). The two are only weakly correlated (r =
-{{ supp_synthetic.bias_stability_r | dp(2) }}), so a marker's systematic bias does not
-predict its sample-to-sample scatter. Bias behaves as a stable per-marker offset rather
-than a quantity that grows with marker noise, which supports modelling it as a fixed
-offset (Supplementary Methods S6) and absorbing the residual scatter separately through
-the overdispersion term.
+**Figure S9.** Validation of the fixed-bias-per-marker assumption. Each of the
+{{ supp_synthetic.n_empirical_markers | dp(0) }} markers is plotted by its absolute median
+bias (systematic component) against its within-marker het-VAF SD across samples (random
+component). The two are only weakly correlated (r =
+{{ supp_synthetic.bias_stability_r | dp(2) }}), so bias behaves as a stable per-marker
+offset rather than a quantity that grows with noise, supporting a fixed offset
+(Supplementary Methods S6) with residual scatter absorbed by the overdispersion term.
 
 ### S10. Absolute Error by Depth (Boxplots)
 

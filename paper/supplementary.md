@@ -246,6 +246,37 @@ the detection floor. The legacy p-value-only rules would flag
 {{ qc_gating.n_review_legacy }} of {{ qc_gating.n_timepoints }} on the identical fits,
 including accurate estimates from 2.5% to 100% host that need no review.
 
+### S11. Per-read and per-genotype weighting refinements considered and not adopted
+
+Three per-marker weighting refinements were considered and left out, because each targets
+a noise source that is not the low-fraction limiter at clinical depth.
+
+Genotype-quality weighting would replace the hard `--min-gq` cutoff with a per-marker
+weight from the Phred genotype posterior, keeping borderline calls but down-weighting
+them. On a panel run above 1000x nearly every host and donor call is GQ 99, so the weight
+is close to 1 at almost every marker and the method reduces to the current hard filter.
+The only markers it recovers are the handful at GQ 10 to 20 on weak host genotyping, which
+do not move the overdispersion and contamination floor that sets low-fraction accuracy.
+
+Per-base-quality weighting (as in Conpair) would weight each read by its base quality
+through a per-marker effective error rate. This is the most invasive change for the
+smallest expected gain. The production VCF carries no per-base quality, so it would need
+an extra `bcftools mpileup -a FORMAT/QS` pass at the panel sites, and on a Q30+ panel the
+resulting per-marker error barely differs from the flat `--error-rate` already used. The
+mean-Phred-to-error conversion also underestimates the true error under Jensen's inequality
+when base qualities are heterogeneous. As with genotype-quality weighting, the dominant
+low-fraction noise is overdispersion and contamination, neither of which this addresses.
+
+An in-likelihood contamination term would add a per-marker contamination rate as a nuisance
+parameter inside the MLE and joint-fit it with the host fraction, replacing the
+pre-subtraction correction of Supplementary Methods S8. Host fraction and contamination
+both add reads to the host allele and are partially confounded, so identifiability would
+have to come from the co-pooled carrier-dose structure (contamination scales with the
+number of co-pooled carriers, host signal does not), adding model complexity for an
+interior refinement. The pre-subtraction together with the two independent readouts, the
+residual-host presence test and the consensus-homozygous contamination report, already
+separates these signals without that coupling.
+
 ## Supplementary Table S1. Empirical Panel Characterisation
 
 Per-marker amplification bias, depth distribution, locus dropout, and allele dropout

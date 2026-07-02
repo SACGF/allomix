@@ -8,6 +8,10 @@
 
 - **Relative documentation links in README** now use absolute GitHub URLs so they
   resolve on the PyPI project page.
+- **Simulator reproducibility across Python versions.** Binomial allele-count draws
+  now always use numpy's generator instead of `random.Random.binomialvariate`
+  (which only exists on Python 3.12+), so simulated data is identical across
+  interpreter versions.
 
 ## [0.4.0] - 2026-07-02
 

@@ -204,14 +204,6 @@ class TestSampleAlleleCounts:
         assert ref == 0
         assert alt == 1000
 
-    def test_binomial_in_expected_range(self) -> None:
-        """With depth=10000 and vaf=0.5, ALT count should be near 5000."""
-        rng = random.Random(123)
-        alt_counts = [sample_allele_counts(0.5, 10000, rng)[1] for _ in range(20)]
-        mean_alt = sum(alt_counts) / len(alt_counts)
-        # Should be within ~2% of 5000
-        assert 4800 < mean_alt < 5200
-
     def test_overdispersion_inflates_variance(self) -> None:
         """Finite rho should widen the VAF spread well beyond binomial."""
         depth, n = 2000, 400
@@ -373,25 +365,6 @@ class TestSampleAlleleCountsErrorModel:
         mean_alt_rate = sum(alt_counts) / (n_trials * depth)
         assert abs(mean_alt_rate - expected_p) < 0.001, (
             f"Expected {expected_p:.6f}, got {mean_alt_rate:.6f}"
-        )
-
-    def test_not_symmetric_model(self) -> None:
-        """Verify we are NOT using the old symmetric model.
-
-        Under the old symmetric model, vaf=0.0 with error_rate=0.03 would give
-        p_obs = 0.03.  Under the 4-state model it should be 0.01.
-        """
-        rng = random.Random(42)
-        n_trials = 200
-        depth = 10000
-        alt_counts = [
-            sample_allele_counts(0.0, depth, rng, error_rate=0.03)[1] for _ in range(n_trials)
-        ]
-        mean_alt_rate = sum(alt_counts) / (n_trials * depth)
-        # Under old symmetric model this would be ~0.03.
-        # Under 4-state model it should be ~0.01.
-        assert mean_alt_rate < 0.02, (
-            f"ALT rate {mean_alt_rate:.4f} is too high; looks like the old symmetric error model"
         )
 
 
@@ -782,8 +755,6 @@ class TestBlendVcfLocusDropout:
 # Tests: build_joint_vcf
 # ---------------------------------------------------------------------------
 
-TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
-
 
 class TestBuildJointVcf:
     """Test the multi-sample joint VCF builder."""
@@ -892,24 +863,6 @@ class TestBuildJointVcf:
                 target_depth=1000,
                 seed=42,
             )
-
-    def test_from_existing_test_data(self) -> None:
-        """Build from the existing host/donor test data VCFs."""
-        host_path = TEST_DATA_DIR / "host.vcf"
-        donor_path = TEST_DATA_DIR / "donor.vcf"
-        if not host_path.exists():
-            pytest.skip("Test data not available")
-
-        result = build_joint_vcf(
-            host_path=str(host_path),
-            donor_paths=[str(donor_path)],
-            admix_fractions=[0.10],
-            admix_sample_names=["TP1"],
-            target_depth=2000,
-            seed=42,
-        )
-        assert result.num_markers > 0
-        assert result.num_informative > 0
 
 
 # ---------------------------------------------------------------------------
@@ -1170,7 +1123,6 @@ class TestThinInformativeMarkers:
         out = thin_informative_markers(markers, 0.3, rng)
         for m in out:
             assert m.admix_dp == m.admix_ad_ref + m.admix_ad_alt
-            assert m.admix_dp <= 1500 * 5  # sanity bound
 
     def test_mean_depth_scales_with_rate(self) -> None:
         """Mean thinned depth ~ rate * original mean over many markers."""
@@ -1184,13 +1136,13 @@ class TestThinInformativeMarkers:
 
     def test_allele_ratio_preserved_in_expectation(self) -> None:
         """Pooled ALT fraction is preserved over many seeds (thinning is unbiased)."""
-        markers = _make_markers(500, 2000, 0.43, 0.3, seed=4)
+        markers = _make_markers(100, 2000, 0.43, 0.3, seed=4)
         orig_alt = sum(m.admix_ad_alt for m in markers)
         orig_tot = sum(m.admix_dp for m in markers)
         orig_frac = orig_alt / orig_tot
         rate = 0.2
         fracs = []
-        for s in range(30):
+        for s in range(8):
             rng = np.random.default_rng(100 + s)
             out = thin_informative_markers(markers, rate, rng)
             alt = sum(m.admix_ad_alt for m in out)

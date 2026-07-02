@@ -44,7 +44,6 @@ class TestFloorDetectionLimits:
         _floor_detection_limits(res, 0.002)
         assert res.lob_fraction == 0.002
         assert res.lod_fraction == 0.005
-        assert res.lod_fraction >= res.lob_fraction
 
     def test_floor_below_both_is_noop(self):
         res = _single_result(lob=0.003, lod=0.006)

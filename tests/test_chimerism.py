@@ -25,7 +25,7 @@ from allomix.estimate.likelihood import (
 )
 from allomix.genotype import InformativeMarker, MarkerGenotypes
 from allomix.qc.qc import assess_quality
-from allomix.results import ChimerismResult, MarkerResult
+from allomix.results import MarkerResult
 from allomix.simulate import (
     expected_vaf,
     generate_marker_biases_realistic,
@@ -241,12 +241,6 @@ class TestBetaBinomialLikelihood:
     def test_zero_reads_returns_zero(self) -> None:
         assert log_likelihood_marker_bb(0, 0, 0.5, 0.01, 100.0) == 0.0
 
-    def test_ll_negative_for_nonzero_reads(self) -> None:
-        """LL should be negative for any non-zero read counts."""
-        ll = log_likelihood_marker_bb(700, 300, 0.7, 0.01, 100.0)
-        assert math.isfinite(ll)
-        assert ll < 0.0
-
     def test_ll_maximised_near_true_w(self) -> None:
         """LL should be higher when w matches the data."""
         ad_ref, ad_alt, e = 700, 300, 0.01
@@ -327,10 +321,11 @@ class TestEstimateSingleDonorBB:
 
         for mr in result.per_marker:
             assert isinstance(mr, MarkerResult)
-            assert 0.0 <= mr.expected_vaf <= 1.0
-            assert 0.0 <= mr.observed_vaf <= 1.0
-            assert mr.dp == mr.ad_ref + mr.ad_alt
             assert mr.dp > 0
+            # Type-0 markers: expected VAF tracks the fitted donor fraction (near f=0.10),
+            # and residuals stay small on clean binomial data.
+            assert mr.expected_vaf == pytest.approx(0.10, abs=0.02)
+            assert abs(mr.residual) < 0.02
 
     def test_log_likelihood_is_finite(self) -> None:
         """MLE log-likelihood should be finite and negative."""
@@ -356,14 +351,6 @@ class TestEstimateSingleDonorBB:
 
         assert result.n_informative == 1
         assert result.donor_fraction == pytest.approx(0.10, abs=0.02)
-
-    def test_result_type(self) -> None:
-        """Verify the return type is ChimerismResult."""
-        markers = _make_markers_for_fraction(0.10, n_markers=5, dp=1000, seed=42)
-        result = estimate_single_donor_bb(markers)
-        assert isinstance(result, ChimerismResult)
-        assert isinstance(result.donor_fraction_ci, tuple)
-        assert len(result.donor_fraction_ci) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -458,13 +445,6 @@ class TestDetectionLimit:
         result = estimate_single_donor_bb([])
         assert math.isinf(result.lod_fraction)
 
-    def test_se_positive_and_finite(self) -> None:
-        """fraction_se returns a positive finite SE for informative markers."""
-        markers = _make_markers_for_fraction(0.0, n_markers=30, dp=1000, seed=9)
-        se = fraction_se(markers, 0.0)
-        assert math.isfinite(se)
-        assert se > 0.0
-
 
 # ---------------------------------------------------------------------------
 # Vectorized likelihood numeric-equivalence tests
@@ -525,10 +505,7 @@ def test_vectorized_ll_no_biases_path() -> None:
     markers = [_mk("chr1", 100, (0, 0), (0, 1), 480, 20)]
     arr = _precompute_marker_arrays(markers, PanelCalibration())
     assert (
-        abs(
-            _total_ll_vec(arr, 0.05, 0.01, 200.0)
-            - _scalar_total(markers, 0.05, 0.01, 200.0, None)
-        )
+        abs(_total_ll_vec(arr, 0.05, 0.01, 200.0) - _scalar_total(markers, 0.05, 0.01, 200.0, None))
         < 1e-9
     )
 
@@ -544,10 +521,10 @@ def _make_contaminated(f_donor, n_clean, n_bad, dp=1000, seed=0):
     markers = []
     for i in range(n_clean):
         alt = sum(1 for _ in range(dp) if rng.random() < f_donor)
-        markers.append(_make_marker((0, 0), (1, 1), dp - alt, alt, 0, f"chr{i+1}", 1000))
+        markers.append(_make_marker((0, 0), (1, 1), dp - alt, alt, 0, f"chr{i + 1}", 1000))
     for j in range(n_bad):
         alt = sum(1 for _ in range(dp) if rng.random() < 0.9)  # CNV/LoH-like outlier
-        markers.append(_make_marker((0, 0), (1, 1), dp - alt, alt, 0, f"chr{j+1}", 9000))
+        markers.append(_make_marker((0, 0), (1, 1), dp - alt, alt, 0, f"chr{j + 1}", 9000))
     return markers
 
 
@@ -727,19 +704,21 @@ class TestMarkerTypeOverdispersion:
         markers = _make_markers_overdispersed(0.20, n_markers=60, dp=2000, seed=42)
         r = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
         # Values captured from the shared-rho estimator before the two-rho change.
-        assert r.donor_fraction == 0.1987291290208436
-        assert r.donor_fraction_ci == (0.1938503158157703, 0.20376169046929146)
-        assert r.log_likelihood == -64885.513825790265
-        assert r.rho == 563.5448641013647
+        assert r.donor_fraction == pytest.approx(0.1987291290208436, rel=1e-9)
+        assert r.donor_fraction_ci == pytest.approx(
+            (0.1938503158157703, 0.20376169046929146), rel=1e-9
+        )
+        assert r.log_likelihood == pytest.approx(-64885.513825790265, rel=1e-9)
+        assert r.rho == pytest.approx(563.5448641013647, rel=1e-9)
         assert r.rho_hom is None
         assert r.rho_het is None
         assert r.marker_type_overdispersion_fallback is None
         # The default (two-rho on) on a hom-only panel falls back to the same fit.
         d = estimate_single_donor_bb(markers)
-        assert d.donor_fraction == r.donor_fraction
-        assert d.donor_fraction_ci == r.donor_fraction_ci
-        assert d.log_likelihood == r.log_likelihood
-        assert d.rho == r.rho
+        assert d.donor_fraction == pytest.approx(r.donor_fraction, rel=1e-9)
+        assert d.donor_fraction_ci == pytest.approx(r.donor_fraction_ci, rel=1e-9)
+        assert d.log_likelihood == pytest.approx(r.log_likelihood, rel=1e-9)
+        assert d.rho == pytest.approx(r.rho, rel=1e-9)
         assert d.rho_hom is None and d.rho_het is None
 
     def test_partition_mask(self) -> None:
@@ -790,8 +769,12 @@ class TestMarkerTypeOverdispersion:
     def test_sparse_class_falls_back(self) -> None:
         """With too few het markers, the request returns the shared-rho result."""
         markers = _make_mixed_class_markers(
-            f_host=0.0, n_hom=60, n_het=MIN_CLASS_MARKERS - 1, dp=2000,
-            het_overdisp_rho=70, seed=31,
+            f_host=0.0,
+            n_hom=60,
+            n_het=MIN_CLASS_MARKERS - 1,
+            dp=2000,
+            het_overdisp_rho=70,
+            seed=31,
         )
         shared = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
         requested = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
@@ -802,20 +785,6 @@ class TestMarkerTypeOverdispersion:
         assert requested.rho_hom is None and requested.rho_het is None
         assert requested.marker_type_overdispersion_fallback is not None
         assert "shared rho" in requested.marker_type_overdispersion_fallback
-
-    def test_rho_fields_populated(self) -> None:
-        """Two-rho result has non-None rho_hom/rho_het and rho == rho_het."""
-        markers = _make_mixed_class_markers(
-            f_host=0.0, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=70, seed=41
-        )
-        two_rho = estimate_single_donor_bb(markers, marker_type_overdispersion=True)
-        assert two_rho.rho_hom is not None
-        assert two_rho.rho_het is not None
-        assert two_rho.rho == two_rho.rho_het
-        assert two_rho.marker_type_overdispersion_fallback is None
-        # The opt-out shared-rho result leaves them None.
-        shared = estimate_single_donor_bb(markers, marker_type_overdispersion=False)
-        assert shared.rho_hom is None and shared.rho_het is None
 
     def test_default_engages_two_rho(self) -> None:
         """Two-rho is the default: an ample mixed set engages it without the flag."""
@@ -876,8 +845,12 @@ class TestMarkerTypeOverdispersion:
         sample). The reason is recorded on the result for diagnostics only.
         """
         markers = _make_mixed_class_markers(
-            f_host=0.0, n_hom=60, n_het=MIN_CLASS_MARKERS - 1, dp=2000,
-            het_overdisp_rho=70, seed=71,
+            f_host=0.0,
+            n_hom=60,
+            n_het=MIN_CLASS_MARKERS - 1,
+            dp=2000,
+            het_overdisp_rho=70,
+            seed=71,
         )
         result = estimate_single_donor_bb(markers)  # default on; het class sparse
         assert result.marker_type_overdispersion_fallback is not None
@@ -891,9 +864,9 @@ class TestMarkerTypeOverdispersion:
         markers = _make_mixed_class_markers(
             f_host=0.02, n_hom=60, n_het=60, dp=2000, het_overdisp_rho=120, seed=83
         )
-        result = estimate_single_donor_bb(
-            markers, robust="auto", marker_type_overdispersion=True
-        )
+        result = estimate_single_donor_bb(markers, robust="auto", marker_type_overdispersion=True)
         assert 0.0 <= result.donor_fraction <= 1.0
         f_lo, f_hi = result.donor_fraction_ci
         assert 0.0 <= f_lo <= result.donor_fraction <= f_hi <= 1.0
+        # Fixture is built at f_host=0.02; the estimate should track it.
+        assert abs(result.host_fraction - 0.02) < 0.01

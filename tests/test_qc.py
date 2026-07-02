@@ -2,6 +2,7 @@
 
 import math
 import random
+import statistics
 
 import pytest
 
@@ -632,27 +633,41 @@ class TestPearsonGoF:
         assert pval < 0.01
 
     def test_calibration_under_null(self):
-        """Under the null, p should not always be ~1.0."""
-        rng = random.Random(42)
-        markers = []
-        for i in range(30):
-            exp_vaf = 0.10
-            dp = 2000
-            sd = math.sqrt(exp_vaf * (1 - exp_vaf) / dp)
-            obs_vaf = max(0.0, min(1.0, rng.gauss(exp_vaf, sd)))
-            markers.append(
-                _make_marker_result(
-                    pos=i * 100,
-                    dp=dp,
-                    expected_vaf=exp_vaf,
-                    observed_vaf=obs_vaf,
-                    residual=obs_vaf - exp_vaf,
-                    included=True,
+        """Under the null the GoF must be calibrated: p-values should be spread
+        across (0, 1) with a mid-range mean and a modest rejection rate, not
+        pinned near 1.0 (never rejecting) or near 0 (always rejecting)."""
+        reps = 50
+        n_markers = 30
+        exp_vaf = 0.10
+        dp = 2000
+        sd = math.sqrt(exp_vaf * (1 - exp_vaf) / dp)
+
+        pvals = []
+        for seed in range(reps):
+            rng = random.Random(seed)
+            markers = []
+            for i in range(n_markers):
+                obs_vaf = max(0.0, min(1.0, rng.gauss(exp_vaf, sd)))
+                markers.append(
+                    _make_marker_result(
+                        pos=i * 100,
+                        dp=dp,
+                        expected_vaf=exp_vaf,
+                        observed_vaf=obs_vaf,
+                        residual=obs_vaf - exp_vaf,
+                        included=True,
+                    )
                 )
-            )
-        pval = _compute_gof_pval(markers)
-        assert pval is not None
-        assert pval < 0.999, f"GoF p-value is {pval:.6f} — not calibrated"
+            pval = _compute_gof_pval(markers)
+            assert pval is not None
+            pvals.append(pval)
+
+        rejection_rate = sum(p < 0.05 for p in pvals) / reps
+        mean_pval = statistics.mean(pvals)
+        # Nominal alpha is 0.05; allow slack for the modest number of reps.
+        assert rejection_rate < 0.2, f"null rejection rate {rejection_rate:.3f} too high"
+        # A uniform null has mean 0.5; a degenerate ~1.0 GoF would fail this.
+        assert 0.2 < mean_pval < 0.8, f"mean null p-value {mean_pval:.3f} not mid-range"
 
     def test_pretrim_includes_excluded_markers(self):
         """pretrim=True evaluates the fit over excluded markers too, so a trim
@@ -680,14 +695,15 @@ class TestPearsonGoF:
 
 
 class TestGoFEndToEnd:
-    """GoF should catch a swapped genotype through the full estimation pipeline."""
+    """A bad marker set should be caught end-to-end, by whichever mechanism owns
+    that failure mode: the 3-SD outlier rule for a lone extreme marker, or the
+    GoF for a spread-out model-data mismatch no single marker can be blamed for.
+    Split into one test per mechanism so a silently broken one cannot hide behind
+    the other."""
 
-    def test_catches_wrong_genotype(self):
-        """A single swapped genotype should be detected end-to-end, either
-        by the 3-SD outlier rule (excluding it from the fit) or by a GoF
-        failure. Under the beta-binomial likelihood a lone outlier is
-        normally caught by the outlier rule; GoF only flags it when the
-        outlier rule fails to exclude it."""
+    def test_outlier_rule_catches_lone_swapped_genotype(self):
+        """A single swapped host/donor genotype is a lone 3-SD residual outlier,
+        so the outlier rule (not the GoF) must exclude it from the fit."""
         rng = random.Random(42)
         true_f = 0.20
         dp = 2000
@@ -707,7 +723,8 @@ class TestGoFEndToEnd:
                 )
             )
 
-        # One marker with swapped host/donor genotypes
+        # One marker with swapped host/donor genotypes: its observed VAF implies
+        # f ~= 0.8 against the ~0.2 the rest agree on, a lone extreme residual.
         alt_count = sum(1 for _ in range(dp) if rng.random() < true_f)
         markers.append(
             _make_informative_marker(
@@ -722,19 +739,67 @@ class TestGoFEndToEnd:
         )
 
         result = estimate_single_donor_bb(markers)
+        outlier_excluded = result.n_markers_used < result.n_informative
+        assert outlier_excluded, (
+            f"lone swapped genotype not excluded: n_used={result.n_markers_used}/"
+            f"{result.n_informative}"
+        )
+
+    def test_gof_catches_inconsistent_marker_classes(self):
+        """Donor-hom and donor-het markers that disagree on the donor fraction
+        are a spread-out mismatch: no single marker is a 3-SD outlier, so the
+        outlier rule leaves them all in and the GoF is what must fail."""
+        rng = random.Random(1)
+        dp = 3000
+        n_per_class = 20
+        f_hom = 0.05  # donor-hom markers imply f ~= 0.05
+        f_het = 0.90  # donor-het markers imply f ~= 0.90
+        markers = []
+
+        # Donor-hom (host 0/0, donor 1/1): expected alt VAF = f.
+        for i in range(n_per_class):
+            alt = sum(1 for _ in range(dp) if rng.random() < f_hom)
+            markers.append(
+                _make_informative_marker(
+                    host_gt=(0, 0),
+                    donor_gt=(1, 1),
+                    ad_ref=dp - alt,
+                    ad_alt=alt,
+                    marker_type=0,
+                    chrom=f"chrh{i}",
+                    pos=1000 * (i + 1),
+                )
+            )
+        # Donor-het (host 0/0, donor 0/1): expected alt VAF = f / 2.
+        for i in range(n_per_class):
+            alt = sum(1 for _ in range(dp) if rng.random() < (f_het / 2))
+            markers.append(
+                _make_informative_marker(
+                    host_gt=(0, 0),
+                    donor_gt=(0, 1),
+                    ad_ref=dp - alt,
+                    ad_alt=alt,
+                    marker_type=2,
+                    chrom=f"chrt{i}",
+                    pos=2000 * (i + 1),
+                )
+            )
+
+        result = estimate_single_donor_bb(markers)
+        n_total = 2 * n_per_class
         genotypes = MarkerGenotypes(
             informative=[],
             non_informative=[],
-            n_total=20,
-            n_shared=20,
+            n_total=n_total,
+            n_shared=n_total,
             n_filtered=0,
         )
         qc = assess_quality(result, genotypes)
-        outlier_excluded = result.n_markers_used < result.n_informative
-        gof_fail = qc.goodness_of_fit_pval is not None and qc.goodness_of_fit_pval < 0.01
-        assert outlier_excluded or gof_fail, (
-            f"Swapped genotype not detected: n_used={result.n_markers_used}/"
-            f"{result.n_informative}, gof_pval={qc.goodness_of_fit_pval}"
+        # The outlier rule keeps every marker (the mismatch is between classes,
+        # not a lone spike), so detection is on the GoF alone.
+        assert result.n_markers_used == result.n_informative
+        assert qc.goodness_of_fit_pval is not None and qc.goodness_of_fit_pval < 0.01, (
+            f"inconsistent marker classes not caught by GoF: gof_pval={qc.goodness_of_fit_pval}"
         )
 
 
@@ -841,11 +906,6 @@ class TestRelatednessQC:
         assert not any("relatedness check" in w for w in qc.warnings)
         # The estimate is still carried on the report even without a verdict.
         assert qc.relatedness is not None
-
-    def test_relatedness_attached_to_report(self):
-        result = _make_chimerism_result(n_informative=30)
-        result.relatedness = [_rel(Relatedness.FIRST_DEGREE, 0.5)]
-        qc = assess_quality(result, _make_genotypes())
         assert qc.relatedness == result.relatedness
 
     def test_count_mismatch_raises(self):

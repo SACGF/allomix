@@ -13,7 +13,6 @@ from allomix.cli import main
 from allomix.estimate.chimerism import estimate_single_donor_bb
 from allomix.genotype import classify_markers, parse_vcf
 from allomix.qc.qc import assess_quality
-from allomix.report.report import timeline_json, to_json, to_tsv
 from allomix.simulate import build_joint_vcf, write_joint_vcf
 
 TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
@@ -55,112 +54,26 @@ def _run_pipeline(
 
 
 class TestFullPipeline:
-    """End-to-end: joint VCF -> genotype -> chimerism -> QC."""
+    """End-to-end: joint VCF -> genotype -> chimerism -> QC.
 
-    def test_pure_host(self):
-        """f=0.0: estimate should be ~0%."""
-        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.00")
-        assert result.donor_fraction < 0.02
-
-    def test_pure_donor(self):
-        """f=1.0: estimate should be ~100%."""
-        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F1.00")
-        assert result.donor_fraction > 0.98
-
-    def test_fifty_fifty(self):
-        """f=0.5: estimate should be near 50%."""
-        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.50")
-        assert 0.40 < result.donor_fraction < 0.60
+    Estimation accuracy across the fraction range is covered cheaply in
+    test_chimerism.py; this keeps one case as the parse -> classify -> estimate
+    wiring check.
+    """
 
     def test_ten_percent(self):
         """f=0.10: estimate should be near 10%."""
         result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
         assert 0.05 < result.donor_fraction < 0.20
 
-    def test_one_percent(self):
-        """f=0.01: estimate should be near 1% (testing low-fraction sensitivity)."""
-        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.01")
-        assert result.donor_fraction < 0.05
-
-    def test_ci_contains_truth(self):
-        """CI should contain the true fraction for well-behaved data.
-
-        With 100 markers and depth 2000, the CI is narrow so we test f=0.50
-        where sampling variability has the least relative effect.
-        """
-        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.50")
-        lo, hi = result.donor_fraction_ci
-        assert lo <= 0.50 <= hi, (
-            f"f_true=0.50: CI [{lo:.4f}, {hi:.4f}] "
-            f"does not contain truth, estimate={result.donor_fraction:.4f}"
-        )
-
-    def test_qc_passes(self):
-        """QC should pass for well-behaved synthetic data."""
-        _, qc, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
-        assert qc.pass_
-        assert qc.n_informative > 0
-
-    def test_per_marker_results(self):
-        """Per-marker results should be populated."""
-        result, _, _ = _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
-        assert len(result.per_marker) > 0
-        for mr in result.per_marker:
-            assert mr.dp > 0
-            assert 0.0 <= mr.observed_vaf <= 1.0
-
-
-class TestReportIntegration:
-    """Integration: pipeline results -> report output."""
-
-    @pytest.fixture
-    def pipeline_result(self):
-        return _run_pipeline(JOINT_VCF, admix_sample="ADMIX_F0.10")
-
-    def test_tsv_output(self, pipeline_result, tmp_path):
-        result, qc, _ = pipeline_result
-        out = tmp_path / "results.tsv"
-        with open(out, "w", encoding="utf-8") as f:
-            to_tsv(result, qc, f)
-        content = out.read_text()
-        lines = content.strip().split("\n")
-        assert len(lines) == 2  # header + data
-        assert "donor_pct" in lines[0]
-
-    def test_tsv_verbose(self, pipeline_result, tmp_path):
-        result, qc, _ = pipeline_result
-        out = tmp_path / "results_verbose.tsv"
-        with open(out, "w", encoding="utf-8") as f:
-            to_tsv(result, qc, f, verbose=True)
-        content = out.read_text()
-        lines = content.strip().split("\n")
-        # header + data + blank + marker_header + marker_lines
-        assert len(lines) > 4
-
-    def test_json_output(self, pipeline_result):
-        result, qc, genotypes = pipeline_result
-        data = to_json(result, qc, sample_name=genotypes.sample_name)
-        assert "donor_pct" in data
-        assert isinstance(data["donor_pct"], float)
-        json.dumps(data)
-
-    def test_timeline(self):
-        results = []
-        for sample_name in ["ADMIX_F0.00", "ADMIX_F0.10", "ADMIX_F0.50"]:
-            result, qc, genotypes = _run_pipeline(JOINT_VCF, admix_sample=sample_name)
-            results.append((genotypes.sample_name, result, qc))
-
-        data = timeline_json(results)
-        assert "timepoints" in data
-        assert len(data["timepoints"]) == 3
-        json.dumps(data)
-
 
 class TestCLIIntegration:
     """Test CLI wiring runs without error."""
 
-    def test_monitor_tsv(self, tmp_path):
-        out = tmp_path / "cli_out.tsv"
+    def test_monitor_tsv_and_json(self, tmp_path):
+        """A single detect run emits both a valid TSV and the JSON envelope."""
+        out_tsv = tmp_path / "cli_out.tsv"
+        out_json = tmp_path / "cli_out.json"
         rc = main(
             [
                 "detect",
@@ -175,7 +88,9 @@ class TestCLIIntegration:
                 "--sample",
                 "ADMIX_F0.10",
                 "--tsv",
-                str(out),
+                str(out_tsv),
+                "--json",
+                str(out_json),
                 "--min-dp",
                 "0",
                 "--min-gq",
@@ -183,8 +98,11 @@ class TestCLIIntegration:
             ]
         )
         assert rc == 0
-        content = out.read_text()
-        assert "donor_pct" in content
+        assert "donor_pct" in out_tsv.read_text()
+        # monitor --json writes the report envelope; the per-sample analysis is
+        # nested under "analysis".
+        data = json.loads(out_json.read_text())
+        assert "donor_pct" in data["analysis"]
 
     def test_detect_exclude_sites(self, tmp_path):
         """--exclude-sites drops the BED marker positions before analysis."""
@@ -252,8 +170,12 @@ class TestCLIIntegration:
             )
 
     def test_monitor_estimate_bias_inline(self, tmp_path):
-        """--estimate-bias runs bias estimation inline (issue #11), no table file."""
-        out = tmp_path / "cli_bias.tsv"
+        """--estimate-bias runs bias estimation inline (issue #11), no table file.
+
+        The JSON report records that inline bias estimation was active, so assert
+        that provenance rather than just a non-zero exit.
+        """
+        out = tmp_path / "cli_bias.json"
         rc = main(
             [
                 "detect",
@@ -268,7 +190,7 @@ class TestCLIIntegration:
                 "--sample",
                 "ADMIX_F0.10",
                 "--estimate-bias",
-                "--tsv",
+                "--json",
                 str(out),
                 "--min-dp",
                 "0",
@@ -277,7 +199,10 @@ class TestCLIIntegration:
             ]
         )
         assert rc == 0
-        assert "donor_pct" in out.read_text()
+        report = json.loads(out.read_text())
+        assert report["params"]["estimate_bias"] is True
+        assert "--estimate-bias" in report["params"]["command"]
+        assert "donor_pct" in report["analysis"]
 
     def test_estimate_bias_both_het_table_builder(self, tmp_path):
         """estimate-bias --both-het builds a pooled table from admix VCFs (issue #11)."""
@@ -371,35 +296,6 @@ class TestCLIIntegration:
                 ]
             )
 
-    def test_monitor_json(self, tmp_path):
-        out = tmp_path / "cli_out.json"
-        rc = main(
-            [
-                "detect",
-                "--genotype-vcf",
-                str(JOINT_VCF),
-                "--admix-vcf",
-                str(JOINT_VCF),
-                "--host-sample",
-                "HOST",
-                "--donor-sample",
-                "DONOR",
-                "--sample",
-                "ADMIX_F0.10",
-                "--json",
-                str(out),
-                "--min-dp",
-                "0",
-                "--min-gq",
-                "0",
-            ]
-        )
-        assert rc == 0
-        data = json.loads(out.read_text())
-        # monitor --json writes the report envelope; the per-sample analysis is
-        # nested under "analysis".
-        assert "donor_pct" in data["analysis"]
-
     def test_monitor_json_records_command(self, tmp_path):
         """The report JSON records the analysis invocation, minus output flags."""
         out = tmp_path / "cmd.json"
@@ -486,6 +382,9 @@ class TestCLIIntegration:
             ]
         )
         assert rc == 0
+        content = out.read_text()
+        for sample in ("ADMIX_F0.00", "ADMIX_F0.10", "ADMIX_F0.50"):
+            assert sample in content, f"{sample} missing from multi-sample TSV"
 
     def test_detect_admix_samples_split_across_vcfs(self, tmp_path):
         """--admix-vcf is repeatable; each --sample resolves to its containing VCF."""
@@ -642,38 +541,6 @@ class TestHostPresenceCli:
             assert col in header
             assert data[header.index(col)] == "NA", f"expected NA for {col}"
 
-    def test_monitor_json_includes_host_presence_object(self, tmp_path):
-        out = tmp_path / "cli_hp.json"
-        rc = main(
-            [
-                "detect",
-                "--genotype-vcf",
-                str(JOINT_VCF),
-                "--admix-vcf",
-                str(JOINT_VCF),
-                "--host-sample",
-                "HOST",
-                "--donor-sample",
-                "DONOR",
-                "--sample",
-                "ADMIX_F0.10",
-                "--json",
-                str(out),
-                "--min-dp",
-                "0",
-                "--min-gq",
-                "0",
-            ]
-        )
-        assert rc == 0
-        data = json.loads(out.read_text())["analysis"]
-        assert "host_presence" in data
-        hp = data["host_presence"]
-        assert hp is not None
-        assert "lrt_pval" in hp
-        assert "f_host_mle" in hp
-        assert "error_rate_source" in hp
-
 
 class TestDynamicJointVcf:
     """Test building a joint VCF on the fly and running pipeline through it."""
@@ -720,5 +587,11 @@ class TestDynamicJointVcf:
             ]
         )
         assert rc == 0
-        content = out.read_text()
-        assert "donor_pct" in content
+        rows = out.read_text().splitlines()
+        header = rows[0].split("\t")
+        values = rows[1].split("\t")
+        donor_pct = float(values[header.index("donor_pct")])
+        # Truth is f=0.20; deep (2000x), 100-marker clean data recovers it tightly.
+        assert donor_pct == pytest.approx(20.0, abs=3.0), (
+            f"round-trip recovered donor_pct={donor_pct}, expected ~20"
+        )

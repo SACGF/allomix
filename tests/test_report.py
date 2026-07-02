@@ -1,6 +1,5 @@
 """Tests for allomix.report.report — TSV and JSON output formatting."""
 
-import inspect
 import io
 import json
 
@@ -97,16 +96,6 @@ def _make_qc_report(
 class TestTsvOutput:
     """Test TSV summary output."""
 
-    def test_tsv_has_header_and_data(self):
-        result = _make_chimerism_result()
-        qc = _make_qc_report()
-        buf = io.StringIO()
-        to_tsv(result, qc, buf)
-        content = buf.getvalue()
-        lines = content.strip().split("\n")
-        assert len(lines) == 2
-        assert lines[0].startswith("sample\t")
-
     def test_tsv_values_parseable(self):
         result = _make_chimerism_result(
             donor_fraction=0.1234,
@@ -116,6 +105,7 @@ class TestTsvOutput:
         buf = io.StringIO()
         to_tsv(result, qc, buf)
         lines = buf.getvalue().strip().split("\n")
+        assert lines[0].startswith("sample\t")
         fields = lines[1].split("\t")
         assert float(fields[1]) == pytest.approx(12.34, abs=0.01)
         assert float(fields[2]) == pytest.approx(11.02, abs=0.01)
@@ -129,23 +119,15 @@ class TestTsvOutput:
         assert float(fields[10]) == pytest.approx(0.45, abs=0.01)
         assert fields[11] == "PASS"
 
-    def test_tsv_fail_status(self):
+    @pytest.mark.parametrize("status", ["PASS", "REVIEW", "FAIL"])
+    def test_tsv_status_column(self, status):
         result = _make_chimerism_result()
-        qc = _make_qc_report(status="FAIL")
+        qc = _make_qc_report(status=status)
         buf = io.StringIO()
         to_tsv(result, qc, buf)
         lines = buf.getvalue().strip().split("\n")
         fields = lines[1].split("\t")
-        assert fields[11] == "FAIL"
-
-    def test_tsv_review_status(self):
-        result = _make_chimerism_result()
-        qc = _make_qc_report(status="REVIEW")
-        buf = io.StringIO()
-        to_tsv(result, qc, buf)
-        lines = buf.getvalue().strip().split("\n")
-        fields = lines[1].split("\t")
-        assert fields[11] == "REVIEW"
+        assert fields[11] == status
 
     def test_tsv_warnings_column(self):
         result = _make_chimerism_result()
@@ -244,22 +226,6 @@ class TestJsonOutput:
         }
         assert required_keys <= set(d.keys())
 
-    def test_json_types(self):
-        result = _make_chimerism_result()
-        qc = _make_qc_report()
-        d = to_json(result, qc, sample_name="day30")
-
-        assert isinstance(d["sample"], str)
-        assert isinstance(d["donor_pct"], float)
-        assert isinstance(d["ci_lo"], float)
-        assert isinstance(d["ci_hi"], float)
-        assert isinstance(d["n_informative"], int)
-        assert isinstance(d["n_used"], int)
-        assert isinstance(d["mean_depth"], float)
-        assert isinstance(d["qc_pass"], bool)
-        assert isinstance(d["warnings"], list)
-        assert isinstance(d["markers"], list)
-
     def test_json_values(self):
         result = _make_chimerism_result(
             donor_fraction=0.1234,
@@ -271,14 +237,10 @@ class TestJsonOutput:
         assert d["donor_pct"] == pytest.approx(12.34, abs=0.01)
         assert d["ci_lo"] == pytest.approx(11.02, abs=0.01)
         assert d["ci_hi"] == pytest.approx(13.71, abs=0.01)
-
-    def test_json_serialisable(self):
-        result = _make_chimerism_result()
-        qc = _make_qc_report()
-        d = to_json(result, qc)
-        # Should not raise
-        json_str = json.dumps(d)
-        assert isinstance(json_str, str)
+        # Guard against numpy-scalar leakage: qc_pass must be a real bool
+        # (numpy.bool_ is not a bool subclass) and donor_pct a numeric float.
+        assert isinstance(d["qc_pass"], bool)
+        assert isinstance(d["donor_pct"], float)
 
     def test_json_markers_present(self):
         markers = [_make_marker_result(pos=100)]
@@ -350,13 +312,6 @@ class TestTimelineJson:
         assert tp["ci_hi"] == pytest.approx(7.0, abs=0.01)
         assert tp["qc_pass"] is True
 
-    def test_timeline_serialisable(self):
-        result = _make_chimerism_result()
-        qc = _make_qc_report()
-        tl = timeline_json([("day30", result, qc)])
-        json_str = json.dumps(tl)
-        assert isinstance(json_str, str)
-
     def test_timeline_empty(self):
         tl = timeline_json([])
         assert tl == {"timepoints": []}
@@ -369,21 +324,6 @@ class TestTimelineJson:
 
 class TestTsvSampleName:
     """to_tsv should accept a sample_name parameter like to_json."""
-
-    def test_default_sample_name_not_hardcoded(self):
-        """TSV default should not be the literal string 'sample'."""
-        result = _make_chimerism_result()
-        qc = _make_qc_report()
-        buf = io.StringIO()
-        to_tsv(result, qc, buf)
-        lines = buf.getvalue().strip().split("\n")
-        first_col = lines[1].split("\t")[0]
-        assert first_col != "sample"
-
-    def test_accepts_sample_name_parameter(self):
-        """to_tsv should accept a sample_name keyword argument."""
-        sig = inspect.signature(to_tsv)
-        assert "sample_name" in sig.parameters
 
     def test_sample_name_appears_in_output(self):
         """Passing sample_name should put it in the TSV data line."""

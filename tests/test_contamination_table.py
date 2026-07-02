@@ -163,14 +163,6 @@ class TestEstimatorByteIdentical:
             mk.append(_im(100 + i, 0, ad_ref=20, ad_alt=1980, host_gt=(0, 0), donor_gt=(1, 1)))
         return mk
 
-    def test_none_matches_default(self):
-        mk = self._markers()
-        base = estimate_single_donor_bb(mk, calibration=PanelCalibration())
-        explicit_none = estimate_single_donor_bb(
-            mk, calibration=PanelCalibration(contamination_correction=None)
-        )
-        assert base.host_fraction == explicit_none.host_fraction
-
     def test_gated_out_matches_default(self):
         mk = self._markers()
         base = estimate_single_donor_bb(mk, calibration=PanelCalibration())

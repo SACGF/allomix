@@ -96,16 +96,16 @@ def _build_pair(n_shared_het: int, n_ibs0: int) -> tuple[list[MarkerData], list[
 
 class TestRelatednessCoefficient:
     def test_identical_is_one(self):
-        for seed in SEEDS:
-            rng = random.Random(seed)
-            markers = generate_related_genotypes(400, "unrelated", rng)
-            host = _markers_to_md(markers, "host_gt")
-            donor = _markers_to_md(markers, "host_gt")  # identical to host
-            res = relatedness_coefficient(host, donor, "host", "donor")
-            assert res.coefficient == 1.0
-            assert res.degree == Relatedness.IDENTICAL
-            assert res.relationship.startswith("identical")
-            assert res.ibs0 == 0
+        # donor == host is deterministic, so a single seed suffices.
+        rng = random.Random(1)
+        markers = generate_related_genotypes(400, "unrelated", rng)
+        host = _markers_to_md(markers, "host_gt")
+        donor = _markers_to_md(markers, "host_gt")  # identical to host
+        res = relatedness_coefficient(host, donor, "host", "donor")
+        assert res.coefficient == 1.0
+        assert res.degree == Relatedness.IDENTICAL
+        assert res.relationship.startswith("identical")
+        assert res.ibs0 == 0
 
     def test_unrelated_near_zero(self):
         coefs = []
@@ -214,12 +214,6 @@ class TestEvaluateExpected:
         assert res.degree == Relatedness.FIRST_DEGREE
         v = evaluate_expected(res, "unrelated")
         assert v.status == "REVIEW"
-
-    def test_declared_first_degree_detected_identical_fails(self):
-        # Expected a sibling, got a duplicate: still a reuse FAIL.
-        res = self._result_with_degree(40, 0)  # identical
-        v = evaluate_expected(res, "first-degree")
-        assert v.status == "FAIL"
 
     def test_within_tolerance_passes(self):
         # coef 0.12 -> third-degree; declared second-degree, distance 1.

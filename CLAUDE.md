@@ -26,18 +26,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Our specific deployment uses the 76 Sample ID SNPs from the IDT rhAmpSeq panel in the Haem capture panel (coverage >1000x). This context is useful for testing and validation but should not be hardcoded into the tool.
 
-- **Existing data**: VCF files with genotypes for all 76 markers on TAU server at `/tau/data/clinical_hg38/idt_rhampseq_sid/` with AF tag (VAF) present, depth >>1000x
+- **Existing data**: VCF files with genotypes for all 76 markers on internal network shares, with AF tag (VAF) present, depth >>1000x. These shares are not accessible to you (see Data Access below).
 - **GMP** (Genetics and Molecular Pathology) is the department running this in-house; not a design constraint, just the deployment context.
 
 ## Input Requirements
 
 - **VCF-first**: allomix takes VCFs as input (not BAMs). Minimum required FORMAT fields: GT, AD, DP.
-- **Two-phase upstream**: Host/donor `GT` should come from GATK joint calling of those reference samples. Admix sample `AD` should come from forced `bcftools mpileup` at the panel sites, not from GATK — `HaplotypeCaller -ERC GVCF` strips minority ALT reads at hom-ref blocks, which is exactly the low-fraction signal we need. See `docs/joint_calling.md` for the full rationale (including the empirical check and why a somatic caller is also not the right answer).
+- **Upstream genotyping matters**: host/donor genotypes and admix per-allele read counts have to be produced the right way, or the low-fraction signal is lost before allomix ever sees it. See `docs/joint_calling.md` for the required pipeline and the rationale (why admix `AD` comes from forced `bcftools mpileup` rather than GATK, the empirical check, and why a somatic caller is not the answer either).
 
 ## Data Access
 
-- Patient data on `/tau` is NOT directly accessible. To examine real VCFs, write a standalone script that outputs only summary statistics (no patient identifiers or genomic coordinates) and ask the user to run it.
-- De-identified example VCFs are in `data/` for development use.
+- Real patient data lives on internal network shares that you cannot access, and the user will not give you access.
+- To examine real VCFs, write a standalone script that outputs only summary statistics (no patient identifiers or genomic coordinates). The user reviews the script, runs it, and passes de-identified results back to you.
+- For development, use the synthetic fixtures in `tests/test_data/` and the rendered report examples in `docs/examples/`. (A local `data/` directory is gitignored for any de-identified files the user pulls back; nothing ships there.)
 
 ## License & Attribution
 
@@ -48,23 +49,23 @@ Our specific deployment uses the 76 Sample ID SNPs from the IDT rhAmpSeq panel i
 
 In silico validation comes first: synthetic chimeric VCFs with realistic noise models (per-marker bias, depth CV, locus dropout) calibrated from empirical panel data. All in silico experiments use multiple independent replicates (N>=5) with different random seeds to capture sampling variability. Wetlab validation with real patient samples and controlled dilution series is planned as the next phase.
 
-## Background Materials
-
-- `claude/` — Planning documents, decision records, and reference tool analysis
-
 ## Development
 
 ### Project Structure
 
 ```
-src/allomix/          # Main package (genotype, chimerism, qc, report, simulate, cli)
+src/allomix/          # Main package (genotype, analysis, results, simulate, constants, cli)
 tests/                # pytest tests
 tests/test_data/      # Synthetic test VCFs (100 markers, 0-100% in 10% steps + timeline)
 scripts/              # Utility scripts (test data generation, validation)
-data/                 # De-identified example VCFs from real pipeline
-claude/               # Planning documents, decision records, research notes
+paper/                # Paper build: Snakefile, validation/figure scripts
+docs/                 # User and design documentation (see below)
 output/               # Script output (gitignored)
 ```
+
+### Documentation
+
+`docs/` holds the user and design docs. Start with `docs/architecture.md` (code map). Others: `docs/joint_calling.md` (upstream genotyping pipeline), `docs/panel_guide.md`, `docs/marker_types.md`, `docs/cli.md`, `docs/reports.md`, `docs/paper.md`, and rendered report examples in `docs/examples/`.
 
 ### Python Version
 
@@ -125,7 +126,7 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 **Do NOT run the full paper build (`snakemake -s paper/Snakefile ...` for the `all` or `paper` target) without the user's express direction.** A full build runs the heavy validation simulations (LoD sweeps, presence sweep, subsample LoD, real-data runs, calibration batches) and takes 6+ hours. When you only need to validate new code, build the single rule or run the single script that produces the facts/figure you changed, and confirm those outputs in isolation. Leave the full render to the user, who runs it on a machine with more cores.
 
-The paper build uses Snakemake (`Snakefile` in repo root). All 7 validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
+The paper build uses Snakemake (`paper/Snakefile`). The validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
 The paper dependencies (snakemake >=8) require Python 3.11+, even though the core tool runs on 3.10+. Pin the venv to Python 3.13. Do not use `--python '>=3.11'`: it resolves to the newest available interpreter (e.g. 3.14), and snakemake's transitive dependency `immutables==0.21` ships no wheel for 3.14, so it falls back to compiling a C extension from source and fails without a compiler installed.
 

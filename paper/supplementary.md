@@ -16,42 +16,20 @@ $$w_i(f) = (1 - f)\,\frac{g_{h,i}}{2} + f\,\frac{g_{d,i}}{2}$$
 
 Markers are informative for the fraction estimate when host and donor genotypes differ.
 Following Vynck et al.,[@Vynck2023bias] each informative marker is assigned one of six
-types by host/donor alternative-allele dose. Markers where host and every donor share a
-genotype are non-informative for the fraction but feed the QC checks (S8): the
-consensus-homozygous class (all parties homozygous for the same allele) drives
-contamination and sample-swap detection, and the consensus-heterozygous class (all
-parties heterozygous) drives the shared-het allele-balance check. The table lists every
-class and which parts of allomix use it.
+types by host/donor alternative-allele dose (the six types and which part of allomix uses
+each are tabulated in the main Methods, "Which markers are informative"). Markers where
+host and every donor share a genotype are non-informative for the fraction but feed the QC
+checks (S8): the consensus-homozygous class (all parties homozygous for the same allele)
+drives contamination and sample-swap detection, and the consensus-heterozygous class (all
+parties heterozygous) drives the shared-het allele-balance check.
 
-| Type | Host | Donor | Contrast | Fraction estimate | Residual-host presence (S7) | Contamination correction (S8) | Consensus QC (S8) |
-|:--|:--|:--|:--|:--|:--|:--|:--|
-| 0  | 0/0 | 1/1 | full | yes | yes | yes | no |
-| 1  | 1/1 | 0/0 | full | yes | yes | yes | no |
-| 10 | 0/1 | 0/0 | half | yes | yes | no  | no |
-| 11 | 0/1 | 1/1 | half | yes | yes | no  | no |
-| 20 | 0/0 | 0/1 | half | yes | no  | no  | no |
-| 21 | 1/1 | 0/1 | half | yes | no  | no  | no |
-| cons-hom | hom | hom (same) | none | no | no | no | contamination + swap |
-| cons-het | 0/1 | 0/1 | none | no | no | no | shared-het balance |
-
-**Marker classes and their uses.** Among the informative types, 0 and 1 give the
-maximum allelic contrast (the minority allele has a single possible source); the
-heterozygous types give half the contrast. Every informative type feeds the donor-fraction
-estimate. The residual-host presence test needs a clean donor-absent allele to count, so
-it uses only the donor-homozygous types (0, 1, 10, 11); types 20 and 21 leave no
-donor-absent allele. The optional co-pool contamination correction acts only on the fully
-homozygous-contrast types (0, 1), where the host (donor-absent) allele reads are otherwise
-a clean background.
-
-The last two rows are the non-informative consensus classes, which carry no
-fraction signal but back the QC checks (S8). At consensus-homozygous markers (host and
-every donor homozygous for the same allele) the minority allele can only be a background
-artifact or foreign DNA, which drives contamination estimation and the sample-swap test.
-At consensus-heterozygous markers (host and every donor heterozygous) the admixture
-alternative-allele fraction should sit near 0.5 whatever the mixing fraction, so a
-systematic skew is a separate signal for contamination, allelic imbalance, or a sample
-mix-up. Default filters: host and donor GQ $\geq$ 20, admixture DP $\geq$ 100, and at
-least three informative markers.
+At consensus-homozygous markers (host and every donor homozygous for the same allele) the
+minority allele can only be a background artifact or foreign DNA, which drives
+contamination estimation and the sample-swap test. At consensus-heterozygous markers (host
+and every donor heterozygous) the admixture alternative-allele fraction should sit near
+0.5 whatever the mixing fraction, so a systematic skew is a separate signal for
+contamination, allelic imbalance, or a sample mix-up. Default filters: host and donor GQ
+$\geq$ 20, admixture DP $\geq$ 100, and at least three informative markers.
 
 ### S2. Sequencing-error model
 
@@ -212,11 +190,11 @@ a_d]/2$ (with $a_h, a_d$ the alternative doses), then applies per-marker bias,
 log-normal depth, sequencing error, and locus dropout (main Methods), and draws counts
 from a binomial (or, for the overdispersion characterisation, a beta-binomial at
 concentration $\rho$). The LoD sweep uses a nested design: for each relatedness level,
-multiple donor/host pairs ({{ lod_headline.n_pairs_unrelated }} unrelated,
-{{ lod_headline.n_pairs_sibling }} sibling) have fixed genotypes (population allele
+multiple donor/host pairs ({{ lod_headline.n_pairs_unrelated | int }} unrelated,
+{{ lod_headline.n_pairs_sibling | int }} sibling) have fixed genotypes (population allele
 frequencies, MAF 0.2--0.5) and per-marker bias reused across all depths and panel sizes,
 with panels strictly nested (a smaller panel is a bit-identical prefix of a larger one);
-each pair then has {{ lod_headline.n_seq_reps }} sequencing replicates per cell that
+each pair then has {{ lod_headline.n_seq_reps | int }} sequencing replicates per cell that
 vary only read-sampling noise. Holding the pair fixed isolates sequencing noise within a
 pair and makes each pair's LoD curve monotonic in panel size, while the across-pair
 identity-by-descent spread is reported as a band rather than leaking into the central

@@ -54,8 +54,11 @@ includes {{ panel_specs.n_markers_panel }} SNPs designed for sample tracking, an
 similar marker sets are incorporated into numerous clinical capture and amplicon panels.
 These markers are sequenced at high depth as part of routine clinical workflows, and the
 resulting data is already available. Lee et al. demonstrated this principle by using 121
-SNPs embedded in a myeloid neoplasm panel for chimerism monitoring, but the analysis
-required custom scripting with no reusable tool.[@Lee2019snp]
+SNPs embedded in a myeloid neoplasm panel for chimerism monitoring, but released no
+reusable tool.[@Lee2019snp] Aloisio et al. built a dedicated analysis tool for amplicon
+SNP chimerism, but it is a closed-source Shiny web application tied to interactive
+use,[@Aloisio2016amplicon] whereas allomix is open source and built for batch processing
+of arbitrary marker panels.
 
 The statistical machinery for quantifying DNA mixtures from allelic read depths is well
 established in the forensic genetics literature, including maximum likelihood estimation
@@ -70,10 +73,9 @@ Here we present allomix, an open-source tool that performs donor chimerism monit
 from any set of biallelic markers already present in a laboratory's clinical NGS
 workflow. Rather than requiring a dedicated chimerism assay, allomix repurposes the
 polymorphic markers that laboratories are already sequencing. It answers two distinct
-clinical questions with two complementary tests that read different markers: a magnitude
-estimate (how much donor is present, with a confidence interval) and a residual-host
-presence test (whether any host remains, even below the level the magnitude estimate can
-quantify). Because the tool is meant to run inside routine laboratory operations, it
+clinical questions with two complementary tests: a magnitude estimate (how much donor is
+present, with a confidence interval) and a residual-host presence test (whether any host
+remains, even below the level the magnitude estimate can quantify). Because the tool is meant to run inside routine laboratory operations, it
 also carries a built-in set of quality and sample-integrity checks that flag sample
 swaps, contamination from a genome other than the host or donor (for example another
 patient co-pooled on the same flowcell), and unexpected donor-host relatedness from the

@@ -9,8 +9,8 @@ data are {{ srp434573.n_individuals | dp(0) }} unrelated individuals on a
 {{ srp434573.panel_n_snps | commas }}-SNP MIP sample-identification panel, combined into
 {{ srp434573.n_mixtures | dp(0) }} two-person mixtures titrated from
 {{ srp434573.dilution_max_pct }}% down to {{ srp434573.dilution_min_pct }}% minor
-contributor, plus one three-person mixture. We assigned the minor contributor to the
-host role, so each dilution series reads as a declining-chimerism trajectory, the same
+contributor, plus one three-person mixture. With the minor contributor assigned to the host role
+(Methods), each dilution series reads as a declining-chimerism trajectory, the same
 direction as relapse monitoring. Genotypes and admixture allele depths were produced
 with the two-phase pipeline, and allomix was run with default parameters, with
 the per-marker co-pooled contamination correction (Methods) additionally enabled for the
@@ -61,9 +61,8 @@ error, which would not scale with co-pooled dose. This floor (a median
 host fractions, which is why the 0.5% estimates scatter.
 
 Given that significant dose-response, the headline two-person estimates apply the
-per-marker contamination correction (Methods): it subtracts the dose-predicted
-contamination from each donor-homozygous host-allele count before the fit, calibrating
-the per-carrier rate on each run's own consensus-homozygous and informative markers. All
+per-marker contamination correction (Methods), which subtracts the dose-predicted
+contamination from each donor-homozygous host-allele count before the fit. All
 {{ srp434573.correction_n_gated }} of {{ srp434573.correction_n_mixtures }} two-person
 mixtures gate in (carrier-dose slopes up to {{ srp434573.correction_slope_max_pct }}%
 per carrier), with the clean pairs self-selecting to a zero slope where the correction
@@ -169,9 +168,10 @@ in silico accuracy across sequencing depths (mean absolute error below 1% from 5
 
 ### Residual-host presence test
 
-The magnitude estimate above answers how much donor is present. The second test answers
-whether any host remains, and reports a host-fraction estimate for it, reading only the
-donor-homozygous markers where the host carries the donor-absent allele (Methods). On the
+The magnitude estimate above answers how much donor is present, and by complement how
+much host remains. The second test answers whether any host is left at all, and reports a
+host-fraction estimate for it, reading only the donor-homozygous markers where the host
+carries the donor-absent allele (Methods). On the
 SRP434573 dilution series it returned a positive call (p < 0.05) at all
 {{ srp434573.presence_n_detected | dp(0) }} of
 {{ srp434573.presence_n_total | dp(0) }} two-person admixtures, reading a median of
@@ -202,12 +202,15 @@ regime where early relapse would first appear.
 
 The real-data limit of detection can be measured directly by subsampling. We sub-sampled
 reads and markers from the high-depth SRP434573 mixtures, reducing depth and panel size
-until the LoD rose into the measurable window, and characterised the LoD across panel
+until the LoD moved into the measurable range, and characterised the LoD across panel
 size and sequencing depth on real reads for both readouts
 ({{ subsample_lod_headline.n_mixtures | dp(0) }} two-person mixtures,
 {{ subsample_lod_headline.n_seeds | dp(0) }} sub-sampling replicates per cell; Figure
 3). As in the simulated sweep (Figure 4, below), the LoD fell with both panel size and
-depth. In the seven mixtures
+depth. The two columns are not directly comparable: the magnitude estimate uses all
+informative markers, whereas the residual-host presence test reads only the
+donor-homozygous subset where the host carries the donor-absent allele, so it runs on
+fewer effective markers (Methods). In the seven mixtures
 titrated only to 1% the median LoD reached at or below 1% (the lowest dilution they
 carry); in the three titrated to {{ subsample_lod_headline.min_titration_pct | dp(1) }}%
 host, both the magnitude and presence-test LoD reached at or below that level. The dilution series
@@ -248,12 +251,12 @@ monotonically with panel size and depth across the full sweep (Figure 4), lettin
 laboratory read off the expected in silico LoD for its own assay.
 
 These figures sit in the range reported for commercial NGS chimerism kits (0.06--0.5%),
-but they are not a head-to-head comparison: the allomix numbers are best-case analytical
-figures from the model's information on near-binomial simulated data, and a real assay's
-LoD can only be higher, whereas the vendor numbers come from dilution series on real
-DNA. The honest limiter on real panels is overdispersion, not depth (Discussion), and
-the more defensible sensitivity number is the real-data LoD measured by subsampling the
-SRP434573 mixtures (Figure 3, above) rather than this analytical ceiling.
+but they are not a head-to-head comparison: the allomix numbers here are simulated
+best-case analytical figures, from the model's information on near-binomial simulated
+data, and a real assay's LoD can only be higher, whereas the vendor numbers come from
+dilution series on real DNA. The limiter on real panels is overdispersion, not depth
+(Discussion), and the more defensible sensitivity number is the real-data LoD measured by
+subsampling the SRP434573 mixtures (Figure 3, above) rather than this analytical ceiling.
 
 | Tool | Markers | LoD | Open Source | Panel Agnostic | Input |
 |:---|:---:|:---:|:---:|:---:|:---:|
@@ -294,7 +297,7 @@ real-data results. All LoD values refer to bulk extracted DNA; clinical sensitiv
 given specimen further depends on the proportion of the lineage of interest and the
 upstream cell-sorting workflow.
 
-![**Figure 4.** Limit of detection as a function of panel size and sequencing depth, for both readouts allomix runs on the same sample. Columns: the MLE magnitude estimate (left) and the host-presence detection test (right). Rows: unrelated donor-host pairs (top) and full-sibling pairs (bottom). Each coloured curve is the median LoD across donor/host pairs at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across pairs (the identity-by-descent spread, wide for siblings at small panels and narrowing as markers are added). The MLE panels also show the limit of blank (LoB) as a faint dashed line; the presence test has no blank because its null is the sequencing-error background (detection = host-presence likelihood-ratio test at p < 0.05). Dashed horizontal lines mark 0.5% and 1% minor (donor or residual-host) fraction. Both readouts come from the same simulated sweep (matched depths, panel sizes, donor/host pairs, and error model), so the columns are directly comparable. LoD was estimated per pair under the CLSI EP17-A2 workflow ({{ lod_headline.n_pairs_unrelated }} unrelated and {{ lod_headline.n_pairs_sibling }} sibling pairs, {{ lod_headline.n_seq_reps }} sequencing replicates each).]({{ facts_dir }}/fig_lod_curves.png)
+![**Figure 4.** Limit of detection as a function of panel size and sequencing depth, for both readouts allomix runs on the same sample. Columns: the MLE magnitude estimate (left) and the host-presence detection test (right). Rows: unrelated donor-host pairs (top) and full-sibling pairs (bottom). Each coloured curve is the median LoD across donor/host pairs at the indicated depth (100x to 2,000x); shaded bands are the 10th-90th percentile across pairs (the identity-by-descent spread, wide for siblings at small panels and narrowing as markers are added). The MLE panels also show the limit of blank (LoB) as a faint dashed line; the presence test has no blank because its null is the sequencing-error background (detection = host-presence likelihood-ratio test at p < 0.05). Dashed horizontal lines mark 0.5% and 1% minor (donor or residual-host) fraction. Both readouts come from the same simulated sweep (matched depths, panel sizes, donor/host pairs, and error model), so the columns are directly comparable. LoD was estimated per pair under the CLSI EP17-A2 workflow ({{ lod_headline.n_pairs_unrelated | int }} unrelated and {{ lod_headline.n_pairs_sibling | int }} sibling pairs, {{ lod_headline.n_seq_reps | int }} sequencing replicates each).]({{ facts_dir }}/fig_lod_curves.png)
 
 ### Stress tests (in silico): relatedness, multiple donors, and recipient copy-number changes
 
@@ -388,19 +391,13 @@ for review (Methods).
 
 ### Built-in quality and sample-integrity checks
 
-Because allomix is meant to run inside routine laboratory operations, it reports a
-three-level verdict (PASS, REVIEW, FAIL) and a set of sample-integrity checks built from
-the same marker data (Methods). Three of these target low-fraction signals the magnitude
-estimate cannot see, kept separate by genotype geometry rather than by re-thresholding
-one number: residual host (at donor-homozygous markers where the host carries the
-donor-absent allele), contamination by a non-host, non-donor genome, and a gross sample
-swap (both at the consensus-homozygous markers the magnitude estimate never reads). On SRP434573 it was
-that contamination geometry, the consensus-homozygous markers, that exposed the
-co-pooled floor by dose-response (above), reported as the excess minor signal over a
-data-internal error floor. Two further checks guard identity at the sample level: a
-relatedness check that flags unexpected kinship as a swap signature, and a read-level
-artifact filter that judges artifacts by effect size and auto-disables its strand test
-on single-strand amplicon panels (as on SRP434573). Together these turn the marker data
-already used for the fraction estimate into a defence against the wrong-sample and
-contamination errors that a quantitative chimerism result would otherwise carry
-silently.
+allomix reports a three-level verdict (PASS, REVIEW, FAIL) and a set of sample-integrity
+checks built from the same marker data, kept separate by genotype geometry rather than by
+re-thresholding one number (Methods). On SRP434573 it was the contamination check,
+reading the consensus-homozygous markers, that exposed the co-pooled floor by
+dose-response (above), reported as the excess minor signal over a data-internal error
+floor. On this single-strand amplicon panel the read-level artifact filter auto-disabled
+its strand test, as expected (Methods), and the relatedness check screened the input
+samples for unexpected kinship. Together these turn the marker data already used for the
+fraction estimate into a defence against the wrong-sample and contamination errors that a
+quantitative chimerism result would otherwise carry silently.

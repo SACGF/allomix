@@ -1,7 +1,7 @@
 # CLI Usage
 
 `allomix` has these subcommands: `detect` (single timepoint), `timeline`
-(serial timepoints), `report` (render HTML from a saved JSON), `estimate-bias`
+(serial timepoints), `report` (render HTML/PDF from a saved JSON), `estimate-bias`
 (build a per-marker bias table), and `panel-qc` (per-marker inclusion QC). The
 calibration commands `estimate-errors` and `build-contamination-table` are
 covered in the [Panel Guide](panel_guide.md).
@@ -49,7 +49,7 @@ allomix detect \
     --sample TP1_20240101 \
     --tsv results.tsv
 
-# Structured JSON (the artifact the HTML report is rendered from)
+# Structured JSON (the artifact the HTML/PDF reports are rendered from)
 allomix detect \
     --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
@@ -58,8 +58,9 @@ allomix detect \
     --sample TP1_20240101 \
     --json results.json
 
-# Structured JSON and the HTML report in one run, plus the per-marker CSV
+# Structured JSON, the HTML and PDF reports in one run, plus the per-marker CSV
 # (bioinformatician-facing detail the report omits). Any output flags combine.
+# --pdf needs the pdf extra: pip install 'allomix[pdf]'.
 allomix detect \
     --genotype-vcf patient001_panel.vcf.gz \
     --admix-vcf patient001_admix.vcf.gz \
@@ -68,6 +69,7 @@ allomix detect \
     --sample TP1_20240101 \
     --json report.json \
     --html report.html \
+    --pdf report.pdf \
     --marker-csv report.markers.csv
 ```
 
@@ -91,6 +93,9 @@ allomix timeline \
 ```bash
 # Render the HTML report later from a saved JSON
 allomix report report.json --output report.html
+
+# Or render a PDF (needs the pdf extra); with only --pdf, no HTML is written to stdout
+allomix report report.json --pdf report.pdf
 ```
 
 ## estimate-bias
@@ -156,10 +161,12 @@ Both `detect` and `timeline` accept these additional options:
 | `--verbose` | off | Include per-marker detail in output |
 
 Output is selected by per-artifact flags that can be combined in one run:
-`detect` accepts `--tsv PATH`, `--json PATH`, and `--html PATH` (plus
-`--marker-csv PATH`); `timeline` accepts `--json PATH` and `--html PATH`. Each
-accepts `-` for stdout. With no output flag, `detect` writes TSV and `timeline`
-writes JSON, both to stdout.
+`detect` accepts `--tsv PATH`, `--json PATH`, `--html PATH`, and `--pdf PATH`
+(plus `--marker-csv PATH`); `timeline` accepts `--json PATH`, `--html PATH`, and
+`--pdf PATH`. Each text artifact accepts `-` for stdout; `--pdf` is binary and
+needs a file path. With no output flag, `detect` writes TSV and `timeline` writes
+JSON, both to stdout. `--pdf` needs the `pdf` extra (`pip install
+'allomix[pdf]'`); see the [reports guide](reports.md#pdf-report).
 
 ## Inputs and outputs
 
@@ -182,6 +189,7 @@ command line via `--host-sample`, `--donor-sample`, and `--sample`.
 | Timeline report | Chimerism trend across serial timepoints for a patient |
 
 Output formats are TSV (machine-readable), JSON (the structured artifact, for
-programmatic consumption and as the report source), and a self-contained HTML
-report. See [Reports and structured output](reports.md) for the JSON envelope,
-the HTML report, and worked examples.
+programmatic consumption and as the report source), a self-contained HTML report,
+and an optional PDF (the `pdf` extra). See [Reports and structured
+output](reports.md) for the JSON envelope, the HTML/PDF report, and worked
+examples.

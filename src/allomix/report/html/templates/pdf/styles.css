@@ -1,0 +1,62 @@
+/*
+ * PDF-only style additions (issue #35).
+ *
+ * Concatenated after styles.css (base first), so this file holds only what the
+ * PDF layout needs on top of the shared look and cannot drift from it. Rendered
+ * by WeasyPrint, which applies the "print" media, so the base @media print block
+ * (A4 page, no card chrome, break-inside: avoid) is already in effect here.
+ *
+ * Two jobs: (1) @page margin boxes for a running header and page numbers, which
+ * only exist in paged media; (2) flatten <details> so the "Methods and notes"
+ * appendix prints in full (WeasyPrint, like a browser, collapses a closed
+ * <details> to its summary).
+ */
+
+/* Running header: the report title, repeated at the top of every page. The
+   source element is pulled out of normal flow by `position: running(...)` and
+   re-placed by the @top-center margin box below. */
+.doc-running-header {
+  position: running(pageHeader);
+  font-size: 9px;
+  color: var(--muted);
+}
+
+@page {
+  size: A4;
+  margin: 20mm 16mm 18mm;
+  @top-center {
+    content: element(pageHeader);
+  }
+  @bottom-right {
+    content: "page " counter(page) " of " counter(pages);
+    font-size: 9px;
+    color: var(--muted);
+  }
+}
+
+/* Flatten the collapsible disclosures so their bodies print. WeasyPrint honours
+   the <details> open/closed state, so without this the appendix would show only
+   the summaries. Keep the summaries (they label each block) but drop the
+   interactive affordances (the info glyph / pointer). */
+details.help,
+details.run-command {
+  display: block;
+}
+details.help > summary,
+details.run-command > summary {
+  cursor: default;
+  list-style: none;
+}
+details.help > summary::before {
+  content: none;
+}
+details.help .help-body,
+.run-command pre {
+  display: block;
+}
+
+/* The appendix is the one place all method prose lives in the PDF; give it room
+   and let it start on its own page when the report body is long. */
+.methods-appendix {
+  break-before: page;
+}

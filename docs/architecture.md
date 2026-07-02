@@ -56,7 +56,9 @@ orchestrator, the CLI, the simulator); the four subpackages each own one stage:
   `host_presence`, `sample_contamination`, `relatedness`, `runmeta`. Its
   `__init__` is empty on purpose (`qc.qc` <-> `results` would otherwise form a
   partial-initialisation cycle).
-- `report/` -- output formatting (`report`) and the `html/` rendering subpackage.
+- `report/` -- output formatting (`report`) and the `html/` rendering subpackage
+  (HTML reports, and the PDF renderer in `html/pdf.py`, which shares the same
+  templates via WeasyPrint).
 
 ## Modules (dependency order)
 

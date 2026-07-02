@@ -7,6 +7,7 @@ callout, footer), the CLI output-flag wiring (``--json`` / ``--html``), and the
 standalone ``report`` subcommand that renders HTML from a saved JSON.
 """
 
+import importlib.util
 import io
 import json
 from html.parser import HTMLParser
@@ -834,6 +835,14 @@ def _detect_pdf_argv(out) -> list[str]:
 
 class TestPDF:
     """PDF output reuses the HTML render path via WeasyPrint (the [pdf] extra)."""
+
+    # WeasyPrint needs system Pango/Cairo/HarfBuzz libraries, so it is not part
+    # of the lean [test] extra used in CI. Skip the whole class when it is not
+    # importable rather than failing on the per-test imports below.
+    pytestmark = pytest.mark.skipif(
+        importlib.util.find_spec("weasyprint") is None,
+        reason="WeasyPrint not installed (needs system Pango/Cairo/HarfBuzz libraries)",
+    )
 
     def _single_data(self) -> dict:
         from allomix.report.report import report_data

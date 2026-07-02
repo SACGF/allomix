@@ -57,8 +57,12 @@ class TestBuildMetadata:
         )
         csv = _csv(
             tmp_path,
-            [("h", "h.bam", "HOST"), ("d", "d.bam", "DONOR"),
-             ("a1", "a1.bam", "ADMIX"), ("a2", "a2.bam", "ADMIX")],
+            [
+                ("h", "h.bam", "HOST"),
+                ("d", "d.bam", "DONOR"),
+                ("a1", "a1.bam", "ADMIX"),
+                ("a2", "a2.bam", "ADMIX"),
+            ],
         )
         rows = {r["sample_id"]: r for r in build_metadata(csv, "samtools")}
         assert rows["h"]["shares_run_with_host"] == "NA"
@@ -92,8 +96,12 @@ class TestBuildMetadata:
         )
         csv = _csv(
             tmp_path,
-            [("h", "h.bam", "HOST"), ("d", "d.bam", "DONOR"),
-             ("a1", "a1.bam", "ADMIX"), ("a2", "a2.bam", "ADMIX")],
+            [
+                ("h", "h.bam", "HOST"),
+                ("d", "d.bam", "DONOR"),
+                ("a1", "a1.bam", "ADMIX"),
+                ("a2", "a2.bam", "ADMIX"),
+            ],
         )
         lines = to_header_lines(build_metadata(csv, "samtools"))
         assert lines == [

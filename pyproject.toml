@@ -30,12 +30,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
+# CI test/lint tooling. No WeasyPrint here: the PDF tests need system Pango,
+# Cairo, and HarfBuzz libraries, so CI installs this lean extra and the PDF
+# tests self-skip (see tests/test_html_report.py::TestPDF). matplotlib stays
+# because the HTML timeline report tests render a real trend chart.
+test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.4",
     "matplotlib>=3.7",  # for the HTML timeline report tests (see the report extra)
-    "weasyprint>=60",  # for the PDF report tests (see the pdf extra)
+]
+# Full local development: the test tooling plus PDF rendering, so the PDF tests
+# actually run locally (given the system libraries).
+dev = [
+    "allomix[test,pdf]",
 ]
 # The HTML timeline report (allomix timeline --format html) renders its trend
 # chart with matplotlib. The single-sample HTML report needs nothing beyond the

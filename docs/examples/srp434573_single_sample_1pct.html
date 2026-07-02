@@ -228,7 +228,7 @@ details.help .help-body p { margin: 4px 0; }
 <div class="headline-grid">
 <div class="figure-card verdict">
 <div class="figure-label">QC verdict</div>
-<div><span class="badge badge-review badge-lg"><span class="badge-glyph">!</span> REVIEW</span></div>
+<div><span class="badge badge-pass badge-lg"><span class="badge-glyph">✓</span> PASS</span></div>
 </div>
 <div class="figure-card">
 <div class="figure-label">Donor fraction</div>
@@ -255,6 +255,7 @@ at this sample's depth and marker set; limit of detection is the lowest fraction
 reliably distinguished from blank. Both are specific to this sample.</p>
 </div>
 </details>
+
 </section>
 
 <section class="section">
@@ -281,9 +282,9 @@ limit.</p>
 
 <section class="section">
 <h2>Quality control</h2>
-<div class="qc-verdict">Overall verdict: <span class="badge badge-review"><span class="badge-glyph">!</span> REVIEW</span></div>
+<div class="qc-verdict">Overall verdict: <span class="badge badge-pass"><span class="badge-glyph">✓</span> PASS</span></div>
 <p class="qc-breakdown">587 of 1058 input markers were informative; 508 used in the fit (excluded: 79 outliers, 6 low-depth).</p>
-<p class="qc-breakdown">2 QC checks flagged (listed below).</p>
+<p class="qc-breakdown">1 QC check flagged (listed below).</p>
 
 <h3 class="subhead">Markers</h3>
 <table class="metrics">
@@ -384,7 +385,6 @@ it points at host copy-number change or a genotyping problem.</p>
 
 <h3 class="subhead">Warnings</h3>
 <ul class="warnings">
-<li>Poor model fit on the full marker set (pre-trim goodness-of-fit p=6.3e-06 &lt; 0.01) that the robust trim masks — possible genotyping error, CNV, or, at low host fraction, trimmed host signal</li>
 <li>Robust refit excluded 79 marker(s) (13%) as residual outliers (possible host copy-number/LoH or genotyping error)</li>
 </ul>
 </section>

@@ -85,16 +85,6 @@ Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even whe
 - [Scripts](https://github.com/SACGF/allomix/blob/main/docs/scripts.md) — developer and validation utilities
 - [Building the paper](https://github.com/SACGF/allomix/blob/main/docs/paper.md) — Snakemake validation and figure build
 
-## Comparison with commercial products
-
-| Feature | allomix | AlloSeq HCT (CareDx) | Devyser Chimerism (Thermo Fisher) |
-|---|---|---|---|
-| Markers | Any bi-allelic panel | 202 SNPs | 24 indels |
-| Max genomes | 3 (host + 2 donors) | 3 | 3 |
-| Sensitivity | Depends on panel/depth | 0.22% LOD | 0.05% LOD |
-| Additional wet-lab | None (uses existing data) | Dedicated kit | Dedicated kit |
-| Software | Open-source CLI | Web-based (HCT Software) | Desktop (Advyser) |
-
 ## Validation and status
 
 allomix has been validated in silico (synthetic chimeric VCFs with realistic noise models: per-marker bias, depth CV, locus dropout) and on real reads from a public dataset of titrated DNA mixtures (SRA study [SRP434573](https://www.ebi.ac.uk/ena/browser/view/PRJNA960854)). On the real mixtures it recovered known host fractions from 10% down to 1%, resolved a three-person mixture, and called residual host with no false positives on the pure-donor controls. Full validation, including the real-data limit of detection, is in the [paper build guide](https://github.com/SACGF/allomix/blob/main/docs/paper.md).

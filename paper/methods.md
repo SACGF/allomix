@@ -252,8 +252,13 @@ marker sufficiency, sequencing depth, coverage uniformity (whether enough marker
 set share of the sample's mean depth, catching an uneven capture that an acceptable mean
 would otherwise hide), and confidence-interval width. A goodness-of-fit
 check compares the marker-to-marker scatter against what the model expects and is
-computed both before and after the outlier-resistant refit, gated on the worse of the
-two, so the refit cannot hide a genuinely bad fit by discarding its own outliers. The
+computed both before and after the outlier-resistant refit, so the refit cannot hide a
+genuinely bad fit by discarding its own outliers. Because a chi-squared test is
+overpowered at panel depth (it reaches significance for a misfit too small to change the
+result), the check is promoted to REVIEW on effect size, not bare significance: the
+reduced chi-squared must be large, and the pre-trim guard fires only near the detection
+floor where the trim could have discarded real low-fraction host signal (Supplementary
+Methods S10). The
 presence test is cross-checked against the magnitude estimate, and a warning is raised
 when residual host is detected below the level the magnitude estimate resolves; this
 stays a soft warning because its behaviour on real samples is still being characterised.
@@ -296,7 +301,10 @@ magnitude estimate at all:
   rather than a faint background. allomix runs a consistency test across these sites
   that catches a wrong-patient VCF the magnitude estimate cannot see, because the
   magnitude estimate only ever looks at informative markers and never at the consensus
-  sites.
+  sites. As with the goodness-of-fit check, promotion to REVIEW is gated on effect size:
+  a genuine swap mismatches roughly half of the consensus-homozygous sites, so a handful
+  of individually significant off-model sites (a miscall or mapping artifact) is reported
+  but not promoted unless the discordant fraction is high (Supplementary Methods S10).
 - **Allele imbalance at shared-heterozygous markers** shows up where host and every donor
   are heterozygous, so the admixture alternative-allele fraction should sit near 0.5
   whatever the mixing fraction. A systematic skew across these markers flags contamination,

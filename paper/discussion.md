@@ -49,7 +49,9 @@ sequencing error individually ({{ supp_synthetic.ablation_rmse_overdispersion_pc
 versus {{ supp_synthetic.ablation_rmse_full_pct }}% for the otherwise-identical binomial
 model; Supplementary Figure S4). This is the honest explanation for the gap between an
 idealised in silico LoD and real-panel performance, and it is the same overdispersion
-that drives the goodness-of-fit REVIEW flags on the real SRP434573 mixtures.
+that raises the goodness-of-fit statistic on the real SRP434573 mixtures, though the QC
+layer promotes a fit to REVIEW only when that misfit is large rather than merely
+significant at depth (Supplementary Methods S10).
 
 Across the simulated depths the 95% intervals cover close to nominal
 ({{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}%) with overdispersion
@@ -95,10 +97,10 @@ allomix to an LD-pruned subset with a simple BED file or marker list, keeping on
 per linked cluster, so the independence assumption holds without changing the panel.
 Residual correlation does not fail silently: it inflates
 per-marker variance in the same way overdispersion does, so it is partly absorbed by the
-per-class overdispersion model and surfaces in the goodness-of-fit check that drives the
-REVIEW flag, the same mechanism that flagged the overdispersed SRP434573 mixtures. A
-marker set dense enough for LD to matter would therefore tend to be caught as an
-overdispersed fit rather than reported as a confidently wrong interval. LD can also be
+per-class overdispersion model and surfaces in the goodness-of-fit statistic. A marker
+set dense enough for LD to matter would raise that statistic far enough to cross the
+effect-size threshold and be caught as an overdispersed fit (Supplementary Methods S10)
+rather than reported as a confidently wrong interval. LD can also be
 turned to advantage: Kim et al. used phased SNPs in tight LD on the same read as a
 concordance filter, requiring the linked alleles to agree before a read counts, which
 suppresses sequencing error and pushes the detectable host fraction lower.[@Kim2021ld]

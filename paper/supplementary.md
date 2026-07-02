@@ -230,6 +230,44 @@ deletion: one copy; gain: three copies), with deletion and gain also changing th
 DNA contribution at homozygous sites. The aberration is applied only to the admixture
 sample, matching the two-phase workflow.
 
+### S10. QC gating on effect size, not significance
+
+The QC layer assigns each result PASS, REVIEW, or FAIL. Three of the REVIEW checks (the
+model goodness-of-fit, the pre-trim guard against a robust trim hiding a poor fit, and
+the consensus-homozygous swap test) are, at heart, significance tests, and a significance
+test is the wrong instrument at panel depth. With hundreds of markers at more than 1000x,
+a chi-squared statistic reaches p < 0.01 for a departure from the model far too small to
+change the reported fraction, so a p-value threshold flags almost every real sample. On
+the SRP434573 two-person mixtures the goodness-of-fit p-value is below 0.01 for
+{{ qc_gating.gof_p_significant }} of {{ qc_gating.n_timepoints }} timepoints, yet the
+beta-binomial model actually fits: the post-trim reduced chi-squared (chi-squared divided
+by degrees of freedom, which is ~1 for a good fit and is depth-independent) has a median
+of {{ qc_gating.gof_reduced_median }} and a maximum of {{ qc_gating.gof_reduced_max }}
+across the series.
+
+allomix therefore promotes a result to REVIEW only when the misfit is large as well as
+significant. The goodness-of-fit and pre-trim checks require the reduced chi-squared to
+exceed {{ qc_gating.gof_reduced_threshold }} (which sits just above the maximum observed
+on this well-behaved dataset, so it does not fire on model-consistent scatter but will
+catch a materially worse fit); the pre-trim guard additionally fires only when the host
+fraction is within {{ qc_gating.pretrim_lod_multiple }}x the limit of detection, the
+regime where the outlier-resistant trim could have discarded real low-fraction host
+signal rather than artifacts; and the swap test requires the discordant fraction to
+exceed {{ qc_gating.swap_review_fraction_pct }}%, well below the roughly one-half of
+consensus-homozygous sites a genuine unrelated sample swap mismatches but far above the
+handful of off-model sites (a genotyping miscall, a mapping artifact, or a site-specific
+contaminant) that a co-pooled research dataset produces. These are the ``clinical_gating``
+defaults; the legacy p-value-only rules remain available (``--no-clinical-gating``) for
+reproducing the stricter behaviour.
+
+The effect is to move the flags to where they change the interpretation. On the SRP434573
+series clinical gating promotes {{ qc_gating.n_review_clinical }} of
+{{ qc_gating.n_timepoints }} timepoints to REVIEW, all at the lowest host fractions
+(0.5% to 1%), where the outlier-resistant refit set aside a large share of markers near
+the detection floor. The legacy p-value-only rules would flag
+{{ qc_gating.n_review_legacy }} of {{ qc_gating.n_timepoints }} on the identical fits,
+including accurate estimates from 2.5% to 100% host that need no review.
+
 ## Supplementary Table S1. Empirical Panel Characterisation
 
 Per-marker amplification bias, depth distribution, locus dropout, and allele dropout

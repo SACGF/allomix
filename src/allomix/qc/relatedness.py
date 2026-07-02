@@ -140,6 +140,12 @@ SITE_ALPHA = 1e-3
 # Minimum consensus-homozygous markers before the overall swap p-value is
 # meaningful; below this the check is reported but not acted on.
 MIN_CONSENSUS = 20
+# Minimum admixture depth for a consensus-hom site to enter the swap test. At low
+# depth a couple of stray minority reads (e.g. 2 of 4) clear the binomial bar and
+# read as "discordant" on noise alone, inflating the swap count. The effective
+# floor is max(min_dp, SWAP_MIN_SITE_DP), so this is a no-op at the default
+# --min-dp (100) and only matters when --min-dp is set lower.
+SWAP_MIN_SITE_DP = 100
 
 # Shared-het (consensus-het) allele balance. A marker is "imbalanced" when the
 # admix ALT VAF falls outside [SHARED_HET_BAND, 1 - SHARED_HET_BAND] (a 70:30
@@ -417,7 +423,7 @@ def admix_consistency(
         if not consensus:
             continue
         ma = admix_map.get(key)
-        if ma is None or ma.dp < min_dp or ma.dp <= 0:
+        if ma is None or ma.dp < max(min_dp, SWAP_MIN_SITE_DP) or ma.dp <= 0:
             continue
         # Minority allele is the one absent from the consensus homozygote.
         minor_reads = ma.ad_alt if dose_h == 0 else ma.ad_ref

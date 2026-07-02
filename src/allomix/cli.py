@@ -208,6 +208,19 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "for the legacy shared-rho estimator. Falls back to shared rho for a "
         "sample when a class has too few markers.",
     )
+    parser.add_argument(
+        "--clinical-gating",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Gate the reliability REVIEW flags on effect size, not bare "
+        "significance, so a check fires only when the problem is large enough to "
+        "matter clinically. Promotes a goodness-of-fit misfit only when the reduced "
+        "chi-sq is high (not merely significant at panel depth), the pre-trim "
+        "full-set guard only near the detection floor, and the consensus-hom swap "
+        "test only when the discordant fraction is high (not a handful of off-model "
+        "sites). On by default; use --no-clinical-gating for the legacy "
+        "p-value-only rules, which flag nearly every high-depth sample.",
+    )
     parser.add_argument("--verbose", action="store_true", help="Include per-marker detail")
     parser.add_argument(
         "--bias-table",
@@ -553,6 +566,7 @@ def _run_single_sample(
     run_unit: RunUnitInfo | None = None,
     include_sites: set[tuple[str, int]] | None = None,
     exclude_sites: set[tuple[str, int]] | None = None,
+    clinical_gating: bool = True,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -588,6 +602,7 @@ def _run_single_sample(
         expected_relatedness=expected_relatedness,
         relatedness_tolerance=relatedness_tolerance,
         run_unit=run_unit,
+        clinical_gating=clinical_gating,
     )
 
     if not use_sex_chroms and analysis.genotypes.n_informative_sex_chrom_excluded:
@@ -808,6 +823,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
             run_unit=run_units.get(sample_name),
             include_sites=include_sites,
             exclude_sites=exclude_sites,
+            clinical_gating=args.clinical_gating,
         )
         results.append((genotypes.sample_name, result, qc))
         marker_rows.append((genotypes.sample_name, result))
@@ -910,6 +926,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             run_unit=run_units.get(sample_name),
             include_sites=include_sites,
             exclude_sites=exclude_sites,
+            clinical_gating=args.clinical_gating,
         )
         results.append((genotypes.sample_name, result, qc))
 

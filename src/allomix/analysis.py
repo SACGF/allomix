@@ -72,6 +72,7 @@ def analyse_sample(
     expected_relatedness: list[Relatedness | None] | None = None,
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
+    clinical_gating: bool = True,
 ) -> AdmixtureSampleAnalysis:
     """Run the chimerism pipeline for one pre-parsed admixture sample.
 
@@ -97,6 +98,11 @@ def analyse_sample(
             against estimated host-vs-donor relatedness in QC.
         relatedness_tolerance: Allowed degree distance before a declared-vs-detected
             mismatch is flagged (see ``evaluate_expected``).
+        clinical_gating: When True (default), gate the reliability REVIEW flags on
+            effect size, not bare significance: promote a goodness-of-fit misfit only
+            when the reduced chi-sq is large, the pre-trim full-set guard only near
+            the detection floor, and the consensus-hom swap test only when the
+            discordant fraction is high. When False, use the legacy p-value-only rules.
     """
     cal = calibration or PanelCalibration()
     genotypes = classify_markers(
@@ -183,6 +189,7 @@ def analyse_sample(
         genotypes,
         expected_relatedness=expected_relatedness,
         relatedness_tolerance=relatedness_tolerance,
+        clinical_gating=clinical_gating,
     )
 
     return AdmixtureSampleAnalysis(

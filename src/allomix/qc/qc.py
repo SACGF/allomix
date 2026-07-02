@@ -7,6 +7,7 @@ and goodness-of-fit to flag potential issues in chimerism estimates.
 import math
 import statistics
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from scipy.stats import chi2
 
@@ -36,6 +37,13 @@ ROBUST_REVIEW_FRACTION = 0.15
 # Consensus-homozygote swap test significant at this level (>= MIN_CONSENSUS
 # markers) promotes to REVIEW.
 SWAP_REVIEW_P = 1e-3
+# Effect-size gate on the swap test (clinical gating, on by default). At panel depth
+# the discordant-count p-value is significant for a handful of off-model consensus-hom
+# sites (a genotyping miscall, a mapping artifact, a site-specific contaminant) even
+# when the sample is correct. A genuine sample swap or gross mix-up mismatches a large
+# fraction of consensus-hom sites (~half for an unrelated swap), so also require the
+# discordant fraction to clear this before promoting to REVIEW.
+SWAP_REVIEW_FRACTION = 0.15
 
 # In-data contamination: third-party signal at consensus-hom markers (see
 # ``allomix.qc.sample_contamination``), the low-level floor the gross swap test misses.
@@ -51,7 +59,21 @@ CONTAMINATION_REVIEW_FRACTION = 0.01  # 1%
 # Sample-level soft warnings (not per-marker filters).
 LOW_MEAN_DEPTH_WARN = 100  # mean admixture depth below this
 WIDE_CI_WARN_PCT = 20  # donor-fraction CI wider than this (%)
-GOF_REVIEW_P = 0.01  # goodness-of-fit p below this -> REVIEW
+GOF_REVIEW_P = 0.01  # goodness-of-fit p below this -> REVIEW (necessary, not sufficient)
+# Effect-size gate on the GoF (clinical gating, on by default). A chi-squared
+# p-value is a significance test: at panel depth (>1000x) with hundreds of markers
+# it is significant for a clinically trivial misfit, so p alone flags almost every
+# real sample. Also require the reduced chi-squared (chi-sq / df) to exceed this,
+# i.e. the misfit must be large, not merely detectable. Reduced chi-sq ~1 means the
+# beta-binomial (with the fitted overdispersion) fits; > 2 is a real excess.
+GOF_REVIEW_REDUCED_CHISQ = 2.0
+# The pre-trim guard catches a full-set misfit that the robust trim masks. Its
+# stated purpose is the low-fraction case, where the trim can discard the few
+# markers carrying real host signal. That risk exists only near the detection
+# floor; above it a pre-trim misfit is a couple of CNV/LoH outliers that do not move
+# the estimate. Promote the pre-trim guard to REVIEW only when the minor (host)
+# fraction is within this multiple of the limit of detection.
+GOF_PRETRIM_LOD_MULTIPLE = 5.0
 
 # Coverage uniformity: fraction of the sample's per-marker depths that must clear
 # UNIFORMITY_DEPTH_FRACTION * mean depth. A lopsided depth distribution (partial
@@ -158,14 +180,29 @@ def _error_adjusted_p_alt(expected_vaf: float, error_rate: float) -> float:
     return p_alt / (p_ref + p_alt)
 
 
-def _compute_gof_pval(
+class GofFit(NamedTuple):
+    """Goodness-of-fit summary.
+
+    Attributes:
+        pval: Chi-squared tail p-value (significance of the misfit).
+        reduced_chisq: Chi-squared divided by degrees of freedom (size of the
+            misfit). ~1.0 when the beta-binomial model fits; > 1 signals residual
+            overdispersion beyond the fitted rho. Depth-independent, so it separates
+            "the misfit is large" from "the misfit is merely detectable at high depth".
+    """
+
+    pval: float
+    reduced_chisq: float
+
+
+def _compute_gof(
     per_marker: list[MarkerResult],
     rho: float = float("inf"),
     n_fitted_params: int = 2,
     error_rate: float = 0.0,
     pretrim: bool = False,
-) -> float | None:
-    """Compute chi-squared goodness-of-fit p-value from per-marker residuals.
+) -> GofFit | None:
+    """Compute the chi-squared goodness-of-fit from per-marker residuals.
 
     Sum of squared Pearson residuals standardised by the beta-binomial variance:
 
@@ -187,7 +224,7 @@ def _compute_gof_pval(
             its own outliers. When False (default), only ``included`` markers count.
 
     Returns:
-        p-value, or None when there are too few markers (<= n_fitted_params).
+        A ``GofFit``, or None when there are too few markers (<= n_fitted_params).
     """
     included = per_marker if pretrim else [m for m in per_marker if m.included]
     if len(included) <= n_fitted_params:
@@ -215,7 +252,28 @@ def _compute_gof_pval(
     if df <= 0:
         return None
     pval: float = chi2.sf(chi_sq, df)
-    return pval
+    return GofFit(pval=pval, reduced_chisq=chi_sq / df)
+
+
+def _compute_gof_pval(
+    per_marker: list[MarkerResult],
+    rho: float = float("inf"),
+    n_fitted_params: int = 2,
+    error_rate: float = 0.0,
+    pretrim: bool = False,
+) -> float | None:
+    """Backward-compatible wrapper returning only the GoF p-value.
+
+    See ``_compute_gof`` for the full result.
+    """
+    gof = _compute_gof(
+        per_marker,
+        rho=rho,
+        n_fitted_params=n_fitted_params,
+        error_rate=error_rate,
+        pretrim=pretrim,
+    )
+    return None if gof is None else gof.pval
 
 
 def _coverage_uniformity(depths: list[int], depth_fraction: float) -> float:
@@ -307,6 +365,7 @@ def assess_quality(
     min_informative: int = 3,
     expected_relatedness: list[Relatedness | None] | None = None,
     relatedness_tolerance: int = 1,
+    clinical_gating: bool = True,
 ) -> QCReport:
     """Assess quality of a chimerism result and produce a QC report.
 
@@ -328,6 +387,12 @@ def assess_quality(
             ``result.relatedness`` (one per donor, in donor order). None entries (no
             expectation) are skipped.
         relatedness_tolerance: Allowed degree distance for a relatedness PASS.
+        clinical_gating: When True (default), gate the goodness-of-fit, pre-trim, and
+            consensus-hom swap REVIEW promotions on effect size (large reduced chi-sq,
+            proximity to the detection floor, high discordant fraction) rather than bare
+            significance. When False, use the legacy p-value-only rules. See
+            ``GOF_REVIEW_REDUCED_CHISQ``, ``GOF_PRETRIM_LOD_MULTIPLE``, and
+            ``SWAP_REVIEW_FRACTION``.
     """
     warnings: list[str] = []
     status = "PASS"
@@ -353,7 +418,7 @@ def assess_quality(
         n_fitted = len(result.donor_fractions) + 1  # k donors + rho
     else:
         n_fitted = 2  # f + rho
-    gof_pval = _compute_gof_pval(
+    gof = _compute_gof(
         result.per_marker,
         rho=rho,
         n_fitted_params=n_fitted,
@@ -363,7 +428,7 @@ def assess_quality(
     # markers (CNV/LoH, miscalls, or low-fraction host signal) and leave a clean
     # post-trim GoF on a poorly-fitting sample. Recompute only when trimmed.
     if any(not m.included for m in result.per_marker):
-        gof_pval_pretrim = _compute_gof_pval(
+        gof_pretrim = _compute_gof(
             result.per_marker,
             rho=rho,
             n_fitted_params=n_fitted,
@@ -371,7 +436,9 @@ def assess_quality(
             pretrim=True,
         )
     else:
-        gof_pval_pretrim = gof_pval
+        gof_pretrim = gof
+    gof_pval = gof.pval if gof is not None else None
+    gof_pval_pretrim = gof_pretrim.pval if gof_pretrim is not None else None
 
     if n_informative < min_informative:
         status = "FAIL"
@@ -414,30 +481,70 @@ def assess_quality(
             wide_ci = True
             warnings.append(f"Wide confidence interval: {ci_width:.1f}% > 20%")
 
-    # Gate on the worse of the post-trim and pre-trim fits so a sample cannot pass
-    # by trimming away its inconvenient markers.
-    gof_candidates = [p for p in (gof_pval, gof_pval_pretrim) if p is not None]
-    gof_for_review = min(gof_candidates) if gof_candidates else None
-    if gof_for_review is not None and gof_for_review < GOF_REVIEW_P:
-        poor_gof = True
-        if (
-            gof_pval_pretrim is not None
-            and gof_pval_pretrim < GOF_REVIEW_P
-            and (gof_pval is None or gof_pval >= GOF_REVIEW_P)
-        ):
-            # Post-trim fit looks fine; only the full set fails (the trim removed
-            # the misfitting markers).
+    # Goodness-of-fit review. With clinical gating (default), a fit is promoted to
+    # REVIEW only when the misfit is both significant (p < GOF_REVIEW_P) and large
+    # (reduced chi-sq > GOF_REVIEW_REDUCED_CHISQ): a bare p-value flags almost every
+    # real sample at panel depth. The pre-trim guard (a full-set misfit the robust
+    # trim masks) is promoted only near the detection floor, where the trim could
+    # discard real low-fraction host signal; above it the outliers do not move the
+    # estimate. Without gating (--legacy-gof-review) the original p-only rule applies.
+    def _gof_significant(g: GofFit | None) -> bool:
+        if g is None or g.pval >= GOF_REVIEW_P:
+            return False
+        return (not clinical_gating) or g.reduced_chisq > GOF_REVIEW_REDUCED_CHISQ
+
+    if clinical_gating:
+        host_frac = _mle_host_estimate(result)
+        lod = getattr(result, "lod_fraction", float("inf"))
+        near_floor = (not math.isfinite(lod)) or host_frac <= GOF_PRETRIM_LOD_MULTIPLE * lod
+        if _gof_significant(gof):
+            poor_gof = True
             warnings.append(
-                "Poor model fit on the full marker set (pre-trim "
-                f"goodness-of-fit p={gof_pval_pretrim:.1e} < 0.01) that the "
-                "robust trim masks — possible genotyping error, CNV, or, at low "
-                "host fraction, trimmed host signal"
+                "Poor model fit (goodness-of-fit p < 0.01, reduced "
+                f"chi-sq={gof.reduced_chisq:.1f}) — possible genotyping error, CNV, "
+                "or sample issue"
             )
-        else:
-            warnings.append(
-                "Poor model fit (goodness-of-fit p < 0.01) — "
-                "possible genotyping error, CNV, or sample issue"
-            )
+        elif _gof_significant(gof_pretrim):
+            # Post-trim fit is clean; only the full set misfits. Actionable only near
+            # the floor, where the trim can hide real low-fraction host signal.
+            if near_floor:
+                poor_gof = True
+                warnings.append(
+                    "Poor model fit on the full marker set (pre-trim goodness-of-fit "
+                    f"p={gof_pretrim.pval:.1e}, reduced chi-sq={gof_pretrim.reduced_chisq:.1f}) "
+                    "that the robust trim masks, near the detection floor — possible "
+                    "trimmed host signal, genotyping error, or CNV"
+                )
+            else:
+                warnings.append(
+                    "Full marker set is overdispersed (pre-trim goodness-of-fit "
+                    f"p={gof_pretrim.pval:.1e}); the robust trim removes the outliers "
+                    f"and the estimate ({host_frac:.2%} host) sits well above the "
+                    f"detection floor ({lod:.3%}), so this is not promoted to REVIEW"
+                )
+    else:
+        # Legacy: gate on the worse of the post-trim and pre-trim p-values so a
+        # sample cannot pass by trimming away its inconvenient markers.
+        gof_candidates = [p for p in (gof_pval, gof_pval_pretrim) if p is not None]
+        gof_for_review = min(gof_candidates) if gof_candidates else None
+        if gof_for_review is not None and gof_for_review < GOF_REVIEW_P:
+            poor_gof = True
+            if (
+                gof_pval_pretrim is not None
+                and gof_pval_pretrim < GOF_REVIEW_P
+                and (gof_pval is None or gof_pval >= GOF_REVIEW_P)
+            ):
+                warnings.append(
+                    "Poor model fit on the full marker set (pre-trim "
+                    f"goodness-of-fit p={gof_pval_pretrim:.1e} < 0.01) that the "
+                    "robust trim masks — possible genotyping error, CNV, or, at low "
+                    "host fraction, trimmed host signal"
+                )
+            else:
+                warnings.append(
+                    "Poor model fit (goodness-of-fit p < 0.01) — "
+                    "possible genotyping error, CNV, or sample issue"
+                )
 
     # Host-presence vs MLE disagreement: a significant presence test the MLE does
     # not echo is the clinically interesting "host below the MLE's resolution"
@@ -514,12 +621,27 @@ def assess_quality(
 
     ac: AdmixConsistencyResult | None = getattr(result, "admix_consistency", None)
     if ac is not None and ac.n_consensus_hom >= MIN_CONSENSUS and ac.swap_pval < SWAP_REVIEW_P:
-        identity_review = True
-        warnings.append(
-            f"Possible sample swap: admixture carries alleles in neither host "
-            f"nor donor at {ac.n_discordant}/{ac.n_consensus_hom} "
-            f"consensus-homozygous markers (swap p={ac.swap_pval:.2e})"
-        )
+        # Significant discordant count. With clinical gating, promote only when the
+        # discordant fraction is also high (a real swap mismatches ~half the sites);
+        # a few off-model sites are reported as an informational warning instead.
+        large_swap = (not clinical_gating) or ac.discordant_fraction >= SWAP_REVIEW_FRACTION
+        if large_swap:
+            identity_review = True
+            warnings.append(
+                f"Possible sample swap: admixture carries alleles in neither host "
+                f"nor donor at {ac.n_discordant}/{ac.n_consensus_hom} "
+                f"consensus-homozygous markers ({ac.discordant_fraction:.0%}, "
+                f"swap p={ac.swap_pval:.2e})"
+            )
+        else:
+            warnings.append(
+                f"Minor consensus-hom discordance: admixture carries alleles in "
+                f"neither host nor donor at {ac.n_discordant}/{ac.n_consensus_hom} "
+                f"markers ({ac.discordant_fraction:.1%}, swap p={ac.swap_pval:.2e}); "
+                "far below the ~50% of a real swap, so likely off-model sites "
+                "(genotyping miscall, mapping artifact, or site-specific "
+                "contamination), not promoted to REVIEW"
+            )
 
     # In-data contamination floor: low-level third-party signal the swap test
     # misses. Magnitude-gated warning; REVIEW when large enough to bias host

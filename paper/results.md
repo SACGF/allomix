@@ -84,16 +84,29 @@ draws the independent per-mixture contamination level (the consensus-homozygous 
 mixtures), the level below which a corrected estimate is not separable from
 contamination.
 
-Two reproducibility caveats apply. {{ srp434573.n_review | dp(0) }} of
-{{ srp434573.n_timepoints | dp(0) }} admixtures carry a REVIEW flag, predominantly from
-the goodness-of-fit check rather than a biased point estimate: per-marker variance
-exceeds the model expectation (overdispersion), so the fit is flagged even where the
-fraction is recovered accurately, the same overdispersion gap quantified in the
-limit-of-detection analysis (Supplementary Figures S7, S8). And the amplicon panel
-intervals were reconstructed from the reads rather than supplied by the panel vendor, and
-which named individual is the titrated minor was inferred from the dataset's naming
-structure rather than stated in the thesis; both affect only the host/donor labelling and
-which marginal markers are included, not the genotypes at the markers that are.
+The QC layer promotes {{ srp434573.n_review | dp(0) }} of
+{{ srp434573.n_timepoints | dp(0) }} admixtures to REVIEW, all at the lowest host
+fractions ({{ srp434573.dilution_min_pct }}% to 1%), where the outlier-resistant refit
+sets aside a large share of markers (Methods). That is the sub-limit-of-detection regime
+where a call should be confirmed by eye, so the flags fall where they are useful, while
+the accurate 2.5% to 100% estimates pass. The flags are gated on effect size rather than
+bare significance. At panel depth (>1000x) a chi-squared goodness-of-fit test and a
+discordant-site count reach significance for a misfit far too small to change the result:
+the goodness-of-fit p-value is below 0.01 for {{ qc_gating.gof_p_significant }} of
+{{ qc_gating.n_timepoints }} mixtures even though the beta-binomial model fits (post-trim
+reduced chi-squared median {{ qc_gating.gof_reduced_median }}, maximum
+{{ qc_gating.gof_reduced_max }}). Promoting to REVIEW instead requires the misfit to be
+large (reduced chi-squared above {{ qc_gating.gof_reduced_threshold }}, a discordant
+fraction above {{ qc_gating.swap_review_fraction_pct }}%, or a fraction within
+{{ qc_gating.pretrim_lod_multiple }}x the detection limit), which holds the flag count at
+{{ qc_gating.n_review_clinical }} rather than the {{ qc_gating.n_review_legacy }} a
+p-value-only rule raises on the same fits (Supplementary Methods S10).
+
+One reproducibility caveat applies to the labelling. The amplicon panel intervals were
+reconstructed from the reads rather than supplied by the panel vendor, and which named
+individual is the titrated minor was inferred from the dataset's naming structure rather
+than stated in the thesis. Both affect only the host/donor labelling and which marginal
+markers are included, not the genotypes at the markers that are.
 
 ![**Figure 1.** allomix on the SRP434573 public titrated-mixture dataset (real reads). (A) Two-person dilution series: known host fraction versus allomix estimate (log-log) for the maximum-likelihood estimate (filled circles, 100 minus donor%, with the per-marker co-pooled contamination correction applied; Methods) and the residual-host presence test (open squares), across {{ srp434573.n_mixtures | dp(0) }} two-person mixtures ({{ srp434573.n_timepoints | dp(0) }} admixtures in total). Dashed line is perfect recovery. The 0.5% points still fall away from the line where the residual contamination floor competes with the true fraction. An alternative view of the same dilution series, with 95% confidence intervals on each estimate, is in Supplementary Figure S12. (B) The single three-person mixture (1:3:5 of F2:M1:M2): known versus estimated component fractions with 95% confidence intervals.]({{ facts_dir }}/fig_srp434573.png)
 

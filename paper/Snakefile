@@ -129,6 +129,11 @@ SRP434573_LOGY_FIGS = [f"{FACTS_DIR}/fig_srp434573_logy.png"]
 # ladder read as a declining-chimerism trajectory. Reads the two-person TSV.
 SRP434573_TIMELINE_FACTS = [f"{FACTS_DIR}/srp434573_timeline.csv"]
 SRP434573_TIMELINE_FIGS = [f"{FACTS_DIR}/fig_srp434573_timeline.png"]
+# QC effect-size gating sensitivity (Supplementary QC Gating): reruns allomix QC on
+# the two-person mixtures under the default clinical gating vs the legacy p-only rule
+# and summarises the goodness-of-fit reduced chi-squared. Reads the committed VCFs
+# (plus the two-person TSV for the mixture list); no sequencing or joint calling.
+QC_GATING_FACTS = [f"{FACTS_DIR}/qc_gating.csv"]
 # Optional per-patient error tables (issue #23), committed alongside the genotype
 # VCFs once built TAU-side by the pipeline's phase-1b reference pileup. Listed as
 # inputs only when present so the allomix rule reruns if they are added/updated;
@@ -222,6 +227,7 @@ ALL_FACTS = (
     + CNV_LOH_FACTS
     + SRP434573_FACTS
     + SRP434573_TIMELINE_FACTS
+    + QC_GATING_FACTS
     + SRP_CONTAM_FACTS
     + SUBSAMPLE_LOD_FACTS
     + SYNTHETIC_FACTS  # results.md now cites the semi-synthetic sub-0.5% facts (#5)
@@ -471,6 +477,22 @@ rule srp434573_facts:
         SRP434573_FIGS,
     shell:
         "python paper/scripts/generate_srp434573_facts.py"
+
+
+rule qc_gating_sensitivity:
+    # Supplementary QC Gating facts: clinical (default) vs legacy REVIEW counts and
+    # the goodness-of-fit reduced chi-squared distribution on the two-person mixtures.
+    # Reruns allomix QC in-process on the committed VCFs; no sequencing or joint calling.
+    input:
+        "output/srp434573_two_person.tsv",
+        "paper/scripts/qc_gating_sensitivity.py",
+        "paper/scripts/srp434573_common.py",
+        f"{SRP434573_GENOTYPES}/mix_F1_into_F3.SRP434573.vcf.gz",
+        *SRP434573_ERROR_TABLES,
+    output:
+        QC_GATING_FACTS,
+    shell:
+        "python paper/scripts/qc_gating_sensitivity.py"
 
 
 rule srp434573_logy_plot:

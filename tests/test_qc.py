@@ -8,8 +8,10 @@ import pytest
 from allomix.estimate.chimerism import estimate_single_donor_bb
 from allomix.genotype import InformativeMarker, MarkerCounts, MarkerGenotypes
 from allomix.qc.qc import (
+    GOF_REVIEW_REDUCED_CHISQ,
     ChimerismResult,
     MarkerResult,
+    _compute_gof,
     _compute_gof_pval,
     _marker_loss_diagnosis,
     assess_quality,
@@ -535,6 +537,29 @@ class TestGoodnessOfFit:
         assert qc.goodness_of_fit_pval is not None
         assert qc.goodness_of_fit_pval < 0.01
 
+    def test_significant_but_small_misfit_not_promoted_under_clinical_gating(self):
+        """Overpowered-at-depth case: many markers with a small residual make the GoF
+        p-value significant while the reduced chi-squared stays near 1. Clinical gating
+        (default) must not promote it; the legacy p-only rule does."""
+        markers = [
+            _make_marker_result(pos=i * 10, dp=1000, residual=0.0118, included=True)
+            for i in range(200)
+        ]
+        result = _make_chimerism_result(n_informative=200, per_marker=markers, rho=float("inf"))
+        genotypes = _make_genotypes()
+
+        gof = _compute_gof(result.per_marker, rho=float("inf"), error_rate=result.error_rate)
+        assert gof.pval < 0.01  # significant
+        assert gof.reduced_chisq < GOF_REVIEW_REDUCED_CHISQ  # but small
+
+        qc = assess_quality(result, genotypes)  # clinical (default)
+        assert qc.status == "PASS"
+        assert not any("model fit" in w.lower() for w in qc.warnings)
+
+        qc_legacy = assess_quality(result, genotypes, clinical_gating=False)
+        assert qc_legacy.status == "REVIEW"
+        assert any("model fit" in w.lower() for w in qc_legacy.warnings)
+
 
 # ---------------------------------------------------------------------------
 # Pearson GoF statistic tests
@@ -893,3 +918,19 @@ class TestAdmixSwapQC:
         )
         qc = assess_quality(result, _make_genotypes())
         assert qc.status == "PASS"
+
+    def test_low_discordant_fraction_not_promoted_under_clinical(self):
+        """A significant swap p-value from only a few off-model sites (small discordant
+        fraction) is reported but not promoted under clinical gating; legacy promotes it."""
+        result = _make_chimerism_result(n_informative=30)
+        result.admix_consistency = AdmixConsistencyResult(
+            n_consensus_hom=110, n_discordant=3, discordant_fraction=3 / 110, swap_pval=2e-4
+        )
+        qc = assess_quality(result, _make_genotypes())  # clinical (default)
+        assert qc.status == "PASS"
+        assert not any("Possible sample swap" in w for w in qc.warnings)
+        assert any("Minor consensus-hom discordance" in w for w in qc.warnings)
+
+        qc_legacy = assess_quality(result, _make_genotypes(), clinical_gating=False)
+        assert qc_legacy.status == "REVIEW"
+        assert any("Possible sample swap" in w for w in qc_legacy.warnings)

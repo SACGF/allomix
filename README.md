@@ -60,9 +60,9 @@ See the [CLI usage guide](docs/cli.md) for multi-donor runs, timelines, bias cor
    (upstream)            GenotypeGVCFs) → panel VCF; pileup admix samples
                          at the panel sites → admix VCF
 
-5. allomix detect       Chimerism for one timepoint → TSV / JSON / HTML
-   allomix timeline      Track chimerism across timepoints → JSON / HTML
-   allomix report        Render HTML from a saved detect/timeline JSON
+5. allomix detect       Chimerism for one timepoint → TSV / JSON / HTML / PDF
+   allomix timeline      Track chimerism across timepoints → JSON / HTML / PDF
+   allomix report        Render HTML/PDF from a saved detect/timeline JSON
 ```
 
 Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even when one sample is hom-ref; pileup of the admix samples preserves raw per-allele counts needed for host fractions below ~5%. See the [Joint Calling Guide](docs/joint_calling.md) for the full rationale.
@@ -71,10 +71,10 @@ Joint calling of HOST + DONOR propagates donor ALT alleles to the panel even whe
 
 - [Panel guide](docs/panel_guide.md) — qualifying your own panel for chimerism use (start here for a new panel)
 - [CLI usage](docs/cli.md) — all subcommands, options, and input/output reference
-- [Reports and structured output](docs/reports.md) — the JSON envelope, HTML report, and worked examples
+- [Reports and structured output](docs/reports.md) — the JSON envelope, HTML/PDF report, and worked examples
 - [Joint Calling Guide](docs/joint_calling.md) — two-phase upstream pipeline and rationale
 - [Bias Estimation Guide](docs/estimate_bias.md) — per-marker bias tables (and building a training cohort from BAMs)
-- [Custom report templates](docs/custom_report_template.md) — branding the HTML report for your lab
+- [Custom report templates](docs/custom_report_template.md) — branding the HTML/PDF report for your lab
 - [Architecture](docs/architecture.md) — module-by-module code map and data flow
 - [Scripts](docs/scripts.md) — developer and validation utilities
 - [Building the paper](docs/paper.md) — Snakemake validation and figure build

@@ -411,6 +411,7 @@ def _build_report_params(args: argparse.Namespace) -> dict:
 _CMD_DROP_WITH_VALUE = {
     "--json",
     "--html",
+    "--pdf",
     "--tsv",
     "--marker-csv",
     "--output",
@@ -675,6 +676,12 @@ def _add_output_args(parser: argparse.ArgumentParser, *, allow_tsv: bool) -> Non
         help="Write the self-contained HTML report to PATH ('-' for stdout)",
     )
     parser.add_argument(
+        "--pdf",
+        metavar="PATH",
+        help="Write the report as PDF to PATH (needs the 'pdf' extra: pip install "
+        "'allomix[pdf]'). PDF is binary, so stdout ('-') is not supported.",
+    )
+    parser.add_argument(
         "--template",
         metavar="DIR",
         help="Directory of HTML report template overrides, searched ahead of the "
@@ -688,6 +695,22 @@ def _add_output_args(parser: argparse.ArgumentParser, *, allow_tsv: bool) -> Non
             metavar="PATH",
             help="Write the TSV summary to PATH ('-' for stdout). The default "
             "when no output flag is given.",
+        )
+
+
+def _require_pdf(path: str) -> None:
+    """Validate a ``--pdf`` destination and confirm WeasyPrint is installed.
+
+    PDF is binary, so stdout is rejected. WeasyPrint (and its system Pango/Cairo
+    libraries) ship in the optional ``[pdf]`` extra, guarded here with the same
+    ``find_spec`` capability check the timeline HTML path uses for matplotlib.
+    """
+    if path == "-":
+        raise SystemExit("--pdf writes a binary PDF; give a file path, not '-' (stdout).")
+    if importlib.util.find_spec("weasyprint") is None:
+        raise SystemExit(
+            "PDF output needs WeasyPrint (and its system Pango/Cairo/HarfBuzz "
+            "libraries): pip install 'allomix[pdf]'"
         )
 
 
@@ -750,17 +773,21 @@ def cmd_detect(args: argparse.Namespace) -> int:
     # No output flag defaults to TSV on stdout (the historical default).
     want_json = args.json is not None
     want_html = args.html is not None
+    want_pdf = args.pdf is not None
     want_tsv = args.tsv is not None
     want_csv = args.marker_csv is not None
-    if not (want_json or want_html or want_tsv or want_csv):
+    if not (want_json or want_html or want_pdf or want_tsv or want_csv):
         want_tsv = True
         args.tsv = "-"
 
+    if want_pdf:
+        _require_pdf(args.pdf)
+
     # Single-sample report is for one sample; multiple timepoints use the
     # timeline report (which adds the trend chart).
-    if (want_json or want_html) and len(args.sample) != 1:
+    if (want_json or want_html or want_pdf) and len(args.sample) != 1:
         raise SystemExit(
-            "detect --json/--html produce one report for a single --sample; got "
+            "detect --json/--html/--pdf produce one report for a single --sample; got "
             f"{len(args.sample)}. Use 'allomix timeline' for multiple timepoints."
         )
 
@@ -828,8 +855,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
         results.append((genotypes.sample_name, result, qc))
         marker_rows.append((genotypes.sample_name, result))
 
-    # One envelope feeds both the JSON and the HTML so they always agree.
-    if want_json or want_html:
+    # One envelope feeds the JSON, HTML, and PDF so they always agree.
+    if want_json or want_html or want_pdf:
         name, result, qc = results[0]
         data = report_data(
             result,
@@ -843,6 +870,13 @@ def cmd_detect(args: argparse.Namespace) -> int:
             _write_text(args.json, json.dumps(data, indent=2) + "\n")
         if want_html:
             _write_text(args.html, render_single(data, template_dir=args.template))
+        if want_pdf:
+            # Deferred import after the _require_pdf check: pdf.py imports
+            # WeasyPrint (the optional `pdf` extra) at module top, so importing
+            # here keeps the base install free of it.
+            from allomix.report.html.pdf import to_pdf_single
+
+            to_pdf_single(data, args.pdf, template_dir=args.template)
 
     if want_tsv:
         out = _open_output(args.tsv)
@@ -863,15 +897,20 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     """Run the timeline subcommand."""
     want_json = args.json is not None
     want_html = args.html is not None
+    want_pdf = args.pdf is not None
     want_csv = args.marker_csv is not None
-    if not (want_json or want_html or want_csv):
+    if not (want_json or want_html or want_pdf or want_csv):
         want_json = True
         args.json = "-"
 
-    if want_html and importlib.util.find_spec("matplotlib") is None:
+    # Both the HTML and PDF timelines embed the matplotlib trend chart.
+    if (want_html or want_pdf) and importlib.util.find_spec("matplotlib") is None:
         raise SystemExit(
-            "timeline --html needs matplotlib for the trend chart: pip install 'allomix[report]'"
+            "timeline --html/--pdf needs matplotlib for the trend chart: "
+            "pip install 'allomix[report]'"
         )
+    if want_pdf:
+        _require_pdf(args.pdf)
     _validate_expected_relatedness(args)
     _validate_sample_names(args.genotype_vcf, [args.host_sample] + args.donor_sample)
     admix_by_sample = _resolve_admix_samples(args.admix_vcf, args.sample)
@@ -930,7 +969,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         )
         results.append((genotypes.sample_name, result, qc))
 
-    if want_json or want_html:
+    if want_json or want_html or want_pdf:
         data = timeline_report_data(
             results,
             meta=_build_report_meta(args),
@@ -949,6 +988,12 @@ def cmd_timeline(args: argparse.Namespace) -> int:
                 args.html,
                 render_timeline(data, log_scale=args.log_scale, template_dir=args.template),
             )
+        if want_pdf:
+            # Deferred import after the capability checks: pdf.py imports both
+            # WeasyPrint and (via timeline) matplotlib at module top.
+            from allomix.report.html.pdf import to_pdf_timeline
+
+            to_pdf_timeline(data, args.pdf, log_scale=args.log_scale, template_dir=args.template)
 
     if want_csv:
         to_marker_csv([(name, result) for name, result, _ in results], args.marker_csv)
@@ -957,30 +1002,55 @@ def cmd_timeline(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    """Render an HTML report from a saved report-data JSON file.
+    """Render an HTML and/or PDF report from a saved report-data JSON file.
 
     Reads the envelope written by ``detect --json`` / ``timeline --json`` and
-    renders the same HTML, so report generation can be split from analysis (or
-    re-run later). The ``kind`` field selects single-sample vs timeline.
+    renders the same report, so report generation can be split from analysis (or
+    re-run later). The ``kind`` field selects single-sample vs timeline. HTML
+    goes to ``--output`` (stdout by default); ``--pdf`` writes a PDF as well. When
+    only ``--pdf`` is given (no explicit ``--output``), the HTML stdout default is
+    suppressed so a bare PDF run does not also dump HTML to the terminal.
     """
+    want_pdf = args.pdf is not None
+    if want_pdf:
+        _require_pdf(args.pdf)
+
+    # Explicit --output wins; otherwise default to stdout unless only --pdf asked.
+    html_out = args.output
+    if html_out is None:
+        html_out = None if want_pdf else "-"
+
     raw = sys.stdin.read() if args.input == "-" else Path(args.input).read_text(encoding="utf-8")
     data = json.loads(raw)
 
     is_timeline = data.get("kind") == "timeline" or "timepoints" in data
-    if is_timeline:
-        if importlib.util.find_spec("matplotlib") is None:
-            raise SystemExit(
-                "rendering a timeline report needs matplotlib for the trend "
-                "chart: pip install 'allomix[report]'"
-            )
-        # Deferred import: keeps the single-sample path matplotlib-free.
-        from allomix.report.html.timeline import render_timeline
+    if is_timeline and importlib.util.find_spec("matplotlib") is None:
+        raise SystemExit(
+            "rendering a timeline report needs matplotlib for the trend "
+            "chart: pip install 'allomix[report]'"
+        )
 
-        html = render_timeline(data, log_scale=args.log_scale, template_dir=args.template)
-    else:
-        html = render_single(data, template_dir=args.template)
+    if html_out is not None:
+        if is_timeline:
+            # Deferred import: keeps the single-sample path matplotlib-free.
+            from allomix.report.html.timeline import render_timeline
 
-    _write_text(args.output, html)
+            html = render_timeline(data, log_scale=args.log_scale, template_dir=args.template)
+        else:
+            html = render_single(data, template_dir=args.template)
+        _write_text(html_out, html)
+
+    if want_pdf:
+        # Deferred import after the capability checks (see cmd_detect/cmd_timeline).
+        if is_timeline:
+            from allomix.report.html.pdf import to_pdf_timeline
+
+            to_pdf_timeline(data, args.pdf, log_scale=args.log_scale, template_dir=args.template)
+        else:
+            from allomix.report.html.pdf import to_pdf_single
+
+            to_pdf_single(data, args.pdf, template_dir=args.template)
+
     return 0
 
 
@@ -1244,15 +1314,22 @@ def main(argv: list[str] | None = None) -> int:
         "-o",
         "--html",
         metavar="PATH",
-        default="-",
-        help="HTML output file (default: stdout); --html is an alias since the "
-        "report is always HTML. A timeline JSON needs the 'report' extra for the "
-        "trend chart: pip install 'allomix[report]'",
+        default=None,
+        help="HTML output file (default: stdout); --html is an alias. A timeline "
+        "JSON needs the 'report' extra for the trend chart: pip install "
+        "'allomix[report]'. When only --pdf is given, the stdout default is "
+        "suppressed.",
+    )
+    report_parser.add_argument(
+        "--pdf",
+        metavar="PATH",
+        help="Also write the report as PDF to PATH (needs the 'pdf' extra: pip "
+        "install 'allomix[pdf]'). PDF is binary, so stdout ('-') is not supported.",
     )
     report_parser.add_argument(
         "--log-scale",
         action="store_true",
-        help="Use a logarithmic y axis on the HTML trend chart (timeline JSON)",
+        help="Use a logarithmic y axis on the trend chart (timeline JSON)",
     )
     report_parser.add_argument(
         "--template",

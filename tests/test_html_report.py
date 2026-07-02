@@ -424,7 +424,7 @@ class TestQCPanel:
     def test_expandable_method_help_present(self):
         """The report carries collapsible 'how this works' help (feedback item 2)."""
         html = _render(_result(host_presence=_host_presence()), _qc(), params=_params())
-        assert "<details class=\"help\">" in html
+        assert '<details class="help">' in html
         assert "How host-presence detection works" in html
 
 
@@ -814,3 +814,152 @@ class TestReportSubcommandTimeline:
         text = html.read_text()
         assert "data:image/png;base64," in text  # trend chart drawn from the JSON
         assert "<h2>Trend</h2>" in text
+
+
+# ---------------------------------------------------------------------------
+# PDF report (issue #35)
+# ---------------------------------------------------------------------------
+
+
+def _detect_pdf_argv(out) -> list[str]:
+    """A minimal detect invocation writing a single-sample PDF to ``out``."""
+    return [
+        "detect",
+        "--genotype-vcf",
+        str(JOINT_VCF),
+        "--admix-vcf",
+        str(JOINT_VCF),
+        "--host-sample",
+        "HOST",
+        "--donor-sample",
+        "DONOR",
+        "--sample",
+        "ADMIX_F0.10",
+        "--pdf",
+        str(out),
+        "--min-dp",
+        "0",
+        "--min-gq",
+        "0",
+    ]
+
+
+class TestPDF:
+    """PDF output reuses the HTML render path via WeasyPrint (the [pdf] extra)."""
+
+    def _single_data(self) -> dict:
+        from allomix.report.report import report_data
+
+        return report_data(
+            _result(host_presence=_host_presence()),
+            _qc(),
+            sample_name="S1",
+            meta=ReportMeta(recipient_id="DEMO-1"),
+            params=_params(),
+            timestamp=FIXED_TS,
+        )
+
+    def _timeline_data(self) -> dict:
+        from allomix.report.report import timeline_report_data
+
+        results = [_tp("T1", 0.10), _tp("T2", 0.30), _tp("T3", 0.55)]
+        return timeline_report_data(results, params=_params(), timestamp=FIXED_TS)
+
+    def test_single_pdf_round_trip(self, tmp_path):
+        from allomix.report.html.pdf import to_pdf_single
+
+        out = tmp_path / "r.pdf"
+        to_pdf_single(self._single_data(), out)
+        blob = out.read_bytes()
+        assert blob[:5] == b"%PDF-"  # a real PDF, not an HTML error page
+        assert len(blob) > 1000
+
+    def test_single_pdf_accepts_binary_stream(self):
+        from allomix.report.html.pdf import to_pdf_single
+
+        buf = io.BytesIO()
+        to_pdf_single(self._single_data(), buf)
+        assert buf.getvalue()[:5] == b"%PDF-"
+
+    def test_timeline_pdf_round_trip(self, tmp_path):
+        from allomix.report.html.pdf import to_pdf_timeline
+
+        out = tmp_path / "tl.pdf"
+        to_pdf_timeline(self._timeline_data(), out)
+        assert out.read_bytes()[:5] == b"%PDF-"
+
+    def test_timeline_pdf_empty_raises(self):
+        from allomix.report.html.pdf import to_pdf_timeline
+
+        with pytest.raises(ValueError):
+            to_pdf_timeline({"kind": "timeline", "timepoints": []}, io.BytesIO())
+
+    def test_cli_detect_pdf(self, tmp_path):
+        out = tmp_path / "report.pdf"
+        assert main(_detect_pdf_argv(out)) == 0
+        assert out.read_bytes()[:5] == b"%PDF-"
+
+    def test_cli_timeline_pdf(self, tmp_path):
+        out = tmp_path / "timeline.pdf"
+        rc = main(
+            [
+                "timeline",
+                "--genotype-vcf",
+                str(JOINT_VCF),
+                "--admix-vcf",
+                str(JOINT_VCF),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.10",
+                "--sample",
+                "ADMIX_F0.50",
+                "--sample",
+                "ADMIX_F1.00",
+                "--pdf",
+                str(out),
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+            ]
+        )
+        assert rc == 0
+        assert out.read_bytes()[:5] == b"%PDF-"
+
+    def test_report_subcommand_pdf(self, tmp_path):
+        js = tmp_path / "r.json"
+        assert main(_detect_pdf_argv(tmp_path / "unused.pdf")[:-2] + ["--json", str(js)]) == 0
+        pdf = tmp_path / "from_json.pdf"
+        assert main(["report", str(js), "--pdf", str(pdf)]) == 0
+        assert pdf.read_bytes()[:5] == b"%PDF-"
+
+    def test_report_pdf_only_suppresses_html_stdout(self, tmp_path, capsys):
+        """`report file.json --pdf out.pdf` writes only the PDF, no HTML to stdout."""
+        js = tmp_path / "r.json"
+        assert main(_detect_pdf_argv(tmp_path / "unused.pdf")[:-2] + ["--json", str(js)]) == 0
+        pdf = tmp_path / "out.pdf"
+        assert main(["report", str(js), "--pdf", str(pdf)]) == 0
+        assert capsys.readouterr().out == ""
+        assert pdf.exists()
+
+    def test_pdf_stdout_rejected(self):
+        with pytest.raises(SystemExit) as exc:
+            main(_detect_pdf_argv("-"))
+        assert "binary" in str(exc.value).lower()
+
+    def test_pdf_extra_guard(self, tmp_path, monkeypatch):
+        """A missing WeasyPrint gives a clean install hint (mirrors the matplotlib guard)."""
+        import importlib.util
+
+        real = importlib.util.find_spec
+        monkeypatch.setattr(
+            importlib.util,
+            "find_spec",
+            lambda name, *a, **k: None if name == "weasyprint" else real(name, *a, **k),
+        )
+        with pytest.raises(SystemExit) as exc:
+            main(_detect_pdf_argv(tmp_path / "r.pdf"))
+        assert "allomix[pdf]" in str(exc.value)

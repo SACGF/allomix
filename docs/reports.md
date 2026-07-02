@@ -1,9 +1,9 @@
 # Reports and structured output
 
-`allomix` emits three output formats: TSV (machine-readable), JSON (the
-structured artifact), and a self-contained HTML report. The JSON is canonical:
-the HTML report is rendered from it and nothing else, so the report and the data
-always agree.
+`allomix` emits several output formats: TSV (machine-readable), JSON (the
+structured artifact), a self-contained HTML report, and an optional PDF. The JSON
+is canonical: the HTML and PDF reports are rendered from it and nothing else, so
+the report and the data always agree.
 
 ## Structured JSON
 
@@ -47,6 +47,39 @@ matplotlib, installed with the `report` extra:
 ```bash
 pip install 'allomix[report]'
 ```
+
+## PDF report
+
+`--pdf PATH` writes the same report as a PDF, for attaching to a record or a
+LIMS. It is available on `detect`, `timeline`, and `report`, and can be produced
+alongside the other outputs in one run:
+
+```bash
+allomix detect ... --json result.json --pdf report.pdf
+allomix report result.json --pdf report.pdf     # from a saved JSON
+```
+
+The PDF carries the same sections as the HTML, laid out for print: a running
+header, page numbers, and a "Methods and notes" appendix that gathers the "how it
+works" explanations and the run command (in the HTML these are collapsible, which
+a printed page cannot show). PDF is binary, so `--pdf -` (stdout) is not
+supported; give a file path. When `allomix report` is given only `--pdf` (no
+`--output`), it writes just the PDF and does not also print HTML to stdout.
+
+PDF output needs WeasyPrint, installed with the `pdf` extra (which also pulls in
+the `report` extra for the timeline chart):
+
+```bash
+pip install 'allomix[pdf]'
+```
+
+WeasyPrint depends on the system Pango, Cairo, and HarfBuzz libraries. These are
+usually already present on Linux; on a locked-down clinical workstation they may
+need installing (for example `apt install libpango-1.0-0 libpangocairo-1.0-0`).
+
+This is a demo-grade converter, not a LIMS replacement. A lab that wants a fully
+branded or signed report overrides the PDF templates with `--template` (see
+below).
 
 ## Customising the report
 

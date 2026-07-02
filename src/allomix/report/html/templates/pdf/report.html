@@ -1,11 +1,17 @@
 {#
-  Single-sample chimerism report. Reads the render context built by
-  allomix.html.context.single_context. To restyle for a lab, override styles.css;
-  to restructure, override this file (and macros.html) via --template.
+  Single-sample chimerism report, PDF layout (issue #35). Shares every section
+  with the HTML report through macros.html; the only differences are structural:
+  the on-screen "how it works" disclosures are suppressed inline (show_help=False)
+  and collected into a "Methods and notes" appendix at the end, so nothing is
+  hidden in a printed document. Selected by `--pdf`; override via --template by
+  dropping a pdf/report.html into your template directory.
 #}
 {% extends "base.html" %}
 {% import "macros.html" as m %}
 {% block body %}
+{# Running header element: repeated at the top of every printed page (see
+   pdf/styles.css @top-center). Removed from normal flow by `position: running`. #}
+<div class="doc-running-header">{{ title }}</div>
 {{ m.header(header_rows) }}
 
 <section class="section headline">
@@ -29,10 +35,17 @@
 {% if "donors" not in analysis %}
 <div class="sensitivity-line">Sample sensitivity (as a donor fraction): limit of blank {{ analysis.lob_pct | pct_value }}, limit of detection {{ analysis.lod_pct | pct_value }}.</div>
 {% endif %}
-{{ m.help_fractions() }}
 </section>
 
-{{ m.host_presence(host_presence.hp, host_presence.detected) }}
-{{ m.qc_panel(qc) }}
-{{ m.footer(version, params, citation, timestamp) }}
+{{ m.host_presence(host_presence.hp, host_presence.detected, show_help=False) }}
+{{ m.qc_panel(qc, show_help=False) }}
+{{ m.footer(version, params, citation, timestamp, show_run_command=False) }}
+
+<section class="section methods-appendix">
+<h2>Methods and notes</h2>
+{{ m.help_fractions() }}
+{{ m.help_host_presence() }}
+{{ m.help_qc() }}
+{{ m.run_command(params) }}
+</section>
 {% endblock %}

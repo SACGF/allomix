@@ -44,8 +44,8 @@ before sequencing, the FABCASE tool assesses that prospectively (Vynck 2025, Int
 Lab Hematol 47:690-697).
 
 Where allomix reports the count: every `allomix detect` run reports how many
-input markers were informative and how many were used in the fit (the HTML report
-states it as "N of M input markers were informative; K used in the fit", and the
+input markers were informative and how many were used in the fit (the HTML/PDF
+report states it as "N of M input markers were informative; K used in the fit", and the
 same `n_informative` / per-donor counts are in the structured JSON). For a
 multi-donor run the per-donor informative counts are reported separately. Use
 these to confirm each real case clears the rule-of-thumb floor, and watch for

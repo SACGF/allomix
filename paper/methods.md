@@ -515,10 +515,11 @@ includes a reference Snakemake[@Molder2021snakemake] workflow that runs the two-
 upstream calling (GATK joint genotyping of host and donor, then forced bcftools pileup
 of the admixture samples at the panel sites) and the optional bwa-mem alignment step
 ahead of it. Each analysis can emit a tab-separated summary, a structured JSON record,
-and a single-file HTML report that presents the estimate, its confidence interval, the
-quality-control verdict, and collapsible method explanations for clinical review. The
-HTML report is rendered from templates a laboratory can override to match its own
-reporting style (logo, layout, and wording). The repository documentation includes a
+and a single-file HTML or PDF report that presents the estimate, its confidence interval,
+the quality-control verdict, and the method explanations for clinical review. The
+HTML and PDF reports are rendered from templates a laboratory can override to match its
+own reporting style (logo, layout, and wording); the PDF is for attaching to a record or
+laboratory information system. The repository documentation includes a
 guide for qualifying an existing clinical panel for chimerism use, covering
 informative-marker sufficiency, per-marker characterization, inclusion thresholds, and
 building the bias and error correction tables.

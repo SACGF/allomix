@@ -16,6 +16,69 @@
 </details>
 {% endmacro %}
 
+{# Single-sourced "how it works" prose. Each is emitted inline in the HTML report
+   (next to the section it explains) and collected into the PDF "Methods and
+   notes" appendix, so the wording lives in exactly one place. #}
+{% macro help_fractions() %}
+{% call help("How the donor and host fractions are estimated") %}
+<p>The donor fraction is a maximum-likelihood estimate from the alternate and
+reference read depths at informative markers (loci where the host and donor
+genotypes differ), following Crysup and Woerner (2022). The host (recipient)
+fraction is the remainder. The 95% confidence interval reflects sampling at the
+sequenced depth.</p>
+<p>Limit of blank is the highest donor fraction expected from a true-zero sample
+at this sample's depth and marker set; limit of detection is the lowest fraction
+reliably distinguished from blank. Both are specific to this sample.</p>
+{% endcall %}
+{% endmacro %}
+
+{% macro help_host_presence() %}
+{% call help("How host-presence detection works") %}
+<p>At markers where every donor is homozygous for the same allele and the host
+carries the other allele, that donor-absent allele appears only at the
+sequencing-error background in a pure-donor sample. A one-sided test (a
+likelihood ratio, with a pooled-Poisson cross-check) asks whether the observed
+donor-absent reads exceed that background, that is, whether any host signal is
+present.</p>
+<p>This answers "is the host detectable?" directly, separately from the size of
+the donor fraction estimated above, and is most informative near the detection
+limit.</p>
+{% endcall %}
+{% endmacro %}
+
+{% macro help_qc() %}
+{% call help("How the quality-control checks work") %}
+<p><strong>Goodness-of-fit</strong> compares the observed allele depths to those
+predicted by the fitted fraction; a low p-value means the single-fraction model
+fits poorly (an unexpected marker, an extra contributor, or a genotyping error).</p>
+<p><strong>Contamination</strong> measures third-party DNA at markers where the
+host and every donor share the same homozygote: minor-allele reads there cannot
+come from either contributor, so their excess over the sequencing-error floor
+estimates contamination (for example index hopping or cross-contamination).</p>
+<p><strong>Sample-swap</strong> counts those same shared-homozygote sites where
+the minor allele is individually significant; many such sites indicate a whole
+extra genome (a swap or wrong-patient VCF).</p>
+<p><strong>Shared-het balance</strong> checks the admixture allele fraction at
+markers heterozygous in the host and every donor, where it should sit near 50%
+whatever the mixing fraction. Many sites skewed away from balance point to
+contamination, copy-number or allelic imbalance, or a sample mix-up.</p>
+<p><strong>Relatedness</strong> is a kinship coefficient between the reference
+samples, compared against the declared relationship to catch mislabelled or
+unexpectedly related inputs.</p>
+<p>The <strong>robust refit</strong> re-fits after dropping markers whose
+residuals are large outliers; dropping a large fraction is itself flagged, since
+it points at host copy-number change or a genotyping problem.</p>
+{% endcall %}
+{% endmacro %}
+
+{# Collapsed "run command" provenance block. Single-sourced so the HTML footer
+   and the PDF appendix render it identically. #}
+{% macro run_command(params) %}
+{% if params.command %}
+<details class="run-command"><summary>Run command</summary><pre>{{ params.command }}</pre></details>
+{% endif %}
+{% endmacro %}
+
 {# One headline figure card (label, big value, optional CI line). #}
 {% macro figure_card(label, value, ci_str="") %}
 <div class="figure-card">
@@ -38,8 +101,10 @@
 {% endmacro %}
 
 {# Host-presence detection callout. `hp` is the detector sub-object (or none);
-   `detected` is the precomputed verdict. Never silently omitted. #}
-{% macro host_presence(hp, detected) %}
+   `detected` is the precomputed verdict. Never silently omitted. `show_help`
+   emits the inline "how it works" disclosure (HTML); the PDF sets it False and
+   collects the same prose into its appendix. #}
+{% macro host_presence(hp, detected, show_help=True) %}
 <section class="section">
 <h2>Host-presence detection</h2>
 {% if hp is none %}
@@ -60,17 +125,7 @@
 <div class="small muted">Markers used: {{ hp.n_markers | count }}; error-rate source: {{ hp.error_rate_source }}; artifact-filtered: {{ hp.n_artifact_filtered | count }}.</div>
 </div>
 {% endif %}
-{% call help("How host-presence detection works") %}
-<p>At markers where every donor is homozygous for the same allele and the host
-carries the other allele, that donor-absent allele appears only at the
-sequencing-error background in a pure-donor sample. A one-sided test (a
-likelihood ratio, with a pooled-Poisson cross-check) asks whether the observed
-donor-absent reads exceed that background, that is, whether any host signal is
-present.</p>
-<p>This answers "is the host detectable?" directly, separately from the size of
-the donor fraction estimated above, and is most informative near the detection
-limit.</p>
-{% endcall %}
+{% if show_help %}{{ help_host_presence() }}{% endif %}
 </section>
 {% endmacro %}
 
@@ -88,8 +143,10 @@ limit.</p>
 {% endmacro %}
 
 {# Quality-control panel. `ctx` carries the analysis dict, the two clinician
-   summary lines, and the reference-threshold strings. #}
-{% macro qc_panel(ctx) %}
+   summary lines, and the reference-threshold strings. `show_help` emits the
+   inline "how it works" disclosure (HTML); the PDF sets it False and collects
+   the same prose into its appendix. #}
+{% macro qc_panel(ctx, show_help=True) %}
 {% set a = ctx.analysis %}
 {% set refs = ctx.refs %}
 <section class="section">
@@ -204,28 +261,7 @@ limit.</p>
 </table>
 {% endif %}
 
-{% call help("How the quality-control checks work") %}
-<p><strong>Goodness-of-fit</strong> compares the observed allele depths to those
-predicted by the fitted fraction; a low p-value means the single-fraction model
-fits poorly (an unexpected marker, an extra contributor, or a genotyping error).</p>
-<p><strong>Contamination</strong> measures third-party DNA at markers where the
-host and every donor share the same homozygote: minor-allele reads there cannot
-come from either contributor, so their excess over the sequencing-error floor
-estimates contamination (for example index hopping or cross-contamination).</p>
-<p><strong>Sample-swap</strong> counts those same shared-homozygote sites where
-the minor allele is individually significant; many such sites indicate a whole
-extra genome (a swap or wrong-patient VCF).</p>
-<p><strong>Shared-het balance</strong> checks the admixture allele fraction at
-markers heterozygous in the host and every donor, where it should sit near 50%
-whatever the mixing fraction. Many sites skewed away from balance point to
-contamination, copy-number or allelic imbalance, or a sample mix-up.</p>
-<p><strong>Relatedness</strong> is a kinship coefficient between the reference
-samples, compared against the declared relationship to catch mislabelled or
-unexpectedly related inputs.</p>
-<p>The <strong>robust refit</strong> re-fits after dropping markers whose
-residuals are large outliers; dropping a large fraction is itself flagged, since
-it points at host copy-number change or a genotyping problem.</p>
-{% endcall %}
+{% if show_help %}{{ help_qc() }}{% endif %}
 
 {% if a.warnings %}
 <h3 class="subhead">Warnings</h3>
@@ -240,8 +276,11 @@ it points at host copy-number change or a genotyping problem.</p>
 </section>
 {% endmacro %}
 
-{# Methods / provenance footer. #}
-{% macro footer(version, params, citation, timestamp) %}
+{# Methods / provenance footer. `show_run_command` emits the collapsed run-command
+   block inline (HTML); the PDF sets it False and re-emits the same block in its
+   "Methods and notes" appendix (browsers collapse <details>, so a printed report
+   would otherwise hide it). #}
+{% macro footer(version, params, citation, timestamp, show_run_command=True) %}
 <footer class="footer section">
 <h2>Methods and provenance</h2>
 <dl>
@@ -253,8 +292,6 @@ it points at host copy-number change or a genotyping problem.</p>
 <dt>Method</dt><dd>{{ citation }}</dd>
 <dt>Report generated</dt><dd>{{ timestamp if timestamp else NA }}</dd>
 </dl>
-{% if params.command %}
-<details class="run-command"><summary>Run command</summary><pre>{{ params.command }}</pre></details>
-{% endif %}
+{% if show_run_command %}{{ run_command(params) }}{% endif %}
 </footer>
 {% endmacro %}

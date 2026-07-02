@@ -35,12 +35,22 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
     "matplotlib>=3.7",  # for the HTML timeline report tests (see the report extra)
+    "weasyprint>=60",  # for the PDF report tests (see the pdf extra)
 ]
 # The HTML timeline report (allomix timeline --format html) renders its trend
 # chart with matplotlib. The single-sample HTML report needs nothing beyond the
 # base runtime deps; only the timeline trend chart pulls this in.
 report = [
     "matplotlib>=3.7",
+]
+# PDF report output (allomix detect/timeline/report --pdf). WeasyPrint renders
+# the same self-contained HTML to PDF. It needs system Pango, Cairo, and
+# HarfBuzz libraries (usually present on Linux, occasionally a hurdle on
+# locked-down clinical IT). Includes the report extra because the timeline PDF
+# embeds the same matplotlib trend chart as the HTML timeline.
+pdf = [
+    "allomix[report]",
+    "weasyprint>=60",
 ]
 # User-facing helper scripts (joint-calling prep, QC, diagnosis) run on the
 # base runtime deps. Only the plotting/visualisation scripts need matplotlib;
@@ -76,6 +86,8 @@ allomix = [
     "report/html/templates/*.html",
     "report/html/templates/*.css",
     "report/html/templates/*.js",
+    "report/html/templates/pdf/*.html",
+    "report/html/templates/pdf/*.css",
 ]
 
 [tool.ruff]

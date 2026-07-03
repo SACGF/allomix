@@ -91,7 +91,11 @@ contamination, allelic imbalance, or a sample mix-up.
 
 By default a site is used only if host and donor genotype quality is at least 20 and the
 admixture depth is at least 100, and at least three informative markers are required to
-report an estimate.
+report an estimate. Sex and mitochondrial contigs (X, Y, M) are excluded by default,
+because in a sex-mismatched donor and recipient pair the expected host and donor allele
+dosage on the sex chromosomes departs from the autosomal diploid model the estimator
+assumes. They can be re-enabled per run once host and donor sex are known to match, and
+the informative sex-chromosome markers that were dropped are reported.
 
 #### Box 1. Reading the residual host off the counts
 
@@ -237,7 +241,11 @@ than one, with the host as the remainder) over a triangular grid, then refines l
 and reports a profile-likelihood interval for each donor (Supplementary Methods). A
 marker is informative if the host differs from any donor, and informative counts are
 tracked per donor, since related donors can leave few markers that separate one donor
-from the other.
+from the other. The host-plus-two-donor scope is a practical default set by the common
+clinical case and the growing cost of searching a higher-dimensional fraction simplex,
+not a hard limit of the likelihood, which generalizes to more components; settings such
+as sequential transplants or some cord-blood mixtures that exceed two donors are untested
+here.
 
 ### Outlier-resistant refit for aberrant markers
 
@@ -270,7 +278,11 @@ discarding its own outliers. Because a chi-squared test is overpowered at panel 
 reaches significance for a misfit too small to change the result), it is promoted to
 REVIEW on effect size, not bare significance (Supplementary Methods S10). The presence
 test is cross-checked against the magnitude estimate, raising a soft warning when
-residual host is detected below what the magnitude estimate can quantify.
+residual host is detected below what the magnitude estimate can quantify. The verdict and
+the presence-test p-values are analytical outputs on the data quality and the fit; they
+are not a validated clinical call, and turning them into clinical action requires
+PASS/REVIEW/FAIL and presence-test thresholds each laboratory sets and validates on its
+own panel.
 
 The sample-integrity checks are separated by genotype geometry rather than by
 re-thresholding one number, each reading a marker class the magnitude estimate never uses
@@ -384,9 +396,14 @@ but do not carry the biology of clinical chimerism. The dataset is
 {{ srp434573.n_individuals }} unrelated individuals captured on a
 {{ srp434573.panel_n_snps | commas }}-SNP molecular inversion probe (MIP)
 sample-identification panel on an {{ srp434573.platform }}, with reads merged to
-single-end inserts (each marker read from a single strand). Pairwise two-person mixtures
-and one three-person mixture were prepared at known major:minor ratios, giving
-minor-contributor fractions of {{ srp434573.dilution_ladder }}.
+single-end inserts (each marker read from a single strand). At a median on-target depth
+of {{ srp434573.depth_median | commas }}x this is the high-depth biallelic
+sample-identification SNP marker class allomix is built for, so it exercises the estimator
+on its intended input despite not being transplant material; the reconstructed panel
+intervals and inferred host/donor labels (below) are the caveats on it, not the marker
+chemistry. Pairwise two-person mixtures and one three-person mixture were prepared at
+known major:minor ratios, giving minor-contributor fractions of
+{{ srp434573.dilution_ladder }}.
 
 We assigned the minor (titrated) contributor to the host (recipient) role and the major
 contributor to the donor. This mirrors the usual clinical situation, where a patient is

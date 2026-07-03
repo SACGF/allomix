@@ -178,7 +178,9 @@ donor's own DNA piled through the identical mpileup path, is a genuine 0%-host i
 the test correctly withheld a host-present call at all
 {{ srp434573.zero_host_presence_absent_n | dp(0) }} of {{ srp434573.zero_host_n | dp(0) }}
 pure-donor controls (host-fraction estimate 0%), even with the real co-pooled
-contamination floor present in those reads. The magnitude estimator floored there too,
+contamination floor present in those reads. This is a small specificity panel
+({{ srp434573.zero_host_n | dp(0) }} controls), so it bounds rather than establishes
+clean-input specificity. The magnitude estimator floored there too,
 with a maximum host estimate of {{ srp434573.zero_host_mle_max_pct }}% across those
 {{ srp434573.zero_host_n | dp(0) }} controls. At
 the 1% host level its host-fraction estimate ranged
@@ -234,12 +236,12 @@ residual host (the recipient titrated against a pure-donor background), the dire
 that matters clinically when a patient is near full donor chimerism.
 
 At an unrelated donor, 100 markers, and 1,000x mean depth, the in silico
-magnitude-estimate LoD was {{ lod_headline.unrelated_lod_1000x_100markers_pct }}% and
+magnitude-estimate LoD was {{ lod_headline.unrelated_lod_1000x_100markers_pct | dp(2) }}% and
 the residual-host detection LoD was
-{{ presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct }}%; with
+{{ presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct | dp(2) }}%; with
 full-sibling donors at the same panel and depth the magnitude LoD rose to
-{{ lod_headline.sibling_lod_1000x_100markers_pct }}% (residual host
-{{ presence_lod_curve_headline.presence_sibling_lod_1000x_100markers_pct }}%),
+{{ lod_headline.sibling_lod_1000x_100markers_pct | dp(2) }}% (residual host
+{{ presence_lod_curve_headline.presence_sibling_lod_1000x_100markers_pct | dp(2) }}%),
 reflecting the smaller number of informative markers. Both readouts improve
 monotonically with panel size and depth across the full sweep (Figure 4), letting a
 laboratory read off the expected in silico LoD for its own assay.
@@ -258,7 +260,7 @@ subsampling the SRP434573 mixtures (Figure 3, above) rather than this analytical
 | Devyser Chimerism | {{ tool_landscape.devyser_n_markers }} indels | {{ tool_landscape.devyser_lod }}% | No | No | Proprietary |
 | NGStrack | 34 indels | 0.1% | No | No | Proprietary |
 | ScisGo Chimerism MD | >200 SNPs + indels | 0.2% (single) / 0.5% (multi) | No | No | Proprietary |
-| **allomix** | **Any biallelic** | **~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | dp(0) }}% real; method floor ~0.1-0.2%** | **Yes (MIT)** | **Yes** | **VCF** |
+| **allomix** | **Any biallelic** | **~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | dp(0) }}% (real mixtures); ~0.1-0.2% (analytical floor)** | **Yes (MIT)** | **Yes** | **VCF** |
 
 **Table 1.** NGS-based chimerism monitoring tools. LoD = limit of detection. Commercial
 specifications are from published evaluations.[@Blouin2024comparison;
@@ -272,8 +274,8 @@ and deepest coverage, an EP17-A2 LoD bounded by the dataset's 0.5% dilution floo
 on a semi-synthetic remix of the same real reads with the co-pooled contamination
 confound removed (the lowest fraction tracked, not an EP17-A2 LoD); and, in near-binomial
 simulation, an analytical EP17-A2 LoD of
-{{ lod_headline.unrelated_lod_1000x_100markers_pct }}% for the magnitude estimate and
-{{ presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct }}% residual
+{{ lod_headline.unrelated_lod_1000x_100markers_pct | dp(2) }}% for the magnitude estimate and
+{{ presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct | dp(2) }}% residual
 host for the presence test (unrelated donor, same operating point). The
 real-reads-minus-contamination (~0.1%) and pure-simulation (~0.2%) figures agree,
 indicating the ~1% real-data ceiling reflects this dataset's index-hop contamination

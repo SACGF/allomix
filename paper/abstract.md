@@ -23,8 +23,8 @@ to a panel it already runs without new reagents.
 
 allomix takes standard VCF files and reports the donor fraction for single-donor or
 multi-donor (host plus up to two donors) mixtures, with profile-likelihood confidence
-intervals and built-in quality checks. It runs a maximum-likelihood estimate of donor
-fraction alongside a separate test for residual host below the quantification limit.
+intervals and quality checks. It runs a maximum-likelihood magnitude estimate alongside a
+separate test for residual host below the quantification limit.
 
 On public titrated DNA mixtures, allomix recovered known host fractions from 10% to 1%,
 resolved a three-person mixture, and called residual host at all
@@ -33,5 +33,6 @@ resolved a three-person mixture, and called residual host at all
 limit of detection near {{ subsample_lod_headline.mle_lod_1000x_100markers_pct | dp(0) }}%
 host at 100 markers and 1,000x depth; semi-synthetic and near-binomial analyses place the
 estimator's floor near 0.1% to 0.2%. Across simulated panels from 50x to 1,000x depth,
-mean absolute error stayed below 1%. These are analytical bounds, not wetlab limits;
-clinical validation against STR chimerism is left to each laboratory.
+mean absolute error stayed below 1%. These are analytical and real-mixture bounds; no
+patient-sample or STR-concordance validation is presented, and clinical validation is
+left to each adopting laboratory.

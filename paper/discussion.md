@@ -3,7 +3,7 @@
 allomix lets a laboratory add post-HSCT chimerism monitoring to an NGS panel it already
 runs, by repurposing polymorphic markers that are sequenced anyway, without a dedicated
 assay or proprietary software. It does this with two complementary readouts (how much
-donor is present, and whether any host remains) and a set of sample-integrity checks
+donor is present, and whether any recipient remains) and a set of sample-integrity checks
 built from the same marker data.
 
 ### Accuracy and sensitivity
@@ -16,11 +16,11 @@ HCT,[@Kakodkar2023alloseq] Pedini et al. and Vynck et al. showed comparable prec
 for the Devyser system,[@Pedini2021devyser; @Vynck2021devyser] and Blouin et al.
 reported R^2 = 0.9987 across the full chimerism range for ScisGo.[@Blouin2024comparison]
 Qama et al. validated the Devyser assay at a LoD of 0.06% with high STR
-concordance (R^2 = 0.998), and found that NGS detected residual host DNA (>0.1%) in 85%
+concordance (R^2 = 0.998), and found that NGS detected residual recipient DNA (>0.1%) in 85%
 of samples with >95% donor chimerism, against 5% by
 STR.[@Qama2026devyser] That gap suggests STR-based definitions of full donor chimerism
-can miss residual host haematopoiesis, and it is the clinical reason a sensitive method,
-and a dedicated residual-host test, are worth having. Per-marker bias correction in
+can miss residual recipient hematopoiesis, and it is the clinical reason a sensitive method,
+and a dedicated residual-recipient test, are worth having. Per-marker bias correction in
 allomix is a precision refinement rather than an accuracy fix: it sharpens the
 confidence intervals but barely moves the point estimate (Methods, Results), consistent
 with bias having its largest relative effect at the extreme expected frequencies of
@@ -64,7 +64,7 @@ fit separately for the donor-heterozygous and donor-homozygous marker classes (t
 per-marker-type model). A residual calibration gap remains on the real
 titrated ladder, where the intervals mildly undercover the nominal fraction. The driver
 is the co-pooled donor-homozygous contamination background, a dose-dependent excess of
-host-allele reads that the per-marker correction reduces but does not fully remove,
+recipient-allele reads that the per-marker correction reduces but does not fully remove,
 together with real heterozygous-marker scatter that is not an exact beta-binomial,
 rather than a shortfall of the model in controlled data. The realised mixing itself is
 faithful: the donor-homozygous markers alone return the nominal fraction. Empirical
@@ -73,12 +73,12 @@ recalibration from training data is one route to closing that gap.
 ### Outlier-resistant estimation at the limit of detection
 
 The one-sided outlier-resistant refit (Methods) matters most at the limit of detection.
-When the true host fraction is around 1%, the handful of markers actually carrying that
+When the true recipient fraction is around 1%, the handful of markers actually carrying that
 signal sit off a donor-dominated fit and read as outliers, so a symmetric outlier rule
 would discard exactly the markers of interest and collapse the estimate to zero. Removing
-only the markers whose deviation points away from host presence, while protecting those
-pointing toward it, is what recovers the donor LoD against an aberration-bearing recipient
-background while leaving aberration-free samples unchanged (Results, copy-number stress
+only the markers whose deviation points away from recipient presence, while protecting those
+pointing toward it, is what recovers the donor LoD against a CNV-bearing recipient
+background while leaving CNV-free samples unchanged (Results, copy-number stress
 test).
 
 ### Marker independence and linkage disequilibrium
@@ -105,29 +105,29 @@ effect-size threshold and be caught as an overdispersed fit (Supplementary Metho
 rather than reported as a confidently wrong interval. LD can also be
 turned to advantage: Kim et al. used phased SNPs in tight LD on the same read as a
 concordance filter, requiring the linked alleles to agree before a read counts, which
-suppresses sequencing error and pushes the detectable host fraction lower.[@Kim2021ld]
-That haplotype-aware extension is a sensitivity upgrade for the residual-host presence
+suppresses sequencing error and pushes the detectable recipient fraction lower.[@Kim2021ld]
+That haplotype-aware extension is a sensitivity upgrade for the residual-recipient presence
 test rather than a correctness fix, and it depends on multiple phased markers per
 amplicon, so we leave it to future work.
 
 ### Two complementary tests and the clinical relapse question
 
 The clinical motivation for sensitivity below the STR threshold is early detection of
-relapse, where residual or returning host DNA appears at fractions a magnitude estimate
-cannot yet quantify. allomix addresses this with a separate residual-host presence test
-that reads donor-homozygous markers where the host carries the donor-absent allele,
-asking only whether that host-only allele exceeds the background-artifact floor. We
-validated it as a capability (in silico, and on SRP434573 down to 1% host) but we do not
+relapse, where residual or returning recipient DNA appears at fractions a magnitude estimate
+cannot yet quantify. allomix addresses this with a separate residual-recipient presence test
+that reads donor-homozygous markers where the recipient carries the donor-absent allele,
+asking only whether that recipient-only allele exceeds the background-artifact floor. We
+validated it as a capability (in silico, and on SRP434573 down to 1% recipient) but we do not
 present it as a demonstrated relapse-detection result: the clinical thresholds that
 would turn a positive presence call into an action, and its operating characteristics on
 real patient samples, still have to be established. The design intent is that the two
 tests are read together, the magnitude estimate for trajectory and the presence test for
-the low-fraction tail, with the tool warning when the presence test detects host below
+the low-fraction tail, with the tool warning when the presence test detects recipient DNA below
 what the magnitude estimate resolves. On real data the test's sensitivity is set by how
 well the per-marker error background is known: allomix can take a per-site,
 per-direction empirical error table (Methods) so each marker's background is its own
 measured REF-to-ALT or ALT-to-REF rate rather than a global average, which is the route
-to pushing the detectable host fraction lower on a given panel. We used the global rate
+to pushing the detectable recipient fraction lower on a given panel. We used the global rate
 here because the simulator and the SRP434573 reads do not exercise a calibrated per-site
 table, so its benefit is a real-cohort question still to be measured.
 
@@ -154,7 +154,7 @@ this into a deployable tool. Vynck et al. showed
 that three informative markers are enough to make a quantification identifiable, with
 accuracy improving as markers are added, and that panels of about 20 markers with MAFs
 near 0.5 give a >95% chance of at least three informative markers even for sibling pairs;
-their FABCASE tool can assess panel sufficiency prospectively for a specific donor-host
+their FABCASE tool can assess panel sufficiency prospectively for a specific donor-recipient
 pair.[@Vynck2022markers; @Vynck2025fabcase] Three markers is the floor for producing an
 estimate at all, not a target for sensitivity: the limit of detection keeps falling as
 informative markers are added (Figure 4), so reaching the low fractions that matter
@@ -216,7 +216,7 @@ depth and cannot apply that filter, which makes this dataset close to a worst ca
 pooled panel: a patterned-flowcell instrument where index hopping is most pronounced,
 seven co-pooled individuals, and no UMI correction available. allomix instead separates
 the floor from true signal in the data, by the carrier-dose response, and reaches a
-residual floor near 0.5% host, comparable to what the UMI-based pipeline achieved for
+residual floor near 0.5% recipient, comparable to what the UMI-based pipeline achieved for
 minor-contributor identification. This is why allomix does not require UMIs: where they
 are present they remain a useful orthogonal way to push the floor lower, but the
 index-hopping contribution can also be held down at the indexing-design level (unique
@@ -235,7 +235,7 @@ tool. Blouin et al. describe a practical framework for such validation,
 including run-level metrics and sample-level acceptance criteria, that is a useful model
 for future allomix studies.[@Blouin2024comparison]
 
-The residual-host presence test is a per-sample test. Under serial monitoring, applying
+The residual-recipient presence test is a per-sample test. Under serial monitoring, applying
 its per-timepoint p < 0.05 threshold repeatedly across a patient's timeline does not
 control a family-wise or trend-level error rate, so the per-sample specificity does not
 carry over unchanged to a multi-timepoint decision. A monitoring-context decision rule,
@@ -275,7 +275,7 @@ for clinically significant chimerism changes.
 
 allomix lets laboratories repurpose polymorphic markers already present in their
 clinical NGS panels for donor chimerism monitoring after HSCT, reporting both how much
-donor is present and whether any host remains, with built-in sample-integrity checks and
+donor is present and whether any recipient remains, with built-in sample-integrity checks and
 <1% mean absolute error in silico, without a dedicated assay, additional reagents, or
 proprietary software. Two lines of clinical validation follow. We are running our own
 validation study at SA Pathology, in tandem with the accredited STR chimerism assay, to

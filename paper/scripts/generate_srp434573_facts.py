@@ -358,13 +358,13 @@ def make_figure(two: list[dict], three: list[dict], out_path: Path) -> None:
     axA.xaxis.set_major_formatter(FuncFormatter(_fmt_pct))
     axA.yaxis.set_major_formatter(FuncFormatter(_fmt_pct))
     axA.grid(True, which="both", alpha=0.2)
-    axA.set_xlabel("Known host fraction", fontsize=11)
-    axA.set_ylabel("allomix estimated host %", fontsize=11)
+    axA.set_xlabel("Known recipient fraction", fontsize=11)
+    axA.set_ylabel("allomix estimated recipient %", fontsize=11)
     axA.set_title("A  Two-person dilution series", fontsize=12, fontweight="bold", loc="left")
     axA.legend(fontsize=8.5, loc="upper left", framealpha=0.92)
 
     # Panel B: three-person mixture.
-    order = [("F2", "host"), ("M1", "donor"), ("M2", "donor")]
+    order = [("F2", "recipient"), ("M1", "donor"), ("M2", "donor")]
     by_comp = {r["component"]: r for r in three}
     labels, kk, ee, elo, ehi = [], [], [], [], []
     for comp, role in order:

@@ -140,7 +140,7 @@ def plot(summary_path: Path, out_path: Path) -> None:
     fig.text(
         0.5,
         0.985,
-        "simulated; detection = host-presence LRT p < 0.05 (per-marker bias off "
+        "simulated; detection = recipient-presence LRT p < 0.05 (per-marker bias off "
         "to keep the null calibrated)",
         ha="center",
         va="top",

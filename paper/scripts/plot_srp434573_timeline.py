@@ -82,7 +82,7 @@ def main() -> int:
 
     ax.plot(
         x, known, "s--", color="0.4", linewidth=1.5, markersize=6,
-        label="Known host fraction", zorder=3,
+        label="Known recipient fraction", zorder=3,
     )
     yerr = [
         [max(m - lo, 0.0) for m, lo in zip(mle, ci_lo)],
@@ -103,11 +103,11 @@ def main() -> int:
             fontsize=8, color="firebrick", ha="right", va="bottom",
         )
 
-    # Mark every timepoint that returned a positive residual-host presence call.
+    # Mark every timepoint that returned a positive residual-recipient presence call.
     if all(detected):
         ax.text(
             0.02, 0.06,
-            "residual-host presence test positive at all timepoints",
+            "residual-recipient presence test positive at all timepoints",
             transform=ax.transAxes, fontsize=8, color="steelblue",
             ha="left", va="bottom",
             bbox=dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none", alpha=0.8),
@@ -119,8 +119,8 @@ def main() -> int:
     ax.yaxis.set_minor_locator(NullLocator())
     ax.set_xticks(x)
     ax.set_xticklabels([f"{k:g}%" for k in known])
-    ax.set_xlabel("Serial monitoring timepoint (titrated host fraction)", fontsize=11)
-    ax.set_ylabel("Host fraction (%)", fontsize=11)
+    ax.set_xlabel("Serial monitoring timepoint (titrated recipient fraction)", fontsize=11)
+    ax.set_ylabel("Recipient fraction (%)", fontsize=11)
     ax.set_title(
         "Monitoring trajectory on real titrated mixtures (SRP434573)",
         fontsize=12, fontweight="bold", loc="left",

@@ -224,7 +224,7 @@ def plot(mle_path: Path, presence_path: Path, out_path: Path) -> None:
     fig.text(
         0.5,
         0.965,
-        "simulated (in silico) data; MLE quantification (left) vs host-presence detection (right), "
+        "simulated (in silico) data; MLE quantification (left) vs recipient-presence detection (right), "
         "matched sweep",
         ha="center",
         va="top",

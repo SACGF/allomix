@@ -102,9 +102,9 @@ def plot_scatter(rows: list[dict], out_path: Path) -> None:
     ax.xaxis.set_major_formatter(FuncFormatter(_fmt_pct))
     ax.yaxis.set_major_formatter(FuncFormatter(_fmt_pct))
     ax.grid(True, alpha=0.2)
-    ax.set_xlabel("Known host fraction", fontsize=12)
-    ax.set_ylabel("allomix estimated host %", fontsize=12)
-    ax.set_title("allomix vs known host fraction (SRP434573)",
+    ax.set_xlabel("Known recipient fraction", fontsize=12)
+    ax.set_ylabel("allomix estimated recipient %", fontsize=12)
+    ax.set_title("allomix vs known recipient fraction (SRP434573)",
                  fontsize=12.5, fontweight="bold")
     ax.legend(fontsize=8.5, loc="upper left", framealpha=0.92)
 
@@ -209,9 +209,9 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
         FuncFormatter(lambda v, p: "0" if abs(v - YFLOOR) < 1e-6 else _fmt_pct(v, p))
     )
     ax.grid(True, axis="y", which="major", alpha=0.25)
-    ax.set_ylabel("host % (log scale)", fontsize=12)
+    ax.set_ylabel("recipient % (log scale)", fontsize=12)
     ax.set_title(
-        "allomix host-fraction estimates: MLE (filled circle, 100 − donor%) and "
+        "allomix recipient-fraction estimates: MLE (filled circle, 100 − donor%) and "
         "presence-test (open square) vs known (grey diamond), per timepoint",
         fontsize=12, fontweight="bold",
     )
@@ -245,7 +245,7 @@ def plot_logy(rows: list[dict], out_path: Path) -> None:
 
 
 def plot_three_person(rows: list[dict], out_path: Path) -> None:
-    order = [("F2", "host"), ("M1", "donor"), ("M2", "donor")]
+    order = [("F2", "recipient"), ("M1", "donor"), ("M2", "donor")]
     by_comp = {r["component"]: r for r in rows}
     labels, known, est, elo, ehi = [], [], [], [], []
     for comp, role in order:

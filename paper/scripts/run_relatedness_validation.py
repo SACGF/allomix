@@ -225,7 +225,7 @@ def plot_results(all_results: dict[str, list[dict]], outdir: Path) -> None:
     ax.grid(True, which="both", alpha=0.2)
 
     fig.suptitle(
-        f"allomix performance by donor-host relatedness "
+        f"allomix performance by donor-recipient relatedness "
         f"({N_MARKERS} markers, {DEPTH}x depth, n={N_REPLICATES} replicates)",
         fontsize=13, y=1.02,
     )

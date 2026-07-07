@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure how host-genome CNV / CN-LoH degrades the donor limit of detection (issue #13).
 
-The HSCT recipient is usually a haematological malignancy patient, so the
+The HSCT recipient is usually a hematological malignancy patient, so the
 residual host clone routinely carries somatic copy-number changes: copy-neutral
 LoH (CN-LoH, acquired uniparental disomy; het -> hom in the clone), deletions
 (CN1) and gains (CN3). The diploid VAF model does not account for these, so the

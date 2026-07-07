@@ -32,7 +32,7 @@ The estimation relies on markers called heterozygous (`GT 0/1`) and assumes true
 
 **Use donor VCFs.** Donors are healthy individuals whose blood gives reliable germline heterozygotes at the marker loci. You are already genotyping them as part of the transplant workup, so donor VCFs accumulate naturally over time without extra effort.
 
-Host VCFs from haematology patients are generally not suitable as training data. Pre-transplant blood from haem patients can have LOH, chromosomal amplifications, or clonal hematopoiesis that shifts het VAF away from 0.5 at individual markers. If host samples come from a germline source (buccal swab, skin, nail clipping), they can be included.
+Host VCFs from hematology patients are generally not suitable as training data. Pre-transplant blood from haem patients can have LOH, chromosomal amplifications, or clonal hematopoiesis that shifts het VAF away from 0.5 at individual markers. If host samples come from a germline source (buccal swab, skin, nail clipping), they can be included.
 
 Do not use admixture timepoint VCFs: post-HSCT blood is a mixture of donor and host, so markers are not truly heterozygous.
 

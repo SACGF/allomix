@@ -4,7 +4,7 @@
 
 This section gives the statistical detail summarised in plain language in the main
 Methods. The notation is shared across subsections: for informative marker *i*,
-$g_{h,i}$ and $g_{d,i}$ are the reference-allele doses (0, 1, or 2) of host and donor,
+$g_{r,i}$ and $g_{d,i}$ are the reference-allele doses (0, 1, or 2) of recipient and donor,
 $n_i$ is the total read count, and $k_i$ is the alternative-allele count.
 
 ### S1. Mixture model and marker classification
@@ -12,20 +12,20 @@ $n_i$ is the total read count, and $k_i$ is the alternative-allele count.
 For a proposed donor fraction *f*, the expected reference-allele weight at marker *i* is
 a blend of the two known genotypes:
 
-$$w_i(f) = (1 - f)\,\frac{g_{h,i}}{2} + f\,\frac{g_{d,i}}{2}$$
+$$w_i(f) = (1 - f)\,\frac{g_{r,i}}{2} + f\,\frac{g_{d,i}}{2}$$
 
-Markers are informative for the fraction estimate when host and donor genotypes differ.
+Markers are informative for the fraction estimate when recipient and donor genotypes differ.
 Following Vynck et al.,[@Vynck2023bias] each informative marker is assigned one of six
-types by host/donor alternative-allele dose (the six types and which part of allomix uses
+types by recipient/donor alternative-allele dose (the six types and which part of allomix uses
 each are tabulated in the main Methods, "Which markers are informative").
 
-Markers where host and every donor share a genotype are non-informative for the fraction
+Markers where recipient and every donor share a genotype are non-informative for the fraction
 but feed the QC checks (S8). At consensus-homozygous markers (all parties homozygous for
 the same allele) the minority allele can only be a background artifact or foreign DNA,
 which drives contamination estimation and the sample-swap test. At consensus-heterozygous
 markers (all parties heterozygous) the admixture alternative-allele fraction should sit
 near 0.5 whatever the mixing fraction, so a systematic skew is a separate signal for
-contamination, allelic imbalance, or a sample mix-up. Default filters: host and donor GQ
+contamination, allelic imbalance, or a sample mix-up. Default filters: recipient and donor GQ
 $\geq$ 20, admixture DP $\geq$ 100, and at least three informative markers.
 
 ### S2. Sequencing-error model
@@ -77,12 +77,12 @@ boundary does not produce an interval running past it.
 
 ### S5. Multi-donor extension
 
-For two donors with fractions $f_1, f_2$ (host the remainder), the weight at marker *i*
+For two donors with fractions $f_1, f_2$ (recipient the remainder), the weight at marker *i*
 is
 
-$$w_i(f_1, f_2) = (1 - f_1 - f_2)\,\frac{g_{h,i}}{2} + f_1\,\frac{g_{d1,i}}{2} + f_2\,\frac{g_{d2,i}}{2}$$
+$$w_i(f_1, f_2) = (1 - f_1 - f_2)\,\frac{g_{r,i}}{2} + f_1\,\frac{g_{d1,i}}{2} + f_2\,\frac{g_{d2,i}}{2}$$
 
-A marker is informative if the host differs from any donor; per-donor informative counts
+A marker is informative if the recipient differs from any donor; per-donor informative counts
 are tracked separately. Optimization is a triangular grid over the simplex $\{(f_1,
 f_2): f_1, f_2 \geq 0,\; f_1 + f_2 \leq 1\}$ at 101 steps per dimension (~5,150
 evaluations), then Nelder-Mead refinement. Per-donor 95% profile intervals use
@@ -101,27 +101,27 @@ clamped to $[10^{-6}, 1 - 10^{-6}]$. At a heterozygous site ($w_i = 0.5$) this r
 to $0.5 - b_i$; at an extreme weight it is a small proportional shift. A marker is
 correctable only where its bias was measured (where it was heterozygous), so the table
 is built across other samples, either a reference cohort called the same way as the
-admixture, or admixture samples at markers where host and every donor are heterozygous
+admixture, or admixture samples at markers where recipient and every donor are heterozygous
 (true VAF 0.5 regardless of mixing).
 
-### S7. Residual-host presence test
+### S7. Residual-recipient presence test
 
-The presence test uses only markers where the donor is homozygous and the host carries
+The presence test uses only markers where the donor is homozygous and the recipient carries
 the donor-absent allele (Vynck types 0, 1, 10, 11). Let $y_i$ be the donor-absent allele
 count out of $n_i$ reads, $e_i$ the per-marker error background in that direction, and
-$h_i$ the host dose of the donor-absent allele. Under a host fraction $f_h$ the expected
+$r_i$ the recipient dose of the donor-absent allele. Under a recipient fraction $f_r$ the expected
 donor-absent allele probability is
 
-$$q_i(f_h) = e_i + \frac{h_i}{2}\,f_h$$
+$$q_i(f_r) = e_i + \frac{r_i}{2}\,f_r$$
 
 Two statistics are reported. A pooled one-sided Poisson test uses $Y = \sum_i y_i$
 against $\Lambda = \sum_i n_i e_i$, with $p = P(\text{Poisson}(\Lambda) \geq Y)$. A
 bounded-MLE likelihood-ratio test maximises a per-marker binomial likelihood in
-$q_i(f_h)$ over $f_h \geq 0$. Because the null sits on the boundary $f_h = 0$, the LRT
+$q_i(f_r)$ over $f_r \geq 0$. Because the null sits on the boundary $f_r = 0$, the LRT
 p-value uses a chi-bar-square reference (a 50:50 mixture of a point mass at 0 and
 $\chi^2_1$) rather than naive Wilks, and the reported confidence interval is the
 profile-likelihood interval clipped at 0. The test thus returns a p-value, a
-host-fraction estimate $\hat{f}_h$, and a CI, and is calibrated against the per-marker
+recipient-fraction estimate $\hat{f}_r$, and a CI, and is calibrated against the per-marker
 error background ($e_i$). When a per-site, per-direction empirical error table is
 supplied (Methods, `estimate-errors`), $e_i$ is that marker's measured rate in the
 donor-absent direction ($e_{refalt}$ where the donor is homozygous-reference,
@@ -158,11 +158,11 @@ index-hopping flag, kept separate from the in-data estimate.
 
 The optional per-marker contamination correction (off by default) acts on the magnitude
 estimate rather than the contamination report. On a co-pooled run a donor-homozygous
-informative marker carries extra reads on the host (donor-absent) allele from co-pooled
+informative marker carries extra reads on the recipient (donor-absent) allele from co-pooled
 genomes that happen to carry it, scaling with the number of those co-pooled carriers;
-the host signal is the same at every such marker while this contamination scales with
+the recipient signal is the same at every such marker while this contamination scales with
 carrier dose. The correction subtracts a dose term, `slope * n_carriers * depth`, from
-each donor-homozygous host-allele count before the fit, leaving the flat error floor to
+each donor-homozygous recipient-allele count before the fit, leaving the flat error floor to
 the per-site error model so it is not double-counted. Two quantities are measured per
 run, not assumed. The gate is the per-flowcell consensus-homozygous dose-response: the
 minor-allele fraction at consensus-homozygous sites is regressed on the co-pooled
@@ -184,7 +184,7 @@ The simulator draws each marker's expected alternative-allele frequency as
 $\text{VAF}_{expected} = [(1-f)a_h + f a_d]/2$ (with $a_h, a_d$ the alternative doses),
 applies the four noise sources of the main Methods, and draws counts from a binomial (or
 a beta-binomial at concentration $\rho$ for the overdispersion characterisation). The LoD
-sweep uses a nested design: for each relatedness level, multiple donor/host pairs
+sweep uses a nested design: for each relatedness level, multiple donor/recipient pairs
 ({{ lod_headline.n_pairs_unrelated | int }} unrelated,
 {{ lod_headline.n_pairs_sibling | int }} sibling) have fixed genotypes (MAF 0.2--0.5) and
 per-marker bias reused across all depths and panel sizes, panels strictly nested (a
@@ -193,13 +193,13 @@ smaller panel is a bit-identical prefix of a larger one), and
 read-sampling noise. Holding the pair fixed makes each pair's LoD curve monotonic in
 panel size while the across-pair identity-by-descent spread is reported as a band rather
 than leaking into the central estimate; seeds are SHA-256-derived for reproducibility.
-For recipient copy-number aberrations the recipient is a mixture of normal diploid cells
-and an aberrant clone at a clonal fraction, with the expected allele fraction a
+For recipient copy-number variants (CNVs) the recipient is a mixture of normal diploid cells
+and a CNV-bearing clone at a clonal fraction, with the expected allele fraction a
 copy-number-weighted average over normal recipient, recipient clone, and donor; three
-aberration types are produced by mutating one clone homolog (copy-neutral LoH: retained
-homolog duplicated, heterozygous sites only; deletion: one copy; gain: three copies),
-deletion and gain also changing the locus DNA contribution at homozygous sites. The
-aberration is applied only to the admixture sample.
+CNV types are produced by mutating one clone homolog (copy-neutral loss of heterozygosity
+(cnLoH): retained homolog duplicated, heterozygous sites only; deletion: one copy; gain:
+three copies), deletion and gain also changing the locus DNA contribution at homozygous
+sites. The CNV is applied only to the admixture sample.
 
 ### S10. QC gating on effect size, not significance
 
@@ -220,9 +220,9 @@ allomix therefore promotes a result to REVIEW only when the misfit is large as w
 significant. The goodness-of-fit and pre-trim checks require the reduced chi-squared to
 exceed {{ qc_gating.gof_reduced_threshold }} (which sits just above the maximum observed
 on this well-behaved dataset, so it does not fire on model-consistent scatter but will
-catch a materially worse fit); the pre-trim guard additionally fires only when the host
+catch a materially worse fit); the pre-trim guard additionally fires only when the recipient
 fraction is within {{ qc_gating.pretrim_lod_multiple }}x the limit of detection, the
-regime where the outlier-resistant trim could have discarded real low-fraction host
+regime where the outlier-resistant trim could have discarded real low-fraction recipient
 signal rather than artifacts; and the swap test requires the discordant fraction to
 exceed {{ qc_gating.swap_review_fraction_pct }}%, well below the roughly one-half of
 consensus-homozygous sites a genuine unrelated sample swap mismatches but far above the
@@ -233,11 +233,11 @@ reproducing the stricter behaviour.
 
 The effect is to move the flags to where they change the interpretation. On the SRP434573
 series clinical gating promotes {{ qc_gating.n_review_clinical }} of
-{{ qc_gating.n_timepoints }} timepoints to REVIEW, all at the lowest host fractions
+{{ qc_gating.n_timepoints }} timepoints to REVIEW, all at the lowest recipient fractions
 (0.5% to 1%), where the outlier-resistant refit set aside a large share of markers near
 the detection floor. The legacy p-value-only rules would flag
 {{ qc_gating.n_review_legacy }} of {{ qc_gating.n_timepoints }} on the identical fits,
-including accurate estimates from 2.5% to 100% host that need no review.
+including accurate estimates from 2.5% to 100% recipient that need no review.
 
 ### S11. Per-read and per-genotype weighting refinements considered and not adopted
 
@@ -246,9 +246,9 @@ a noise source that is not the low-fraction limiter at clinical depth.
 
 Genotype-quality weighting would replace the hard `--min-gq` cutoff with a per-marker
 weight from the Phred genotype posterior, keeping borderline calls but down-weighting
-them. On a panel run above 1000x nearly every host and donor call is GQ 99, so the weight
+them. On a panel run above 1000x nearly every recipient and donor call is GQ 99, so the weight
 is close to 1 at almost every marker and the method reduces to the current hard filter.
-The only markers it recovers are the handful at GQ 10 to 20 on weak host genotyping, which
+The only markers it recovers are the handful at GQ 10 to 20 on weak recipient genotyping, which
 do not move the overdispersion and contamination floor that sets low-fraction accuracy.
 
 Per-base-quality weighting (as in Conpair) would weight each read by its base quality
@@ -261,13 +261,13 @@ when base qualities are heterogeneous. As with genotype-quality weighting, the d
 low-fraction noise is overdispersion and contamination, neither of which this addresses.
 
 An in-likelihood contamination term would add a per-marker contamination rate as a nuisance
-parameter inside the MLE and joint-fit it with the host fraction, replacing the
-pre-subtraction correction of Supplementary Methods S8. Host fraction and contamination
-both add reads to the host allele and are partially confounded, so identifiability would
+parameter inside the MLE and joint-fit it with the recipient fraction, replacing the
+pre-subtraction correction of Supplementary Methods S8. Recipient fraction and contamination
+both add reads to the recipient allele and are partially confounded, so identifiability would
 have to come from the co-pooled carrier-dose structure (contamination scales with the
-number of co-pooled carriers, host signal does not), adding model complexity for an
+number of co-pooled carriers, recipient signal does not), adding model complexity for an
 interior refinement. The pre-subtraction together with the two independent readouts, the
-residual-host presence test and the consensus-homozygous contamination report, already
+residual-recipient presence test and the consensus-homozygous contamination report, already
 separates these signals without that coupling.
 
 ## Supplementary Table S1. Empirical Panel Characterisation
@@ -275,8 +275,11 @@ separates these signals without that coupling.
 Per-marker amplification bias, depth distribution, locus dropout, and allele dropout
 were measured from {{ panel_empirical.n_vcfs | fmt('g') }} joint-called VCFs
 ({{ panel_empirical.n_samples | commas }} samples) generated from the
-{{ panel_specs.n_markers_panel }}-SNP IDT rhAmpSeq Sample ID panel as part of routine
-clinical sequencing. All {{ panel_empirical.n_bias_markers | fmt('g') }} biallelic
+{{ panel_specs.n_markers_panel }} sample-identification SNPs of the IDT rhAmpSeq Sample
+ID panel (Integrated DNA Technologies), incorporated into a custom hematology capture
+panel and sequenced on Illumina instruments (for example NovaSeq) to a mean depth of
+{{ panel_specs.typical_depth }} as part of routine clinical sequencing. All
+{{ panel_empirical.n_bias_markers | fmt('g') }} biallelic
 markers with heterozygous observations were included. Simulation parameters used
 throughout this study were calibrated from these measurements.
 
@@ -491,25 +494,25 @@ maximum error). Centre: 95% profile-likelihood CI coverage versus the nominal 95
 
 **Figure S12.** Confidence-interval view of the SRP434573 two-person dilution series
 (main-text Figure 3A shows the same data as a log-log scatter). Each admixture is
-plotted on a log host-fraction axis grouped by mixture, with the maximum-likelihood
+plotted on a log recipient-fraction axis grouped by mixture, with the maximum-likelihood
 estimate (filled circle, 100 minus donor%, with the per-marker contamination correction
-applied) and the residual-host presence-test estimate (open square) each shown with its
+applied) and the residual-recipient presence-test estimate (open square) each shown with its
 95% confidence interval, against the known fraction (grey diamond). The dashed
 horizontal line in each mixture is that mixture's independent in-data contamination
 level, measured at consensus-homozygous markers (a marker class the magnitude estimate
 never reads), so it is a floor estimated from different sites than the ones being
 corrected: an estimate below its mixture's line is not separable from contamination. The
-pure-donor (true-0%-host) endpoints, at the right of each group, sit at or near the 0
+pure-donor (true-0%-recipient) endpoints, at the right of each group, sit at or near the 0
 row after correction, at or below their contamination line. At the higher titration
 levels the intervals are tight and bracket the known value; at the 0.5% level they widen
-toward the contamination line, where the residual floor competes with the true host
+toward the contamination line, where the residual floor competes with the true recipient
 signal (Results, Figure 3 caption).
 
 ![Figure S13]({{ facts_dir }}/fig_srp_contam.png)
 
 **Figure S13.** Co-pooled contamination floor in SRP434573 as a dose-response, the
 figure behind the median values in Results. Consensus-homozygous sites are those where
-host and donor are both homozygous for the same allele, so the minor allele at that site
+recipient and donor are both homozygous for the same allele, so the minor allele at that site
 cannot come from either contributor. For each such site, reads were pooled across the
 dilution samples (sites with pooled depth below 500 were dropped for a stable per-site
 fraction) and the per-site minor-allele fraction was computed. Sites are binned on the

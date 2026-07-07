@@ -204,8 +204,8 @@ def _plot_two_person(ax, syn: list[dict], two: list[dict], zoom: bool) -> None:
         FuncFormatter(lambda v, p: "0 (n.d.)" if abs(v - FLOOR) < 1e-9 else _fmt_pct(v, p))
     )
     ax.grid(True, which="both", alpha=0.2)
-    ax.set_xlabel("Known host fraction (semi-synthetic mix)", fontsize=10)
-    ax.set_ylabel("allomix estimated host %", fontsize=10)
+    ax.set_xlabel("Known recipient fraction (semi-synthetic mix)", fontsize=10)
+    ax.set_ylabel("allomix estimated recipient %", fontsize=10)
     title = "Sub-0.5% zoom" if zoom else "Two-person semi-synthetic"
     ax.set_title(title, fontsize=11, fontweight="bold", loc="left")
     ax.legend(fontsize=7.5, loc="upper left", framealpha=0.92)
@@ -214,7 +214,7 @@ def _plot_two_person(ax, syn: list[dict], two: list[dict], zoom: bool) -> None:
 def _plot_three_person(ax, syn3: list[dict]) -> None:
     """Host + 2 donor recovery (known vs estimated %) on log-log axes."""
     if not syn3:
-        ax.text(0.5, 0.5, "No host + 2 donor\nsemi-synthetic mixtures yet.",
+        ax.text(0.5, 0.5, "No recipient + 2 donor\nsemi-synthetic mixtures yet.",
                 ha="center", va="center", fontsize=10, transform=ax.transAxes,
                 color="0.4")
         ax.set_axis_off()
@@ -240,7 +240,7 @@ def _plot_three_person(ax, syn3: list[dict]) -> None:
     if hx.size:
         ax.scatter(hx, np.where(hy > 0, hy, FLOOR), s=42, facecolor="none",
                    edgecolor="#1f77b4", linewidth=1.2, marker="o", zorder=3,
-                   label="host (minor)")
+                   label="recipient (minor)")
     if dx.size:
         ax.scatter(dx, np.where(dy > 0, dy, FLOOR), s=42, facecolor="none",
                    edgecolor="#ff7f0e", linewidth=1.2, marker="s", zorder=3,
@@ -252,7 +252,7 @@ def _plot_three_person(ax, syn3: list[dict]) -> None:
     ax.grid(True, which="both", alpha=0.2)
     ax.set_xlabel("Known component %", fontsize=10)
     ax.set_ylabel("allomix estimated %", fontsize=10)
-    ax.set_title("Host + 2 donor semi-synthetic", fontsize=11, fontweight="bold",
+    ax.set_title("Recipient + 2 donor semi-synthetic", fontsize=11, fontweight="bold",
                  loc="left")
     ax.legend(fontsize=7.5, loc="upper left", framealpha=0.92)
 

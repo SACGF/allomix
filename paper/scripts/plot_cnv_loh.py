@@ -34,7 +34,7 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator  # noqa: 
 
 FACTS_DIR = Path("output/facts")
 KINDS = ["cnloh", "deletion", "gain"]
-KIND_LABELS = {"cnloh": "CN-LoH (copy-neutral)", "deletion": "Deletion (CN1)", "gain": "Gain (CN3)"}
+KIND_LABELS = {"cnloh": "cnLoH (copy-neutral)", "deletion": "Deletion (CN1)", "gain": "Gain (CN3)"}
 # Relapse detection first (primary use), then donor detection.
 MODES = ["host", "donor"]
 MODE_YLABEL = {
@@ -167,7 +167,7 @@ def main() -> None:
     fig.text(
         0.5, 0.005,
         f"{panel_desc}. Depth/markers set the baseline (burden 0) LoD per the depth x markers "
-        "curves; the CN-LoH/deletion LoD floor is a systematic-bias limit (largely "
+        "curves; the cnLoH/deletion LoD floor is a systematic-bias limit (largely "
         "depth-independent). More markers also improve the robust recovery.",
         ha="center", va="bottom", fontsize=7, color="0.35", wrap=True,
     )

@@ -40,7 +40,13 @@ known fractions and ordered the two donors correctly: recipient F2 at
 {{ srp434573.three_f2_est_pct }}% (known {{ srp434573.three_f2_known_pct }}%), donor M1
 at {{ srp434573.three_m1_est_pct }}% (known {{ srp434573.three_m1_known_pct }}%), and
 donor M2 at {{ srp434573.three_m2_est_pct }}% (known
-{{ srp434573.three_m2_known_pct }}%) (Figure 1B).
+{{ srp434573.three_m2_known_pct }}%) (Figure 1B). Because the recipient and donor labels are
+assigned by us rather than fixed by the data, this mixture also stands in for the
+second-transplant configuration: the dominant genome is a donor (M2), while the recipient and
+the other donor (M1) persist as minor residual fractions, the geometry seen when a patient is
+re-transplanted after graft loss or relapse. The in silico multi-donor sweep characterises
+this donor-dominant configuration more fully, across the simplex and at more extreme
+dominance than this single real mixture reaches (Figure 6, Table 3).
 
 This dataset carries a genuine low-level co-pooled contamination floor, most plausibly
 index hopping on the patterned flowcell, which the source study independently identified
@@ -104,7 +110,7 @@ individual is the titrated minor was inferred from the dataset's naming structur
 than stated in the thesis. Both affect only the recipient/donor labelling and which marginal
 markers are included, not the genotypes at the markers that are.
 
-![**Figure 1.** allomix on the SRP434573 public titrated-mixture dataset (real reads). (A) Two-person dilution series: known recipient fraction versus allomix estimate (log-log) for the maximum-likelihood estimate (filled circles, 100 minus donor%, with the per-marker co-pooled contamination correction applied; Methods) and the residual-recipient presence test (open squares), across {{ srp434573.n_mixtures | dp(0) }} two-person mixtures ({{ srp434573.n_timepoints | dp(0) }} admixtures in total). Dashed line is perfect recovery. The 0.5% points still fall away from the line where the residual contamination floor competes with the true fraction. An alternative view of the same dilution series, with 95% confidence intervals on each estimate, is in Supplementary Figure S12. (B) The single three-person mixture (1:3:5 of F2:M1:M2): known versus estimated component fractions with 95% confidence intervals.]({{ facts_dir }}/fig_srp434573.png)
+![**Figure 1.** allomix on the SRP434573 public titrated-mixture dataset (real reads). (A) Two-person dilution series: known recipient fraction versus allomix estimate (log-log) for the maximum-likelihood estimate (filled circles, 100 minus donor%, with the per-marker co-pooled contamination correction applied; Methods) and the residual-recipient presence test (open squares), across {{ srp434573.n_mixtures | dp(0) }} two-person mixtures ({{ srp434573.n_timepoints | dp(0) }} admixtures in total). Dashed line is perfect recovery. The 0.5% points still fall away from the line where the residual contamination floor competes with the true fraction; the deviation is downward rather than upward because the applied contamination correction only ever subtracts recipient-allele reads (a one-sided downward adjustment; Methods), which pulls the low-fraction estimates below the line. An alternative view of the same dilution series, with 95% confidence intervals on each estimate, is in Supplementary Figure S12. (B) The single three-person mixture (1:3:5 of F2:M1:M2), a dominant-donor configuration standing in for a second transplant (recipient and the earlier donor persisting as minor residual fractions): known versus estimated component fractions with 95% confidence intervals.]({{ facts_dir }}/fig_srp434573.png)
 
 The real series floors at 0.5% recipient, where the co-pooled contamination competes with the
 signal. To probe below that without the contamination confound, we built a
@@ -188,7 +194,11 @@ the 1% recipient level its recipient-fraction estimate ranged
 {{ srp434573.presence_onepct_max_pct | dp(2) }}%, tracking the dilution alongside the
 magnitude estimate (Figure 1A, open squares); at the lowest 0.5% titration it cannot
 separate residual recipient from the co-pooled contamination floor (below), so a positive
-call there reflects both. We present this as a validated capability, not a clinical relapse-detection result: it is
+call there reflects both. That 0.5% floor is set by this dataset's co-pooled contamination
+(index hopping on the patterned flowcell), not by the test itself: on a semi-synthetic
+remix of the same reads with the contamination removed, the presence test detects residual
+recipient below 0.5%, its detection rate rising from 0.1% recipient to full by 0.4%
+(above). We present this as a validated capability, not a clinical relapse-detection result: it is
 demonstrated in silico and on this titrated panel down to 1% recipient, but its operating
 characteristics on real patient samples and the clinical thresholds for action remain to
 be established (Discussion). Its value is a separate readout from the magnitude estimate,
@@ -320,7 +330,8 @@ align:
 
 **Table 2.** Effect of donor-recipient relatedness on marker informativity and chimerism
 accuracy. Each level: {{ rel_unrelated.n_replicates }} replicate donor-recipient pairs,
-{{ rel_unrelated.n_markers }} markers, 500x depth.
+{{ rel_unrelated.n_markers }} markers, 500x depth. MAE = mean absolute error; RMSE = root
+mean square error, both in percentage points of donor fraction.
 
 ![**Figure 5.** Effect of donor-recipient relatedness on allomix performance. Left: informative markers by relatedness level (dots = replicates, bars = means). Centre: mean absolute error. Right: truth versus estimated donor fraction across all replicates. Simulated with {{ rel_unrelated.n_markers }} markers, 500x mean depth (CV = {{ sim_calibration.depth_cv }}), {{ sim_calibration.seq_error_pct }}% sequencing error, empirically calibrated per-marker bias, and {{ sim_calibration.locus_dropout_pct }}% locus dropout.]({{ facts_dir }}/fig_relatedness.png)
 
@@ -328,8 +339,10 @@ accuracy. Each level: {{ rel_unrelated.n_replicates }} replicate donor-recipient
 scenario (recipient and two donors sharing both parents) across
 {{ multidonor.n_markers | dp(0) }} markers at {{ multidonor.depth | commas }}x, of which
 {{ multidonor.n_informative_any | dp(0) }} were informative for at least one donor.
-Across {{ multidonor.n_samples | dp(0) }} chimeric samples spanning the simplex,
-per-donor mean absolute error was {{ multidonor.mae_d1_pct }}% (donor 1) and
+Across {{ multidonor.n_samples | dp(0) }} chimeric samples spanning the simplex
+(including donor-dominant mixes with the recipient as a minor residual, the
+post-second-transplant pattern), per-donor mean absolute error was
+{{ multidonor.mae_d1_pct }}% (donor 1) and
 {{ multidonor.mae_d2_pct }}% (donor 2), the total donor fraction was estimated with
 {{ multidonor.mae_total_pct }}% MAE, and all {{ multidonor.n_asymmetric | dp(0) }}
 asymmetric mixes were correctly ranked (Table 3, Figure 6). Per-donor CI coverage was
@@ -354,7 +367,7 @@ align:
 informative), {{ multidonor.depth | commas }}x depth. Error metrics on interior
 fractions.
 
-![**Figure 6.** Multi-donor chimerism estimation. (A) Per-donor accuracy: true versus estimated fraction for donor 1 (circles) and donor 2 (triangles), with 95% profile-likelihood CIs. (B) Two-dimensional log-likelihood surface for a representative mixture (60% recipient, 30% donor 1, 10% donor 2); contours show delta log-likelihood from the maximum, dashed line marks the 95% joint CI, grey region is infeasible (f1 + f2 > 1). Star = true value, circle = MLE.]({{ facts_dir }}/fig_multidonor.png)
+![**Figure 6.** Multi-donor chimerism estimation. (A) Per-donor accuracy: true versus estimated fraction for donor 1 (circles) and donor 2 (triangles), with 95% profile-likelihood CIs. At low true fractions the points sit slightly above the identity line, the expected upward bias of a non-negative estimate near the zero boundary (opposite in sign to the correction-driven downward pull in Figure 1A). The panel is per donor, not a single recipient fraction, because its purpose is to separate the two donors. (B) Two-dimensional log-likelihood surface for a representative mixture (60% recipient, 30% donor 1, 10% donor 2); contours show delta log-likelihood from the maximum, dashed line marks the 95% joint CI, grey region is infeasible (f1 + f2 > 1). Star = true value, circle = MLE.]({{ facts_dir }}/fig_multidonor.png)
 
 **Recipient copy-number variants.** The relapsing recipient clone often carries
 CNVs, which the diploid mixture model does not represent. We simulated

@@ -77,7 +77,7 @@ host vs donor. If the authors confirm the opposite ordering, flip
 | `manifest.tsv` | Ground truth: patient, sample, run, role, known minor %. |
 | `config.yaml` | allomix joint-calling config for this dataset. |
 | `genotypes/*.vcf.gz` | Committed snapshot of the joint-called genotype + admix VCFs (see below). |
-| `genotypes/*.error_table.tsv` | Optional per-patient host-presence error tables (issue #23), present once built TAU-side (see "Error tables" below). |
+| `genotypes/*.error_table.tsv` | Optional host-presence error tables (issue #23), present once built TAU-side: `pooled.error_table.tsv` (all 7 individuals, preferred) plus one per-mixture `<mix>.error_table.tsv` fallback (see "Error tables" below). |
 | `SRP434573.midpoints.bed` | One background position per amplicon (BED midpoints), the force-called hom-ref sites the error tables learn the ref->alt rate from. |
 
 11 patient CSVs: 10 two-person mixture pairs + 1 three-person mixture. Each maps
@@ -136,9 +136,9 @@ one.
 The committed snapshot lives in `genotypes_synthetic/`
 (`<name>.synthetic.SRP434573.vcf.gz` genotypes + `<name>.synthetic.admix.vcf.gz`
 raw AD). The paper build consumes it through
-`paper/scripts/run_srp434573_allomix.py` (which reuses each mixture's real
-`genotypes/<name>.error_table.tsv`, since the host/donor individuals are
-unchanged) and `paper/scripts/generate_srp434573_synthetic_facts.py`. When the
+`paper/scripts/run_srp434573_allomix.py` (which reuses the real error table, the
+pooled one when present else each mixture's own, since the host/donor individuals
+are unchanged) and `paper/scripts/generate_srp434573_synthetic_facts.py`. When the
 snapshot is absent (fresh checkout before generation), the synthetic run is
 skipped and the facts/figure degrade to an `n_points=0` stub, so the build stays
 green.
@@ -283,19 +283,34 @@ The fix is the pipeline's phase 1b: a raw `bcftools mpileup` of the HOST/DONOR
 BAMs at the panel sites plus the amplicon midpoints (`SRP434573.midpoints.bed`),
 fed to `allomix estimate-errors`. This runs TAU-side (the BAMs are on `/tau`).
 `build_error_table: true` is the default, so the standard pipeline run above
-already produces `output/genotypes/SRP434573/<mix>.error_table.tsv`. Copy them
-into the snapshot:
+already produces `output/genotypes/SRP434573/<mix>.error_table.tsv`.
+
+**Pooled table (preferred).** Each `<mix>.error_table.tsv` sees only that
+mixture's two reference individuals, so most sites carry only one substitution
+direction (a site yields the alt->ref rate only where a reference individual is
+hom-alt, the minority case) and the low-rate tail is estimated from few reads.
+The seven individuals (F1-F3, M1-M4) share the panel and sequencing chemistry,
+so the substitution background is shared and can be pooled. `config.yaml` sets
+`build_pooled_error_table: true`, which adds one `pooled.error_table.tsv` built
+over all seven reference individuals (deduplicated, so an individual shared by
+several mixtures is counted once). Pooling fills both directions at nearly every
+site (some individual is hom-ref and some hom-alt) and pools far more reads per
+site. The per-mixture tables are still built as a fallback.
+
+Copy both into the snapshot:
 
 ```bash
 cp output/genotypes/SRP434573/*.error_table.tsv \
    paper/public_data/SRP434573/genotypes/
 ```
 
-Once committed, `run_srp434573_allomix.py` passes each table to `allomix detect
---error-table` automatically (it falls back to the default model when absent), so
-the paper figures pick up the data-derived background on the next build. The
-tables hold only aggregated per-site rates and read counts (no patient
-identifiers or genotypes), consistent with the data-access rule.
+Once committed, `run_srp434573_allomix.py` passes an error table to `allomix
+detect --error-table` automatically: `pooled.error_table.tsv` for every mixture
+when present, else that mixture's own `<mix>.error_table.tsv`, else the flat
+default model (`resolve_error_table`). So the paper figures pick up the pooled
+data-derived background on the next build. The tables hold only aggregated
+per-site rates and read counts (no patient identifiers or genotypes), consistent
+with the data-access rule.
 
 The admix VCF also carries the index-hopping metadata (issue #12) in its header:
 one `##allomixRunUnit` line per admix sample with a recoverable sequencing run

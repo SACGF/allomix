@@ -56,3 +56,10 @@ min_baseq: 20
 # the BAMs must NOT be duplicate-marked (every amplicon read shares start/end, so
 # dup-marking would discard nearly all coverage). Keep BAMs un-marked.
 read_filters: "UNMAP,SECONDARY,QCFAIL"
+
+# Phase 1b — build a single pooled error table across all 7 reference individuals
+# (F1-F3, M1-M4), not just one per mixture pair. These are the same panel and
+# sequencing chemistry, so the substitution background is shared; pooling gives
+# both-direction per-site coverage and a tighter low-rate tail than the ~2-sample
+# per-patient tables. The per-patient tables are still built as a fallback.
+build_pooled_error_table: true

@@ -140,6 +140,18 @@ ALLOMIX = config.get("allomix", "allomix")
 # One single-base background position per panel interval, derived from INTERVALS.
 MIDPOINTS_BED = os.path.join(OUTPUT_DIR, f"midpoints{_intervals_tag}.bed")
 
+# Optional — a single POOLED error table built from every unique HOST/DONOR
+# reference individual across all patient CSVs (deduplicated), rather than one
+# table per patient. Sequencing substitution error is a property of the site and
+# the run chemistry, largely shared across samples, so pooling the reference
+# individuals gives near-complete both-direction per-site coverage (a site that
+# is hom-ref in one individual and hom-alt in another supplies both directions)
+# and tightens the low-rate tail that sets the detection floor. Only sound when
+# the pooled patients share a run/flowcell/panel/chemistry; OFF by default so a
+# pipeline processing patients from unrelated runs keeps the per-patient tables.
+# Needs BUILD_ERROR_TABLE on. Output: <OUTPUT_DIR>/pooled.error_table.tsv.
+BUILD_POOLED_ERROR_TABLE = BUILD_ERROR_TABLE and config.get("build_pooled_error_table", False)
+
 # Optional alignment (FASTQ -> BAM) with bwa mem. Active only when `fastq_dir`
 # is set; otherwise the bam_filename paths in the CSVs are treated as
 # pre-aligned inputs (the default for deployments that already have BAMs).
@@ -288,6 +300,20 @@ def _ref_bams(patient):
     return seen
 
 
+# Every unique HOST/DONOR individual across all patients, first occurrence wins.
+# One individual referenced by several patients (e.g. a shared background donor)
+# maps to a single (sample_id -> BAM) entry, so the pooled error table counts its
+# reads once rather than once per patient it appears in. Assumes a stable 1:1
+# sample_id <-> BAM per individual, which holds when the CSVs name each pure
+# reference run consistently.
+ALL_REF_SAMPLES: dict[str, str] = {}
+for _p in PATIENTS:
+    for _sid, _bam in _ref_samples(_p).items():
+        ALL_REF_SAMPLES.setdefault(_sid, _bam)
+# Deduplicated BAM list in stable sample_id order (dict preserves insertion).
+ALL_REF_BAMS: list[str] = list(dict.fromkeys(ALL_REF_SAMPLES.values()))
+
+
 # Per-patient intermediates live under <OUTPUT_DIR>/<patient>/ to avoid
 # cross-patient collisions on shared filenames (combined.g.vcf.gz,
 # admix/per_sample/...).
@@ -305,6 +331,15 @@ PER_SAMPLE_ADMIX_TPL = os.path.join(
 REFS_PANEL_TPL = os.path.join(OUTPUT_DIR, "{patient}", "refs", "panel.vcf.gz")
 REFS_BG_TPL = os.path.join(OUTPUT_DIR, "{patient}", "refs", "midpoints.vcf.gz")
 ERROR_TABLE_TPL = os.path.join(OUTPUT_DIR, "{patient}.error_table.tsv")
+
+# Phase 1b (pooled): one panel + midpoint pileup over every unique reference
+# individual, and the single error table derived from them. The union targets
+# file (CHROM POS REF,ALT) collects every patient's panel sites, deduplicated by
+# position, so the pooled pileup covers the same loci any patient uses.
+POOLED_TARGETS = os.path.join(OUTPUT_DIR, "pooled", "targets.tsv.gz")
+POOLED_REFS_PANEL = os.path.join(OUTPUT_DIR, "pooled", "refs_panel.vcf.gz")
+POOLED_REFS_BG = os.path.join(OUTPUT_DIR, "pooled", "refs_midpoints.vcf.gz")
+POOLED_ERROR_TABLE = os.path.join(OUTPUT_DIR, "pooled.error_table.tsv")
 
 
 def _error_table(patient):
@@ -327,6 +362,9 @@ def _all_targets():
         # every patient (a patient always has at least one ref sample).
         if BUILD_ERROR_TABLE:
             out.append(_error_table(p))
+    # Optional single pooled table across all reference individuals (opt-in).
+    if BUILD_POOLED_ERROR_TABLE:
+        out.append(POOLED_ERROR_TABLE)
     return out
 
 
@@ -851,6 +889,156 @@ rule error_table:
     params:
         allomix=ALLOMIX,
         sample_flags=lambda wc: " ".join(f"--sample {s}" for s in _ref_samples(wc.patient)),
+    shell:
+        """
+        {params.allomix} estimate-errors \
+            {input.panel} \
+            --homref-vcf {input.homref} \
+            {params.sample_flags} \
+            -o {output.tsv} \
+            2>&1 | tee {log}
+        """
+
+
+# ---------------------------------------------------------------------------
+# Phase 1b (pooled): one error table over all unique reference individuals.
+# Only built when build_pooled_error_table is set (see BUILD_POOLED_ERROR_TABLE).
+# ---------------------------------------------------------------------------
+
+rule pooled_targets:
+    """Union of every patient's panel targets (CHROM POS REF,ALT), by position.
+
+    Concatenates the per-patient targets files and keeps one row per position
+    (first REF,ALT wins; the same panel gives the same REF/ALT at a shared site).
+    Serves as both the ``-R`` regions and the ``-C alleles -T`` targets for the
+    pooled reference pileup, so it covers every locus any single patient uses.
+    """
+    input:
+        targets=expand(PANEL_TSV_TPL, patient=list(PATIENTS)),
+    output:
+        tsv=POOLED_TARGETS,
+        tbi=POOLED_TARGETS + ".tbi",
+    params:
+        bgzip=BGZIP,
+        tabix=TABIX,
+    shell:
+        r"""
+        zcat {input.targets} \
+            | sort -k1,1 -k2,2n \
+            | awk -F'\t' '!seen[$1"\t"$2]++' \
+            | {params.bgzip} -c > {output.tsv}
+        {params.tabix} -f -s1 -b2 -e2 {output.tsv}
+        """
+
+
+rule pileup_refs_panel_pooled:
+    """Raw pileup of every unique HOST/DONOR BAM at the union panel sites.
+
+    The pooled counterpart of ``pileup_refs_panel``: one multi-sample VCF whose
+    columns are the unique reference individuals, so ``estimate-errors`` sees
+    each individual once. A site hom-ref in one individual gives its ref->alt
+    rate; hom-alt in another gives alt->ref, so pooling fills both directions.
+    """
+    input:
+        bams=ALL_REF_BAMS,
+        ref=REF,
+        targets=POOLED_TARGETS,
+        targets_tbi=POOLED_TARGETS + ".tbi",
+    output:
+        vcf=POOLED_REFS_PANEL,
+        tbi=POOLED_REFS_PANEL + ".tbi",
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "pileup_refs_panel_pooled", "pooled.log"),
+    threads: 4
+    params:
+        bcftools=BCFTOOLS,
+        tabix=TABIX,
+        max_depth=MAX_DEPTH,
+        min_mapq=MIN_MAPQ,
+        min_baseq=MIN_BASEQ,
+        read_filters=READ_FILTERS,
+    shell:
+        """
+        {params.bcftools} mpileup \
+            -f {input.ref} \
+            -R {input.targets} \
+            -a FORMAT/AD,FORMAT/DP \
+            -d {params.max_depth} \
+            -q {params.min_mapq} \
+            -Q {params.min_baseq} \
+            --ff {params.read_filters} \
+            --threads {threads} \
+            {input.bams} 2> {log} \
+        | {params.bcftools} call \
+            -m \
+            -A \
+            -C alleles \
+            -T {input.targets} \
+            -Oz -o {output.vcf} 2>> {log}
+        {params.tabix} -f {output.vcf}
+        """
+
+
+rule pileup_refs_bg_pooled:
+    """Raw pileup of every unique HOST/DONOR BAM at the amplicon-midpoint sites.
+
+    The pooled counterpart of ``pileup_refs_bg`` (ref->alt background). Same
+    midpoints as the per-patient rule; only the sample set differs.
+    """
+    input:
+        bams=ALL_REF_BAMS,
+        ref=REF,
+        midpoints=MIDPOINTS_BED,
+    output:
+        vcf=POOLED_REFS_BG,
+        tbi=POOLED_REFS_BG + ".tbi",
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "pileup_refs_bg_pooled", "pooled.log"),
+    threads: 4
+    params:
+        bcftools=BCFTOOLS,
+        tabix=TABIX,
+        max_depth=MAX_DEPTH,
+        min_mapq=MIN_MAPQ,
+        min_baseq=MIN_BASEQ,
+        read_filters=READ_FILTERS,
+    shell:
+        """
+        {params.bcftools} mpileup \
+            -f {input.ref} \
+            -R {input.midpoints} \
+            -a FORMAT/AD,FORMAT/DP \
+            -d {params.max_depth} \
+            -q {params.min_mapq} \
+            -Q {params.min_baseq} \
+            --ff {params.read_filters} \
+            --threads {threads} \
+            {input.bams} 2> {log} \
+        | {params.bcftools} call \
+            -m \
+            -A \
+            -Oz -o {output.vcf} 2>> {log}
+        {params.tabix} -f {output.vcf}
+        """
+
+
+rule error_table_pooled:
+    """Single error table pooled over all unique reference individuals.
+
+    Same estimator as the per-patient ``error_table`` rule, but the panel and
+    midpoint pileups carry every individual, so each site pools far more reads
+    and (across individuals of both genotypes) both substitution directions.
+    """
+    input:
+        panel=POOLED_REFS_PANEL,
+        homref=POOLED_REFS_BG,
+    output:
+        tsv=POOLED_ERROR_TABLE,
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "error_table_pooled", "pooled.log"),
+    params:
+        allomix=ALLOMIX,
+        sample_flags=" ".join(f"--sample {s}" for s in ALL_REF_SAMPLES),
     shell:
         """
         {params.allomix} estimate-errors \

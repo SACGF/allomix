@@ -1,6 +1,6 @@
 ## Discussion
 
-allomix lets a laboratory add post-HSCT chimerism monitoring to an NGS panel it already
+allomix lets a laboratory add post-allograft chimerism monitoring to an NGS panel it already
 runs, by repurposing polymorphic markers that are sequenced anyway, without a dedicated
 assay or proprietary software. It does this with two complementary readouts (how much
 donor is present, and whether any recipient remains) and a set of sample-integrity checks
@@ -19,8 +19,11 @@ Qama et al. validated the Devyser assay at a LoD of 0.06% with high STR
 concordance (R^2 = 0.998), and found that NGS detected residual recipient DNA (>0.1%) in 85%
 of samples with >95% donor chimerism, against 5% by
 STR.[@Qama2026devyser] That gap suggests STR-based definitions of full donor chimerism
-can miss residual recipient hematopoiesis, and it is the clinical reason a sensitive method,
-and a dedicated residual-recipient test, are worth having. Per-marker bias correction in
+can miss residual recipient hematopoiesis. The clinical significance of such low-level
+residual chimerism is debated, and detecting it is not the same as predicting relapse, but
+increasing mixed chimerism measured by sensitive methods has been shown to predict leukemia
+relapse,[@ZhangR2024relapse] which is the clinical reason a sensitive method, and a
+dedicated residual-recipient test, are worth having. Per-marker bias correction in
 allomix is a precision refinement rather than an accuracy fix: it sharpens the
 confidence intervals but barely moves the point estimate (Methods, Results), consistent
 with bias having its largest relative effect at the extreme expected frequencies of

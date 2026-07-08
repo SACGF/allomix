@@ -147,10 +147,17 @@ are most probable, given the known recipient and donor genotypes. Three mechanis
 estimate realistic for clinical data; the full formulae are in the Supplementary Methods.
 
 First, a background-artifact term. Even a marker where one allele should be absent shows a
-low background of that allele, from miscalled bases and, on co-pooled runs, index hopping
-and low-level cross-sample contamination. allomix models this floor with a fixed per-base
-rate (default 1%) spread across the possible miscalls, which sets the expected level of
-stray reads and keeps the estimate from reading pure background as real signal.
+low background of that allele, chiefly from miscalled bases. allomix sets the expected
+level of these stray reads so it does not read pure background as real signal. The default
+is a fixed per-base rate (1%) spread across the three possible miscalls, giving a
+per-direction floor near 0.33%. This default is a conservative fallback, not a number fit
+from the run: where the data support it, each marker can instead use its own measured
+per-site, per-direction rate, estimated from homozygous calls in a training cohort
+(Per-site error calibration, below). The other co-pooled artifacts named above, index
+hopping and low-level cross-sample contamination, are not folded into this floor. They are
+handled separately by the contamination estimate and its optional per-marker correction
+(Sample-integrity checks, below), because they scale with a co-pooled genome's allele dose
+rather than sitting at a flat per-base level.
 
 Second, the allele counts are modeled so that marker-to-marker scatter can exceed simple
 read-sampling noise. Capture and amplification do not treat every marker identically, so

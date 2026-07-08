@@ -50,6 +50,22 @@ from allomix.genotype import parse_vcf
 GEN = resolve_srp434573_genotypes_dir()
 OUT = Path("output")
 ALLOMIX = [shutil.which("allomix") or ".venv/bin/allomix", "detect"]
+# A single error table pooled over all 7 reference individuals (built when the
+# pipeline runs with build_pooled_error_table). When present it is preferred over
+# the per-mixture tables for every mixture: the substitution background is shared
+# across these co-panel samples, so the pooled table has both-direction coverage
+# at more sites and a tighter low-rate tail. Falls back to the per-patient table.
+POOLED_ERROR_TABLE = GEN / "pooled.error_table.tsv"
+
+
+def resolve_error_table(name: str) -> Path | None:
+    """Error table for one mixture: the pooled table if built, else the mixture's
+    own per-patient table, else None (detect falls back to the flat --error-rate).
+    """
+    if POOLED_ERROR_TABLE.exists():
+        return POOLED_ERROR_TABLE
+    per_patient = GEN / f"{name}.error_table.tsv"
+    return per_patient if per_patient.exists() else None
 # Per-marker contamination correction (Step 30, issue #30). On this co-pooled
 # flowcell the consensus-hom dose-response gate fires, so the correction is
 # applied for the headline two-person figures; a baseline (uncorrected) run is
@@ -211,7 +227,7 @@ def run_mix(
     if admix is None:
         admix = GEN / f"{name}.admix.vcf.gz"
     if error_table is None:
-        error_table = GEN / f"{name}.error_table.tsv"
+        error_table = resolve_error_table(name)
     cmd = [
         *ALLOMIX,
         "--genotype-vcf", str(panel),
@@ -223,13 +239,14 @@ def run_mix(
         cmd += ["--contamination-table", str(contam_table), "--contamination-correction"]
     if NO_MARKER_TYPE_OVERDISPERSION:
         cmd += ["--no-marker-type-overdispersion"]
-    # Per-patient empirical error table (issue #23). When the committed snapshot
-    # carries one (built TAU-side by the pipeline's phase-1b reference pileup),
-    # pass it so the host-presence background is data-derived per site instead of
-    # the flat --error-rate default, which over-attributes signal to error at the
-    # lowest dilutions. Absent (fresh checkout before the table is generated) the
-    # run falls back to the default, matching the previous behaviour.
-    if error_table.exists():
+    # Empirical error table (issue #23). Built TAU-side by the pipeline's phase-1b
+    # reference pileup: the pooled table (all 7 individuals) when present, else the
+    # mixture's own per-patient table (see resolve_error_table). Passed so the
+    # host-presence background is data-derived per site instead of the flat
+    # --error-rate default, which over-attributes signal to error at the lowest
+    # dilutions. Absent (fresh checkout before any table is generated) the run
+    # falls back to the default, matching the previous behaviour.
+    if error_table is not None and error_table.exists():
         cmd += ["--error-table", str(error_table)]
     for d in donors:
         cmd += ["--donor-sample", d, "--expected-relatedness", "unrelated"]
@@ -324,8 +341,9 @@ def run_synthetic(syn_dir: Path) -> list[dict]:
         admix = syn_dir / f"{name}.synthetic.admix.vcf.gz"
         if not admix.exists():
             continue
-        # Reuse the real per-patient error table (same host/donor individuals).
-        error_table = GEN / f"{name}.error_table.tsv"
+        # Reuse the real error table (same host/donor individuals): the pooled
+        # table when built, else this mixture's per-patient table.
+        error_table = resolve_error_table(name)
         recs = run_mix(name, host, donors, panel=panel, admix=admix,
                        error_table=error_table)
         for rec in recs:
@@ -357,7 +375,7 @@ def run_synthetic_three(syn_dir: Path) -> list[dict]:
         admix = syn_dir / f"{name}.synthetic.admix.vcf.gz"
         if not admix.exists():
             continue
-        error_table = GEN / f"{name}.error_table.tsv"
+        error_table = resolve_error_table(name)
         recs = run_mix(name, host, donors, panel=panel, admix=admix,
                        error_table=error_table)
         for rec in recs:

@@ -80,3 +80,66 @@ sudo apt-get install -y libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 l
 
 `vibepaper build --is-pdf-available` reports whether the PDF toolchain is
 usable.
+
+## Appendix: regenerating the real-data inputs (SRP434573)
+
+Not part of a normal build. Skip this unless you are changing how the real-data
+inputs themselves are produced.
+
+The real-data figures come from the public SRP434573 titrated-mixture dataset. A
+snapshot of the joint-called genotype and admix VCFs is committed under
+`paper/public_data/SRP434573/genotypes`, and the Snakefile reads it directly, so
+a fresh checkout builds those figures with no FASTQ download, no alignment, no
+joint calling, and no access to the internal BAMs.
+
+If a from-scratch run is present, it wins:
+`paper/scripts/run_srp434573_allomix.py` prefers `output/genotypes/SRP434573`
+when that directory exists and otherwise falls back to the committed snapshot.
+
+The semi-synthetic sub-0.5% points work the same way, from
+`paper/public_data/SRP434573/genotypes_synthetic`. When that snapshot is absent
+the synthetic run is skipped and the facts and figure degrade to an
+`n_points=0` stub, so the build stays green.
+
+Regenerating either snapshot needs the aligned BAMs, which are not public. The
+full procedure (download, alignment, panel BED recovery, joint calling, error
+tables, and the semi-synthetic blending) is documented in
+[`paper/public_data/SRP434573/README.md`](../paper/public_data/SRP434573/README.md).
+The run itself is:
+
+```bash
+# from the repo root
+snakemake -s pipeline/Snakefile \
+    --configfile paper/public_data/SRP434573/config.yaml \
+                 <your_server_config.yaml> \
+    --cores 16
+```
+
+`paper/public_data/SRP434573/config.yaml` is the machine-agnostic run config. It
+ships placeholders for the three paths that vary per machine (`ref`, `fastq_dir`,
+`bam_dir`), so it cannot run unedited. Supply real values either by editing that
+file or, better, by keeping them in a separate `<your_server_config.yaml>` that
+you layer on top.
+
+Note that both paths go on a **single** `--configfile`. The option takes a list,
+so a repeated `--configfile` flag does not layer: the last one silently replaces
+all earlier ones. Within the one flag, later values override earlier ones, so the
+machine config goes second to override the placeholders. Check what actually got
+loaded on the `Config file(s):` line of the snakemake startup banner.
+
+Tool paths (GATK, bcftools,
+samtools, bwa, tabix, bgzip) and resource limits are separate again and come from
+`pipeline/tools.yaml`, which the Snakefile loads automatically; set those up once
+per machine and check them with:
+
+```bash
+snakemake -s pipeline/Snakefile validate_tools \
+    --configfile paper/public_data/SRP434573/config.yaml
+```
+
+Two things about that invocation are easy to get wrong. The target must come
+**before** `--configfile`: that option takes a list, so a target written after it
+is swallowed as another config path and the run dies with a `FileNotFoundError`
+naming the target. And `validate_tools` still needs a run config even though it
+only checks executables, because the Snakefile discovers the sample CSVs at parse
+time and aborts before any rule runs if `samples_csv_dir` is unset.

@@ -111,26 +111,50 @@ The run itself is:
 # from the repo root
 snakemake -s pipeline/Snakefile \
     --configfile paper/public_data/SRP434573/config.yaml \
-                 <your_server_config.yaml> \
+                 <your_data_paths.yaml> \
     --cores 16
 ```
 
-`paper/public_data/SRP434573/config.yaml` is the machine-agnostic run config. It
-ships placeholders for the three paths that vary per machine (`ref`, `fastq_dir`,
-`bam_dir`), so it cannot run unedited. Supply real values either by editing that
-file or, better, by keeping them in a separate `<your_server_config.yaml>` that
-you layer on top.
+Three separate kinds of config are in play, and mixing them up is the usual
+first failure:
+
+| What | Holds | Where |
+|---|---|---|
+| Run config | `intervals`, `samples_csv_dir`, `output_dir`, mpileup settings | `paper/public_data/SRP434573/config.yaml` |
+| Data paths | `ref`, `fastq_dir`, `bam_dir` | `<your_data_paths.yaml>`, yours to write |
+| Tool paths | `gatk`, `bcftools`, `samtools`, `bwa`, `tabix`, `bgzip`, resource limits | `pipeline/tools.yaml`, loaded automatically |
+
+`paper/public_data/SRP434573/config.yaml` ships placeholders for the three data
+paths, so it cannot run unedited. Supply real values either by editing that file
+or, better, by keeping them in a separate `<your_data_paths.yaml>` layered on top.
+A tools file will **not** do this job: it holds executables only, so passing one
+here leaves `ref` at its placeholder and the run fails with a
+`MissingInputException` naming `/path/to/hg38.fa`.
 
 Note that both paths go on a **single** `--configfile`. The option takes a list,
 so a repeated `--configfile` flag does not layer: the last one silently replaces
 all earlier ones. Within the one flag, later values override earlier ones, so the
-machine config goes second to override the placeholders. Check what actually got
-loaded on the `Config file(s):` line of the snakemake startup banner.
+data-paths config goes second to override the placeholders. Check what actually
+got loaded on the `Config file(s):` line of the snakemake startup banner.
 
-Tool paths (GATK, bcftools,
-samtools, bwa, tabix, bgzip) and resource limits are separate again and come from
-`pipeline/tools.yaml`, which the Snakefile loads automatically; set those up once
-per machine and check them with:
+Outputs land in `output/genotypes/SRP434573/`. Nothing downstream reads them
+there by default, so refresh the committed snapshot to pick them up:
+
+```bash
+cp output/genotypes/SRP434573/*.SRP434573.vcf.gz* \
+   output/genotypes/SRP434573/*.admix.vcf.gz* \
+   output/genotypes/SRP434573/*.error_table.tsv \
+   paper/public_data/SRP434573/genotypes/
+```
+
+That is 56 files: for each of the 11 mixtures a genotype VCF, an admix VCF, their
+two `.tbi` indexes and an error table, plus one `pooled.error_table.tsv` spanning
+all seven reference individuals. If the pooled table is missing, the run was
+built without `build_pooled_error_table` and the presence test falls back to the
+thinner per-mixture tables.
+
+If you keep tool paths somewhere other than `pipeline/tools.yaml`, add that file
+to the same `--configfile` list. Check the tools on a machine with:
 
 ```bash
 snakemake -s pipeline/Snakefile validate_tools \

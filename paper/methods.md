@@ -238,7 +238,14 @@ rate), and each marker then uses its own measured rate in the matching direction
 the magnitude likelihood and the presence-test background. The in silico results below
 use the global rate, because the simulator draws errors from that same uniform model, so
 a per-site table cannot change simulated data; it sharpens detection only on real reads,
-where error rates genuinely vary by site and direction.
+where error rates genuinely vary by site and direction. Where a set of reference
+individuals shares a panel, run and chemistry, the substitution background is shared and
+one table can be pooled across them, which fills both substitution directions at more
+sites than a per-patient table can. Supplementary Figure S15 quantifies what the choice
+of error model buys on real reads, comparing the flat default, per-patient tables and a
+pooled table. Pooling applies to the substitution background only; run-specific index
+hopping and cross-sample contamination are handled by the separate contamination
+machinery described below.
 
 ### Multi-donor estimation
 

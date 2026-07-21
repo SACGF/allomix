@@ -538,3 +538,55 @@ estimated donor fraction (y-axis) at the indicated depth, all replicates
 (N={{ depth_50.n_replicates | dp(0) }}). Dashed line indicates perfect agreement. This is
 the estimator's controlled-simulation accuracy across depth; the real-data accuracy is in
 main-text Figures 2 and 3.
+
+### S15. Error-Table Provenance and Low-Fraction Sensitivity
+
+![Figure S15]({{ facts_dir }}/fig_error_table_arms.png)
+
+**Figure S15.** Effect of the per-site error model on low-fraction performance,
+on the SRP434573 public mixtures. Three background models are compared: the
+built-in flat per-base `--error-rate` default; one `estimate-errors` table per
+mixture, built from that mixture's two reference individuals; and one table
+pooled across all seven reference individuals. (A) Presence-test detection rate
+against nominal recipient fraction on the semi-synthetic ladder. Detection at
+0.2% recipient rises from
+{{ error_table_arms_headline.flat_detect_0p2 }} with the flat default to
+{{ error_table_arms_headline.per_mixture_detect_0p2 }} with per-mixture tables
+and {{ error_table_arms_headline.pooled_detect_0p2 }} when pooled, and full
+detection is reached at 0.3% rather than 0.4%. The real titration moves the same
+way: the median estimate at a known 0.5% recipient goes
+{{ error_table_arms_headline.flat_real_0p5_mle_med_pct }}% to
+{{ error_table_arms_headline.per_mixture_real_0p5_mle_med_pct }}% to
+{{ error_table_arms_headline.pooled_real_0p5_mle_med_pct }}%. (B) The
+corresponding false-signal floor, measured on the
+{{ error_table_arms_headline.pooled_zero_n | dp(0) }} pure-donor endpoints, which are
+genuine 0%-recipient samples carrying real reads and the real co-pooled
+contamination. Bars are the per-arm maximum, dots the median; the grey band is
+the contamination floor measured independently from the same data
+({{ error_table_arms_headline.contam_floor_median_pct }}% to
+{{ error_table_arms_headline.contam_floor_max_pct }}%).
+
+A data-derived error table is worth building: the flat default detects nothing
+at a 0.2% recipient fraction, where a pooled table detects two-thirds of
+replicates. The gain does not cost specificity. No arm produced a false positive
+on the pure-donor endpoints, and the maximum false signal stayed below the
+independently measured contamination floor in all three
+({{ error_table_arms_headline.flat_zero_mle_max_pct }}%,
+{{ error_table_arms_headline.per_mixture_zero_mle_max_pct }}% and
+{{ error_table_arms_headline.pooled_zero_mle_max_pct }}%).
+
+No single arm dominates, and we report the comparison rather than a
+recommendation. Pooling gives the best low-fraction sensitivity, but the
+per-mixture tables give both the lowest false-signal floor and the closest
+agreement on the semi-synthetic ladder (mean absolute deviation
+{{ error_table_arms_headline.per_mixture_ladder_mean_abs_dev_pct }} against
+{{ error_table_arms_headline.pooled_ladder_mean_abs_dev_pct }} percentage points
+pooled and {{ error_table_arms_headline.flat_ladder_mean_abs_dev_pct }} flat).
+The floor is also not ordered by how much data the table sees: pooling sits
+close to the flat default, and only the per-mixture tables sit materially lower.
+A laboratory monitoring near its limit of detection should therefore choose
+deliberately, pooling when sensitivity governs and per-patient tables when a low
+false-signal floor governs. Pooling is sound only across samples that share a
+panel, run and chemistry; the substitution background is what pools, while
+run-specific index hopping and cross-sample contamination are handled separately
+(Methods).

@@ -26,6 +26,34 @@ figure so the Snakemake rule is still satisfied and the build stays green.
 
 These points are always labelled "semi-synthetic" so a synthetic fraction is
 never presented as a measured one.
+
+Provenance of the shared-overdispersion number in ``paper/results.md``
+----------------------------------------------------------------------
+``results.md`` states the shared-overdispersion recipient offset as "about 0.29
+percentage points". That number is not templated from this script, because the
+shared-rho arm is not part of the default build. It was measured on 2026-07-21
+with::
+
+    ALLOMIX_NO_MARKER_TYPE_OVERDISPERSION=1 python3 paper/scripts/run_srp434573_allomix.py
+
+run against the pooled error table, then taking the median over ladder levels of
+(median MLE - nominal fraction) on ``output/srp434573_synthetic.tsv``:
+
+    series              shared-rho    per-marker-type (default)
+    two-person ladder   +0.285        +0.040
+    two-donor series    +0.170        +0.170
+
+The two-donor offset is identical under both models to three decimal places,
+which is why ``results.md`` attributes it to the co-pooled contamination floor
+rather than to the overdispersion fit.
+
+That run overwrites ``output/srp434573_synthetic*.tsv`` and the facts CSVs, so
+back them up first and restore afterwards or the default-model facts are lost.
+
+Re-measure and update ``results.md`` if the error model changes. Better still,
+add a build rule for the shared-rho arm and template it: the 0.29 replaced an
+earlier hardcoded 0.22 that had gone stale and contradicted the numbers printed
+beside it, and it carries the same risk.
 """
 
 import csv
@@ -116,6 +144,21 @@ def compute_facts(syn: list[dict], two: list[dict]) -> dict:
         )
         facts[f"n_{tag}"] = str(len(rows))
 
+    # Constant offset of the two-person ladder: the per-level median estimate
+    # minus its nominal fraction, summarised across levels. Near-zero means the
+    # ladder sits on the identity line; a positive value is a floor the estimator
+    # carries at every level. Reported as a fact rather than in prose because the
+    # value moves with the error model (issue #23).
+    offs = []
+    for fr in fracs:
+        rows = [r for r in syn if _f(r["frac_pct"]) == fr]
+        mle = [_f(r["mle_pct"]) for r in rows if _f(r["mle_pct"]) is not None]
+        mm = _median(mle)
+        if mm is not None:
+            offs.append(mm - fr)
+    off = _median(offs)
+    facts["two_person_med_signed_off_pct"] = f"{off:+.3f}" if off is not None else ""
+
     # Synthetic-vs-real cross-check at 0.5% (the anchored pairs have a real 0.5%).
     real_mle, real_pres = real_05_medians(two)
     syn_05 = [_f(r["mle_pct"]) for r in syn if _f(r["frac_pct"]) == 0.5]
@@ -151,6 +194,33 @@ def compute_facts3(syn3: list[dict]) -> dict:
     de = _abs_err(donor)
     facts["three_host_med_abs_err_pct"] = f"{he:.3f}" if he is not None else ""
     facts["three_donor_med_abs_err_pct"] = f"{de:.3f}" if de is not None else ""
+
+    # The recipient error is a near-constant positive offset rather than scatter
+    # around truth, so the signed median is the honest summary: it is the floor
+    # the two-donor mode carries at these fractions. Reported alongside the
+    # estimate at the bottom of the ladder, where the same absolute offset is
+    # largest in relative terms.
+    signed = [
+        _f(r["est_pct"]) - _f(r["known_pct"])
+        for r in host
+        if _f(r.get("est_pct")) is not None and _f(r.get("known_pct")) is not None
+    ]
+    hs = _median(signed)
+    facts["three_host_med_signed_err_pct"] = f"{hs:+.3f}" if hs is not None else ""
+
+    known = (_f(r.get("known_pct")) for r in host)
+    lowest = min((k for k in known if k is not None), default=None)
+    if lowest is not None:
+        at_low = [
+            _f(r["est_pct"])
+            for r in host
+            if _f(r.get("known_pct")) == lowest and _f(r.get("est_pct")) is not None
+        ]
+        lm = _median(at_low)
+        facts["three_host_lowest_known_pct"] = f"{lowest:g}"
+        facts["three_host_lowest_est_pct"] = f"{lm:.3f}" if lm is not None else ""
+        if lm is not None and lowest:
+            facts["three_host_lowest_ratio"] = f"{lm / lowest:.1f}"
     return facts
 
 

@@ -48,7 +48,11 @@ from allomix.calibration.contamination_table import (
 from allomix.genotype import parse_vcf
 
 GEN = resolve_srp434573_genotypes_dir()
-OUT = Path("output")
+# Output directory. Overridable so several arms of the error-table comparison
+# (see the env vars below) can run concurrently without writing the same TSV
+# paths. Defaults to output/, so an ordinary run is unaffected.
+OUT = Path(os.environ.get("ALLOMIX_OUT_DIR", "output"))
+OUT.mkdir(parents=True, exist_ok=True)
 ALLOMIX = [shutil.which("allomix") or ".venv/bin/allomix", "detect"]
 # A single error table pooled over all 7 reference individuals (built when the
 # pipeline runs with build_pooled_error_table). When present it is preferred over
@@ -57,12 +61,27 @@ ALLOMIX = [shutil.which("allomix") or ".venv/bin/allomix", "detect"]
 # at more sites and a tighter low-rate tail. Falls back to the per-patient table.
 POOLED_ERROR_TABLE = GEN / "pooled.error_table.tsv"
 
+# Error-table arm selection, for the pooled-vs-per-mixture-vs-flat comparison
+# (supplementary section). Default is the normal precedence below. These let the
+# other two arms be produced from an unmodified checkout, without deleting or
+# moving the committed tables:
+#   ALLOMIX_NO_ERROR_TABLE=1              flat --error-rate default, no table
+#   ALLOMIX_FORCE_PER_MIXTURE_ERROR_TABLE=1  each mixture's own table, ignoring pooled
+NO_ERROR_TABLE = os.environ.get("ALLOMIX_NO_ERROR_TABLE") == "1"
+FORCE_PER_MIXTURE_ERROR_TABLE = (
+    os.environ.get("ALLOMIX_FORCE_PER_MIXTURE_ERROR_TABLE") == "1"
+)
+
 
 def resolve_error_table(name: str) -> Path | None:
     """Error table for one mixture: the pooled table if built, else the mixture's
     own per-patient table, else None (detect falls back to the flat --error-rate).
+
+    The two env-var overrides above select the other comparison arms.
     """
-    if POOLED_ERROR_TABLE.exists():
+    if NO_ERROR_TABLE:
+        return None
+    if POOLED_ERROR_TABLE.exists() and not FORCE_PER_MIXTURE_ERROR_TABLE:
         return POOLED_ERROR_TABLE
     per_patient = GEN / f"{name}.error_table.tsv"
     return per_patient if per_patient.exists() else None
@@ -444,6 +463,15 @@ def collect(step30: bool, cohort: list[list]) -> tuple[list[dict], list[dict]]:
 
 
 def main() -> int:
+    # State which sources this run resolved to. A stale output/genotypes dir
+    # silently outranks the committed snapshot, and the error-table arm is set by
+    # env var, so both are worth printing rather than inferring afterwards.
+    _example = next(iter(MIXES))
+    _tbl = resolve_error_table(_example)
+    print(f"[sources] genotypes: {GEN}")
+    print(f"[sources] error table: {_tbl if _tbl else 'none (flat --error-rate default)'}")
+    print(f"[sources] output dir: {OUT}")
+
     two_cols = ["mixture", "sample", "host", "donor", "known_pct", "mle_pct",
                 "mle_ci_lo", "mle_ci_hi", "presence_pct", "presence_ci_lo",
                 "presence_ci_hi", "presence_p", "presence_markers",

@@ -92,14 +92,41 @@ snapshot of the joint-called genotype and admix VCFs is committed under
 a fresh checkout builds those figures with no FASTQ download, no alignment, no
 joint calling, and no access to the internal BAMs.
 
-If a from-scratch run is present, it wins:
-`paper/scripts/run_srp434573_allomix.py` prefers `output/genotypes/SRP434573`
-when that directory exists and otherwise falls back to the committed snapshot.
+### Reuse vs rebuild
 
-The semi-synthetic sub-0.5% points work the same way, from
-`paper/public_data/SRP434573/genotypes_synthetic`. When that snapshot is absent
-the synthetic run is skipped and the facts and figure degrade to an
-`n_points=0` stub, so the build stays green.
+One rule governs all of it: **a from-scratch run always wins, a committed
+snapshot is the fallback, and a missing snapshot degrades rather than fails.**
+Nothing is ever silently stale, and the build stays green on a bare checkout.
+
+Four things resolve this way. The first two choose input data, the third chooses
+a model, the fourth chooses which stored results a figure summarises.
+
+| What resolves | Preferred (from scratch) | Fallback (committed) | If neither |
+|---|---|---|---|
+| Genotype + admix VCFs | `output/genotypes/SRP434573` | `paper/public_data/SRP434573/genotypes` | build fails, the snapshot is required |
+| Semi-synthetic sub-0.5% VCFs | `output/genotypes/SRP434573_synthetic` | `.../genotypes_synthetic` | synthetic run skipped, facts degrade to an `n_points=0` stub |
+| Error table used by a run | `pooled.error_table.tsv` | that mixture's `<mix>.error_table.tsv` | flat `--error-rate` default |
+| Error-table arm results (Figure S15) | `output/error_table_arms/<arm>` | `pooled` from the ordinary build output, `flat` and `per_mixture` from `.../error_table_arms` | that arm is dropped from the figure |
+
+The resolvers are `resolve_srp434573_genotypes_dir` and
+`resolve_srp434573_synthetic_dir` in `paper/scripts/srp434573_common.py`,
+`resolve_error_table` in `paper/scripts/run_srp434573_allomix.py`, and `arm_dir`
+in `paper/scripts/generate_error_table_arms_facts.py`.
+
+Two consequences worth knowing:
+
+- **Snapshots are committed only for what the build cannot otherwise produce.**
+  The pooled arm is not committed, because the pipeline defaults to the pooled
+  table and so the ordinary build already writes exactly that arm; committing a
+  copy would duplicate an artifact and let the two drift. Only the flat and
+  per-mixture arms are stored.
+- **Presence of a fresh directory is the whole trigger.** A stale
+  `output/genotypes/SRP434573` from an old run silently outranks a newer
+  committed snapshot. Delete it if you want the snapshot used.
+
+To confirm which source a build actually used, check the paths in the Snakemake
+job's `input:` line, or the log line each script prints naming the directory it
+read.
 
 Regenerating either snapshot needs the aligned BAMs, which are not public. The
 full procedure (download, alignment, panel BED recovery, joint calling, error

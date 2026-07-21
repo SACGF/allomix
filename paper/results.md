@@ -123,7 +123,8 @@ matches the nominal one (real reads and genotyping path, artificial mixing ratio
 this ladder the maximum-likelihood recipient estimate tracked the true fraction down to 0.1%
 recipient, with the median estimate rising in step with the nominal one (median
 {{ srp434573_synthetic.mle_med_0p1 }}% at 0.1% recipient,
-{{ srp434573_synthetic.mle_med_0p5 }}% at 0.5%, near-unit slope) and no constant floor.
+{{ srp434573_synthetic.mle_med_0p5 }}% at 0.5%, near-unit slope) on a small constant
+positive offset of {{ srp434573_synthetic.two_person_med_signed_off_pct }} percentage points.
 The residual-recipient presence test gives an independent low-fraction readout: it climbed
 from a detection rate of {{ srp434573_synthetic.detect_rate_0p1 }} at 0.1% recipient to full
 detection by 0.4% ({{ srp434573_synthetic.detect_rate_0p4 }}), reading only the
@@ -131,19 +132,42 @@ donor-homozygous markers. The same construction produced a recipient-plus-two-do
 (recipient F2 titrated below 1% against donors M1 and M2), where allomix recovered the sub-1%
 recipient and both donors with median absolute errors of
 {{ srp434573_synthetic.three_host_med_abs_err_pct }} and
-{{ srp434573_synthetic.three_donor_med_abs_err_pct }} percentage points. Reaching truth
-at the low end depends on the overdispersion model, not on the data. On this dataset a
-single overdispersion parameter shared across marker types leaves a near-constant positive
-recipient offset of about 0.22 percentage points at these fractions, coming from the
-donor-heterozygous markers, where the two contributors balance the alleles near 0.5 and
-their symmetric extra-binomial scatter rectifies into a small positive recipient signal.
-Fitting a separate overdispersion for the donor-heterozygous and donor-homozygous classes
-(the default per-marker-type model) absorbs that scatter where it occurs and removes the
-offset. The mixing itself is faithful (the realised minor fraction tracks the nominal one
-with unit slope, and the donor-homozygous markers alone return the nominal fraction), and
-the offset is neither a background-artifact floor nor an estimator boundary effect: a
-plain binomial fit shows no offset, confirming it is a property of the shared-overdispersion
-fit rather than of the reads.
+{{ srp434573_synthetic.three_donor_med_abs_err_pct }} percentage points. The recipient
+error here is not scatter around truth but a near-constant positive offset of
+{{ srp434573_synthetic.three_host_med_signed_err_pct }} percentage points, essentially
+unchanged across the ladder, so it acts as a floor rather than as noise. Because the
+recipient fractions are themselves below 1%, that offset dominates at the bottom: at
+{{ srp434573_synthetic.three_host_lowest_known_pct }}% recipient the median estimate is
+{{ srp434573_synthetic.three_host_lowest_est_pct }}%, a
+{{ srp434573_synthetic.three_host_lowest_ratio }}-fold overestimate. The two-donor mode
+therefore carries a materially higher effective floor than the single-donor case, and
+sub-1% recipient fractions against two donors should be read as bounded above by this
+floor rather than as point estimates.
+
+On the two-person ladder most of the offset is a property of the overdispersion model
+rather than of the reads.
+A single overdispersion parameter shared across marker
+types leaves a near-constant positive recipient offset of about 0.29 percentage points at
+these fractions, coming from the donor-heterozygous markers, where the two contributors
+balance the alleles near 0.5 and their symmetric extra-binomial scatter rectifies into a
+small positive recipient signal. Fitting a separate overdispersion for the
+donor-heterozygous and donor-homozygous classes (the default per-marker-type model) absorbs
+that scatter where it occurs and reduces the offset roughly sevenfold, to the
+{{ srp434573_synthetic.two_person_med_signed_off_pct }} percentage points quoted above,
+though it does not eliminate it. The mixing itself is faithful (the realised minor fraction
+tracks the nominal one with unit slope, and the donor-homozygous markers alone return the
+nominal fraction).
+
+The residual offset in the two-donor series has a different origin. It is unchanged by the
+overdispersion model, sitting at
+{{ srp434573_synthetic.three_host_med_signed_err_pct }} percentage points under both the
+shared and the per-marker-type fit, so the marker-class argument that accounts for the
+two-person ladder does not explain it. Its size is comparable to the co-pooled
+contamination floor measured independently on the same data
+({{ srp434573.contam_floor_median_pct }}% median across mixtures), which is the most likely
+source, though this dataset has no contamination-free sample against which to confirm it.
+We therefore report the two-donor sub-1% figures as bounded by this floor rather than
+attributing the residual to the estimator.
 
 ### Longitudinal monitoring
 

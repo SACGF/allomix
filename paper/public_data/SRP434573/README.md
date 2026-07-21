@@ -293,9 +293,16 @@ The seven individuals (F1-F3, M1-M4) share the panel and sequencing chemistry,
 so the substitution background is shared and can be pooled. `config.yaml` sets
 `build_pooled_error_table: true`, which adds one `pooled.error_table.tsv` built
 over all seven reference individuals (deduplicated, so an individual shared by
-several mixtures is counted once). Pooling fills both directions at nearly every
-site (some individual is hom-ref and some hom-alt) and pools far more reads per
-site. The per-mixture tables are still built as a fallback.
+several mixtures is counted once). Pooling fills both directions wherever some
+individual is hom-ref and some hom-alt, which on the committed snapshot is 38%
+of sites (1432 rows), against 6% for a typical per-mixture table. The remaining
+sites are ones where all seven individuals share a genotype, mostly low-MAF
+sites where all seven are hom-ref, so no amount of pooling over these seven
+recovers the alt->ref direction there. Pooling also pools far more reads per
+site: the median site goes from 2010 to 8760 hom-ref reads, and from 0 to 1632
+hom-alt reads, so the alt->ref rate goes from unmeasurable at most sites to
+estimated from a useful depth. The per-mixture tables are still built as a
+fallback.
 
 Copy both into the snapshot:
 

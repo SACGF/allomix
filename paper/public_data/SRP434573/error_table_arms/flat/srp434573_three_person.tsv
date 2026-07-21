@@ -1,0 +1,4 @@
+mixture	sample	component	role	known_pct	est_pct	ci_lo	ci_hi	qc
+mix_F2_M1_into_M2	1_3_5_F2-M1-M2	F2	host	11.1111	10.3900			PASS
+mix_F2_M1_into_M2	1_3_5_F2-M1-M2	M1	donor	33.3333	33.0000	31.6600	34.3500	PASS
+mix_F2_M1_into_M2	1_3_5_F2-M1-M2	M2	donor	55.5556	56.6100	55.2300	57.9700	PASS

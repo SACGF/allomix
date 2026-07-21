@@ -295,14 +295,43 @@ so the substitution background is shared and can be pooled. `config.yaml` sets
 over all seven reference individuals (deduplicated, so an individual shared by
 several mixtures is counted once). Pooling fills both directions wherever some
 individual is hom-ref and some hom-alt, which on the committed snapshot is 38%
-of sites (1432 rows), against 6% for a typical per-mixture table. The remaining
-sites are ones where all seven individuals share a genotype, mostly low-MAF
-sites where all seven are hom-ref, so no amount of pooling over these seven
-recovers the alt->ref direction there. Pooling also pools far more reads per
-site: the median site goes from 2010 to 8760 hom-ref reads, and from 0 to 1632
-hom-alt reads, so the alt->ref rate goes from unmeasurable at most sites to
-estimated from a useful depth. The per-mixture tables are still built as a
-fallback.
+of sites (1432 rows), against 6% for a typical per-mixture table. Counting the
+alt->ref direction alone, pooling raises coverage from 331-550 sites per
+per-mixture table to 797.
+
+That is well short of all 1432 sites, and the shortfall is a property of the
+cohort rather than a fault in the pooling. Of the 635 sites with no alt->ref
+rate, 554 have zero hom-alt reads: not one of the seven individuals is hom-alt
+there, so no amount of pooling over these seven recovers that direction. With
+only seven people the chance that nobody is hom-alt is (1 - p^2)^7 for an alt
+allele frequency p, which is 13% at p=0.5 but 75% at p=0.2, so a large fraction
+of the lower-frequency panel sites are expected to be single-direction. The
+other 81 sites do have hom-alt reads but fewer than the estimator's
+`--min-reads` threshold (default 1000, applied per direction), so their
+estimate is withheld rather than made from thin counts. Lowering that threshold
+would recover those 81 at the cost of noisier rates. Expect the recovered
+fraction to rise with cohort size, not with read depth.
+
+Pooling also pools far more reads per site: the median site goes from 2010 to
+8760 hom-ref reads, and from 0 to 1632 hom-alt reads, so the alt->ref rate goes
+from unmeasurable at most sites to estimated from a useful depth. Pooling does
+not distort the per-site rates: across the 1037 sites where at least two
+per-mixture tables give a ref->alt rate, the pooled value falls inside the
+per-mixture range at 80% of them, and the 20% outside fall on both sides (79
+lower, 119 higher), as expected when the pooled table averages over individuals
+that no single per-mixture table sees. The per-mixture tables are still built as
+a fallback.
+
+What pooling actually changes is worth being precise about, because the obvious
+reading is wrong. Pooled rates are lower than the per-mixture ones at only
+32-38% of sites, so pooling does not simply shift the background down. But the
+pooled mean is consistently lower while the pooled median is often higher: what
+pooling removes is an inflated upper tail in the per-mixture tables, where a
+rate had to be estimated from few reads. Those inflated rates were
+over-subtracting, which is why low-fraction estimates read low before pooling,
+and removing the inflation is what raises them. This is also why the benefit
+scales with cohort size rather than sequencing depth: more individuals means
+fewer sites where a rate rests on one individual's reads.
 
 Copy both into the snapshot:
 

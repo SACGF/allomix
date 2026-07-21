@@ -190,6 +190,23 @@ SUBSAMPLE_LOD_FIGS = [
 SYNTHETIC_FACTS = [f"{FACTS_DIR}/srp434573_synthetic.csv"]
 SYNTHETIC_FIGS = [f"{FACTS_DIR}/fig_srp434573_synthetic.png"]
 
+# Error-table arm comparison (issue #49 follow-up): flat --error-rate default vs
+# per-mixture tables vs one table pooled over all seven reference individuals.
+# Each arm is a full run_srp434573_allomix.py pass, so the arms that the build
+# does not otherwise produce are committed as a snapshot, the same way the
+# genotype VCFs are, and this rule only summarises them (seconds, not ~30 min).
+# Only flat and per_mixture are committed: the pipeline defaults to the pooled
+# table, so srp434573_allomix already writes the pooled arm and committing a
+# second copy would duplicate an existing artifact and let the two drift.
+# Regenerate with paper/scripts/run_error_table_arms.sh.
+ERROR_TABLE_ARMS_DIR = "paper/public_data/SRP434573/error_table_arms"
+ERROR_TABLE_ARMS_TSVS = sorted(glob.glob(f"{ERROR_TABLE_ARMS_DIR}/*/*.tsv"))
+ERROR_TABLE_ARMS_FACTS = [
+    f"{FACTS_DIR}/error_table_arms.csv",
+    f"{FACTS_DIR}/error_table_arms_headline.csv",
+]
+ERROR_TABLE_ARMS_FIGS = [f"{FACTS_DIR}/fig_error_table_arms.png"]
+
 # Simulated presence-test LoD curve (issue #25): the companion to the MLE-only
 # Figure 1. Same two-level pair design as run_lod_validation, but with per-marker
 # bias off so the presence-test null stays calibrated (see the script docstring).
@@ -235,6 +252,7 @@ ALL_FACTS = (
     + SRP_CONTAM_FACTS
     + SUBSAMPLE_LOD_FACTS
     + SYNTHETIC_FACTS  # results.md now cites the semi-synthetic sub-0.5% facts (#5)
+    + ERROR_TABLE_ARMS_FACTS
 )
 
 ALL_FIGS = (
@@ -243,6 +261,7 @@ ALL_FIGS = (
     + MULTIDONOR_FIGS
     + BIAS_FIGS
     + SUPP_SYNTHETIC_FIGS
+    + ERROR_TABLE_ARMS_FIGS
     + LOD_FIGS
     + LOD_SATURATION_FIGS
     + OVERDISP_FIGS
@@ -475,6 +494,31 @@ rule srp434573_synthetic_facts:
         SYNTHETIC_FIGS,
     shell:
         "python paper/scripts/generate_srp434573_synthetic_facts.py"
+
+
+rule error_table_arms_facts:
+    # Summarises the three error-table arms (flat default / per-mixture / pooled)
+    # into facts + a two-panel supplementary figure. Reads the committed arm
+    # snapshot under paper/public_data/SRP434573/error_table_arms, or a fresh
+    # output/error_table_arms if one is present (the script prefers the latter).
+    # Summary only: no allomix runs here, so this is seconds, not the ~30 min the
+    # arms themselves take.
+    input:
+        "paper/scripts/generate_error_table_arms_facts.py",
+        # Panel B draws the independently measured co-pooled contamination floor
+        # as a reference band, which the script reads out of the srp434573 facts.
+        # Declared so that dependency is real rather than incidental.
+        *SRP434573_FACTS,
+        # The pooled arm IS the ordinary build output: the pipeline defaults to
+        # the pooled table, so srp434573_allomix already writes it. Only the flat
+        # and per-mixture arms need a committed snapshot.
+        "output/srp434573_two_person.tsv",
+        *ERROR_TABLE_ARMS_TSVS,
+    output:
+        ERROR_TABLE_ARMS_FACTS,
+        ERROR_TABLE_ARMS_FIGS,
+    shell:
+        "python paper/scripts/generate_error_table_arms_facts.py"
 
 
 rule srp434573_facts:

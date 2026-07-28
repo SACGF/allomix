@@ -89,6 +89,15 @@ sample-swap detection, and at consensus-heterozygous markers the alternative-all
 fraction should sit near 0.5 whatever the mixing fraction, so a systematic skew flags
 contamination, allelic imbalance, or a sample mix-up.
 
+Which classes are available depends on the donor relationship. A parent and child share
+one allele identical by descent at every autosomal locus, so opposite homozygotes cannot
+occur: for a parent-child donor, types 0 and 1 have probability zero rather than merely
+low. Such a pair still yields the half-contrast types, so the fraction estimate and the
+residual-recipient presence test both run, but the contamination correction, which acts
+only on types 0 and 1, is unavailable. Full siblings share both alleles at only a quarter
+of loci in expectation, so they retain a small and variable number of full-contrast
+markers.
+
 By default a site is used only if recipient and donor genotype quality is at least 20 and the
 admixture depth is at least 100, and at least three informative markers are required to
 report an estimate. Sex and mitochondrial contigs (X, Y, M) are excluded by default,
@@ -255,7 +264,18 @@ than one, with the recipient as the remainder) over a triangular grid, then refi
 and reports a profile-likelihood interval for each donor (Supplementary Methods). A
 marker is informative if the recipient differs from any donor, and informative counts are
 tracked per donor, since related donors can leave few markers that separate one donor
-from the other. The recipient-plus-two-donor scope is a practical default set by the common
+from the other. What limits a multi-donor run is how much of the recipient's genotype the
+donor set covers between them. The presence test needs an allele the recipient carries
+and no donor does, so a donor set that covers both of the recipient's alleles at every
+locus leaves it no markers at all. The degenerate case is a recipient whose donors are
+both of its parents: every allele a child carries came from one parent or the other, so
+no donor-absent allele exists anywhere in the panel and the presence test cannot run,
+while at markers where both parents are homozygous the child's allele dosage equals the
+mean of theirs, making its fraction indistinguishable from adding half of it to each
+parent. allomix reports no presence result rather than a p-value when the donor-homozygous
+marker set is empty, and a laboratory should confirm the recipient carries at least one
+allele absent from every donor before relying on that readout. The recipient-plus-two-donor
+scope is a practical default set by the common
 clinical case and the growing cost of searching a higher-dimensional fraction simplex,
 not a hard limit of the likelihood, which generalizes to more components; settings such
 as sequential transplants or some cord-blood mixtures that exceed two donors are untested

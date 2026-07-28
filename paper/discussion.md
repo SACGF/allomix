@@ -245,6 +245,15 @@ carry over unchanged to a multi-timepoint decision. A monitoring-context decisio
 such as confirmation on a repeat draw or a trend test across timepoints, is a
 clinical-validation-stage choice we leave to the adopting laboratory.
 
+Donor relatedness constrains which checks are available, not only how many markers
+survive. A parent-child donor yields no opposite-homozygote markers at all (Methods), so
+the co-pool contamination correction cannot run, and a laboratory sequencing related
+donors on co-pooled flowcells controls index misassignment at the indexing-design level
+instead. A donor set that covers both of the recipient's alleles at every locus, of which
+a recipient donated to by both parents is the limiting case, leaves the residual-recipient
+presence test no markers at all; allomix reports no result rather than a p-value there,
+but the magnitude estimate is then the only readout available.
+
 The LoD reported here is a best-case analytical figure, not a validated
 assay limit (a real assay's LoD can only be higher). It is the CLSI EP17-A2
 95%-detection criterion[@CLSIEP17A2] applied to simulated data under a noise model
@@ -253,7 +262,14 @@ the full evidence ladder, from the ~1% real-data LoD on the SRP434573 mixtures t
 sub-0.2% analytical figures in near-binomial simulation, and places each against the
 commercial assays. The gap between the analytical figure and real-panel performance is
 expected to be driven largely by overdispersion (above), and wetlab validation will set
-the floor allomix actually delivers in routine use. As a partial
+the floor allomix actually delivers in routine use. A second floor is set by how much
+material enters the library: at 6.6 pg per diploid genome the minor component contributes
+roughly 150 genome equivalents per nanogram of input, and the Poisson error on that count
+is shared by every marker, so unlike read-sampling noise it falls with neither deeper
+sequencing nor more markers. Measuring a 0.1% fraction to within 10% relative error needs
+on the order of 100 genome equivalents of the minor component, so several hundred
+nanograms of input before library conversion losses, which is why input is worth reporting
+in genome equivalents alongside depth. As a partial
 check against real reads, we
 sub-sampled the high-depth SRP434573 mixtures across depth and panel size and measured
 the LoD on those reads directly (Figure 3): it falls with depth and panel size as the

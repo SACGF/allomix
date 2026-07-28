@@ -346,7 +346,7 @@ def sample_allele_counts(
         het/intermediate amplification effect; at a donor-absent allele at the
         sequencing-error background the residual variance is a binomial error
         floor. This is the regime presence-detection at donor-homozygous markers
-        targets (see ``claude/20_host_presence_detection_plan.md``).
+        targets.
     """
     if rng is None:
         rng = random.Random()

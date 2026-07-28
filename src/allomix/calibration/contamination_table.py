@@ -22,7 +22,7 @@ Only the dose-dependent part is subtracted; the flat error floor stays with the
 per-site error model (``allomix.calibration.error_rates``, issue #23), so it is not
 double-counted.
 
-Two pieces are measured per run, not hardcoded (see ``claude/step30_design.md``):
+Two pieces are measured per run, not hardcoded:
 
 - GATE (per flowcell): at consensus-homozygous sites (host and every donor
   homozygous for the same allele, so the minor allele is pure background), fit
@@ -65,8 +65,7 @@ from allomix.genotype import (
 
 # Cap on the carrier dose. The host allele is common, so the dose-response is
 # measurable but saturates; a hard cap stops a high-frequency site dominating the
-# regression. Validated at 5 on SRP434573 (carrier COUNT, not allele copies; see
-# claude/step30_design.md open question 1).
+# regression. Validated at 5 on SRP434573 (carrier COUNT, not allele copies).
 DEFAULT_DOSE_CAP = 5
 
 # Gate defaults. The correction applies only when the consensus-hom slope is

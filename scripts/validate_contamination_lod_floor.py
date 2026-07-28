@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """In-silico validation of the contamination floor feeding the LoD and presence test.
 
-This is the check for Observation 2 in ``claude/further_improvements.md``: the
-in-data contamination floor allomix estimates per sample should (a) floor the
+The in-data contamination floor allomix estimates per sample should (a) floor the
 reported limit of detection, and (b) raise the per-marker background the
 host-presence test compares donor-absent reads against.
 

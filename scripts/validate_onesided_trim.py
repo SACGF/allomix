@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Compare the symmetric vs one-sided robust trim at low host fraction.
 
-This is the in-silico check for the direction-aware robust trim (Obs 1 in
-``claude/further_improvements.md``). The motivating real-data observation on
+This is the in-silico check for the direction-aware robust trim. The motivating
+real-data observation on
 SRP434573 was that ``allomix``'s robust refit drops a runaway fraction of markers
 as the host fraction falls and the MLE host estimate collapses toward zero (in
 the worst case reading exactly 0% when the truth is ~1%), because the symmetric

@@ -221,9 +221,8 @@ class TestFalsePositiveRate:
     def test_calibrated_across_replicates(self):
         """FP rate at alpha=0.05 should sit in a wide Wald band for n=50.
 
-        Mirrors acceptance gate 1 from
-        ``claude/20_host_presence_detection_plan.md`` (LRT FP rate ~ 0.05 across
-        cells) but at a single cell with a modest replicate count to keep the test
+        Mirrors the detector's acceptance gate (LRT FP rate ~ 0.05 across cells)
+        but at a single cell with a modest replicate count to keep the test
         fast; the band is widened to absorb the larger sampling noise of n=50.
         """
         rng = random.Random(1234)

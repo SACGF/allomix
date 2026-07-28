@@ -1,7 +1,6 @@
 """Tests for allomix.analysis wiring, focused on the contamination LoD floor.
 
-The contamination-floor-into-LoD logic (Obs 2 in
-``claude/further_improvements.md``) is validated here against a synthetic
+The contamination-floor-into-LoD logic is validated here against a synthetic
 contamination scalar, which isolates the flooring rule from the in-data
 contamination estimator (tested separately in ``test_sample_contamination.py``).
 """

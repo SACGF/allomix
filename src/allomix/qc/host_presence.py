@@ -9,7 +9,7 @@ against that background.
 
 Complementary to the fraction MLE in ``chimerism``: the MLE estimates the
 magnitude, this test guards the low end and answers "is host present?" directly.
-See ``claude/20_host_presence_detection_plan.md`` for the full rationale; the
+The full rationale is in the paper Methods (residual-recipient presence test); the
 calibration evidence under realistic overdispersion lives in
 ``paper/scripts/run_presence_lod_validation.py`` (the presence-LoD sweep behind
 Figure 1), with gate checks in ``tests/test_host_presence.py``.
@@ -490,8 +490,7 @@ def host_presence_test(
             counts this test reads, so the background a real host signal must
             clear is the sequencing-error rate plus this floor. Defaults to
             ``0.0`` (no contamination correction). Applied per-sample as a flat
-            scalar; a per-marker apportionment is a possible refinement (see
-            ``claude/further_improvements.md``, Obs 2).
+            scalar; a per-marker apportionment is a possible refinement.
         artifact_filter: When True (default), drop donor-homozygous markers
             whose donor-absent reads show alignment-artifact signatures
             (strand bias, soft-clip bias, read-position bias) before testing.

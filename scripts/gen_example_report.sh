@@ -18,9 +18,8 @@
 #      HOST and the background M1 is the DONOR (see
 #      paper/scripts/run_srp434573_allomix.py), so the monitored 0.5% quantity is
 #      the HOST fraction. The MLE reads slightly low because of the
-#      donor-homozygous contamination background documented in
-#      claude/srp434573_figure_review_findings.md; the host-presence test still
-#      gates it correctly.
+#      donor-homozygous contamination background on this flowcell; the
+#      host-presence test still gates it correctly.
 #
 #   2. Timeline report (secondary): the whole F2-into-M1 dilution ladder fed to
 #      the timeline mode to show the trend chart. These are a titration series,

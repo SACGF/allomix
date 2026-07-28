@@ -55,7 +55,7 @@ ROBUST_MODES = ("off", "auto", "force")
 # host presence are never trimmed; only those pointing away (genotype miscalls,
 # mapping artifacts, host CNV/LoH in the anti-host direction) stay eligible. At the
 # limit of detection, keep a few artifacts rather than discard real low-fraction
-# host signal. See claude/further_improvements.md, Obs 1.
+# host signal.
 ROBUST_ONE_SIDED = True
 
 # Residual outlier cut for the non-robust per-marker flag, in SDs from the mean

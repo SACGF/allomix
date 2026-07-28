@@ -359,7 +359,8 @@ mean square error, both in percentage points of donor fraction.
 
 ![**Figure 5.** Effect of donor-recipient relatedness on allomix performance. Left: informative markers by relatedness level (dots = replicates, bars = means). Centre: mean absolute error. Right: truth versus estimated donor fraction across all replicates. Simulated with {{ rel_unrelated.n_markers }} markers, 500x mean depth (CV = {{ sim_calibration.depth_cv }}), {{ sim_calibration.seq_error_pct }}% sequencing error, empirically calibrated per-marker bias, and {{ sim_calibration.locus_dropout_pct }}% locus dropout.]({{ facts_dir }}/fig_relatedness.png)
 
-**Multiple donors.** For the hardest multi-donor case, we generated a three-sibling
+**Multiple donors.** For the hardest multi-donor case among donor sets that leave the
+recipient a private allele, we generated a three-sibling
 scenario (recipient and two donors sharing both parents) across
 {{ multidonor.n_markers | dp(0) }} markers at {{ multidonor.depth | commas }}x, of which
 {{ multidonor.n_informative_any | dp(0) }} were informative for at least one donor.

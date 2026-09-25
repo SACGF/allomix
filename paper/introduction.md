@@ -54,7 +54,11 @@ similar marker sets are incorporated into numerous clinical capture and amplicon
 These markers are sequenced at high depth as part of routine clinical workflows, and the
 resulting data is already available. Lee et al. demonstrated this principle by using 121
 SNPs embedded in a myeloid neoplasm panel for chimerism monitoring, but released no
-reusable tool.[@Lee2019snp] Aloisio et al. built a dedicated analysis tool for amplicon
+reusable tool.[@Lee2019snp] Krakow et al. combined incidentally sequenced SNPs in a
+myeloid panel with somatic mutations to follow residual host clones after transplant; their
+CloneTracker tool reconstructs clones rather than estimating a mixture fraction, reports no
+analytical limit of detection, and is available on request for non-profit research rather
+than openly released.[@Krakow2025clonetracker] Aloisio et al. built a dedicated analysis tool for amplicon
 SNP chimerism, but it is a closed-source Shiny web application tied to interactive
 use,[@Aloisio2016amplicon] whereas allomix is open source and built for batch processing
 of arbitrary marker panels.

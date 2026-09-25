@@ -153,7 +153,13 @@ sequence. Sample-identification SNPs, pharmacogenomic markers, and other polymor
 loci included for quality control or diagnosis can serve double duty for chimerism,
 eliminating a separate dedicated assay. Lee et al. demonstrated the principle with 121
 SNPs in a myeloid panel but released no reusable tool;[@Lee2019snp] allomix generalises
-this into a deployable tool. Vynck et al. showed
+this into a deployable tool. Krakow et al.'s CloneTracker clusters myeloid-panel SNPs
+with somatic mutations into clones and labels a clone donor-derived when it rises from
+under 5% before transplant to over 50% after, so the donor need not be
+sequenced.[@Krakow2025clonetracker] That helps where no donor sample is available, but the
+rule has no error model and was not tested against mixtures of known composition. allomix
+instead takes donor genotypes as input and estimates the fraction from an explicit
+mixture likelihood with a characterised limit of detection. Vynck et al. showed
 that three informative markers are enough to make a quantification identifiable, with
 accuracy improving as markers are added, and that panels of about 20 markers with MAFs
 near 0.5 give a >95% chance of at least three informative markers even for sibling pairs;

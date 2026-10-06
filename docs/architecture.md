@@ -122,8 +122,10 @@ PAR2 interval, about 330 kb of non-PAR Xq28 in GRCh38 coordinates) is
 acceptable and removes any need to know the genome build. The transcription is
 guarded by
 `tests/test_contigs.py::test_constants_match_bioutils_union`, which compares the
-constants with `bioutils.par` and is skipped unless that module is importable.
-It lives on a fork branch, not in any released bioutils; to run the check:
+constants with `bioutils.par` (converting its interbase, 0-based half-open
+intervals to 1-based inclusive) and is skipped unless that module is
+importable. It lives on a fork branch, not in any released bioutils; to run the
+check:
 
 ```bash
 pip install "git+https://github.com/davmlaw/bioutils@add-par-regions"

@@ -10,10 +10,11 @@ contig naming conventions or genome build.
 
 Pseudoautosomal regions (PAR), 1-based inclusive. The constants below are the
 EXACT UNION of the GRCh37 and GRCh38 intervals: overlapping intervals are
-merged, non-overlapping ones are kept separate. Per-build source values, from
-NCBI ``par_align.gff`` for each assembly as packaged in ``bioutils.par`` (fork
-``davmlaw/bioutils`` branch ``add-par-regions``, datasets ``ncbi-GRCh37`` and
-``ncbi-GRCh38``)::
+merged, non-overlapping ones are kept separate. Per-build source values, 1-based
+inclusive as NCBI publishes them in each assembly's ``par_align.gff``. The same
+data is packaged in ``bioutils.par`` (fork ``davmlaw/bioutils`` branch
+``add-par-regions``, datasets ``ncbi-GRCh37`` and ``ncbi-GRCh38``) in interbase
+coordinates, i.e. ``[start - 1, end]``; the cross-check test converts back::
 
                 GRCh37                    GRCh38
     X PAR1      60001-2699520             10001-2781479
@@ -73,8 +74,9 @@ class ContigClass(Enum):
 
 #: Exact union of the GRCh37 and GRCh38 PAR intervals, 1-based inclusive
 #: ``(start, end)``, sorted, per normalised chromosome name. Built the same way
-#: the cross-check test builds it from ``bioutils.par.get_par_map``: pool both
-#: builds' intervals and merge any that overlap.
+#: the cross-check test builds it from ``bioutils.par.get_par_map`` (after
+#: converting its interbase intervals to 1-based): pool both builds' intervals
+#: and merge any that overlap.
 PAR_X: tuple[tuple[int, int], ...] = (
     (10001, 2781479),  # PAR1, merged
     (154931044, 155260560),  # PAR2, GRCh37

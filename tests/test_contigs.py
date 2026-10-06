@@ -247,9 +247,12 @@ def test_constants_match_bioutils_union():
     bioutils_par = pytest.importorskip("bioutils.par")
     grch37 = bioutils_par.get_par_map("ncbi-GRCh37")
     grch38 = bioutils_par.get_par_map("ncbi-GRCh38")
-    # bioutils returns {chrom: {par_name: [start, end]}}; compare as tuples.
-    as_tuples37 = {c: {n: tuple(iv) for n, iv in r.items()} for c, r in grch37.items()}
-    as_tuples38 = {c: {n: tuple(iv) for n, iv in r.items()} for c, r in grch38.items()}
+    # bioutils returns {chrom: {par_name: [start_i, end_i]}} in interbase
+    # (0-based, half-open) coordinates like bioutils.cytobands; allomix keeps
+    # the NCBI 1-based inclusive values, so convert as (start_i + 1, end_i).
+    assert bioutils_par.get_par_meta("ncbi-GRCh38")["coordinates"].startswith("interbase")
+    as_tuples37 = {c: {n: (iv[0] + 1, iv[1]) for n, iv in r.items()} for c, r in grch37.items()}
+    as_tuples38 = {c: {n: (iv[0] + 1, iv[1]) for n, iv in r.items()} for c, r in grch38.items()}
     assert as_tuples37 == GRCH37
     assert as_tuples38 == GRCH38
     assert PAR_REGIONS == _union(as_tuples37, as_tuples38)

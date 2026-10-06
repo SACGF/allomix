@@ -124,8 +124,8 @@ guarded by
 `tests/test_contigs.py::test_constants_match_bioutils_union`, which compares the
 constants with `bioutils.par` (converting its interbase, 0-based half-open
 intervals to 1-based inclusive) and is skipped unless that module is
-importable. It lives on a fork branch, not in any released bioutils; to run the
-check:
+importable. It lives on a fork branch (proposed upstream as biocommons/bioutils
+PR #88), not in any released bioutils; to run the check:
 
 ```bash
 pip install "git+https://github.com/davmlaw/bioutils@add-par-regions"

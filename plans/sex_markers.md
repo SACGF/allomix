@@ -15,7 +15,7 @@ not yet measured.
 
 | topic | decision |
 |---|---|
-| PAR data | Vendor the PAR boundaries into allomix with provenance; cross-check test against `bioutils.par` from the fork when installed. The module is not in any released bioutils (0.6.1, Nov 2024) nor on upstream `main`; it exists only on the fork branch. |
+| PAR data | Vendor the PAR boundaries into allomix with provenance; cross-check test against `bioutils.par` from the fork when installed. The module is not in any released bioutils (0.6.1, Nov 2024); it lives on the fork branch `davmlaw/bioutils@add-par-regions` (interbase coordinates, flat JSON like `_data/assemblies`) and is proposed upstream as biocommons/bioutils PR #88 (opened 2026-10-06). Switch to a `bioutils>=` pin once a release carries it. |
 | Genome build | Not needed. PAR mask is the union of the GRCh37 and GRCh38 intervals (see "Why no genome build" below). Build inference and `--genome-build` are dropped from the plan. |
 | chrY content | The rhAmpSeq SID BED carries three chrY sex-typing amplicons (SRY, ZFY, AMELY intron 3), all non-PAR. The idt_haem kit has none. |
 | Male-male chrX | Included in Phase 2 (drop het calls, route hom/hom). |

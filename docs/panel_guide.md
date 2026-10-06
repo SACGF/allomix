@@ -103,6 +103,20 @@ to do with them: GATK joint calling of the host/donor reference samples for
 genotypes, and forced `bcftools mpileup` at the same sites for the admixture
 samples.
 
+**Sex chromosomes and non-primary contigs.** allomix classifies each marker's
+contig itself (`allomix.contigs`). Markers in the X and Y pseudoautosomal regions
+and markers on non-primary contigs (alternate haplotypes, decoys, unplaced and
+random scaffolds) are always excluded from the informative set and counted
+(`n_par_excluded`, `n_other_contig_excluded`, reported on stderr when non-zero).
+You do not need to tell allomix which genome build the panel is on: the PAR mask
+is the exact union of the GRCh37 and GRCh38 intervals, so a site is treated as
+PAR if it is PAR in either build. The only over-exclusion is positions that are
+PAR in one build but not the other: on chrX, 10001-60000 and 2699521-2781479 at
+the PAR1 edges, and the GRCh37 PAR2 interval 154931044-155260560, which is
+about 330 kb of non-PAR Xq28 in GRCh38 coordinates (chrY has the mirror-image
+set, see `allomix.contigs`). Keep panel sites away from the PAR boundaries and
+off non-primary contigs, and these exclusions will be zero.
+
 ## 3. Characterize the panel on a reference cohort
 
 Run a set of reference samples (any cohort genotyped through your normal pipeline;

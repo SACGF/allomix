@@ -614,6 +614,18 @@ def _run_single_sample(
             "informative sex-chromosome marker(s) (use --use-sex-chroms to keep them)",
             file=sys.stderr,
         )
+    if analysis.genotypes.n_par_excluded:
+        print(
+            f"{admix_sample}: excluded {analysis.genotypes.n_par_excluded} "
+            "pseudoautosomal (PAR) marker(s)",
+            file=sys.stderr,
+        )
+    if analysis.genotypes.n_other_contig_excluded:
+        print(
+            f"{admix_sample}: excluded {analysis.genotypes.n_other_contig_excluded} "
+            "marker(s) on non-primary contig(s) (alt, decoy, unplaced)",
+            file=sys.stderr,
+        )
 
     return analysis.result, analysis.qc, analysis.genotypes
 

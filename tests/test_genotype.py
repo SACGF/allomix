@@ -231,6 +231,78 @@ class TestClassifyMarkers:
         result = classify_markers(host, [donor], admix, min_dp=0, min_gq=0)
         assert result.sample_name == ""
 
+    def test_other_contig_excluded_unconditionally(self):
+        """Markers on alt/decoy/unplaced contigs are dropped and counted."""
+        host = [
+            self._make_marker(chrom="chr1", pos=100, gt=(0, 0)),
+            self._make_marker(chrom="chr1_KI270706v1_random", pos=100, gt=(0, 0)),
+            self._make_marker(chrom="chrUn_KN707606v1_decoy", pos=100, gt=(0, 1)),
+        ]
+        donor = [
+            self._make_marker(chrom="chr1", pos=100, gt=(1, 1)),
+            self._make_marker(chrom="chr1_KI270706v1_random", pos=100, gt=(1, 1)),
+            self._make_marker(chrom="chrUn_KN707606v1_decoy", pos=100, gt=(0, 1)),
+        ]
+        admix = [
+            self._make_marker(chrom="chr1", pos=100, ad_ref=900, ad_alt=100, dp=1000),
+            self._make_marker(chrom="chr1_KI270706v1_random", pos=100, dp=1000),
+            self._make_marker(chrom="chrUn_KN707606v1_decoy", pos=100, dp=1000),
+        ]
+        for use_sex in (False, True):
+            result = classify_markers(
+                host, [donor], admix, min_dp=0, min_gq=0, use_sex_chroms=use_sex
+            )
+            assert result.n_shared == 3
+            assert len(result.informative) == 1
+            assert result.informative[0].chrom == "chr1"
+            assert len(result.non_informative) == 0
+            # Both other-contig markers counted, informative or not, and not
+            # as sex-chromosome or filter losses.
+            assert result.n_other_contig_excluded == 2
+            assert result.n_par_excluded == 0
+            assert result.n_informative_sex_chrom_excluded == 0
+            assert result.n_filtered == 0
+
+    def test_par_excluded_regardless_of_use_sex_chroms(self):
+        """PAR X/Y markers are dropped and counted separately from the flag."""
+        host = [
+            self._make_marker(chrom="chrX", pos=1_000_000, gt=(0, 0)),  # PAR1
+            self._make_marker(chrom="chrY", pos=59_100_000, gt=(0, 0)),  # PAR2 (GRCh37 interval)
+            self._make_marker(chrom="chrX", pos=50_000_000, gt=(0, 0)),  # non-PAR
+        ]
+        donor = [
+            self._make_marker(chrom="chrX", pos=1_000_000, gt=(1, 1)),
+            self._make_marker(chrom="chrY", pos=59_100_000, gt=(1, 1)),
+            self._make_marker(chrom="chrX", pos=50_000_000, gt=(1, 1)),
+        ]
+        admix = [
+            self._make_marker(chrom="chrX", pos=1_000_000, ad_ref=900, ad_alt=100, dp=1000),
+            self._make_marker(chrom="chrY", pos=59_100_000, ad_ref=900, ad_alt=100, dp=1000),
+            self._make_marker(chrom="chrX", pos=50_000_000, ad_ref=900, ad_alt=100, dp=1000),
+        ]
+
+        off = classify_markers(host, [donor], admix, min_dp=0, min_gq=0, use_sex_chroms=False)
+        assert off.n_shared == 3
+        assert off.n_par_excluded == 2
+        assert off.n_other_contig_excluded == 0
+        # The non-PAR chrX marker is the only one counted against the flag.
+        assert off.n_informative_sex_chrom_excluded == 1
+        assert len(off.informative) == 0
+
+        on = classify_markers(host, [donor], admix, min_dp=0, min_gq=0, use_sex_chroms=True)
+        assert on.n_par_excluded == 2
+        assert on.n_informative_sex_chrom_excluded == 0
+        assert len(on.informative) == 1
+        assert (on.informative[0].chrom, on.informative[0].pos) == ("chrX", 50_000_000)
+
+    def test_contig_counters_default_zero(self):
+        host = [self._make_marker(gt=(0, 0))]
+        donor = [self._make_marker(gt=(1, 1))]
+        admix = [self._make_marker(dp=1000)]
+        result = classify_markers(host, [donor], admix, min_dp=0, min_gq=0)
+        assert result.n_par_excluded == 0
+        assert result.n_other_contig_excluded == 0
+
 
 # ---------------------------------------------------------------------------
 # parse_vcf — multi-sample joint VCF

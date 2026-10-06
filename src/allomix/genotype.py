@@ -20,6 +20,10 @@ from allomix.constants import (
     HOM_REF_MAX_VAF,
 )
 
+# ``is_sex_chrom`` moved to ``allomix.contigs``; re-exported here so existing
+# ``from allomix.genotype import is_sex_chrom`` callers keep working.
+from allomix.contigs import ContigClass, classify_contig, is_sex_chrom  # noqa: F401
+
 
 class MarkerType(IntEnum):
     """Vynck host-vs-donor informative marker class.
@@ -170,9 +174,12 @@ class MarkerGenotypes:
     sample_name: str = ""
     marker_counts: MarkerCounts | None = None  # per-input diagnostic counts
     n_informative_sex_chrom_excluded: int = 0
+    # Shared markers excluded by contig class regardless of ``use_sex_chroms``:
+    # pseudoautosomal X/Y sites, and sites on non-primary contigs (alt, decoy,
+    # unplaced, random). See ``allomix.contigs``.
+    n_par_excluded: int = 0
+    n_other_contig_excluded: int = 0
 
-
-_SEX_CHROM_NAMES = {"X", "Y", "M", "MT"}
 
 # Reference-sample GT/AD consistency thresholds (see parse_vcf, gt_ad_consistency).
 # A called genotype is dropped when its AD-derived VAF contradicts the call.
@@ -182,12 +189,6 @@ _SEX_CHROM_NAMES = {"X", "Y", "M", "MT"}
 VAF_CHECK_MIN_DEPTH = 20  # need this many total reads before judging the VAF
 HET_MIN_VAF = 0.35
 HET_MAX_VAF = 1.0 - HET_MIN_VAF  # 0.65
-
-
-def is_sex_chrom(chrom: str) -> bool:
-    """True if ``chrom`` is a sex or mitochondrial contig (chr-prefix optional)."""
-    c = chrom[3:] if chrom.lower().startswith("chr") else chrom
-    return c.upper() in _SEX_CHROM_NAMES
 
 
 def parse_vcf(
@@ -393,11 +394,24 @@ def classify_markers(
     n_dropped_low_gq_donor = 0
     n_dropped_low_admix_dp = 0
     n_informative_sex_chrom_excluded = 0
+    n_par_excluded = 0
+    n_other_contig_excluded = 0
 
     for key in sorted(shared_keys):
         h = host_idx[key]
         ds = [di[key] for di in donor_idxs]
         a = admix_idx[key]
+
+        # Contig-class exclusions that no option can override: non-primary
+        # contigs are mapping hazards, and pseudoautosomal X/Y sites have
+        # ambiguous copy number. Both are counted so the loss is visible.
+        contig_class = classify_contig(key[0], key[1])
+        if contig_class is ContigClass.OTHER:
+            n_other_contig_excluded += 1
+            continue
+        if contig_class in (ContigClass.X_PAR, ContigClass.Y_PAR):
+            n_par_excluded += 1
+            continue
 
         if pass_only and (
             h.filter != "PASS" or a.filter != "PASS" or any(d.filter != "PASS" for d in ds)
@@ -422,9 +436,9 @@ def classify_markers(
         mtypes = [MarkerType.classify(h.gt, d.gt) for d in ds]
         any_informative = any(mt is not None for mt in mtypes)
 
-        # Drop sex / mitochondrial contigs unless explicitly enabled, counting
-        # the informative ones lost so the cost is visible.
-        if not use_sex_chroms and is_sex_chrom(key[0]):
+        # Drop non-PAR sex / mitochondrial contigs unless explicitly enabled,
+        # counting the informative ones lost so the cost is visible.
+        if not use_sex_chroms and contig_class is not ContigClass.AUTOSOME:
             if any_informative:
                 n_informative_sex_chrom_excluded += 1
             continue
@@ -483,4 +497,6 @@ def classify_markers(
         sample_name=sample_name,
         marker_counts=counts,
         n_informative_sex_chrom_excluded=n_informative_sex_chrom_excluded,
+        n_par_excluded=n_par_excluded,
+        n_other_contig_excluded=n_other_contig_excluded,
     )

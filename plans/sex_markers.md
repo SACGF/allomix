@@ -181,14 +181,22 @@ more), so a build-naive mask would be wrong in the band between the two
 builds' boundaries.
 
 Since the decision is to exclude PAR markers anyway, the fix is to over-exclude:
-mask the **union** of both builds' PAR intervals. A site in the band between
-the boundaries is PAR in one build and not the other, and excluding it in both
-costs at most a few kb of chrX that no sample-ID panel targets (both panels we
-know have nothing within 5 Mb of a PAR boundary). Outside the union, PAR status
-is identical in both builds, so no build is needed. The classification is then
-a pure function of `(chrom, pos)`, like everything else in allomix, and the
-build inference, the `--genome-build` flag, and the fixture-header problem all
-go away.
+mask the **exact union** of both builds' PAR intervals (the two PAR1 intervals
+overlap and merge; the two PAR2 intervals do not overlap on either chromosome,
+so they stay as two intervals each, and the gap between them is non-PAR in both
+builds). A site is then excluded if it is PAR in at least one build. The cost
+is the positions that are PAR in one build only: on X, 10001-60000 and
+2699521-2781479 at the PAR1 boundary, and the GRCh37 PAR2 interval
+154931044-155260560, which is about 330 kb of non-PAR Xq28 in GRCh38
+coordinates (the GRCh38 PAR2 interval lies beyond GRCh37's chrX length, so it
+costs nothing there). Neither panel we know has a marker within 5 Mb of any of
+these. Outside the union, PAR status is identical in both builds, so no build
+is needed. The classification is a pure function of `(chrom, pos)`, like
+everything else in allomix, and the build inference, the `--genome-build` flag,
+and the fixture-header problem all go away. (Phase 0 implementation note: a
+min-to-max span instead of the exact union would also have dropped the 770 kb
+gap on X and 2.1 Mb on Y that are non-PAR in both builds, so the exact union is
+what is implemented.)
 
 ---
 

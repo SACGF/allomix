@@ -50,11 +50,13 @@ from pathlib import Path
 
 from cyvcf2 import VCF
 
-# Pseudoautosomal regions, 1-based inclusive, union of GRCh37 and GRCh38 so the
-# mask is conservative whichever build the VCF is on. Source: NCBI par_align.gff
-# via the bioutils fork (see plans/sex_markers.md, Phase 0).
-PAR_X = [(10001, 2781479), (154931044, 156030895)]
-PAR_Y = [(10001, 2781479), (56887903, 59363566)]
+# Pseudoautosomal regions, 1-based inclusive, exact union of GRCh37 and GRCh38
+# so the mask is conservative whichever build the VCF is on (PAR1 merges, the
+# two builds' PAR2 intervals do not overlap and stay separate). Same values as
+# allomix.contigs. Source: NCBI par_align.gff via the bioutils fork (see
+# plans/sex_markers.md, Phase 0).
+PAR_X = [(10001, 2781479), (154931044, 155260560), (155701383, 156030895)]
+PAR_Y = [(10001, 2781479), (56887903, 57217415), (59034050, 59363566)]
 
 MIN_DP_DEFAULT = 20
 MIN_GQ_DEFAULT = 20

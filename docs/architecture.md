@@ -21,7 +21,8 @@ runs a separate detection test for whether the host is present at all.
      +----- genotype.parse_vcf -----+        cyvcf2 -> MarkerData
                     |
             genotype.classify_markers        host vs donor -> InformativeMarker
-                    |                         (Vynck marker types; sex chroms dropped)
+                    |                         (Vynck marker types; PAR and non-primary
+                    |                          contigs dropped, sex chroms dropped)
                     v
             analysis.analyse_sample  ------------------------------+
                     |                                              |
@@ -62,6 +63,7 @@ orchestrator, the CLI, the simulator); the four subpackages each own one stage:
 
 | Module | Owns | Key public surface |
 | --- | --- | --- |
+| `contigs.py` | Contig classification as a pure function of `(chrom, pos)`: autosome, chrX/chrY split into PAR and non-PAR, MT, or `OTHER` (alt, decoy, unplaced, random, HLA). Owns the PAR mask (exact union of GRCh37 and GRCh38, so no genome build is needed) and the name-only `is_sex_chrom` predicate. No allomix imports. | `ContigClass`, `classify_contig`, `is_sex_chrom`, `PAR_REGIONS` |
 | `genotype.py` | VCF parsing (cyvcf2) and marker classification (the eight marker classes are described in [Marker types](marker_types.md)). The canonical home of `MarkerKey`/`marker_key`. | `parse_vcf`, `classify_markers`, `MarkerData`, `InformativeMarker`, `MarkerGenotypes`, `marker_type`, `MarkerKey` |
 | `estimate/chimerism.py` | The donor-fraction MLE: beta-binomial likelihood, grid + Brent (single donor) / Nelder-Mead (multi), profile-likelihood CIs. | `estimate_single_donor_bb`, `estimate_multi_donor`, `ChimerismResult`, `MultiDonorResult`, `detection_limit` |
 | `calibration/bias.py` | Per-marker amplification-bias table (median het-VAF deviation), used to shift the expected REF weight in the MLE. | `estimate_biases`, `save_bias_table`, `load_bias_table` |
@@ -94,6 +96,31 @@ Every marker is keyed by `(chrom, pos, ref, alt)`. This shape is defined once as
 `genotype.MarkerKey` (built by `genotype.marker_key`) and imported by `bias`,
 `error_rates`, and `host_presence`, so the bias table, the error table, and the
 detector all join on the same key.
+
+## Contig classes and the PAR mask
+
+`contigs.classify_contig(chrom, pos)` is the only place allomix reads a
+coordinate against reference annotation. `classify_markers` drops markers on
+`OTHER` contigs (mapping hazards) and in the pseudoautosomal regions (ambiguous
+copy number) before anything else, counting them into
+`MarkerGenotypes.n_other_contig_excluded` and `n_par_excluded`; the CLI reports
+both on stderr when non-zero.
+
+The PAR intervals are vendored constants: the exact union of the GRCh37 and
+GRCh38 NCBI values (overlapping intervals merged, so PAR1 is one interval and
+each PAR2 is two), 1-based inclusive, with the per-build source values in the
+module comment. Because PAR markers are always excluded, over-excluding the
+positions that are PAR in only one build (the PAR1 edges, and the GRCh37 chrX
+PAR2 interval, about 330 kb of non-PAR Xq28 in GRCh38 coordinates) is
+acceptable and removes any need to know the genome build. The transcription is
+guarded by
+`tests/test_contigs.py::test_constants_match_bioutils_union`, which compares the
+constants with `bioutils.par` and is skipped unless that module is importable.
+It lives on a fork branch, not in any released bioutils; to run the check:
+
+```bash
+pip install "git+https://github.com/davmlaw/bioutils@add-par-regions"
+```
 
 ## Diagnostics in `scripts/`
 

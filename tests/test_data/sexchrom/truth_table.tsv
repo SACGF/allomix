@@ -1,0 +1,7 @@
+vcf	sample_name	true_donor_fraction	host_sex	donor_sex	n_autosomal	n_autosomal_informative	n_chrx_nonpar	n_chrx_nonpar_informative	n_chrx_par	n_other_contig	n_chrx_host_spurious_het	n_chrx_donor_spurious_het
+joint_FF.vcf	ADMIX_F0.95	0.950000	F	F	60	45	20	10	2	1	0	0
+joint_FF.vcf	ADMIX_F0.80	0.800000	F	F	60	45	20	10	2	1	0	0
+joint_MM.vcf	ADMIX_F0.95	0.950000	M	M	60	29	20	9	2	1	1	2
+joint_MM.vcf	ADMIX_F0.80	0.800000	M	M	60	29	20	9	2	1	1	2
+joint_MF.vcf	ADMIX_F0.95	0.950000	M	F	60	39	20	14	2	1	1	0
+joint_MF.vcf	ADMIX_F0.80	0.800000	M	F	60	39	20	14	2	1	1	0

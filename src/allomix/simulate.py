@@ -3,6 +3,12 @@
 Blends two genotype VCFs at a specified mixture fraction to produce a synthetic
 chimeric VCF with realistic allele counts drawn from a binomial distribution.
 
+Sex chromosomes: ``generate_sex_chrom_genotypes`` draws chrX genotypes with
+sex-aware ploidy (male non-PAR chrX hemizygous, encoded diploid-homozygous as
+GATK does, with an optional spurious-het rate), and the blenders weight each
+contributor by copy number (``cn_weighted_vaf``) so sex-mismatched mixtures
+come out right. Autosomal and PAR sites keep the diploid model.
+
 Uses plain-text VCF parsing only (no cyvcf2 dependency) so this module can be
 used in test environments without compiled libraries.
 """
@@ -20,17 +26,22 @@ from allomix.constants import (
     HOM_REF_MAX_VAF,
     N_OTHER_BASES,
 )
+from allomix.contigs import PAR_X
 from allomix.estimate.likelihood import inject_bias
 from allomix.genotype import InformativeMarker, MarkerData
 
 
-def _chrom_sort_key(chrom: str) -> tuple[int, int]:
-    """Sort key for chromosome names (chr1, chr2, ... chr22, chrX, chrY)."""
+def _chrom_sort_key(chrom: str) -> tuple[int, int, str]:
+    """Sort key for chromosome names (chr1, chr2, ... chr22, chrX, chrY).
+
+    The full name breaks ties so alt contigs (``chrX_KI270880v1_alt``) sort
+    deterministically after their primary chromosome rather than by set order.
+    """
     name = chrom.replace("chr", "")
     try:
-        return (0, int(name))
+        return (0, int(name), name)
     except ValueError:
-        return (1, ord(name[0]) if name else 0)
+        return (1, ord(name[0]) if name else 0, name)
 
 
 @dataclass
@@ -168,6 +179,49 @@ def expected_vaf_multi(
     return vaf / 2.0
 
 
+# Sex-chromosome copy number. Non-PAR chrX is hemizygous (one copy) in a male
+# and diploid in a female; everything else the simulator emits is diploid.
+SEXES = ("F", "M")
+SEX_CHRX_COPY_NUMBER = {"F": 2, "M": 1}
+
+
+def is_chrx_par(pos: int) -> bool:
+    """True when a chrX position falls in the PAR mask of ``allomix.contigs``.
+
+    The simulator shares the analysis side's mask (the exact union of the
+    GRCh37 and GRCh38 intervals) so a site it treats as hemizygous in a male is
+    exactly a site the estimator treats as non-PAR.
+    """
+    return any(lo <= pos <= hi for lo, hi in PAR_X)
+
+
+def chrx_copy_number(chrom: str, pos: int, sex: str | None) -> int:
+    """Copy number of a contributor of ``sex`` at a marker.
+
+    Returns 1 for a male at a non-PAR chrX site and 2 everywhere else
+    (autosomes, PAR, female, or ``sex`` None meaning "treat as diploid").
+    ``sex`` is ``"F"`` or ``"M"``.
+    """
+    if sex is None:
+        return 2
+    if sex not in SEX_CHRX_COPY_NUMBER:
+        raise ValueError(f"sex must be one of {SEXES}, got {sex!r}")
+    if chrom.removeprefix("chr") != "X" or is_chrx_par(pos):
+        return 2
+    return SEX_CHRX_COPY_NUMBER[sex]
+
+
+def alt_fraction(gt: tuple[int, int]) -> float:
+    """Fraction of a contributor's copies carrying ALT: ``alt_dose / 2``.
+
+    A hemizygous genotype is encoded diploid-homozygous (GATK style, ``0/0`` or
+    ``1/1``), so the same ``alt_dose / 2`` gives 0.0 or 1.0 for one copy. A het
+    at a hemizygous site is a genotyping error and has no allele fraction;
+    callers blending such a site pass the recorded true genotype instead.
+    """
+    return alt_dose(gt) / 2.0
+
+
 @dataclass
 class HostAberration:
     """A somatic copy-number aberration carried by the host (recipient) clone.
@@ -192,30 +246,48 @@ def cn_weighted_vaf(
     donor_gts: list[tuple[int, int]],
     donor_fractions: list[float],
     host_aberration: HostAberration | None = None,
+    host_cn: int = 2,
+    donor_cns: list[int] | None = None,
 ) -> float:
     """Expected ALT VAF in a chimeric mixture, weighted by copy number.
 
-    ``expected_vaf_multi`` divides by 2 assuming every genome is diploid. A host
-    copy-number aberration changes the clone's allele balance and (for
-    non-copy-neutral changes) how much host DNA the locus contributes, so the
-    local mixing fraction differs from the genome-wide fractions:
+    ``expected_vaf_multi`` divides by 2 assuming every genome is diploid. When
+    contributors differ in copy number at a locus, the local mixing fraction
+    differs from the genome-wide fractions:
 
         VAF = sum_i (frac_i * cn_i * alt_frac_i) / sum_i (frac_i * cn_i)
 
-    over contributors i (normal-diploid host, host clone, each donor). With
-    ``host_aberration`` None this reduces exactly to ``expected_vaf_multi``.
+    over contributors i (host germline, host clone, each donor). Two sources of
+    unequal copy number are modelled:
+
+      - ``host_aberration``: a somatic host clone whose allele balance and DNA
+        mass differ from the host germline (see ``HostAberration``).
+      - ``host_cn`` / ``donor_cns``: constitutional copy number, 1 for a male at
+        a non-PAR chrX site and 2 otherwise (``chrx_copy_number``). At a
+        hemizygous site the genotype must be the true one (hom-encoded); a
+        spurious het has no allele fraction.
+
+    With no aberration and copy number 2 everywhere this returns exactly
+    ``expected_vaf_multi``.
     """
-    f_host = 1.0 - sum(donor_fractions)
-    if host_aberration is None:
+    if donor_cns is None:
+        donor_cns = [2] * len(donor_gts)
+    if host_aberration is None and host_cn == 2 and all(cn == 2 for cn in donor_cns):
         return expected_vaf_multi(host_gt, donor_gts, donor_fractions)
 
-    c = host_aberration.clonal_fraction
-    # Host splits into a normal diploid sub-population and the aberrant clone.
-    num = f_host * (1.0 - c) * alt_dose(host_gt) + f_host * c * host_aberration.alt_copies
-    den = f_host * (1.0 - c) * 2.0 + f_host * c * host_aberration.cn
-    for dgt, fr in zip(donor_gts, donor_fractions):
-        num += fr * alt_dose(dgt)
-        den += fr * 2.0
+    f_host = 1.0 - sum(donor_fractions)
+    if host_aberration is None:
+        num = f_host * host_cn * alt_fraction(host_gt)
+        den = f_host * host_cn
+    else:
+        c = host_aberration.clonal_fraction
+        # Host splits into a normal germline sub-population and the aberrant clone.
+        num = f_host * (1.0 - c) * host_cn * alt_fraction(host_gt)
+        num += f_host * c * host_aberration.alt_copies
+        den = f_host * (1.0 - c) * host_cn + f_host * c * host_aberration.cn
+    for dgt, fr, cn in zip(donor_gts, donor_fractions, donor_cns):
+        num += fr * cn * alt_fraction(dgt)
+        den += fr * cn
     return num / den if den > 0 else 0.0
 
 
@@ -442,6 +514,25 @@ def gt_from_counts(ref_count: int, alt_count: int) -> str:
     if af > HOM_ALT_MIN_VAF:
         return "1/1"
     return "0/1"
+
+
+def _check_hemizygous_gt(
+    gt: tuple[int, int],
+    cn: int,
+    rec: VcfRecord,
+    label: str,
+) -> None:
+    """Reject a het call at a hemizygous (copy number 1) site read from a VCF.
+
+    The VCF carries only the erroneous ``0/1``, not the true allele the reads
+    come from, so the VCF-based blenders cannot simulate such a site honestly.
+    """
+    if cn == 1 and gt[0] != gt[1]:
+        raise ValueError(
+            f"{label} genotype {gt[0]}/{gt[1]} at {rec.chrom}:{rec.pos} is heterozygous at "
+            "a hemizygous site; the VCF path cannot recover the true allele. Use the "
+            "genotype-dict path (build_joint_vcf_from_genotype_dicts) for spurious male hets."
+        )
 
 
 @dataclass
@@ -677,6 +768,124 @@ def generate_paired_related_genotypes(
     return panels
 
 
+def _draw_chrx_genotype(
+    p_alt: float,
+    sex: str,
+    spurious_het_rate: float,
+    rng: random.Random,
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Draw (true_gt, written_gt) at a non-PAR chrX site for one contributor.
+
+    A female is ordinary diploid Hardy-Weinberg. A male carries one X: one
+    allele is drawn and encoded diploid-homozygous as GATK calls it, then with
+    probability ``spurious_het_rate`` the written call is corrupted to ``0/1``
+    while the true genotype stays hemizygous. The spurious-het draw is always
+    consumed so the true genotypes at a seed do not depend on the rate.
+    """
+    if sex == "F":
+        gt = _draw_genotype(p_alt, rng)
+        return gt, gt
+    allele = 1 if rng.random() < p_alt else 0
+    true_gt = (allele, allele)
+    written_gt = (0, 1) if rng.random() < spurious_het_rate else true_gt
+    return true_gt, written_gt
+
+
+def generate_sex_chrom_genotypes(
+    n_chrx: int,
+    host_sex: str,
+    donor_sex: str,
+    rng: random.Random,
+    n_par: int = 0,
+    male_chrx_spurious_het_rate: float = 0.04,
+    maf_range: tuple[float, float] = (0.2, 0.5),
+    nonpar_start: int = 10_000_000,
+    nonpar_spacing: int = 1_000_000,
+) -> list[dict]:
+    """Generate chrX host-donor genotype pairs with sex-aware ploidy.
+
+    Non-PAR chrX markers are hemizygous in a male (one allele, written
+    diploid-homozygous as GATK does, with ``male_chrx_spurious_het_rate`` of
+    them corrupted to a ``0/1`` call) and diploid in a female. PAR markers are
+    diploid in both sexes and never corrupted. Host and donor are drawn
+    independently (unrelated); X-linked IBD sharing is not modelled.
+
+    Non-PAR positions start at ``nonpar_start`` and step by ``nonpar_spacing``
+    (defaults stay well inside the non-PAR body of chrX in both builds). PAR
+    markers alternate between PAR1 (from 1,000,000) and PAR2 (from
+    155,800,000), both inside the ``allomix.contigs`` PAR mask.
+
+    Returns a list of dicts keyed like :func:`generate_related_genotypes`
+    (chrom, pos, ref, alt, host_gt, donor_gt, p_alt, informative) plus
+    ``host_true_gt`` / ``donor_true_gt`` (what the reads come from),
+    ``host_cn`` / ``donor_cn`` (1 or 2), ``host_sex`` / ``donor_sex`` and
+    ``par`` (bool). ``host_gt`` / ``donor_gt`` are the written calls, so they
+    carry any spurious het. Non-PAR markers come first, then PAR.
+    """
+    for label, sex in (("host_sex", host_sex), ("donor_sex", donor_sex)):
+        if sex not in SEXES:
+            raise ValueError(f"{label} must be one of {SEXES}, got {sex!r}")
+    if not 0.0 <= male_chrx_spurious_het_rate <= 1.0:
+        raise ValueError(
+            f"male_chrx_spurious_het_rate must be 0.0-1.0, got {male_chrx_spurious_het_rate}"
+        )
+
+    markers: list[dict] = []
+    for i in range(n_chrx):
+        p_alt = rng.uniform(*maf_range)
+        host_true, host_gt = _draw_chrx_genotype(p_alt, host_sex, male_chrx_spurious_het_rate, rng)
+        donor_true, donor_gt = _draw_chrx_genotype(
+            p_alt, donor_sex, male_chrx_spurious_het_rate, rng
+        )
+        markers.append(
+            {
+                "chrom": "chrX",
+                "pos": nonpar_start + i * nonpar_spacing,
+                "ref": "A",
+                "alt": "G",
+                "host_gt": host_gt,
+                "donor_gt": donor_gt,
+                "host_true_gt": host_true,
+                "donor_true_gt": donor_true,
+                "host_cn": SEX_CHRX_COPY_NUMBER[host_sex],
+                "donor_cn": SEX_CHRX_COPY_NUMBER[donor_sex],
+                "host_sex": host_sex,
+                "donor_sex": donor_sex,
+                "par": False,
+                "p_alt": p_alt,
+                "informative": alt_fraction(host_true) != alt_fraction(donor_true),
+            }
+        )
+
+    par_starts = (1_000_000, 155_800_000)
+    for i in range(n_par):
+        p_alt = rng.uniform(*maf_range)
+        host_gt = _draw_genotype(p_alt, rng)
+        donor_gt = _draw_genotype(p_alt, rng)
+        pos = par_starts[i % 2] + (i // 2) * 1000
+        markers.append(
+            {
+                "chrom": "chrX",
+                "pos": pos,
+                "ref": "A",
+                "alt": "G",
+                "host_gt": host_gt,
+                "donor_gt": donor_gt,
+                "host_true_gt": host_gt,
+                "donor_true_gt": donor_gt,
+                "host_cn": 2,
+                "donor_cn": 2,
+                "host_sex": host_sex,
+                "donor_sex": donor_sex,
+                "par": True,
+                "p_alt": p_alt,
+                "informative": alt_dose(host_gt) != alt_dose(donor_gt),
+            }
+        )
+
+    return markers
+
+
 def _mendelian_child(
     parent1: tuple[int, int],
     parent2: tuple[int, int],
@@ -815,6 +1024,8 @@ def blend_vcfs(
     rho: float = float("inf"),
     rho_marker_type: str = "all",
     host_aberrations: list[HostAberration | None] | None = None,
+    host_sex: str | None = None,
+    donor_sex: str | None = None,
     return_markers: bool = False,
 ) -> BlendResult:
     """Blend two genotype VCFs to create a synthetic chimeric VCF.
@@ -840,6 +1051,12 @@ def blend_vcfs(
             (see ``HostAberration``). Affected markers use the copy-number-weighted
             mixture instead of the diploid model. Aligns with the shared markers in
             iteration order like ``fixed_biases``; ``None`` entries stay diploid.
+        host_sex: ``"F"`` or ``"M"``; None treats every site as diploid. A male
+            is hemizygous at non-PAR chrX (``chrx_copy_number``), so those sites
+            blend copy-number weighted. A het call there is a genotyping error
+            the VCF cannot resolve, so it raises; use the genotype-dict path
+            (``build_joint_vcf_from_genotype_dicts``) for spurious male hets.
+        donor_sex: As ``host_sex``, for the donor.
     """
     if not 0.0 <= donor_fraction <= 1.0:
         raise ValueError(f"donor_fraction must be 0.0-1.0, got {donor_fraction}")
@@ -925,10 +1142,15 @@ def blend_vcfs(
         if is_informative(host_gt, donor_gt):
             num_informative += 1
 
-        # A host copy-number aberration replaces the diploid model at this marker.
+        # Constitutional copy number (male non-PAR chrX is hemizygous) and any
+        # host copy-number aberration replace the diploid model at this marker.
+        host_cn = chrx_copy_number(host_rec.chrom, host_rec.pos, host_sex)
+        donor_cn = chrx_copy_number(host_rec.chrom, host_rec.pos, donor_sex)
+        _check_hemizygous_gt(host_gt, host_cn, host_rec, "host")
+        _check_hemizygous_gt(donor_gt, donor_cn, host_rec, "donor")
         aberr = host_aberrations[bias_idx] if host_aberrations is not None else None
-        if aberr is not None:
-            vaf = cn_weighted_vaf(host_gt, [donor_gt], [donor_fraction], aberr)
+        if aberr is not None or host_cn != 2 or donor_cn != 2:
+            vaf = cn_weighted_vaf(host_gt, [donor_gt], [donor_fraction], aberr, host_cn, [donor_cn])
         else:
             vaf = expected_vaf(host_gt, donor_gt, donor_fraction)
         this_bias = marker_biases[bias_idx]
@@ -1035,6 +1257,27 @@ def write_vcf(result: BlendResult, path: str | Path) -> None:
             fh.write(line + "\n")
 
 
+def _true_genotypes_and_cns(
+    marker: dict,
+    donor_keys: list[str],
+) -> tuple[tuple[int, int], list[tuple[int, int]], int, list[int]]:
+    """Resolve what the reads come from at a genotype-dict marker.
+
+    Returns (host_gt, donor_gts, host_cn, donor_cns) using the ``*_true_gt`` and
+    ``*_cn`` keys when present (``generate_sex_chrom_genotypes``), otherwise the
+    written genotypes and copy number 2.
+    """
+    host_gt = marker.get("host_true_gt", marker["host_gt"])
+    host_cn = marker.get("host_cn", 2)
+    donor_gts = []
+    donor_cns = []
+    for key in donor_keys:
+        stem = key.removesuffix("_gt")
+        donor_gts.append(marker.get(f"{stem}_true_gt", marker[key]))
+        donor_cns.append(marker.get(f"{stem}_cn", 2))
+    return host_gt, donor_gts, host_cn, donor_cns
+
+
 def blend_from_genotype_dicts(
     markers: list[dict],
     donor_fractions: list[float],
@@ -1048,8 +1291,17 @@ def blend_from_genotype_dicts(
 ) -> BlendResult:
     """Create a synthetic chimeric VCF directly from genotype dicts.
 
-    Designed for ``generate_sibling_trio_genotypes()`` output. Supports 1 or 2
-    donors via the length of ``donor_fractions`` ([f1] or [f1, f2]).
+    Designed for ``generate_sibling_trio_genotypes()`` output (``donor1_gt``,
+    ``donor2_gt``). Supports 1 or 2 donors via the length of ``donor_fractions``
+    ([f1] or [f1, f2]); single-donor dicts keyed ``donor_gt`` (from
+    ``generate_related_genotypes`` / ``generate_sex_chrom_genotypes``) are
+    accepted too.
+
+    Blending uses the true genotypes and copy numbers when the dicts carry them
+    (``host_true_gt`` / ``donorN_true_gt``, ``host_cn`` / ``donorN_cn``, as
+    written by ``generate_sex_chrom_genotypes``), falling back to the written
+    calls and copy number 2. Autosomal dicts without those keys blend exactly
+    as before.
     """
     if sum(donor_fractions) > 1.0 + 1e-9:
         raise ValueError(f"donor_fractions sum to {sum(donor_fractions):.4f}, must be <= 1.0")
@@ -1079,18 +1331,20 @@ def blend_from_genotype_dicts(
     n_informative = 0
 
     n_donors = len(donor_fractions)
-    donor_keys = [f"donor{i + 1}_gt" for i in range(n_donors)]
+    if n_donors == 1 and markers and "donor1_gt" not in markers[0] and "donor_gt" in markers[0]:
+        donor_keys = ["donor_gt"]
+    else:
+        donor_keys = [f"donor{i + 1}_gt" for i in range(n_donors)]
 
     for i, m in enumerate(markers):
-        host_gt = m["host_gt"]
-        donor_gts = [m[k] for k in donor_keys]
+        host_gt, donor_gts, host_cn, donor_cns = _true_genotypes_and_cns(m, donor_keys)
 
-        vaf = expected_vaf_multi(host_gt, donor_gts, donor_fractions)
+        vaf = cn_weighted_vaf(host_gt, donor_gts, donor_fractions, None, host_cn, donor_cns)
         ref_count, alt_count = sample_allele_counts(
             vaf, depths[i], rng, error_rate, rho, rho_marker_type
         )
 
-        if m.get("informative_any", False):
+        if m.get("informative_any", m.get("informative", False)):
             n_informative += 1
 
         total = ref_count + alt_count
@@ -1136,9 +1390,34 @@ def _simulate_genotype_sample(
     vaf = alt_dose(gt) / 2.0
     ref_count, alt_count = sample_allele_counts(vaf, depth, rng, error_rate=0.01)
     total = ref_count + alt_count
-    gt_str = f"{gt[0]}/{gt[1]}"
+    # Unphased GTs are written smaller allele first, as GATK does (never "1/0").
+    gt_str = f"{min(gt)}/{max(gt)}"
     af_val = f"{alt_count / total:.4f}" if total > 0 else "0"
     return f"{gt_str}:{ref_count},{alt_count}:{total}:99:{af_val}"
+
+
+def _simulate_admix_sample(
+    vaf: float,
+    bias: float,
+    depth: int,
+    rng: random.Random,
+    error_rate: float,
+) -> str:
+    """Simulate a FORMAT sample field for an admixture sample at expected ``vaf``."""
+    vaf_biased = float(inject_bias(vaf, bias)) if bias != 0.0 else vaf
+    ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng, error_rate)
+    total = ref_count + alt_count
+    gt = gt_from_counts(ref_count, alt_count)
+    af_val = f"{alt_count / total:.4f}" if total > 0 else "0"
+    return f"{gt}:{ref_count},{alt_count}:{total}:99:{af_val}"
+
+
+def _check_admix_args(admix_fractions: list[float], admix_sample_names: list[str]) -> None:
+    if len(admix_fractions) != len(admix_sample_names):
+        raise ValueError(
+            f"admix_fractions length ({len(admix_fractions)}) != "
+            f"admix_sample_names length ({len(admix_sample_names)})"
+        )
 
 
 def build_joint_vcf(
@@ -1153,6 +1432,8 @@ def build_joint_vcf(
     error_rate: float = DEFAULT_ERROR_RATE,
     depth_cv: float = 0.0,
     marker_bias_sd: float = 0.0,
+    host_sex: str | None = None,
+    donor_sexes: list[str] | None = None,
 ) -> JointVcfResult:
     """Build a multi-sample joint VCF of host, donor(s), and admixture samples.
 
@@ -1164,12 +1445,18 @@ def build_joint_vcf(
             (one float each); multi-donor per-sample lists are not yet supported.
         donor_sample_names: Defaults to DONOR, or DONOR1/DONOR2/... for multiple.
         target_depth: Fixed depth for all markers/samples; None uses host VCF depth.
+        host_sex: ``"F"`` or ``"M"``; None treats every site as diploid. A male
+            is hemizygous at non-PAR chrX, so those sites blend copy-number
+            weighted; a het call there raises (see ``blend_vcfs``).
+        donor_sexes: One entry per donor, as ``host_sex``.
     """
-    if len(admix_fractions) != len(admix_sample_names):
+    _check_admix_args(admix_fractions, admix_sample_names)
+    if donor_sexes is not None and len(donor_sexes) != len(donor_paths):
         raise ValueError(
-            f"admix_fractions length ({len(admix_fractions)}) != "
-            f"admix_sample_names length ({len(admix_sample_names)})"
+            f"donor_sexes length ({len(donor_sexes)}) != donor_paths length ({len(donor_paths)})"
         )
+    if donor_sexes is None:
+        donor_sexes = [None] * len(donor_paths)
 
     rng = random.Random(seed)
 
@@ -1246,25 +1533,27 @@ def build_joint_vcf(
         if any(is_informative(host_gt, dg) for dg in donor_gts):
             num_informative += 1
 
+        host_cn = chrx_copy_number(host_rec.chrom, host_rec.pos, host_sex)
+        donor_cns = [chrx_copy_number(host_rec.chrom, host_rec.pos, s) for s in donor_sexes]
+        _check_hemizygous_gt(host_gt, host_cn, host_rec, "host")
+        for dg, cn in zip(donor_gts, donor_cns):
+            _check_hemizygous_gt(dg, cn, host_rec, "donor")
+
         sample_fields = []
         sample_fields.append(_simulate_genotype_sample(host_gt, depth, rng))
         for dg in donor_gts:
             sample_fields.append(_simulate_genotype_sample(dg, depth, rng))
 
         for frac in admix_fractions:
-            if len(donor_gts) == 1:
+            # Multi-donor with a single fraction: split it equally.
+            per_donor = [frac / len(donor_gts)] * len(donor_gts)
+            if host_cn != 2 or any(cn != 2 for cn in donor_cns):
+                vaf = cn_weighted_vaf(host_gt, donor_gts, per_donor, None, host_cn, donor_cns)
+            elif len(donor_gts) == 1:
                 vaf = expected_vaf(host_gt, donor_gts[0], frac)
             else:
-                # Multi-donor with a single fraction: split it equally.
-                per_donor = [frac / len(donor_gts)] * len(donor_gts)
                 vaf = expected_vaf_multi(host_gt, donor_gts, per_donor)
-
-            vaf_biased = float(inject_bias(vaf, bias)) if bias != 0.0 else vaf
-            ref_count, alt_count = sample_allele_counts(vaf_biased, depth, rng, error_rate)
-            total = ref_count + alt_count
-            gt = gt_from_counts(ref_count, alt_count)
-            af_val = f"{alt_count / total:.4f}" if total > 0 else "0"
-            sample_fields.append(f"{gt}:{ref_count},{alt_count}:{total}:99:{af_val}")
+            sample_fields.append(_simulate_admix_sample(vaf, bias, depth, rng, error_rate))
 
         info_parts = [f"DP={depth}"]
 
@@ -1290,6 +1579,101 @@ def build_joint_vcf(
         num_markers=len(out_records),
         num_informative=num_informative,
         sample_names=all_sample_names,
+    )
+
+
+def build_joint_vcf_from_genotype_dicts(
+    markers: list[dict],
+    admix_fractions: list[float],
+    admix_sample_names: list[str],
+    host_sample_name: str = "HOST",
+    donor_sample_name: str = "DONOR",
+    target_depth: int = 1000,
+    seed: int | None = None,
+    error_rate: float = DEFAULT_ERROR_RATE,
+    depth_cv: float = 0.0,
+    marker_bias_sd: float = 0.0,
+) -> JointVcfResult:
+    """Build a single-donor joint VCF (host, donor, admixtures) from genotype dicts.
+
+    Dict-path counterpart of ``build_joint_vcf`` for markers from
+    ``generate_related_genotypes`` or ``generate_sex_chrom_genotypes`` (keys
+    ``host_gt`` / ``donor_gt``). The host and donor columns carry the written
+    calls with reads drawn from them, so a spurious male chrX het appears as a
+    plausible ``0/1``. The admixture columns are blended from
+    ``host_true_gt`` / ``donor_true_gt`` with copy numbers ``host_cn`` /
+    ``donor_cn`` (defaults: the written calls and 2), so their reads come from
+    the true hemizygous allele.
+
+    Args:
+        admix_fractions: Donor fraction per admixture sample.
+        target_depth: Mean depth for every sample column; ``depth_cv`` > 0 draws
+            per-marker depths around it.
+    """
+    _check_admix_args(admix_fractions, admix_sample_names)
+
+    rng = random.Random(seed)
+    n = len(markers)
+    marker_biases = generate_marker_biases(n, rng, marker_bias_sd)
+    if depth_cv > 0:
+        depths = sample_marker_depths(n, target_depth, depth_cv, rng)
+    else:
+        depths = [target_depth] * n
+
+    sample_names = [host_sample_name, donor_sample_name, *admix_sample_names]
+    chroms = sorted(set(m["chrom"] for m in markers), key=_chrom_sort_key)
+    header = [
+        "##fileformat=VCFv4.2",
+        *[f"##contig=<ID={c}>" for c in chroms],
+        '##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">',
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+        '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele depths">',
+        '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">',
+        '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">',
+        '##FORMAT=<ID=AF,Number=A,Type=Float,Description="Allele frequency">',
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" + "\t".join(sample_names),
+    ]
+
+    out_records = []
+    num_informative = 0
+    for i, m in enumerate(markers):
+        true_host, true_donors, host_cn, donor_cns = _true_genotypes_and_cns(m, ["donor_gt"])
+        if is_informative(true_host, true_donors[0]):
+            num_informative += 1
+
+        depth = depths[i]
+        sample_fields = [
+            _simulate_genotype_sample(m["host_gt"], depth, rng),
+            _simulate_genotype_sample(m["donor_gt"], depth, rng),
+        ]
+        for frac in admix_fractions:
+            vaf = cn_weighted_vaf(true_host, true_donors, [frac], None, host_cn, donor_cns)
+            sample_fields.append(
+                _simulate_admix_sample(vaf, marker_biases[i], depth, rng, error_rate)
+            )
+
+        line = "\t".join(
+            [
+                m["chrom"],
+                str(m["pos"]),
+                ".",
+                m["ref"],
+                m["alt"],
+                ".",
+                "PASS",
+                f"DP={depth}",
+                "GT:AD:DP:GQ:AF",
+                *sample_fields,
+            ]
+        )
+        out_records.append(line)
+
+    return JointVcfResult(
+        header=header,
+        records=out_records,
+        num_markers=len(out_records),
+        num_informative=num_informative,
+        sample_names=sample_names,
     )
 
 

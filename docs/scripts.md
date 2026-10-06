@@ -24,6 +24,7 @@ scripts/<name>.py`. They depend on `allomix` being installed (`pip install -e
 | `generate_test_data.py` | Generate synthetic joint-called VCFs (host + donor + admixture) for tests. |
 | `generate_multidonor_test_data.py` | Generate a multi-donor synthetic dataset (host + 2 related donors). |
 | `generate_timeline_data.py` | Generate a synthetic post-HSCT timeline (serial chimeric VCFs). |
+| `generate_sexchrom_test_data.py` | Generate the sex-chromosome fixtures in `tests/test_data/sexchrom/`: FF, MM and MF host/donor pairs as joint VCFs with autosomal, non-PAR chrX (sex-aware ploidy, GATK-style diploid encoding, spurious male hets), PAR and alt-contig markers, plus a truth table. |
 | `make_synthetic_genotypes.py` | Create synthetic host/donor genotype VCFs (100 biallelic SNPs). |
 | `measure_panel_bias.py` | Measure per-marker bias/characteristics from joint-called genotyping VCFs. See [panel_guide.md](panel_guide.md) for using it to qualify a panel. |
 | `recover_panel_bed.py` | Recover an amplicon/MIP capture panel as a BED from BAM coverage, for panels that ship no usable coordinates. Keeps positions covered at `--min-depth` in at least `--min-samples` BAMs and merges them into one interval per amplicon. See [panel_guide.md](panel_guide.md). |

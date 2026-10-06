@@ -417,12 +417,12 @@ sequenced.
 
 ## Sequencing and size
 
-| phase | lands as | estimator affected | needs revalidation |
-|---|---|---|---|
-| 0 | contigs module + tests | no (unless an `OTHER` contig marker exists in current data, see Phase 0) | byte-identity check |
-| 1 | sex module, flags, reporting, flag retirement, docs, 0.5.0 | no | byte-identity check on fixtures |
-| 2 | routing, bias guard, simulator, fixtures, validation rule | yes, for matched pairs | in-silico sweeps + SRP434573 same-sex arms |
-| 3 | sex-mismatch module, concordance, reporting, pipeline midpoint pileup for admix | no (independent estimate) | SRP434573 mismatched arms |
+| phase | lands as | estimator affected | needs revalidation | status |
+|---|---|---|---|---|
+| 0 | contigs module + tests | no (unless an `OTHER` contig marker exists in current data, see Phase 0) | byte-identity check | done, `0981963` |
+| 1 | sex module, flags, reporting, flag retirement, docs, 0.5.0 | no | byte-identity check on fixtures | done, `d6057f8` |
+| 2 | routing, bias guard, simulator, fixtures, validation rule | yes, for matched pairs | in-silico sweeps + SRP434573 same-sex arms | done, `9467b12` + `e6c3907` |
+| 3 | sex-mismatch module, concordance, reporting, pipeline midpoint pileup for admix | no (independent estimate) | SRP434573 mismatched arms | done, `04881c8` (chrY readout untested) |
 
 Before Phase 1 ships: run `scripts/sex_calibration_summary.py` on the internal
 cohort (the rhAmpSeq SID joint VCFs with the lab's imputed sex as declared sex,
@@ -430,34 +430,83 @@ and the haem-run VCFs and BAMs) and set the thresholds from its output.
 
 ---
 
-## Status (2026-10-06)
+## Status (end of 2026-10-06)
 
-Phases 0, 1 and 2 are on `main` (contigs module; sex inference, declared-sex
-flags, flag retirement, 0.5.0; sex-aware chrX routing, bias guard, simulator
-fixtures, SRP434573 chrX arm and `scripts/validate_sexchrom_routing.py`).
-Phase 3 is on `main` as well (sex-mismatch cross-check module, chrX
-copy-number readout validated on the five mismatched public titrations: 26 of
-27 concordant, chrX bias +0.3 to +1.3 pp host with CIs 5 to 8 pp wide against
-the MLE's 0.7 to 0.8 pp; chrY depth readout implemented but untested for want
-of data; admix midpoint pileup added to the pipeline; discordance is a soft
-warning, see Phase 3). Remaining: threshold calibration from
-`scripts/sex_calibration_summary.py` on the internal cohort, the chrY depth
-secondary for sex inference once depth input exists, and the paper rules
-(`srp434573_chrx`, `srp434573_sexmismatch`) in a full build.
-Results of the Phase 2 validation: on the five same-sex
-public titrations chrX adds 9 to 17 informative markers (1.5 to 3%) and moves
-estimates by at most 0.1 pp with CI width ratio 0.985; in silico (5 seeds) the
-FF gate adds no bias and tightens the CI in proportion to the marker gain, an
-MF pair with chrX forced in is biased by +1.6 pp at 10% host, and the MM het
-drop removes a -0.9 to -2.3 pp bias.
+All four phases are on `main`, version 0.5.0. Nothing is blocked on code;
+the remaining items need internal data or a decision.
 
-Threshold note from Phase 2: a male with 2 spurious hets in 20 chrX sites
-and an autosomal het rate of 0.38 comes out `ambiguous` (log10 LR -1.1
-against the 2.0 threshold), so with only ~20 chrX sites the LR test needs
-either a cleaner het rate (the GQ filter gives 0-1 hets per male on the public
-panel) or a declaration to resolve it. The constants `MALE_X_SPURIOUS_HET`,
-`SEX_LR_THRESHOLD` and `MIN_X_SITES` are to be set from the calibration
-script's output; until then declared sex is the safety net, as designed.
+### Landed
+
+| commit | phase | content |
+|---|---|---|
+| `0981963` | 0 | `allomix.contigs`: contig classes, build-free PAR mask (exact union of GRCh37 and GRCh38), PAR and non-primary contigs always excluded and counted |
+| `9467b12` | 2 (simulator) | sex-aware chrX genotypes, copy-number-weighted blending, `tests/test_data/sexchrom/` FF / MM / MF fixtures |
+| `d6057f8` | 1 | `allomix.qc.sex`: chrX het-rate inference, `--donor-sex`, parsed `--recipient-sex`, FAIL on declared-vs-inferred conflict, `--use-sex-chroms` retired (hidden, errors), report columns and HTML header, 0.5.0 |
+| `46ae855`, `fa9e963` | 0 | cross-check test against `bioutils.par` in its interbase convention; upstream PR noted |
+| `e6c3907` | 2 | `ContigPolicy.SEX_AWARE` routing (FF through the diploid path, MM hom/hom only with het drop), bias-fitting guard, `--contig-policy`, `paper/scripts/run_srp434573_chrx.py` + rule `srp434573_chrx`, `scripts/validate_sexchrom_routing.py` |
+| `04881c8` | 3 | `allomix.qc.sex_mismatch`: chrX copy-number readout and (experimental, untested) chrY depth readout, `--admix-depth-vcf` / `--ref-depth-vcf`, pipeline rule `pileup_admix_bg`, HTML panel, `paper/scripts/run_srp434573_sexmismatch.py` + rule, `scripts/validate_sex_mismatch.py` |
+
+Also written: `scripts/sex_calibration_summary.py` (de-identified calibration
+summary for the internal cohort) and `scripts/build_union_bed.py` (rebuilds
+the union intervals BED). The PAR data source is proposed upstream as
+biocommons/bioutils PR #88 (fork branch `davmlaw/bioutils@add-par-regions`,
+interbase coordinates, flat JSON like `_data/assemblies`); allomix keeps the
+vendored constants until a release carries the module.
+
+### Validation results
+
+Phase 2, same-sex pairs. On the five same-sex SRP434573 titrations chrX adds 9
+to 17 informative markers (1.5 to 3%) and moves estimates by at most 0.1 pp,
+CI width ratio 0.985, QC status unchanged. In silico (5 seeds, 60 autosomal +
+20 chrX): the FF gate adds no bias and tightens the CI in proportion to the
+marker gain; an MF pair with chrX forced in is biased by +1.6 pp at 10% host;
+the MM het drop removes a -0.9 to -2.3 pp bias. Autosomal output is
+byte-identical to before.
+
+Phase 3, mismatched pairs. On the five mismatched SRP434573 titrations the
+chrX readout is concordant with the MLE in 26 of 27; chrX bias +0.3 to +1.3 pp
+host with CIs 5 to 8 pp wide (MLE 0.7 to 0.8 pp) from 11 to 20 markers. The
+one discordant case (F2 into M2 at 5% host) has a chrX CI that misses the
+truth. In silico the readout's bias is within 0.25 pp at 1 to 10% host in both
+directions.
+
+### Departures from the plan as first written
+
+- **No genome build.** The PAR mask is the exact union of both builds'
+  intervals, so classification is a pure function of `(chrom, pos)`.
+- **Discordance is a soft warning, not REVIEW.** Because of the one real
+  titration whose chrX CI misses the truth, the cross-check does not change QC
+  status until its real-sample dispersion is understood, as for the
+  host-presence disagreement warning. Revisit with `SEXCHROM_CONCORDANCE_PP`.
+- **`Sex` and `PairStatus` live in `allomix.sex_types`** (a leaf module) to
+  avoid a `genotype` / `qc.sex` import cycle; `qc.sex` re-exports them.
+- **The bias guard is opt-in for library callers** (`sample_sexes=None` keeps
+  old behaviour); the CLI always passes inferred sexes.
+
+### Remaining
+
+Needs internal data (user, other machine):
+
+1. Run `scripts/sex_calibration_summary.py` on the rhAmpSeq SID joint VCFs
+   (with the lab's imputed sex as declared sex) and on haem-run VCFs and BAMs.
+   Set `MALE_X_SPURIOUS_HET`, `SEX_LR_THRESHOLD` and `MIN_X_SITES` from the
+   output. Known sensitivity: a male with 2 spurious hets in 20 chrX sites and
+   an autosomal het rate of 0.38 is `ambiguous` under the current constants
+   (log10 LR -1.1 vs threshold 2.0); on the public panel the GQ filter leaves
+   0 to 1 hets per male, and declared sex resolves ambiguity by design.
+2. The same run's `--bam-list --sex-bed` path answers open question 2 (chrY
+   depth on haem runs).
+
+Code, once the above is known:
+
+3. Wire chrY relative depth into sex inference as the secondary signal
+   (`SexInference.chry_rel_depth` is reserved and always None today).
+4. Exercise the chrY depth readout of Phase 3 on real data, or on the GIAB
+   trio arm of `plans/wetlab_validation_design.md`.
+5. Run the paper rules `srp434573_chrx` and `srp434573_sexmismatch` in a full
+   build and decide what goes in the text (decision 10).
+6. Full test suite run before the next release (only phase subsets were run).
+7. Remove the hidden `--use-sex-chroms` option in a later release.
 
 ## Open questions
 
@@ -471,7 +520,7 @@ script's output; until then declared sex is the safety net, as designed.
    SID SNPs were added to the haem capture as probes; whether SRY / ZFY / AMELY
    / chrX_AMELX / chrX_ZFX were too is unknown. The calibration script's
    `--bam-list --sex-bed` path answers it directly. If there is no depth,
-   readout 1 of Phase 3 only works on rhAmpSeq SID runs.
+   the chrY readout of Phase 3 only works on rhAmpSeq SID runs.
 3. **Paper Table S1 provenance.** `paper/supplementary.md` says the
    characterisation VCFs are from the SID SNPs inside the haem capture;
    `paper/empirical_results/README.md` says they are from the
@@ -485,3 +534,8 @@ script's output; until then declared sex is the safety net, as designed.
    the MLE, which the 2 bp interval width and absence of a GATK record will
    usually do on their own, but the calibration output will show if one leaks
    through as a "site".
+5. **Concordance tolerance.** `SEXCHROM_CONCORDANCE_PP` (2 pp) is provisional
+   and mostly moot on real data, where the chrX CIs are 5 to 8 pp wide and
+   concordance is driven by CI overlap. Decide after more mismatched pairs
+   whether the chrX fit needs a dispersion floor and whether discordance
+   should promote to REVIEW.

@@ -146,7 +146,9 @@ def _timeline_context(data: dict, log_scale: bool) -> dict:
 
     ctx = {
         "title": title,
-        "header_rows": context.header_rows(meta, latest_name, version=version, timestamp=timestamp),
+        "header_rows": context.header_rows(
+            meta, latest_name, version=version, timestamp=timestamp, sex=latest.get("sex")
+        ),
         "headline": _headline(timepoints),
         "chart_uri": chart_uri,
         "chart_note": note,
@@ -154,7 +156,7 @@ def _timeline_context(data: dict, log_scale: bool) -> dict:
         "host_presence": context.host_presence_context(latest),
         "qc": context.qc_context(latest),
     }
-    ctx.update(context.base_context(data))
+    ctx.update(context.base_context(data, latest))
     return ctx
 
 

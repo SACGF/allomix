@@ -39,3 +39,25 @@ CI_LEVEL = 0.95
 # (simulate). Symmetric about 0.5, so the pair is defined from one number.
 HOM_REF_MAX_VAF = 0.05
 HOM_ALT_MIN_VAF = 1.0 - HOM_REF_MAX_VAF  # 0.95
+
+# Sex inference from non-PAR chrX heterozygosity (allomix.qc.sex), shared with
+# the calibration script. Starting values were set from the 7 public SRP434573
+# individuals (M1-M4, F1-F3): females showed a chrX het rate of 0.44-0.71 and
+# males 0.00-0.04 after a GQ >= 20 filter. They are to be finalised from
+# ``scripts/sex_calibration_summary.py`` on the internal cohort.
+#
+# Female model: het probability = FEMALE_X_HET_SCALE * the sample's own
+# autosomal het rate (the panel's design het rate), clamped to [0.05, 0.95].
+FEMALE_X_HET_SCALE = 1.0
+# Male model: residual spurious-het probability on a hemizygous chromosome
+# (GATK diploid calls at a male chrX site that pass GQ).
+MALE_X_SPURIOUS_HET = 0.02
+# |log10 likelihood ratio| (female vs male) needed for a confident call.
+SEX_LR_THRESHOLD = 2.0
+# Fewer usable non-PAR chrX sites than this -> UNAVAILABLE (no inference).
+MIN_X_SITES = 5
+# Minimum reference-sample depth at a chrX / autosomal site for it to count in
+# sex inference. Deliberately not the admixture ``--min-dp`` (default 100): GATK
+# downsamples per alignment start, so amplicon reference VCFs cap DP near 50
+# (SRP434573 does), and the admixture depth floor would discard every site.
+SEX_MIN_REF_DP = 20

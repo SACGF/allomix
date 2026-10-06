@@ -21,6 +21,7 @@ from allomix.qc.qc import QCReport
 from allomix.qc.relatedness import AdmixConsistencyResult, RelatednessResult
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
+from allomix.qc.sex import PairStatus, Sex, SexInference, SexResult
 from allomix.report.report import DonorMeta, ReportMeta, to_html
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 
@@ -126,7 +127,7 @@ def _params() -> dict:
         "contamination_correction": False,
         "host_presence": True,
         "artifact_filter": True,
-        "use_sex_chroms": False,
+        "contig_policy": "autosomes",
     }
 
 
@@ -308,6 +309,66 @@ class TestMetaAndFooter:
         html = _render(_result(), _qc(), meta=meta, params=_params())
         assert "<script>alert(1)</script>" not in html
         assert "&lt;script&gt;" in html
+
+
+def _sex_inference(sex: Sex, declared: Sex | None = None, source: str = "inferred"):
+    return SexInference(
+        sex=sex,
+        n_x_sites=25,
+        n_x_het=12 if sex is Sex.FEMALE else 0,
+        x_het_rate=0.48 if sex is Sex.FEMALE else 0.0,
+        log10_lr=10.0 if sex is Sex.FEMALE else -4.0,
+        chry_rel_depth=None,
+        n_y_sites=0,
+        declared=declared,
+        source=source,
+    )
+
+
+class TestSexHeaderAndFooter:
+    def test_header_declared_and_inferred(self):
+        result = _result()
+        result.sex = SexResult(
+            host=_sex_inference(Sex.FEMALE, Sex.FEMALE, "inferred+declared"),
+            donors=[_sex_inference(Sex.MALE)],
+            pair=PairStatus.MISMATCHED,
+        )
+        meta = ReportMeta(sex="F", donors=[DonorMeta(donor_id="D1", relationship="unrelated")])
+        html = _render(result, _qc(), meta=meta, params=_params())
+        assert "F declared / F inferred" in html
+        assert "Donor 1 sex" in html
+        assert "M inferred" in html
+        assert "D1 (unrelated)" in html
+        # Footer: pair status replaces the old included/excluded line.
+        assert "sex-mismatched; chrX not used" in html
+        assert "excluded (autosomes only)" not in html
+
+    def test_header_inferred_only_and_declared_donor(self):
+        result = _result()
+        result.sex = SexResult(
+            host=_sex_inference(Sex.FEMALE),
+            donors=[_sex_inference(Sex.UNAVAILABLE, Sex.FEMALE, "declared")],
+            pair=PairStatus.MATCHED_FEMALE,
+        )
+        meta = ReportMeta(donors=[DonorMeta(donor_id="D1", sex="female")])
+        html = _render(result, _qc(), meta=meta, params=_params())
+        assert 'Sex:</span><span class="meta-value">F inferred' in html
+        assert "female declared / unavailable inferred" in html
+        assert "sex-matched (female); chrX not used" in html
+
+    def test_contig_exclusions_shown_when_nonzero(self):
+        qc = _qc()
+        qc.n_par_excluded = 2
+        qc.n_other_contig_excluded = 1
+        html = _render(_result(), qc, params=_params())
+        assert "Markers excluded by contig" in html
+        assert "2 pseudoautosomal, 1 on non-primary contigs" in html
+        html_clean = _render(_result(), _qc(), params=_params())
+        assert "Markers excluded by contig" not in html_clean
+
+    def test_no_sex_row_without_declaration_or_inference(self):
+        html = _render(_result(), _qc(), meta=ReportMeta(recipient_id="X"), params=_params())
+        assert "Sex:</span>" not in html
 
 
 # ---------------------------------------------------------------------------

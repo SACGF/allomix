@@ -25,6 +25,7 @@ from allomix.qc.relatedness import (
 )
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
+from allomix.qc.sex import Sex, SexInference, SexResult, pair_status
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -994,3 +995,94 @@ class TestAdmixSwapQC:
         qc_legacy = assess_quality(result, _make_genotypes(), clinical_gating=False)
         assert qc_legacy.status == "REVIEW"
         assert any("Possible sample swap" in w for w in qc_legacy.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Sex: declared vs inferred (#50)
+# ---------------------------------------------------------------------------
+
+
+def _sex_inf(sex: Sex, declared: Sex | None = None) -> SexInference:
+    """A SexInference with the source rule applied the way ``infer_sex`` does."""
+    if declared is None:
+        source = "unavailable" if sex is Sex.UNAVAILABLE else "inferred"
+    elif not sex.confident:
+        source = "declared"
+    else:
+        source = "inferred+declared" if sex is declared else "conflict"
+    return SexInference(
+        sex=sex,
+        n_x_sites=25,
+        n_x_het=12 if sex is Sex.FEMALE else 0,
+        x_het_rate=0.48 if sex is Sex.FEMALE else 0.0,
+        log10_lr=12.3 if sex is Sex.FEMALE else -4.5,
+        chry_rel_depth=None,
+        n_y_sites=0,
+        declared=declared,
+        source=source,
+    )
+
+
+def _sex_result(host: SexInference, donors: list[SexInference]) -> SexResult:
+    return SexResult(
+        host=host,
+        donors=donors,
+        pair=pair_status(host.effective, [d.effective for d in donors]),
+    )
+
+
+class TestSexQC:
+    """A declared sex contradicted by a confident chrX inference is a FAIL."""
+
+    def test_host_conflict_fails(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.sex = _sex_result(_sex_inf(Sex.FEMALE, Sex.MALE), [_sex_inf(Sex.MALE)])
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "FAIL"
+        msgs = [w for w in qc.warnings if w.startswith("Sex mismatch for host")]
+        assert len(msgs) == 1
+        assert "declared M" in msgs[0] and "inferred F" in msgs[0]
+        assert "mix-up" in msgs[0]
+        assert qc.sex is result.sex
+
+    def test_donor_conflict_named(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.sex = _sex_result(
+            _sex_inf(Sex.FEMALE), [_sex_inf(Sex.MALE, Sex.MALE), _sex_inf(Sex.MALE, Sex.FEMALE)]
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "FAIL"
+        assert any(w.startswith("Sex mismatch for donor2") for w in qc.warnings)
+        assert not any("donor1" in w for w in qc.warnings)
+
+    def test_single_donor_label(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.sex = _sex_result(_sex_inf(Sex.FEMALE), [_sex_inf(Sex.MALE, Sex.FEMALE)])
+        qc = assess_quality(result, _make_genotypes())
+        assert any(w.startswith("Sex mismatch for donor:") for w in qc.warnings)
+
+    def test_agreement_and_declared_resolution_pass(self):
+        result = _make_chimerism_result(n_informative=30)
+        result.sex = _sex_result(
+            _sex_inf(Sex.FEMALE, Sex.FEMALE), [_sex_inf(Sex.AMBIGUOUS, Sex.FEMALE)]
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "PASS"
+        assert not any("Sex mismatch" in w for w in qc.warnings)
+
+    def test_no_sex_result_is_silent(self):
+        result = _make_chimerism_result(n_informative=30)
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.sex is None
+        assert not any("Sex mismatch" in w for w in qc.warnings)
+
+    def test_contig_counters_copied_from_genotypes(self):
+        result = _make_chimerism_result(n_informative=30)
+        g = _make_genotypes()
+        g.n_par_excluded = 2
+        g.n_other_contig_excluded = 1
+        g.n_informative_sex_chrom_excluded = 3
+        qc = assess_quality(result, g)
+        assert (qc.n_par_excluded, qc.n_other_contig_excluded) == (2, 1)
+        assert qc.n_informative_sex_chrom_excluded == 3
+        assert qc.n_chrx_used == 0

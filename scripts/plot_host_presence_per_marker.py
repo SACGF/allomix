@@ -48,7 +48,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from allomix.analysis import analyse_sample
-from allomix.genotype import parse_vcf
+from allomix.genotype import ContigPolicy, parse_vcf
 
 # Wilson-interval z for a 95% CI.
 Z = 1.959963984540054
@@ -127,7 +127,7 @@ def per_marker_rows(
     min_gq: int,
     min_dp: int,
     error_rate: float,
-    use_sex_chroms: bool,
+    contig_policy: ContigPolicy,
 ) -> tuple[list[dict], dict]:
     """Compute per-marker implied host fraction and the pooled MLE for a sample.
 
@@ -150,7 +150,7 @@ def per_marker_rows(
         min_dp=min_dp,
         min_gq=min_gq,
         error_rate=error_rate,
-        use_sex_chroms=use_sex_chroms,
+        contig_policy=contig_policy,
     )
     hp = analysis.result.host_presence
     e = error_rate / 3.0  # per-direction background under the global fallback
@@ -268,8 +268,9 @@ def main() -> None:
     ap.add_argument(
         "--use-sex-chroms",
         action="store_true",
-        help="Keep sex/MT markers. Default off, matching the monitor run "
-        "default; leave off for sex-mismatched pairs.",
+        help="Keep non-PAR sex/MT markers (diagnostic contig policy). Default "
+        "off, matching the detect run (autosomes only); leave off for "
+        "sex-mismatched pairs.",
     )
     ap.add_argument(
         "--error-rate",
@@ -296,7 +297,7 @@ def main() -> None:
             args.min_gq,
             args.min_dp,
             args.error_rate,
-            args.use_sex_chroms,
+            ContigPolicy.ALL_PRIMARY if args.use_sex_chroms else ContigPolicy.AUTOSOMES,
         )
         # Cross-check the recomputed MLE against the reported run value.
         b = batch.get(admix_sample)

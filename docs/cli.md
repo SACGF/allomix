@@ -171,7 +171,20 @@ Both `detect` and `timeline` accept these additional options:
 | `--no-bias-correction` | off | Disable bias correction even when a bias table is provided |
 | `--exclude-sites` | none | BED of marker sites to drop before analysis (e.g. `panel-qc --exclude-bed`) |
 | `--include-sites` | none | BED of marker sites to restrict analysis to (mutually exclusive with `--exclude-sites`) |
+| `--recipient-sex` | none | Declared recipient sex. `F`/`female` or `M`/`male` (any case) is checked against the sex inferred from chrX; other text is shown in the report header only |
+| `--donor-sex` | none | Declared donor sex, one per `--donor-sample` in order (repeat to match; `NA` for none). Parsed and checked like `--recipient-sex` |
 | `--verbose` | off | Include per-marker detail in output |
+
+**Sex chromosomes.** allomix infers the sex of the recipient and of each donor
+from the heterozygosity of their non-PAR chrX genotypes (see
+`allomix.qc.sex`), compares it with any declared sex, and reports both. A
+confident inference that contradicts the declaration fails QC as a likely
+sample mix-up; a declaration resolves an ambiguous or unavailable inference
+(an autosome-only panel always gives `unavailable`). In this release
+sex-chromosome markers are excluded from the estimate regardless of sex, and
+pseudoautosomal and non-primary-contig markers are always excluded. The old
+`--use-sex-chroms` flag is retired: giving it exits with an explanation, and it
+will be removed in a later release.
 
 Output is selected by per-artifact flags that can be combined in one run:
 `detect` accepts `--tsv PATH`, `--json PATH`, `--html PATH`, and `--pdf PATH`

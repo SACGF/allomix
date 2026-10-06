@@ -37,7 +37,7 @@ from pathlib import Path
 
 from scipy.stats import binom
 
-from allomix.genotype import classify_markers, parse_vcf
+from allomix.genotype import ContigPolicy, classify_markers, parse_vcf
 from allomix.qc.host_presence import host_presence_test, select_donor_hom_markers
 
 ALPHA = 0.05
@@ -89,8 +89,15 @@ def build_markers(
     host = parse_vcf(panel, sample=meta["host"], min_gq=min_gq, gt_ad_consistency=True)
     donor = parse_vcf(panel, sample=meta["donor"], min_gq=min_gq, gt_ad_consistency=True)
     admix = parse_vcf(admix_vcf, sample=admix_sample, min_dp=0)
+    # Diagnostic view: keep non-PAR chrX/chrY/MT markers so they can be
+    # inspected (the clinical path admits autosomes only).
     genotypes = classify_markers(
-        host, [donor], admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=True
+        host,
+        [donor],
+        admix,
+        min_dp=min_dp,
+        min_gq=min_gq,
+        contig_policy=ContigPolicy.ALL_PRIMARY,
     )
 
     result = host_presence_test(genotypes.informative, error_rate=error_rate)

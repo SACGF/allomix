@@ -100,11 +100,19 @@ markers.
 
 By default a site is used only if recipient and donor genotype quality is at least 20 and the
 admixture depth is at least 100, and at least three informative markers are required to
-report an estimate. Sex and mitochondrial contigs (X, Y, M) are excluded by default,
-because in a sex-mismatched donor and recipient pair the expected recipient and donor allele
-dosage on the sex chromosomes departs from the autosomal diploid model the estimator
-assumes. They can be re-enabled per run once recipient and donor sex are known to match, and
-the informative sex-chromosome markers that were dropped are reported.
+report an estimate. Markers in the X and Y pseudoautosomal regions and on non-primary
+contigs are always excluded, and sex and mitochondrial contigs (non-PAR X, Y, M) are
+excluded from the estimate, because in a sex-mismatched donor and recipient pair the
+expected recipient and donor allele dosage on the sex chromosomes departs from the
+autosomal diploid model the estimator assumes; the informative sex-chromosome markers that
+were dropped are reported. The sex of the recipient and of each donor is inferred from
+their own genotypes, from heterozygosity at non-PAR chrX sites compared by likelihood
+ratio between a female model (heterozygous at the sample's autosomal rate) and a male
+model (heterozygous only by genotyping error), with ambiguous and unavailable states when
+the sites do not resolve or the panel has none. A declared sex is optional; a confident
+inference that contradicts it fails quality control as a likely sample mix-up. Using
+chrX markers for sex-matched pairs is planned work and is not part of the estimates
+reported here.
 
 #### Box 1. Reading the residual recipient off the counts
 

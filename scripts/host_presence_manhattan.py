@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import binom
 
 from allomix.analysis import analyse_sample
-from allomix.genotype import parse_vcf
+from allomix.genotype import ContigPolicy, parse_vcf
 
 ALPHA = 0.05
 
@@ -152,8 +152,8 @@ def build_markers(
     host = parse_vcf(panel, sample=meta["host"], min_gq=min_gq, gt_ad_consistency=True)
     donor = parse_vcf(panel, sample=meta["donor"], min_gq=min_gq, gt_ad_consistency=True)
     admix = parse_vcf(admix_vcf, sample=admix_sample, min_dp=0)
-    # Shared analysis path (allomix.analysis); sex chroms kept here so the
-    # genomic view shows chrX/Y markers for investigation.
+    # Shared analysis path (allomix.analysis); non-PAR sex chroms kept here
+    # (diagnostic policy) so the genomic view shows chrX/Y markers.
     analysis = analyse_sample(
         host,
         [donor],
@@ -161,7 +161,7 @@ def build_markers(
         min_dp=min_dp,
         min_gq=min_gq,
         error_rate=error_rate,
-        use_sex_chroms=True,
+        contig_policy=ContigPolicy.ALL_PRIMARY,
     )
     hp = analysis.result.host_presence
     f = hp.f_host_mle

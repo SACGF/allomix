@@ -22,6 +22,7 @@ from allomix.qc.relatedness import (
 )
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
+from allomix.qc.sex import SexInference, SexResult
 from allomix.report.html.meta import DonorMeta, ReportMeta
 from allomix.report.html.render import render_single
 from allomix.results import ChimerismResult, MultiDonorResult
@@ -329,6 +330,77 @@ def _runmeta_json(run_unit: RunUnitInfo | None) -> dict | None:
     }
 
 
+# Sex and contig-routing columns, appended after the run-unit block (#50).
+# ``host_sex`` / ``donor_sex`` are the effective sexes used for routing (inferred
+# when confident, else declared); per-donor values are joined with ";" like the
+# relatedness columns. ``sex_source`` is the host's reconciliation
+# (inferred / declared / inferred+declared / conflict / unavailable) and
+# ``donor_sex_source`` the donors', joined. A conflict is also a QC FAIL in
+# qc_status / qc_warnings. The contig counters come from ``classify_markers``.
+_SEX_TSV_COLS = [
+    "host_sex",
+    "donor_sex",
+    "sex_pair",
+    "sex_source",
+    "donor_sex_source",
+    "n_chrx_used",
+    "n_par_excluded",
+    "n_other_contig_excluded",
+    "n_informative_sex_chrom_excluded",
+]
+
+
+def _sex_tsv_cells(sex: SexResult | None, qc: QCReport) -> list[str]:
+    """Format the sex and contig columns. Order matches ``_SEX_TSV_COLS``.
+
+    ``NA`` for the sex cells when inference did not run; the contig counters
+    always come from the QC report (0 when nothing was excluded).
+    """
+    counts = [
+        str(qc.n_chrx_used),
+        str(qc.n_par_excluded),
+        str(qc.n_other_contig_excluded),
+        str(qc.n_informative_sex_chrom_excluded),
+    ]
+    if sex is None:
+        return [_NA] * 5 + counts
+    return [
+        sex.host.effective.value,
+        ";".join(d.effective.value for d in sex.donors),
+        sex.pair.value,
+        sex.host.source,
+        ";".join(d.source for d in sex.donors),
+        *counts,
+    ]
+
+
+def _sex_inference_json(inf: SexInference) -> dict:
+    """JSON view of one sample's sex inference (all fields, plus ``effective``)."""
+    return {
+        "sex": inf.sex.value,
+        "effective": inf.effective.value,
+        "declared": inf.declared.value if inf.declared is not None else None,
+        "source": inf.source,
+        "n_x_sites": inf.n_x_sites,
+        "n_x_het": inf.n_x_het,
+        "x_het_rate": round(inf.x_het_rate, 6) if inf.x_het_rate is not None else None,
+        "log10_lr": round(inf.log10_lr, 4) if inf.log10_lr is not None else None,
+        "chry_rel_depth": inf.chry_rel_depth,
+        "n_y_sites": inf.n_y_sites,
+    }
+
+
+def _sex_json(sex: SexResult | None) -> dict | None:
+    """JSON view of the sex inference for host and donors with the pair status."""
+    if sex is None:
+        return None
+    return {
+        "host": _sex_inference_json(sex.host),
+        "donors": [_sex_inference_json(d) for d in sex.donors],
+        "pair": sex.pair.value,
+    }
+
+
 def _contamination_json(contamination: ContaminationResult | None) -> dict | None:
     """JSON view of a ContaminationResult; mirrors the TSV columns plus detail."""
     if contamination is None:
@@ -439,6 +511,7 @@ def _write_tsv(
         *_CONTAMINATION_TSV_COLS,
         *_SHARED_HET_TSV_COLS,
         *_RUNMETA_TSV_COLS,
+        *_SEX_TSV_COLS,
     ]
     fh.write("\t".join(summary_cols) + "\n")
 
@@ -466,6 +539,7 @@ def _write_tsv(
         *_contamination_tsv_cells(getattr(result, "contamination", None)),
         *_shared_het_tsv_cells(getattr(result, "shared_het_balance", None)),
         *_runmeta_tsv_cells(getattr(result, "run_unit", None)),
+        *_sex_tsv_cells(getattr(result, "sex", None), qc),
     ]
     fh.write("\t".join(summary_vals) + "\n")
 
@@ -536,6 +610,7 @@ def _write_tsv_multi(
             *_CONTAMINATION_TSV_COLS,
             *_SHARED_HET_TSV_COLS,
             *_RUNMETA_TSV_COLS,
+            *_SEX_TSV_COLS,
         ]
     )
     fh.write("\t".join(cols) + "\n")
@@ -567,6 +642,7 @@ def _write_tsv_multi(
             *_contamination_tsv_cells(getattr(result, "contamination", None)),
             *_shared_het_tsv_cells(getattr(result, "shared_het_balance", None)),
             *_runmeta_tsv_cells(getattr(result, "run_unit", None)),
+            *_sex_tsv_cells(getattr(result, "sex", None), qc),
         ]
     )
     fh.write("\t".join(vals) + "\n")
@@ -639,6 +715,10 @@ def _qc_common_json(result: ChimerismResult | MultiDonorResult, qc: QCReport) ->
         "n_excluded_depth": qc.n_excluded_depth,
         "n_excluded_quality": qc.n_excluded_quality,
         "n_excluded_outlier": qc.n_excluded_outlier,
+        "n_informative_sex_chrom_excluded": qc.n_informative_sex_chrom_excluded,
+        "n_par_excluded": qc.n_par_excluded,
+        "n_other_contig_excluded": qc.n_other_contig_excluded,
+        "n_chrx_used": qc.n_chrx_used,
         "n_robust_excluded": getattr(result, "n_robust_excluded", 0),
         "robust_drop_fraction": getattr(result, "robust_drop_fraction", 0.0),
         "mean_depth": round(qc.mean_depth, 1),
@@ -664,6 +744,7 @@ def _qc_common_json(result: ChimerismResult | MultiDonorResult, qc: QCReport) ->
         "shared_het_balance": _shared_het_json(qc.shared_het_balance),
         "contamination": _contamination_json(qc.contamination),
         "run_unit": _runmeta_json(qc.run_unit),
+        "sex": _sex_json(getattr(result, "sex", None)),
     }
 
 

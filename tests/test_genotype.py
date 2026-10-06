@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from allomix.genotype import (
+    ContigPolicy,
     MarkerData,
     MarkerType,
     classify_markers,
@@ -248,9 +249,9 @@ class TestClassifyMarkers:
             self._make_marker(chrom="chr1_KI270706v1_random", pos=100, dp=1000),
             self._make_marker(chrom="chrUn_KN707606v1_decoy", pos=100, dp=1000),
         ]
-        for use_sex in (False, True):
+        for policy in (ContigPolicy.AUTOSOMES, ContigPolicy.ALL_PRIMARY):
             result = classify_markers(
-                host, [donor], admix, min_dp=0, min_gq=0, use_sex_chroms=use_sex
+                host, [donor], admix, min_dp=0, min_gq=0, contig_policy=policy
             )
             assert result.n_shared == 3
             assert len(result.informative) == 1
@@ -263,8 +264,8 @@ class TestClassifyMarkers:
             assert result.n_informative_sex_chrom_excluded == 0
             assert result.n_filtered == 0
 
-    def test_par_excluded_regardless_of_use_sex_chroms(self):
-        """PAR X/Y markers are dropped and counted separately from the flag."""
+    def test_par_excluded_under_every_contig_policy(self):
+        """PAR X/Y markers are dropped and counted separately from the policy."""
         host = [
             self._make_marker(chrom="chrX", pos=1_000_000, gt=(0, 0)),  # PAR1
             self._make_marker(chrom="chrY", pos=59_100_000, gt=(0, 0)),  # PAR2 (GRCh37 interval)
@@ -281,17 +282,23 @@ class TestClassifyMarkers:
             self._make_marker(chrom="chrX", pos=50_000_000, ad_ref=900, ad_alt=100, dp=1000),
         ]
 
-        off = classify_markers(host, [donor], admix, min_dp=0, min_gq=0, use_sex_chroms=False)
+        off = classify_markers(
+            host, [donor], admix, min_dp=0, min_gq=0, contig_policy=ContigPolicy.AUTOSOMES
+        )
         assert off.n_shared == 3
         assert off.n_par_excluded == 2
         assert off.n_other_contig_excluded == 0
-        # The non-PAR chrX marker is the only one counted against the flag.
+        # The non-PAR chrX marker is the only one counted against the policy.
         assert off.n_informative_sex_chrom_excluded == 1
+        assert off.n_chrx_used == 0
         assert len(off.informative) == 0
 
-        on = classify_markers(host, [donor], admix, min_dp=0, min_gq=0, use_sex_chroms=True)
+        on = classify_markers(
+            host, [donor], admix, min_dp=0, min_gq=0, contig_policy=ContigPolicy.ALL_PRIMARY
+        )
         assert on.n_par_excluded == 2
         assert on.n_informative_sex_chrom_excluded == 0
+        assert on.n_chrx_used == 1
         assert len(on.informative) == 1
         assert (on.informative[0].chrom, on.informative[0].pos) == ("chrX", 50_000_000)
 

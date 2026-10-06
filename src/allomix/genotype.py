@@ -8,7 +8,7 @@ non-informative based on host vs donor genotype comparison.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import IntEnum
+from enum import Enum, IntEnum
 from pathlib import Path
 
 from cyvcf2 import VCF
@@ -23,6 +23,30 @@ from allomix.constants import (
 # ``is_sex_chrom`` moved to ``allomix.contigs``; re-exported here so existing
 # ``from allomix.genotype import is_sex_chrom`` callers keep working.
 from allomix.contigs import ContigClass, classify_contig, is_sex_chrom  # noqa: F401
+
+
+class ContigPolicy(Enum):
+    """Which contig classes ``classify_markers`` admits to the informative set.
+
+    PAR X/Y sites and ``OTHER`` (non-primary) contigs are excluded under every
+    policy; the policy only decides what happens to non-PAR chrX, non-PAR chrY
+    and MT.
+
+    - ``AUTOSOMES`` (default): autosomes only. Informative non-PAR X/Y/MT
+      markers are dropped and counted in
+      ``MarkerGenotypes.n_informative_sex_chrom_excluded``.
+    - ``ALL_PRIMARY``: diagnostic only. Also admits non-PAR chrX, non-PAR chrY
+      and MT so genomic views can show them. The diploid dosage model is wrong
+      on those contigs for a sex-mismatched pair, so this is never the clinical
+      path.
+
+    Phase 2 of the sex-marker work (#46) adds sex-aware routing on top of this:
+    non-PAR chrX admitted for a sex-matched host/donor pair (het sites dropped
+    for male pairs) and excluded otherwise, driven by ``allomix.qc.sex``.
+    """
+
+    AUTOSOMES = "autosomes"
+    ALL_PRIMARY = "all_primary"
 
 
 class MarkerType(IntEnum):
@@ -173,12 +197,16 @@ class MarkerGenotypes:
     n_filtered: int
     sample_name: str = ""
     marker_counts: MarkerCounts | None = None  # per-input diagnostic counts
+    # Informative non-PAR X/Y/MT markers dropped under ``ContigPolicy.AUTOSOMES``.
     n_informative_sex_chrom_excluded: int = 0
-    # Shared markers excluded by contig class regardless of ``use_sex_chroms``:
+    # Shared markers excluded by contig class under every ``ContigPolicy``:
     # pseudoautosomal X/Y sites, and sites on non-primary contigs (alt, decoy,
     # unplaced, random). See ``allomix.contigs``.
     n_par_excluded: int = 0
     n_other_contig_excluded: int = 0
+    # Non-PAR chrX markers admitted to the informative set. Always 0 under
+    # ``AUTOSOMES``; populated by the sex-aware routing of Phase 2 (#46).
+    n_chrx_used: int = 0
 
 
 # Reference-sample GT/AD consistency thresholds (see parse_vcf, gt_ad_consistency).
@@ -360,13 +388,17 @@ def classify_markers(
     min_gq: int = DEFAULT_MIN_GQ,
     pass_only: bool = True,
     sample_name: str = "",
-    use_sex_chroms: bool = False,
+    contig_policy: ContigPolicy = ContigPolicy.AUTOSOMES,
 ) -> MarkerGenotypes:
     """Classify shared markers as informative or non-informative.
 
     Joins markers across host, donor(s), and admixture by (chrom, pos, ref, alt),
     applies depth and quality filters, and assigns Vynck marker types for the
     first donor (multi-donor types are stored in the donor_gts list).
+
+    ``contig_policy`` decides which contig classes may enter the informative
+    set (see ``ContigPolicy``). PAR and non-primary contigs are excluded under
+    every policy.
     """
     n_total = len(admixture)
 
@@ -396,6 +428,7 @@ def classify_markers(
     n_informative_sex_chrom_excluded = 0
     n_par_excluded = 0
     n_other_contig_excluded = 0
+    n_chrx_used = 0
 
     for key in sorted(shared_keys):
         h = host_idx[key]
@@ -436,14 +469,16 @@ def classify_markers(
         mtypes = [MarkerType.classify(h.gt, d.gt) for d in ds]
         any_informative = any(mt is not None for mt in mtypes)
 
-        # Drop non-PAR sex / mitochondrial contigs unless explicitly enabled,
-        # counting the informative ones lost so the cost is visible.
-        if not use_sex_chroms and contig_class is not ContigClass.AUTOSOME:
+        # Drop non-PAR sex / mitochondrial contigs under the autosomes-only
+        # policy, counting the informative ones lost so the cost is visible.
+        if contig_policy is ContigPolicy.AUTOSOMES and contig_class is not ContigClass.AUTOSOME:
             if any_informative:
                 n_informative_sex_chrom_excluded += 1
             continue
 
         if any_informative:
+            if contig_class is ContigClass.X_NONPAR:
+                n_chrx_used += 1
             # Use first donor's type for backward compat; fall back to first non-None
             mtype_first = mtypes[0]
             if mtype_first is None:
@@ -499,4 +534,5 @@ def classify_markers(
         n_informative_sex_chrom_excluded=n_informative_sex_chrom_excluded,
         n_par_excluded=n_par_excluded,
         n_other_contig_excluded=n_other_contig_excluded,
+        n_chrx_used=n_chrx_used,
     )

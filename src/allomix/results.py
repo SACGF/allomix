@@ -17,6 +17,7 @@ from allomix.qc.relatedness import (
 )
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
+from allomix.qc.sex import SexResult
 
 
 @dataclass
@@ -85,6 +86,9 @@ class ChimerismResult:
     # Run-unit metadata read from the admix VCF header (see ``allomix.qc.runmeta``).
     # None when the VCF carried no run metadata.
     run_unit: RunUnitInfo | None = None
+    # Sex inference for host and donor(s) plus the pair status (see
+    # ``allomix.qc.sex``), attached by ``analyse_sample``. None when not computed.
+    sex: SexResult | None = None
 
 
 @dataclass
@@ -111,3 +115,4 @@ class MultiDonorResult:
     shared_het_balance: SharedHetBalanceResult | None = None
     contamination: ContaminationResult | None = None
     run_unit: RunUnitInfo | None = None
+    sex: SexResult | None = None

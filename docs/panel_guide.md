@@ -117,6 +117,18 @@ about 330 kb of non-PAR Xq28 in GRCh38 coordinates (chrY has the mirror-image
 set, see `allomix.contigs`). Keep panel sites away from the PAR boundaries and
 off non-primary contigs, and these exclusions will be zero.
 
+**Sex inference needs non-PAR chrX content.** allomix infers each reference
+sample's sex from heterozygosity at its non-PAR chrX sites (a female is
+heterozygous at about the panel's design rate, a male only by genotyping
+error), and uses it to check declared sex and to classify the host/donor pair.
+With fewer than five usable non-PAR chrX sites the inference is `unavailable`
+and only a declared sex (`--recipient-sex`, `--donor-sex`) can fill it in; with
+sites that do not resolve it is `ambiguous`. Around 25 non-PAR chrX SNPs (the
+public SRP434573 panel) separate the sexes cleanly. Sex-typing amplicons such
+as SRY, ZFY, AMELY and their chrX counterparts are depth-only regions, not
+SNPs, and do not contribute to the het-rate inference; chrY depth is reserved
+as a secondary signal for a later release.
+
 ## 3. Characterize the panel on a reference cohort
 
 Run a set of reference samples (any cohort genotyped through your normal pipeline;

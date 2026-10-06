@@ -24,6 +24,7 @@ from allomix.qc.relatedness import (
 )
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
+from allomix.qc.sex import SexResult
 from allomix.results import ChimerismResult, MarkerResult
 
 # Warn when the host-presence detector fires but the global MLE does not echo it.
@@ -120,10 +121,14 @@ class QCReport:
             gate uses the worse of the two.
         warnings: List of warning messages.
         status: Overall QC status, one of "PASS", "REVIEW", or "FAIL". "FAIL"
-            means the result is unusable (e.g. too few informative markers).
-            "REVIEW" means it was computed but a reliability check failed (poor
-            model fit or wide CI), so it needs manual interpretation rather than
-            being trusted or discarded automatically.
+            means the result is unusable: too few informative markers, a
+            relatedness declaration that crosses the related/unrelated
+            boundary, identical reference samples, or a declared sex that a
+            confident chrX inference contradicts (a sample mix-up signal; see
+            ``allomix.qc.sex``). "REVIEW" means it was computed but a
+            reliability check failed (poor model fit or wide CI), so it needs
+            manual interpretation rather than being trusted or discarded
+            automatically.
         coverage_uniformity: Fraction of per-marker depths above
             ``UNIFORMITY_DEPTH_FRACTION`` of the sample mean. 1.0 when there are no
             markers. A low value means a lopsided depth distribution.
@@ -133,6 +138,15 @@ class QCReport:
         shared_het_balance: Consensus-het allele-balance check result, or None.
         contamination: In-data third-party contamination estimate, or None.
         run_unit: Sequencing run-unit metadata for the sample, or None.
+        sex: Sex inference for host and donor(s) with the pair status, or None.
+        n_informative_sex_chrom_excluded: Informative non-PAR X/Y/MT markers
+            dropped by the contig policy.
+        n_par_excluded: Shared markers in the X/Y pseudoautosomal regions
+            (always excluded).
+        n_other_contig_excluded: Shared markers on non-primary contigs (always
+            excluded).
+        n_chrx_used: Non-PAR chrX markers admitted to the informative set (0
+            until sex-aware routing lands).
     """
 
     n_total_markers: int
@@ -156,6 +170,11 @@ class QCReport:
     shared_het_balance: SharedHetBalanceResult | None = None
     contamination: ContaminationResult | None = None
     run_unit: RunUnitInfo | None = None
+    sex: SexResult | None = None
+    n_informative_sex_chrom_excluded: int = 0
+    n_par_excluded: int = 0
+    n_other_contig_excluded: int = 0
+    n_chrx_used: int = 0
 
     @property
     def pass_(self) -> bool:
@@ -370,10 +389,11 @@ def assess_quality(
     """Assess quality of a chimerism result and produce a QC report.
 
     Checks marker counts, depth, CI width, goodness-of-fit, and sample identity
-    (relatedness against a declared expectation, and an admixture-vs-(host+donor)
-    swap test), setting a three-state status and collecting warnings. FAIL means
-    unusable (too few informative markers, or a relatedness declaration that
-    crosses the related/unrelated boundary). REVIEW means computed but flagged for
+    (relatedness against a declared expectation, declared vs chrX-inferred sex,
+    and an admixture-vs-(host+donor) swap test), setting a three-state status
+    and collecting warnings. FAIL means unusable (too few informative markers, a
+    relatedness declaration that crosses the related/unrelated boundary, or a
+    declared sex contradicted by a confident inference). REVIEW means computed but flagged for
     manual interpretation (poor fit, wide CI, 2-level relatedness mismatch, or a
     significant swap test). Handles both ChimerismResult and MultiDonorResult.
 
@@ -619,6 +639,28 @@ def assess_quality(
             elif verdict.status == "REVIEW":
                 identity_review = True
 
+    # Declared vs inferred sex. A confident chrX inference that contradicts the
+    # declaration means the reference sample is not who the label says: a
+    # sample mix-up, so a hard FAIL. Ambiguous / unavailable inferences never
+    # conflict (the declaration resolves them instead).
+    sex: SexResult | None = getattr(result, "sex", None)
+    if sex is not None:
+        n_donors = len(sex.donors)
+        labelled = [("host", sex.host)] + [
+            ("donor" if n_donors == 1 else f"donor{i + 1}", d) for i, d in enumerate(sex.donors)
+        ]
+        for label, inf in labelled:
+            if inf.source != "conflict":
+                continue
+            status = "FAIL"
+            declared = inf.declared.value if inf.declared is not None else "NA"
+            lr = f"{inf.log10_lr:+.1f}" if inf.log10_lr is not None else "NA"
+            warnings.append(
+                f"Sex mismatch for {label}: declared {declared}, inferred {inf.sex.value} "
+                f"from non-PAR chrX heterozygosity ({inf.n_x_het}/{inf.n_x_sites} het, "
+                f"log10 LR {lr}); likely sample mix-up or mislabel"
+            )
+
     ac: AdmixConsistencyResult | None = getattr(result, "admix_consistency", None)
     if ac is not None and ac.n_consensus_hom >= MIN_CONSENSUS and ac.swap_pval < SWAP_REVIEW_P:
         # Significant discordant count. With clinical gating, promote only when the
@@ -731,4 +773,9 @@ def assess_quality(
         shared_het_balance=shb,
         contamination=contamination,
         run_unit=run_unit,
+        sex=sex,
+        n_informative_sex_chrom_excluded=genotypes.n_informative_sex_chrom_excluded,
+        n_par_excluded=genotypes.n_par_excluded,
+        n_other_contig_excluded=genotypes.n_other_contig_excluded,
+        n_chrx_used=genotypes.n_chrx_used,
     )

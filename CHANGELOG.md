@@ -4,6 +4,27 @@
 
 ### Added
 
+- **Sex inference for reference samples** (`allomix.qc.sex`, #50). Recipient and
+  donor sex is inferred from non-PAR chrX heterozygosity (binomial likelihood
+  ratio of a female model, het rate from the sample's own autosomes, against a
+  male spurious-het model), with honest `ambiguous` and `unavailable` states.
+  Attached to the result as `result.sex` with a host/donor pair status
+  (`matched_female` / `matched_male` / `mismatched` / `unknown`). Thresholds are
+  starting values from the public SRP434573 individuals, to be finalised from
+  `scripts/sex_calibration_summary.py` on the internal cohort.
+- `--donor-sex` (one per `--donor-sample`, like `--donor-relationship`), and
+  `--recipient-sex` is now parsed (`F`/`female`, `M`/`male`, any case) as well
+  as displayed. A declared sex resolves an ambiguous or unavailable inference;
+  a confident inference that contradicts the declaration is a QC **FAIL**
+  (sample mix-up).
+- TSV/JSON columns `host_sex`, `donor_sex`, `sex_pair`, `sex_source`,
+  `donor_sex_source`, `n_chrx_used`, `n_par_excluded`, `n_other_contig_excluded`,
+  `n_informative_sex_chrom_excluded`; a `sex` object in the JSON analysis
+  payload with the full per-sample inference. The HTML header shows recipient
+  and donor sex as "declared / inferred" and the footer shows the pair status
+  and chrX marker count in place of the old included/excluded line.
+- `genotype.ContigPolicy` (`AUTOSOMES`, the default, and the diagnostic
+  `ALL_PRIMARY`).
 - **Contig classification module** `allomix.contigs` (#50). `classify_contig(chrom, pos)`
   labels a marker as autosome, chrX/chrY PAR or non-PAR, MT, or other (alt, decoy,
   unplaced, random, HLA). The pseudoautosomal mask is the exact union of the GRCh37
@@ -14,9 +35,18 @@
 
 ### Changed
 
+- **`--use-sex-chroms` is retired** (#50). It is now a hidden option that exits
+  with an error explaining that sex chromosomes are handled automatically from
+  the inferred and declared sex (`--recipient-sex` / `--donor-sex`). It will be
+  removed entirely in a later release. In this release sex-chromosome markers
+  are still excluded from the estimate; sex-matched chrX routing follows (#46).
+- `classify_markers` and `analyse_sample` take `contig_policy: ContigPolicy`
+  instead of `use_sex_chroms: bool`; `analyse_sample` also takes
+  `declared_host_sex` and `declared_donor_sexes`.
+- Version bumped to 0.5.0.
 - **Pseudoautosomal (PAR) markers are now always excluded** from the informative
-  set, whether or not `--use-sex-chroms` is given, and counted separately from the
-  non-PAR sex-chromosome exclusion (#50).
+  set under every contig policy, and counted separately from the non-PAR
+  sex-chromosome exclusion (#50).
 - **Markers on non-primary contigs** (alt, decoy, unplaced, random) are now always
   excluded and counted (#50). Existing fixtures and public data contain none, so
   results on them are unchanged.

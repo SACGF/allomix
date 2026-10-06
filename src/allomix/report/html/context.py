@@ -65,19 +65,42 @@ def _days_post_transplant(transplant_date: str | None, sample_date: str | None) 
     return (s - t).days
 
 
+def _sex_text(declared: str | None, inferred: dict | None) -> str | None:
+    """Header text for one party's sex: ``"<declared> declared / <inferred> inferred"``.
+
+    Either half is omitted when absent (nothing declared, or no inference in the
+    payload), so a report with neither shows no sex row at all.
+    """
+    parts: list[str] = []
+    if declared:
+        parts.append(f"{declared} declared")
+    if inferred is not None and inferred.get("sex"):
+        parts.append(f"{inferred['sex']} inferred")
+    return " / ".join(parts) if parts else None
+
+
 def header_rows(
-    meta: ReportMeta, sample_name: str, *, version: str, timestamp: str | None
+    meta: ReportMeta,
+    sample_name: str,
+    *,
+    version: str,
+    timestamp: str | None,
+    sex: dict | None = None,
 ) -> list[tuple[str, str]]:
     """Build the (label, value) rows for the header identification band.
 
     Rows are included only when their value is present, so the band never shows
     empty fields. Days-post-transplant is derived only when both a transplant
-    date and this sample's collection date are present.
+    date and this sample's collection date are present. ``sex`` is the
+    analysis payload's sex object (host and per-donor inference); each party's
+    row shows the declared sex from ``meta`` beside the inferred one.
     """
+    sex = sex or {}
+    donor_sex = sex.get("donors") or []
     rows: list[tuple[str, object | None]] = [
         ("Recipient ID", meta.recipient_id),
         ("Name", meta.recipient_name),
-        ("Sex", meta.sex),
+        ("Sex", _sex_text(meta.sex, sex.get("host"))),
         ("Date of birth", meta.dob),
         ("Sample", sample_name),
         ("Transplant type", meta.transplant_type),
@@ -90,10 +113,19 @@ def header_rows(
     if days is not None:
         rows.append(("Days post-transplant", f"+{days}"))
 
-    for i, donor in enumerate(meta.donors, start=1):
-        ident = donor.donor_id or f"donor {i}"
-        rel = f" ({donor.relationship})" if donor.relationship else ""
-        rows.append((f"Donor {i}", f"{ident}{rel}"))
+    # Donor rows come from the metadata (ids, relationships); when the analysis
+    # inferred sex for more donors than the metadata names, the extra donors
+    # still get a sex row.
+    n_donors = max(len(meta.donors), len(donor_sex))
+    for i in range(n_donors):
+        donor = meta.donors[i] if i < len(meta.donors) else None
+        if donor is not None:
+            ident = donor.donor_id or f"donor {i + 1}"
+            rel = f" ({donor.relationship})" if donor.relationship else ""
+            rows.append((f"Donor {i + 1}", f"{ident}{rel}"))
+        declared = donor.sex if donor is not None else None
+        inferred = donor_sex[i] if i < len(donor_sex) else None
+        rows.append((f"Donor {i + 1} sex", _sex_text(declared, inferred)))
 
     rows.append(("allomix version", version))
     rows.append(("Report generated", timestamp))
@@ -127,7 +159,46 @@ def _flag_summary(a: dict) -> str:
     return "No QC checks flagged."
 
 
-def _params_view(params: dict) -> dict:
+_PAIR_LABELS = {
+    "matched_female": "sex-matched (female)",
+    "matched_male": "sex-matched (male)",
+    "mismatched": "sex-mismatched",
+    "unknown": "sex pair unknown",
+}
+
+
+def _sex_chrom_line(analysis: dict | None) -> str:
+    """Footer text for the sex-chromosome handling of this run.
+
+    Reads the pair status and the chrX marker count off the analysis payload
+    (the host/donor pair is the same at every timepoint, so the latest one
+    serves a timeline). Falls back to the plain exclusion statement when the
+    payload carries no sex object.
+    """
+    if not analysis:
+        return "excluded (autosomes only)"
+    sex = analysis.get("sex") or {}
+    pair = _PAIR_LABELS.get(sex.get("pair") or "", "sex pair unknown")
+    n_chrx = analysis.get("n_chrx_used") or 0
+    used = f"{n_chrx} chrX marker{'s' if n_chrx != 1 else ''} used" if n_chrx else "chrX not used"
+    return f"{pair}; {used}"
+
+
+def _contig_exclusion_line(analysis: dict | None) -> str | None:
+    """Footer text for the PAR / non-primary-contig exclusions, or None if zero."""
+    if not analysis:
+        return None
+    parts: list[str] = []
+    n_par = analysis.get("n_par_excluded") or 0
+    n_other = analysis.get("n_other_contig_excluded") or 0
+    if n_par:
+        parts.append(f"{n_par} pseudoautosomal")
+    if n_other:
+        parts.append(f"{n_other} on non-primary contigs")
+    return ", ".join(parts) if parts else None
+
+
+def _params_view(params: dict, analysis: dict | None = None) -> dict:
     """Methods-footer view of the analysis parameters.
 
     Collapses the raw CLI parameter dict into the labelled lines the footer
@@ -135,6 +206,8 @@ def _params_view(params: dict) -> dict:
     bias-correction descriptions, and the on/off toggles. The full invocation
     (``command``) is passed through for the separate, collapsed "Run command"
     block, which is the one place full paths appear (provenance, off by default).
+    ``analysis`` (the per-sample payload) supplies the sex-chromosome line and
+    the contig-exclusion counts.
     """
     file_keys = [
         ("Genotype VCF", "genotype_vcf"),
@@ -177,11 +250,11 @@ def _params_view(params: dict) -> dict:
         ("Host-presence detection", on_off("host_presence")),
         ("Artifact filter", on_off("artifact_filter")),
         ("Contamination correction", on_off("contamination_correction")),
-        (
-            "Sex chromosomes",
-            "included" if params.get("use_sex_chroms") else "excluded (autosomes only)",
-        ),
+        ("Sex chromosomes", _sex_chrom_line(analysis)),
     ]
+    excluded = _contig_exclusion_line(analysis)
+    if excluded:
+        lines.append(("Markers excluded by contig", excluded))
     return {
         "input_files": input_files,
         "param_lines": lines,
@@ -194,13 +267,17 @@ def _params_view(params: dict) -> dict:
 NA_ = "—"
 
 
-def base_context(data: dict) -> dict:
-    """Provenance / footer context shared by the single and timeline reports."""
+def base_context(data: dict, analysis: dict | None = None) -> dict:
+    """Provenance / footer context shared by the single and timeline reports.
+
+    ``analysis`` is the per-sample payload whose sex and contig counts the
+    footer shows (the single sample, or the latest timepoint).
+    """
     params = data.get("params") or {}
     return {
         "version": data.get("allomix_version", ""),
         "timestamp": data.get("generated"),
-        "params": _params_view(params),
+        "params": _params_view(params, analysis),
         "citation": CITATION,
         "refs": REVIEW_REFS,
     }
@@ -243,13 +320,15 @@ def single_context(data: dict) -> dict:
 
     ctx = {
         "analysis": analysis,
-        "header_rows": header_rows(meta, sample_name, version=version, timestamp=timestamp),
+        "header_rows": header_rows(
+            meta, sample_name, version=version, timestamp=timestamp, sex=analysis.get("sex")
+        ),
         "host_ci_lo": host_ci_lo,
         "host_ci_hi": host_ci_hi,
         "qc": qc_context(analysis),
         "host_presence": host_presence_context(analysis),
     }
-    ctx.update(base_context(data))
+    ctx.update(base_context(data, analysis))
     ctx["title"] = _title("allomix chimerism report", sample_name, meta.recipient_id)
     return ctx
 

@@ -41,7 +41,7 @@ from allomix.constants import (
     ROBUST_K_DEFAULT,
 )
 from allomix.estimate.likelihood import PanelCalibration
-from allomix.genotype import parse_vcf
+from allomix.genotype import ContigPolicy, parse_vcf
 from allomix.qc.caller import Caller, caller_from_token, detect_caller
 from allomix.qc.panel_qc import (
     DEFAULT_BIAS_P95_MULT,
@@ -57,6 +57,7 @@ from allomix.qc.panel_qc import (
 )
 from allomix.qc.relatedness import Relatedness
 from allomix.qc.runmeta import RunUnitInfo, read_run_units
+from allomix.qc.sex import Sex, parse_declared_sex
 from allomix.report.html.render import render_single
 from allomix.report.report import (
     DonorMeta,
@@ -168,14 +169,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_MIN_GQ,
         help=f"Minimum GQ (default: {DEFAULT_MIN_GQ})",
     )
-    parser.add_argument(
-        "--use-sex-chroms",
-        action="store_true",
-        help="Include sex / mitochondrial contigs (X/Y/M). Off by default: in "
-        "sex-mismatched transplants the host/donor dosage on chrX/chrY is "
-        "wrong. Enable per run only once host and donor sex are known to "
-        "match. The informative sex-chrom markers dropped are reported.",
-    )
+    # Retired in 0.5.0: sex-chromosome handling is now automatic. Kept hidden
+    # so an old invocation gets an explanation (``_reject_retired_flags``)
+    # instead of argparse's generic "unrecognized arguments"; removed in a
+    # later release.
+    parser.add_argument("--use-sex-chroms", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--error-rate",
         type=float,
@@ -325,7 +323,14 @@ def _add_report_meta_args(parser: argparse.ArgumentParser) -> None:
     group = parser.add_argument_group("HTML report metadata (optional)")
     group.add_argument("--recipient-id", help="Recipient identifier for the report header")
     group.add_argument("--recipient-name", help="Recipient display name")
-    group.add_argument("--recipient-sex", help="Recipient sex (shown verbatim)")
+    group.add_argument(
+        "--recipient-sex",
+        help="Declared recipient sex. F/female or M/male (any case) is compared "
+        "with the sex inferred from non-PAR chrX heterozygosity: a confident "
+        "inference that contradicts it fails QC (sample mix-up), and it resolves "
+        "an ambiguous inference. Other text is shown verbatim in the report "
+        "header and ignored by the check.",
+    )
     group.add_argument("--recipient-dob", help="Recipient date of birth (shown verbatim)")
     group.add_argument(
         "--transplant-type",
@@ -343,6 +348,14 @@ def _add_report_meta_args(parser: argparse.ArgumentParser) -> None:
         help="Declared donor relationship shown in the header, one per "
         "--donor-sample in the same order (free text, e.g. 'unrelated', "
         "'sibling'). Separate from --expected-relatedness, which drives QC.",
+    )
+    group.add_argument(
+        "--donor-sex",
+        action="append",
+        metavar="SEX",
+        help="Declared donor sex, one per --donor-sample in the same order "
+        "(repeat to match). Parsed and checked like --recipient-sex; use NA for "
+        "no declaration.",
     )
     group.add_argument(
         "--sample-date",
@@ -363,8 +376,13 @@ def _add_report_meta_args(parser: argparse.ArgumentParser) -> None:
 def _build_report_meta(args: argparse.Namespace) -> ReportMeta:
     """Assemble a ReportMeta from the optional CLI metadata flags."""
     rels = args.donor_relationship or []
+    sexes = getattr(args, "donor_sex", None) or []
     donors = [
-        DonorMeta(donor_id=d, relationship=rels[i] if i < len(rels) else None)
+        DonorMeta(
+            donor_id=d,
+            relationship=rels[i] if i < len(rels) else None,
+            sex=_display_sex(sexes[i]) if i < len(sexes) else None,
+        )
         for i, d in enumerate(args.donor_sample)
     ]
     dates = args.sample_date or []
@@ -372,7 +390,7 @@ def _build_report_meta(args: argparse.Namespace) -> ReportMeta:
     return ReportMeta(
         recipient_id=args.recipient_id,
         recipient_name=args.recipient_name,
-        sex=args.recipient_sex,
+        sex=_display_sex(args.recipient_sex),
         dob=args.recipient_dob,
         transplant_type=args.transplant_type,
         transplant_date=args.transplant_date,
@@ -402,7 +420,7 @@ def _build_report_params(args: argparse.Namespace) -> dict:
         "contamination_correction": args.contamination_correction,
         "host_presence": args.host_presence,
         "artifact_filter": args.artifact_filter,
-        "use_sex_chroms": args.use_sex_chroms,
+        "contig_policy": ContigPolicy.AUTOSOMES.value,
     }
 
 
@@ -470,6 +488,69 @@ def _validate_expected_relatedness(args: argparse.Namespace) -> None:
             f"--expected-relatedness given {len(er)} value(s) but there are "
             f"{len(args.donor_sample)} donor(s); provide exactly one per "
             "--donor-sample, in the same order (use NA for no expectation)"
+        )
+
+
+#: ``--donor-sex`` values that mean "nothing declared" for that donor.
+_NO_SEX_VALUES = {"", "na"}
+
+
+def _display_sex(text: str | None) -> str | None:
+    """Declared-sex text for the report header: verbatim, with NA/blank as None."""
+    if text is None or text.strip().lower() in _NO_SEX_VALUES:
+        return None
+    return text
+
+
+def _parse_sex_flag(text: str | None, flag: str) -> Sex | None:
+    """Parse one declared-sex flag value, warning once on stderr if unparseable.
+
+    F/female and M/male (any case) parse; NA and blank mean no declaration;
+    anything else is kept for display only and the QC check is skipped for it.
+    """
+    if text is None or text.strip().lower() in _NO_SEX_VALUES:
+        return None
+    parsed = parse_declared_sex(text)
+    if parsed is None:
+        print(
+            f"WARNING: {flag} {text!r} is not F/female or M/male; shown in the report "
+            "but not checked against the inferred sex",
+            file=sys.stderr,
+        )
+    return parsed
+
+
+def _declared_sexes(args: argparse.Namespace) -> tuple[Sex | None, list[Sex | None]]:
+    """Parsed ``--recipient-sex`` and per-donor ``--donor-sex`` declarations.
+
+    Fails early when more ``--donor-sex`` values are given than donors; fewer is
+    allowed (the trailing donors have no declaration).
+    """
+    donor_sex = getattr(args, "donor_sex", None) or []
+    if len(donor_sex) > len(args.donor_sample):
+        raise SystemExit(
+            f"--donor-sex given {len(donor_sex)} value(s) but there are "
+            f"{len(args.donor_sample)} donor(s); provide at most one per "
+            "--donor-sample, in the same order (use NA for no declaration)"
+        )
+    host = _parse_sex_flag(getattr(args, "recipient_sex", None), "--recipient-sex")
+    donors: list[Sex | None] = [
+        _parse_sex_flag(donor_sex[i], "--donor-sex") if i < len(donor_sex) else None
+        for i in range(len(args.donor_sample))
+    ]
+    return host, donors
+
+
+def _reject_retired_flags(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Exit with an explanation when a retired option is given."""
+    if getattr(args, "use_sex_chroms", False):
+        parser.error(
+            "--use-sex-chroms has been retired. Sex chromosomes are now handled "
+            "automatically: allomix infers recipient and donor sex from non-PAR chrX "
+            "heterozygosity, checks it against --recipient-sex / --donor-sex when "
+            "given, and routes sex-chromosome markers on the result (in this release "
+            "they are excluded from the estimate; PAR and non-primary contigs are "
+            "always excluded). Drop the flag; it will be removed in a later release."
         )
 
 
@@ -559,7 +640,9 @@ def _run_single_sample(
     error_rate: float,
     calibration: PanelCalibration | None = None,
     run_host_presence: bool = True,
-    use_sex_chroms: bool = False,
+    contig_policy: ContigPolicy = ContigPolicy.AUTOSOMES,
+    declared_host_sex: Sex | None = None,
+    declared_donor_sexes: list[Sex | None] | None = None,
     artifact_filter: bool = True,
     robust: str = "off",
     robust_k: float = ROBUST_K_DEFAULT,
@@ -596,7 +679,9 @@ def _run_single_sample(
         error_rate=error_rate,
         calibration=calibration,
         run_host_presence=run_host_presence,
-        use_sex_chroms=use_sex_chroms,
+        contig_policy=contig_policy,
+        declared_host_sex=declared_host_sex,
+        declared_donor_sexes=declared_donor_sexes,
         artifact_filter=artifact_filter,
         sample_name=admix_sample,
         robust=robust,
@@ -608,10 +693,11 @@ def _run_single_sample(
         clinical_gating=clinical_gating,
     )
 
-    if not use_sex_chroms and analysis.genotypes.n_informative_sex_chrom_excluded:
+    if analysis.genotypes.n_informative_sex_chrom_excluded:
         print(
             f"{admix_sample}: excluded {analysis.genotypes.n_informative_sex_chrom_excluded} "
-            "informative sex-chromosome marker(s) (use --use-sex-chroms to keep them)",
+            "informative non-PAR sex-chromosome / MT marker(s); sex-chromosome markers "
+            "are not used in the estimate in this release",
             file=sys.stderr,
         )
     if analysis.genotypes.n_par_excluded:
@@ -850,6 +936,7 @@ def _warn_caller_provenance(args: argparse.Namespace, admix_paths: list[str]) ->
 def cmd_detect(args: argparse.Namespace) -> int:
     """Run the detect subcommand."""
     _validate_expected_relatedness(args)
+    declared_host_sex, declared_donor_sexes = _declared_sexes(args)
     _validate_sample_names(args.genotype_vcf, [args.host_sample] + args.donor_sample)
     admix_by_sample = _resolve_admix_samples(args.admix_vcf, args.sample)
 
@@ -925,7 +1012,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
             args.error_rate,
             calibration=calibration,
             run_host_presence=args.host_presence,
-            use_sex_chroms=args.use_sex_chroms,
+            declared_host_sex=declared_host_sex,
+            declared_donor_sexes=declared_donor_sexes,
             artifact_filter=args.artifact_filter,
             robust=args.robust,
             robust_k=args.robust_k,
@@ -997,6 +1085,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     if want_pdf:
         _require_pdf(args.pdf)
     _validate_expected_relatedness(args)
+    declared_host_sex, declared_donor_sexes = _declared_sexes(args)
     _validate_sample_names(args.genotype_vcf, [args.host_sample] + args.donor_sample)
     admix_by_sample = _resolve_admix_samples(args.admix_vcf, args.sample)
 
@@ -1042,7 +1131,8 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             args.error_rate,
             calibration=calibration,
             run_host_presence=args.host_presence,
-            use_sex_chroms=args.use_sex_chroms,
+            declared_host_sex=declared_host_sex,
+            declared_donor_sexes=declared_donor_sexes,
             artifact_filter=args.artifact_filter,
             robust=args.robust,
             robust_k=args.robust_k,
@@ -1742,6 +1832,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    _reject_retired_flags(parser, args)
 
     # Record the analysis invocation for report provenance (stored in the JSON
     # and shown in a collapsed section of the HTML report).

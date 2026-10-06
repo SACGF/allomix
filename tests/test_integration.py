@@ -595,3 +595,94 @@ class TestDynamicJointVcf:
         assert donor_pct == pytest.approx(20.0, abs=3.0), (
             f"round-trip recovered donor_pct={donor_pct}, expected ~20"
         )
+
+
+class TestSexCli:
+    """Sex flags (#50): declared sex parsing, the retired --use-sex-chroms, columns."""
+
+    @staticmethod
+    def _argv(*extra: str) -> list[str]:
+        return [
+            "detect",
+            "--genotype-vcf",
+            str(JOINT_VCF),
+            "--admix-vcf",
+            str(JOINT_VCF),
+            "--host-sample",
+            "HOST",
+            "--donor-sample",
+            "DONOR",
+            "--sample",
+            "ADMIX_F0.10",
+            "--min-dp",
+            "0",
+            "--min-gq",
+            "0",
+            *extra,
+        ]
+
+    def test_use_sex_chroms_is_retired(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main(self._argv("--use-sex-chroms"))
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "--use-sex-chroms has been retired" in err
+        assert "--recipient-sex" in err and "--donor-sex" in err
+        assert "removed in a later release" in err
+
+    def test_use_sex_chroms_hidden_from_help(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main(["detect", "--help"])
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "--use-sex-chroms" not in out
+        assert "--donor-sex" in out
+        assert "--recipient-sex" in out
+
+    def test_donor_sex_count_mismatch_errors(self):
+        with pytest.raises(SystemExit, match="--donor-sex given 2 value"):
+            main(self._argv("--donor-sex", "F", "--donor-sex", "M", "--tsv", "-"))
+
+    def test_declared_recipient_sex_on_autosome_only_panel(self, tmp_path):
+        """No chrX content: inference is unavailable, the declaration resolves it."""
+        out = tmp_path / "sex.tsv"
+        rc = main(self._argv("--recipient-sex", "F", "--tsv", str(out)))
+        assert rc == 0
+        header, values = (ln.split("\t") for ln in out.read_text().splitlines()[:2])
+        row = dict(zip(header, values, strict=True))
+        assert row["host_sex"] == "F"
+        assert row["sex_source"] == "declared"
+        assert row["donor_sex"] == "unavailable"
+        assert row["donor_sex_source"] == "unavailable"
+        assert row["sex_pair"] == "unknown"
+        assert row["n_chrx_used"] == "0"
+        assert row["n_par_excluded"] == "0"
+        assert row["n_other_contig_excluded"] == "0"
+        assert row["qc_status"] != "FAIL"
+
+    def test_donor_sex_na_and_json_sex_object(self, tmp_path):
+        out = tmp_path / "sex.json"
+        rc = main(self._argv("--recipient-sex", "male", "--donor-sex", "NA", "--json", str(out)))
+        assert rc == 0
+        data = json.loads(out.read_text())
+        sex = data["analysis"]["sex"]
+        assert sex["host"]["declared"] == "M"
+        assert sex["host"]["effective"] == "M"
+        assert sex["host"]["source"] == "declared"
+        assert sex["donors"][0]["declared"] is None
+        assert sex["pair"] == "unknown"
+        # NA is "nothing declared", so no donor sex is shown in the header meta.
+        assert data["meta"]["donors"][0]["sex"] is None
+        assert data["meta"]["sex"] == "male"
+        assert data["params"]["contig_policy"] == "autosomes"
+        assert "use_sex_chroms" not in data["params"]
+
+    def test_unparseable_recipient_sex_warns_and_runs(self, tmp_path, capsys):
+        out = tmp_path / "sex.tsv"
+        rc = main(self._argv("--recipient-sex", "intersex", "--tsv", str(out)))
+        assert rc == 0
+        assert "not F/female or M/male" in capsys.readouterr().err
+        header, values = (ln.split("\t") for ln in out.read_text().splitlines()[:2])
+        row = dict(zip(header, values, strict=True))
+        assert row["host_sex"] == "unavailable"
+        assert row["sex_source"] == "unavailable"

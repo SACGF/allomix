@@ -11,10 +11,10 @@ it does not print. Callers own I/O and messaging.
 
 from dataclasses import dataclass
 
-from allomix.constants import ROBUST_K_DEFAULT
+from allomix.constants import ROBUST_K_DEFAULT, SEX_MIN_REF_DP
 from allomix.estimate.chimerism import estimate_multi_donor, estimate_single_donor_bb
 from allomix.estimate.likelihood import PanelCalibration
-from allomix.genotype import MarkerData, MarkerGenotypes, classify_markers
+from allomix.genotype import ContigPolicy, MarkerData, MarkerGenotypes, classify_markers
 from allomix.qc.host_presence import DonorHomMarker, donor_hom_markers, host_presence_test
 from allomix.qc.qc import QCReport, assess_quality
 from allomix.qc.relatedness import (
@@ -26,6 +26,7 @@ from allomix.qc.relatedness import (
 )
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import estimate_contamination
+from allomix.qc.sex import Sex, assess_sex
 from allomix.results import ChimerismResult, MultiDonorResult
 
 
@@ -63,7 +64,9 @@ def analyse_sample(
     error_rate: float,
     calibration: PanelCalibration | None = None,
     run_host_presence: bool = True,
-    use_sex_chroms: bool = False,
+    contig_policy: ContigPolicy = ContigPolicy.AUTOSOMES,
+    declared_host_sex: Sex | None = None,
+    declared_donor_sexes: list[Sex | None] | None = None,
     artifact_filter: bool = True,
     sample_name: str | None = None,
     robust: str = "off",
@@ -85,6 +88,13 @@ def analyse_sample(
             applied here via ``min_dp``).
         run_host_presence: When False, ``result.host_presence`` is left unset and
             ``donor_hom_markers`` is empty.
+        contig_policy: Which contig classes enter the informative set (see
+            ``ContigPolicy``). The default admits autosomes only; ``ALL_PRIMARY``
+            is for diagnostic genomic views.
+        declared_host_sex: Declared host sex (``Sex.FEMALE`` / ``Sex.MALE``) or
+            None. Compared with the chrX-inferred sex in QC; see ``allomix.qc.sex``.
+        declared_donor_sexes: Declared sex per donor, aligned with ``donors``
+            (None entries for no declaration); None for nothing declared.
         artifact_filter: Drop alignment-artifact markers from the host-presence
             test (returned ``donor_hom_markers`` still lists them, flagged).
         robust: Robust-refit mode ("off"/"auto"/"force"; see
@@ -106,7 +116,7 @@ def analyse_sample(
     """
     cal = calibration or PanelCalibration()
     genotypes = classify_markers(
-        host, donors, admix, min_dp=min_dp, min_gq=min_gq, use_sex_chroms=use_sex_chroms
+        host, donors, admix, min_dp=min_dp, min_gq=min_gq, contig_policy=contig_policy
     )
     if sample_name is not None:
         genotypes.sample_name = sample_name
@@ -180,6 +190,19 @@ def analyse_sample(
     # contamination checks above (issue #38). Flags contamination, CNV/allelic
     # imbalance, or a sample mix-up via VAF skew at sites het in all parties.
     result.shared_het_balance = shared_het_balance(host, donors, admix, min_dp=min_dp)
+    # Sex of each reference sample from its own non-PAR chrX heterozygosity,
+    # reconciled with any declared sex, plus the host/donor pair status (#50).
+    # Attached before QC, which fails a confident inference that contradicts
+    # the declaration. The depth floor is the reference-sample one, not the
+    # admixture ``min_dp`` (see ``SEX_MIN_REF_DP``).
+    result.sex = assess_sex(
+        host,
+        donors,
+        min_dp=SEX_MIN_REF_DP,
+        min_gq=min_gq,
+        declared_host=declared_host_sex,
+        declared_donors=declared_donor_sexes,
+    )
     # Run-unit metadata (index-hopping provenance); attached before QC so the
     # shared-run flag can be reported.
     result.run_unit = run_unit

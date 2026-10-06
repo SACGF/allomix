@@ -6,6 +6,7 @@ import json
 import pytest
 
 from allomix.qc.qc import ChimerismResult, MarkerResult, QCReport
+from allomix.qc.sex import PairStatus, Sex, SexInference, SexResult
 from allomix.report.report import timeline_json, to_json, to_tsv
 
 # ---------------------------------------------------------------------------
@@ -407,3 +408,117 @@ class TestSharedHetBalanceOutput:
         assert d["shared_het_balance"]["n_shared_het"] == 120
         assert d["shared_het_balance"]["imbalanced_fraction"] == pytest.approx(0.25)
         json.dumps(d)  # serialisable
+
+
+# ---------------------------------------------------------------------------
+# Sex and contig columns (#50)
+# ---------------------------------------------------------------------------
+
+_SEX_COLS = [
+    "host_sex",
+    "donor_sex",
+    "sex_pair",
+    "sex_source",
+    "donor_sex_source",
+    "n_chrx_used",
+    "n_par_excluded",
+    "n_other_contig_excluded",
+    "n_informative_sex_chrom_excluded",
+]
+
+
+def _sex_inf(sex: Sex, declared: Sex | None = None, source: str = "inferred") -> SexInference:
+    return SexInference(
+        sex=sex,
+        n_x_sites=25,
+        n_x_het=12 if sex is Sex.FEMALE else 1,
+        x_het_rate=0.48 if sex is Sex.FEMALE else 0.04,
+        log10_lr=12.3456 if sex is Sex.FEMALE else -3.2,
+        chry_rel_depth=None,
+        n_y_sites=0,
+        declared=declared,
+        source=source,
+    )
+
+
+def _tsv_row(result, qc) -> dict[str, str]:
+    buf = io.StringIO()
+    to_tsv(result, qc, buf)
+    header, values = (ln.split("\t") for ln in buf.getvalue().splitlines()[:2])
+    return dict(zip(header, values, strict=True))
+
+
+class TestSexOutput:
+    def test_tsv_columns_na_without_inference(self):
+        row = _tsv_row(_make_chimerism_result(), _make_qc_report())
+        for col in _SEX_COLS:
+            assert col in row
+        assert [row[c] for c in _SEX_COLS[:5]] == ["NA"] * 5
+        assert [row[c] for c in _SEX_COLS[5:]] == ["0", "0", "0", "0"]
+
+    def test_tsv_columns_with_inference(self):
+        result = _make_chimerism_result()
+        result.sex = SexResult(
+            host=_sex_inf(Sex.FEMALE, Sex.FEMALE, "inferred+declared"),
+            donors=[_sex_inf(Sex.MALE)],
+            pair=PairStatus.MISMATCHED,
+        )
+        qc = _make_qc_report()
+        qc.n_par_excluded = 2
+        qc.n_other_contig_excluded = 1
+        qc.n_informative_sex_chrom_excluded = 7
+        row = _tsv_row(result, qc)
+        assert row["host_sex"] == "F"
+        assert row["donor_sex"] == "M"
+        assert row["sex_pair"] == "mismatched"
+        assert row["sex_source"] == "inferred+declared"
+        assert row["donor_sex_source"] == "inferred"
+        assert row["n_chrx_used"] == "0"
+        assert row["n_par_excluded"] == "2"
+        assert row["n_other_contig_excluded"] == "1"
+        assert row["n_informative_sex_chrom_excluded"] == "7"
+
+    def test_tsv_multi_donor_joined(self):
+        result = _make_chimerism_result()
+        result.sex = SexResult(
+            host=_sex_inf(Sex.FEMALE),
+            donors=[
+                _sex_inf(Sex.FEMALE),
+                _sex_inf(Sex.UNAVAILABLE, Sex.FEMALE, "declared"),
+            ],
+            pair=PairStatus.MATCHED_FEMALE,
+        )
+        row = _tsv_row(result, _make_qc_report())
+        assert row["donor_sex"] == "F;F"  # effective: the declared sex resolves donor 2
+        assert row["donor_sex_source"] == "inferred;declared"
+        assert row["sex_pair"] == "matched_female"
+
+    def test_json_sex_object(self):
+        result = _make_chimerism_result()
+        result.sex = SexResult(
+            host=_sex_inf(Sex.FEMALE, Sex.MALE, "conflict"),
+            donors=[_sex_inf(Sex.MALE)],
+            pair=PairStatus.MISMATCHED,
+        )
+        d = to_json(result, _make_qc_report())
+        sex = d["sex"]
+        assert sex["pair"] == "mismatched"
+        host = sex["host"]
+        assert host["sex"] == "F"
+        assert host["effective"] == "F"
+        assert host["declared"] == "M"
+        assert host["source"] == "conflict"
+        assert host["n_x_sites"] == 25
+        assert host["n_x_het"] == 12
+        assert host["x_het_rate"] == pytest.approx(0.48)
+        assert host["log10_lr"] == pytest.approx(12.3456)
+        assert host["chry_rel_depth"] is None
+        assert sex["donors"][0]["declared"] is None
+        assert d["n_chrx_used"] == 0
+        assert d["n_par_excluded"] == 0
+        json.dumps(d)  # everything JSON-serialisable
+
+    def test_json_sex_null_without_inference(self):
+        d = to_json(_make_chimerism_result(), _make_qc_report())
+        assert d["sex"] is None
+        assert "n_informative_sex_chrom_excluded" in d

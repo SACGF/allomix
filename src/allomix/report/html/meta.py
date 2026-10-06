@@ -23,19 +23,23 @@ class DonorMeta:
             "unrelated", "first-degree", "sibling"). Free text; shown verbatim.
             This is the human-facing label, separate from the
             ``--expected-relatedness`` value that drives the QC check.
+        sex: Declared donor sex as given on the CLI (``--donor-sex``), shown
+            verbatim next to the inferred sex. The parsed form drives the QC
+            check; this is the display text.
     """
 
     donor_id: str | None = None
     relationship: str | None = None
+    sex: str | None = None
 
     def to_dict(self) -> dict:
         """Serialise to a plain JSON-safe dict."""
-        return {"donor_id": self.donor_id, "relationship": self.relationship}
+        return {"donor_id": self.donor_id, "relationship": self.relationship, "sex": self.sex}
 
     @classmethod
     def from_dict(cls, d: dict) -> "DonorMeta":
         """Rebuild from a ``to_dict`` mapping (unknown keys ignored)."""
-        return cls(donor_id=d.get("donor_id"), relationship=d.get("relationship"))
+        return cls(donor_id=d.get("donor_id"), relationship=d.get("relationship"), sex=d.get("sex"))
 
 
 @dataclass
@@ -50,7 +54,8 @@ class ReportMeta:
     Attributes:
         recipient_id: Recipient identifier.
         recipient_name: Optional recipient display name.
-        sex: Optional recipient sex, shown verbatim.
+        sex: Optional declared recipient sex, shown verbatim next to the sex
+            inferred from chrX (the inference lives in the analysis payload).
         dob: Optional date of birth, as a preformatted string.
         transplant_type: Transplant type label (default "HSCT"); allows others.
         transplant_date: Optional transplant date, as a preformatted string.

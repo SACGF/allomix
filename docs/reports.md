@@ -24,6 +24,23 @@ Because the report is rendered from exactly this structure,
 `allomix report saved.json --output report.html` regenerates the report from
 saved data without re-running the analysis (on any machine).
 
+The analysis payload carries a `sex` object (`host`, `donors`, `pair`) with
+each reference sample's chrX-inferred sex, the declared sex, how the two were
+reconciled (`source`: `inferred`, `declared`, `inferred+declared`, `conflict`,
+`unavailable`), the `effective` sex used for routing, and the counts behind the
+call (`n_x_sites`, `n_x_het`, `x_het_rate`, `log10_lr`; `chry_rel_depth` is
+reserved and null). The contig accounting sits beside the other marker counts:
+`n_chrx_used`, `n_par_excluded`, `n_other_contig_excluded`,
+`n_informative_sex_chrom_excluded`.
+
+The TSV summary appends the same information as columns, after the run-unit
+block: `host_sex`, `donor_sex` (per donor, joined with `;`), `sex_pair`
+(`matched_female` / `matched_male` / `mismatched` / `unknown`), `sex_source`
+(host), `donor_sex_source` (per donor, joined), `n_chrx_used`,
+`n_par_excluded`, `n_other_contig_excluded`,
+`n_informative_sex_chrom_excluded`. The sex cells are `NA` when inference did
+not run.
+
 ## HTML report
 
 `--html` writes a single self-contained HTML file (all CSS and JavaScript
@@ -31,10 +48,14 @@ inlined, no network access needed) suitable for review or attaching to a record.
 It is written for the clinician: the headline chimerism fractions with CIs, the
 host-presence callout, a plain-language QC breakdown (informative-marker
 accounting and the number of QC flags), the QC panel, and a methods/provenance
-footer. The footer lists the analysis settings (thresholds, error/bias model,
-and the on/off toggles) and ends with a collapsed "Run command" section holding
-the recorded invocation; that section is the only place full file paths appear,
-so it is hidden by default.
+footer. The header shows the recipient's and each donor's sex as "declared /
+inferred" (for example `F declared / F inferred`, or just `M inferred` when
+nothing was declared). The footer lists the analysis settings (thresholds,
+error/bias model, and the on/off toggles), the sex-chromosome handling (the
+host/donor pair status and the number of chrX markers used) and, when
+non-zero, the pseudoautosomal and non-primary-contig exclusions, and ends with
+a collapsed "Run command" section holding the recorded invocation; that section
+is the only place full file paths appear, so it is hidden by default.
 
 It does not include the per-marker table; that detail is for bioinformaticians
 and is written separately with `--marker-csv PATH` (one row per marker per

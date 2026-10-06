@@ -2,12 +2,19 @@
 
 import pytest
 
-from allomix.constants import MIN_X_SITES, SEX_LR_THRESHOLD
+from allomix.constants import (
+    CHRY_REL_DEPTH_FEMALE_WEAK,
+    CHRY_REL_DEPTH_MALE,
+    CHRY_REL_DEPTH_MALE_WEAK,
+    MIN_X_SITES,
+    SEX_LR_THRESHOLD,
+)
 from allomix.genotype import MarkerData
 from allomix.qc.sex import (
     PairStatus,
     Sex,
     assess_sex,
+    grade_chry_depth,
     infer_sex,
     pair_status,
     parse_declared_sex,
@@ -143,6 +150,114 @@ class TestInferSex:
         assert inf.sex is Sex.FEMALE
         assert inf.source == "conflict"
         assert inf.effective is Sex.FEMALE
+
+
+def _depths(rel: float, auto_depth: int = 1000, n_auto: int = 10) -> list[tuple[str, int, int]]:
+    """Forced-pileup depths whose chrY relative depth is ``rel``.
+
+    Three non-PAR chrY sites (SRY, ZFY, AMELY positions) with the max at
+    ``rel * auto_depth``, plus a chrY PAR1 site at high depth that must be ignored.
+    """
+    rows = [("chr1", 1_000_000 + i, auto_depth) for i in range(n_auto)]
+    top = round(rel * auto_depth)
+    rows += [("chrY", 2_787_394, top), ("chrY", 2_979_984, top // 2), ("chrY", 6_869_956, 0)]
+    rows.append(("chrY", 1_000_000, 10 * auto_depth))
+    return rows
+
+
+class TestChrYSecondary:
+    @pytest.mark.parametrize(
+        "rel, expected",
+        [
+            (None, None),
+            (0.0, "F"),
+            (CHRY_REL_DEPTH_FEMALE_WEAK, "F"),
+            (0.1, "F*"),
+            (CHRY_REL_DEPTH_MALE_WEAK, "F*"),
+            (0.3, "M*"),
+            (CHRY_REL_DEPTH_MALE, "M*"),
+            (0.51, "M"),
+            (1.2, "M"),
+        ],
+    )
+    def test_grade_matches_lab_thresholds(self, rel, expected):
+        assert grade_chry_depth(rel) == expected
+
+    def test_no_depth_input(self):
+        inf = infer_sex(_autosomes() + _x(25, 4), min_dp=20, min_gq=20)
+        assert inf.chry_rel_depth is None
+        assert inf.chry_call is None
+        assert not inf.chry_resolved
+
+    def test_depth_ratio_ignores_par(self):
+        inf = infer_sex(_autosomes() + _x(25, 12), min_dp=20, min_gq=20, region_depth=_depths(0.8))
+        assert inf.chry_rel_depth == pytest.approx(0.8)
+        assert inf.chry_call == "M"
+
+    def test_male_resolves_ambiguous(self):
+        """The plan's known case: a male with spurious chrX hets is ambiguous on chrX alone."""
+        markers = _autosomes() + _x(25, 4)
+        assert infer_sex(markers, min_dp=20, min_gq=20).sex is Sex.AMBIGUOUS
+        inf = infer_sex(markers, min_dp=20, min_gq=20, region_depth=_depths(0.8))
+        assert inf.sex is Sex.MALE
+        assert inf.chry_resolved
+        assert inf.source == "inferred"
+        assert inf.effective is Sex.MALE
+
+    def test_male_resolves_unavailable(self):
+        inf = infer_sex(_autosomes(), min_dp=20, min_gq=20, region_depth=_depths(0.8))
+        assert inf.sex is Sex.MALE
+        assert inf.chry_resolved
+        assert inf.n_x_sites == 0
+
+    @pytest.mark.parametrize("rel", [0.3, 0.1, 0.0])
+    def test_weak_or_absent_chry_does_not_resolve(self, rel):
+        """``M*`` is too weak; ``F*`` / ``F`` (absent chrY) are not evidence for a female."""
+        inf = infer_sex(_autosomes() + _x(25, 4), min_dp=20, min_gq=20, region_depth=_depths(rel))
+        assert inf.sex is Sex.AMBIGUOUS
+        assert not inf.chry_resolved
+
+    def test_never_overrules_confident_chrx(self):
+        inf = infer_sex(_autosomes() + _x(25, 12), min_dp=20, min_gq=20, region_depth=_depths(0.8))
+        assert inf.sex is Sex.FEMALE
+        assert inf.chry_call == "M"
+        assert not inf.chry_resolved
+
+    def test_chry_male_against_declared_female_is_conflict(self):
+        inf = infer_sex(
+            _autosomes() + _x(25, 4),
+            min_dp=20,
+            min_gq=20,
+            declared=Sex.FEMALE,
+            region_depth=_depths(0.8),
+        )
+        assert inf.sex is Sex.MALE
+        assert inf.source == "conflict"
+
+    def test_assess_sex_aligns_donor_depths(self):
+        host = _autosomes() + _x(25, 4)
+        donors = [_autosomes() + _x(25, 4), _autosomes() + _x(25, 4)]
+        res = assess_sex(
+            host,
+            donors,
+            min_dp=20,
+            min_gq=20,
+            host_region_depth=_depths(0.8),
+            donor_region_depths=[None, _depths(0.9)],
+        )
+        assert res.host.sex is Sex.MALE
+        assert res.donors[0].sex is Sex.AMBIGUOUS
+        assert res.donors[1].sex is Sex.MALE
+        assert res.pair is PairStatus.UNKNOWN
+        res = assess_sex(
+            host,
+            donors[1:],
+            min_dp=20,
+            min_gq=20,
+            host_region_depth=_depths(0.8),
+            donor_region_depths=[_depths(0.9)],
+        )
+        assert res.pair is PairStatus.MATCHED_MALE
 
 
 class TestPairStatus:

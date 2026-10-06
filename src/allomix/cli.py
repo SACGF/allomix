@@ -200,7 +200,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--ref-depth-vcf",
         metavar="VCF",
         help="The same forced-pileup VCF for the host and donor reference samples "
-        "(the pipeline's <patient>/refs/midpoints.vcf.gz).",
+        "(the pipeline's <patient>/refs/midpoints.vcf.gz). Also gives sex inference "
+        "its chrY-depth secondary signal, which resolves an ambiguous chrX call to "
+        "male; usable without --admix-depth-vcf.",
     )
     parser.add_argument(
         "--error-rate",
@@ -821,7 +823,7 @@ def _sex_exclusion_reason(sex: SexResult | None, contig_policy: ContigPolicy) ->
 def _load_region_depths(
     path: str | None, samples: list[str], flag: str
 ) -> dict[str, list[RegionDepth] | None]:
-    """Per-sample forced-pileup depths from a midpoint VCF, for the chrY readout.
+    """Per-sample forced-pileup depths from a midpoint VCF, for the chrY signals.
 
     Returns a dict with one entry per requested sample: the ``(chrom, pos, dp)``
     list, or None when the file was not given or the sample is absent from it

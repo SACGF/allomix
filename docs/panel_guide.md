@@ -126,8 +126,11 @@ and only a declared sex (`--recipient-sex`, `--donor-sex`) can fill it in; with
 sites that do not resolve it is `ambiguous`. Around 25 non-PAR chrX SNPs (the
 public SRP434573 panel) separate the sexes cleanly. Sex-typing amplicons such
 as SRY, ZFY, AMELY and their chrX counterparts are depth-only regions, not
-SNPs, and do not contribute to the het-rate inference; chrY depth is reserved
-as a secondary signal for a later release.
+SNPs, and do not contribute to the het-rate inference. Their depth, from the
+pipeline's midpoint pileup (`--ref-depth-vcf`), is a secondary signal: strong
+chrY depth resolves an ambiguous or unavailable chrX call to male. Low chrY
+depth is never read as female, since on a capture panel the chrY targets may
+simply not be pulled down.
 
 **chrX SNPs add informative markers for sex-matched pairs.** Non-PAR chrX
 markers are used in the estimate when host and donor are the same sex: through

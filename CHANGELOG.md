@@ -4,6 +4,16 @@
 
 ### Added
 
+- **chrY depth as the secondary sex signal** (`allomix.qc.sex`, plan item 3
+  of `plans/sex_markers.md`). With `--ref-depth-vcf`, each reference sample's
+  `max(non-PAR chrY DP) / median(autosomal DP)` is graded with the lab's
+  amplicon-pipeline thresholds (M > 0.5, M* > 0.15, F* > 0.05, else F). A full
+  `M` grade resolves an ambiguous or unavailable chrX het-rate call to male; a
+  confident chrX call is never changed, and low chrY depth is not used to call
+  a female. JSON `sex` entries gain `chry_call` and `chry_resolved`, and
+  `chry_rel_depth` is now filled; the HTML header marks a chrY-resolved call.
+  A chrY-resolved male against a declared female is a conflict (QC FAIL), as
+  for any confident inference.
 - **Sex-mismatch cross-check** (`allomix.qc.sex_mismatch`, #48). For a
   sex-mismatched single-donor pair the excluded non-PAR chrX markers are
   fitted on their own under the copy-number-weighted expectation (female two

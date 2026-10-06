@@ -499,8 +499,16 @@ Needs internal data (user, other machine):
 
 Code, once the above is known:
 
-3. Wire chrY relative depth into sex inference as the secondary signal
-   (`SexInference.chry_rel_depth` is reserved and always None today).
+3. ~~Wire chrY relative depth into sex inference as the secondary signal.~~
+   Done (2026-10-06): `qc.sex.infer_sex` takes the reference sample's
+   forced-pileup depths (`--ref-depth-vcf`), grades `chry_rel_depth` with the
+   lab thresholds (`chry_call`), and a full `M` grade resolves an `AMBIGUOUS`
+   or `UNAVAILABLE` chrX call to `MALE` (`chry_resolved`). This covers the
+   known sensitivity in item 1 (male with spurious chrX hets). Departure from
+   the plan as written: `F` / `F*` grades do **not** resolve to female, because
+   absent chrY depth is only evidence once the panel is known to capture the
+   chrY targets (open question 2); on a haem capture with SID chrY intervals
+   but no chrY probes every sample would read `F`. Revisit after item 2.
 4. Exercise the chrY depth readout of Phase 3 on real data, or on the GIAB
    trio arm of `plans/wetlab_validation_design.md`.
 5. Run the paper rules `srp434573_chrx` and `srp434573_sexmismatch` in a full
@@ -534,7 +542,12 @@ Code, once the above is known:
    the MLE, which the 2 bp interval width and absence of a GATK record will
    usually do on their own, but the calibration output will show if one leaks
    through as a "site".
-5. **Concordance tolerance.** `SEXCHROM_CONCORDANCE_PP` (2 pp) is provisional
+5. **Female resolution from chrY depth.** Should a low chrY grade (`F`)
+   resolve an ambiguous chrX call to female on a panel shown to capture chrY
+   (e.g. rhAmpSeq SID amplicon runs)? Needs open question 2 answered and some
+   way to know per run that chrY capture works (a confident chrX male in the
+   same case with an `M` grade would show it). Not implemented.
+6. **Concordance tolerance.** `SEXCHROM_CONCORDANCE_PP` (2 pp) is provisional
    and mostly moot on real data, where the chrX CIs are 5 to 8 pp wide and
    concordance is driven by CI overlap. Decide after more mismatched pairs
    whether the chrX fit needs a dispersion floor and whether discordance

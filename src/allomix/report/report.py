@@ -454,7 +454,9 @@ def _sex_inference_json(inf: SexInference) -> dict:
         "n_x_het": inf.n_x_het,
         "x_het_rate": round(inf.x_het_rate, 6) if inf.x_het_rate is not None else None,
         "log10_lr": round(inf.log10_lr, 4) if inf.log10_lr is not None else None,
-        "chry_rel_depth": inf.chry_rel_depth,
+        "chry_rel_depth": round(inf.chry_rel_depth, 6) if inf.chry_rel_depth is not None else None,
+        "chry_call": inf.chry_call,
+        "chry_resolved": inf.chry_resolved,
         "n_y_sites": inf.n_y_sites,
     }
 

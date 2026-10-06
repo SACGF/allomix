@@ -123,7 +123,9 @@ def analyse_sample(
             admixture sample (``sex_mismatch.region_depths_from_vcf``), for the
             experimental chrY depth readout of the sex-mismatch cross-check.
             None (the default) skips that readout.
-        host_region_depth: The same for the host reference sample.
+        host_region_depth: The same for the host reference sample. Also the
+            chrY-depth secondary signal of sex inference, which resolves an
+            ambiguous chrX call to male (``qc.sex.infer_sex``).
         donor_region_depths: The same per donor, aligned with ``donors``.
     """
     cal = calibration or PanelCalibration()
@@ -141,6 +143,8 @@ def analyse_sample(
         min_gq=min_gq,
         declared_host=declared_host_sex,
         declared_donors=declared_donor_sexes,
+        host_region_depth=host_region_depth,
+        donor_region_depths=donor_region_depths,
     )
     genotypes = classify_markers(
         host,

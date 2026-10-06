@@ -357,6 +357,16 @@ class TestSexHeaderAndFooter:
         assert "female declared / unavailable inferred" in html
         assert "sex-matched (female); chrX not used" in html
 
+    def test_header_marks_chry_resolved(self):
+        result = _result()
+        host = _sex_inference(Sex.MALE)
+        host.chry_rel_depth, host.chry_call, host.chry_resolved = 0.8, "M", True
+        result.sex = SexResult(
+            host=host, donors=[_sex_inference(Sex.MALE)], pair=PairStatus.MATCHED_MALE
+        )
+        html = _render(result, _qc(), meta=ReportMeta(), params=_params())
+        assert "M inferred (chrY depth)" in html
+
     def test_footer_chrx_used_and_male_het_drops(self):
         result = _result()
         result.sex = SexResult(

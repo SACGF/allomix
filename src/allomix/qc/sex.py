@@ -14,10 +14,17 @@ when ``|log10 LR|`` clears ``SEX_LR_THRESHOLD``. Below ``MIN_X_SITES`` usable
 sites the result is ``UNAVAILABLE`` (no usable chrX content on this panel);
 with sites but no clear call it is ``AMBIGUOUS``.
 
-chrY relative depth is reserved as a secondary signal (``chry_rel_depth``,
-``n_y_sites``) and is not yet computed: an invariant chrY site has no GATK
-record, so the depth has to come from a pileup the pipeline does not yet make
-(plan Phase 3).
+Secondary signal: chrY relative depth, the lab statistic ``max(non-PAR chrY
+DP) / median(autosomal DP)``, when a forced midpoint pileup of the reference
+sample is supplied (``--ref-depth-vcf``; an invariant chrY site has no GATK
+record, so the genotype VCF cannot provide it). It is graded with the lab's
+thresholds (``chry_call``: ``M`` / ``M*`` / ``F*`` / ``F``) and used only to
+resolve a chrX call that is ``AMBIGUOUS`` or ``UNAVAILABLE``, never to overrule
+a confident one. Only an unstarred ``M`` resolves: chrY depth is positive
+evidence for a male, but its absence is not evidence for a female until it is
+known that the panel captures the chrY targets at all (a panel whose intervals
+list chrY sites the capture does not pull down would read every sample as
+``F``).
 
 Declared sex (``--recipient-sex`` / ``--donor-sex``) is used two ways: it
 resolves an ambiguous or unavailable inference for routing, and a confident
@@ -30,9 +37,13 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
 from scipy.stats import binom
 
 from allomix.constants import (
+    CHRY_REL_DEPTH_FEMALE_WEAK,
+    CHRY_REL_DEPTH_MALE,
+    CHRY_REL_DEPTH_MALE_WEAK,
     FEMALE_X_HET_SCALE,
     MALE_X_SPURIOUS_HET,
     MIN_X_SITES,
@@ -41,6 +52,9 @@ from allomix.constants import (
 from allomix.contigs import ContigClass, classify_contig
 from allomix.genotype import MarkerData
 from allomix.sex_types import PairStatus, Sex
+
+#: One forced-pileup record: ``(chrom, pos, dp)`` for a single sample.
+RegionDepth = tuple[str, int, int]
 
 # Clamp on the female-model het probability so a sample with an extreme
 # autosomal het rate (or none) still gives a finite, sensible likelihood.
@@ -68,9 +82,11 @@ class SexInference:
         x_het_rate: ``n_x_het / n_x_sites``, or None when there are no sites.
         log10_lr: log10 likelihood ratio, female model over male model, or None
             when below ``MIN_X_SITES``. Positive favours female.
-        chry_rel_depth: Reserved for the chrY depth secondary; always None in
-            this release.
-        n_y_sites: Usable non-PAR chrY sites seen (informational).
+        chry_rel_depth: ``max(non-PAR chrY DP) / median(autosomal DP)`` from the
+            forced-pileup depth input, or None when none was given or it had no
+            chrY or autosomal sites.
+        n_y_sites: Usable non-PAR chrY sites seen in the genotype VCF
+            (informational).
         declared: Declared sex, or None.
         source: How ``effective`` was arrived at: ``"inferred"`` (no
             declaration, or an unresolved inference with none), ``"declared"``
@@ -78,6 +94,10 @@ class SexInference:
             ``"inferred+declared"`` (both agree), ``"conflict"`` (confident
             inference contradicts the declaration) or ``"unavailable"`` (no
             chrX content and nothing declared).
+        chry_call: The lab's grade of ``chry_rel_depth`` (``"M"``, ``"M*"``,
+            ``"F*"``, ``"F"``), or None without it.
+        chry_resolved: True when ``sex`` came from the chrY depth because the
+            chrX call was ambiguous or unavailable.
     """
 
     sex: Sex
@@ -89,6 +109,8 @@ class SexInference:
     n_y_sites: int
     declared: Sex | None
     source: str
+    chry_call: str | None = None
+    chry_resolved: bool = False
 
     @property
     def effective(self) -> Sex:
@@ -132,6 +154,47 @@ def parse_declared_sex(text: str | None) -> Sex | None:
     return None
 
 
+def split_region_depths(depths: list[RegionDepth]) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``(chrY non-PAR depths, autosomal depths)`` as arrays."""
+    y = [dp for chrom, pos, dp in depths if classify_contig(chrom, pos) is ContigClass.Y_NONPAR]
+    auto = [dp for chrom, pos, dp in depths if classify_contig(chrom, pos) is ContigClass.AUTOSOME]
+    return np.array(y, dtype=float), np.array(auto, dtype=float)
+
+
+def chry_depth_ratio(depths: list[RegionDepth]) -> tuple[float | None, int]:
+    """The lab statistic ``max(non-PAR chrY DP) / median(autosomal DP)`` for one sample.
+
+    Returns:
+        ``(ratio, n_chry_sites)``; the ratio is None when there are no chrY
+        sites, no autosomal sites, or a zero autosomal median.
+    """
+    y, auto = split_region_depths(depths)
+    if y.size == 0 or auto.size == 0:
+        return None, int(y.size)
+    med = float(np.median(auto))
+    if med <= 0.0:
+        return None, int(y.size)
+    return float(y.max() / med), int(y.size)
+
+
+def grade_chry_depth(rel_depth: float | None) -> str | None:
+    """Grade a chrY relative depth with the lab thresholds.
+
+    ``M`` above ``CHRY_REL_DEPTH_MALE``, ``M*`` above
+    ``CHRY_REL_DEPTH_MALE_WEAK``, ``F*`` above ``CHRY_REL_DEPTH_FEMALE_WEAK``,
+    else ``F``; None when there is no depth.
+    """
+    if rel_depth is None:
+        return None
+    if rel_depth > CHRY_REL_DEPTH_MALE:
+        return "M"
+    if rel_depth > CHRY_REL_DEPTH_MALE_WEAK:
+        return "M*"
+    if rel_depth > CHRY_REL_DEPTH_FEMALE_WEAK:
+        return "F*"
+    return "F"
+
+
 def _usable(m: MarkerData, min_dp: int, min_gq: int) -> bool:
     """Called, clean biallelic diploid GT passing the depth and GQ filters."""
     a, b = m.gt
@@ -156,6 +219,7 @@ def infer_sex(
     min_dp: int,
     min_gq: int,
     declared: Sex | None = None,
+    region_depth: list[RegionDepth] | None = None,
 ) -> SexInference:
     """Infer the sex of one reference sample from its chrX heterozygosity.
 
@@ -169,11 +233,18 @@ def infer_sex(
     MALE at or below its negative, AMBIGUOUS between. Fewer than ``MIN_X_SITES``
     usable chrX sites gives UNAVAILABLE.
 
+    When ``region_depth`` is given, its chrY relative depth is graded with the
+    lab thresholds, and an unstarred ``M`` grade turns an AMBIGUOUS or
+    UNAVAILABLE chrX call into MALE (``chry_resolved``). A confident chrX call is
+    never changed.
+
     Args:
         markers: Parsed reference-sample markers (host or one donor).
         min_dp: Minimum depth at a site for it to count.
         min_gq: Minimum GQ at a site for it to count (ignored when GQ absent).
         declared: Declared sex, or None.
+        region_depth: Forced-pileup ``(chrom, pos, dp)`` depths for this sample
+            (``sex_mismatch.region_depths_from_vcf``), or None.
 
     Returns:
         A ``SexInference`` carrying the call, the counts behind it, and the
@@ -212,16 +283,24 @@ def infer_sex(
         else:
             inferred = Sex.AMBIGUOUS
 
+    rel_depth = chry_depth_ratio(region_depth)[0] if region_depth is not None else None
+    y_call = grade_chry_depth(rel_depth)
+    chry_resolved = not inferred.confident and y_call == "M"
+    if chry_resolved:
+        inferred = Sex.MALE
+
     return SexInference(
         sex=inferred,
         n_x_sites=n_x,
         n_x_het=n_x_het,
         x_het_rate=x_het_rate,
         log10_lr=log10_lr,
-        chry_rel_depth=None,
+        chry_rel_depth=rel_depth,
         n_y_sites=n_y,
         declared=declared,
         source=_source(inferred, declared),
+        chry_call=y_call,
+        chry_resolved=chry_resolved,
     )
 
 
@@ -250,16 +329,26 @@ def assess_sex(
     min_gq: int,
     declared_host: Sex | None = None,
     declared_donors: list[Sex | None] | None = None,
+    host_region_depth: list[RegionDepth] | None = None,
+    donor_region_depths: list[list[RegionDepth] | None] | None = None,
 ) -> SexResult:
     """Infer sex for the host and every donor and summarise the pair.
 
-    ``declared_donors`` is aligned with ``donors`` (one entry per donor, None for
-    no declaration); None means nothing declared for any donor.
+    ``declared_donors`` and ``donor_region_depths`` are aligned with ``donors``
+    (one entry per donor, None for none); None means nothing for any donor.
     """
     decl = declared_donors or [None] * len(donors)
-    host_inf = infer_sex(host, min_dp=min_dp, min_gq=min_gq, declared=declared_host)
+    depths = donor_region_depths or [None] * len(donors)
+    host_inf = infer_sex(
+        host,
+        min_dp=min_dp,
+        min_gq=min_gq,
+        declared=declared_host,
+        region_depth=host_region_depth,
+    )
     donor_infs = [
-        infer_sex(d, min_dp=min_dp, min_gq=min_gq, declared=decl[i]) for i, d in enumerate(donors)
+        infer_sex(d, min_dp=min_dp, min_gq=min_gq, declared=decl[i], region_depth=depths[i])
+        for i, d in enumerate(donors)
     ]
     pair = pair_status(host_inf.effective, [d.effective for d in donor_infs])
     return SexResult(host=host_inf, donors=donor_infs, pair=pair)
@@ -267,11 +356,15 @@ def assess_sex(
 
 __all__ = [
     "PairStatus",
+    "RegionDepth",
     "Sex",
     "SexInference",
     "SexResult",
     "assess_sex",
+    "chry_depth_ratio",
+    "grade_chry_depth",
     "infer_sex",
     "pair_status",
     "parse_declared_sex",
+    "split_region_depths",
 ]

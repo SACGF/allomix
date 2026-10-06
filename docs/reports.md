@@ -28,8 +28,11 @@ The analysis payload carries a `sex` object (`host`, `donors`, `pair`) with
 each reference sample's chrX-inferred sex, the declared sex, how the two were
 reconciled (`source`: `inferred`, `declared`, `inferred+declared`, `conflict`,
 `unavailable`), the `effective` sex used for routing, and the counts behind the
-call (`n_x_sites`, `n_x_het`, `x_het_rate`, `log10_lr`; `chry_rel_depth` is
-reserved and null). The contig accounting sits beside the other marker counts:
+call (`n_x_sites`, `n_x_het`, `x_het_rate`, `log10_lr`), plus the chrY
+secondary signal when `--ref-depth-vcf` was given: `chry_rel_depth`, its
+lab grade `chry_call` (`M`, `M*`, `F*`, `F`; null without depth) and
+`chry_resolved` (true when chrY depth turned an ambiguous or unavailable chrX
+call into male). The contig accounting sits beside the other marker counts:
 `n_chrx_used` (non-PAR chrX markers in the informative set, non-zero only for a
 sex-matched pair), `n_chrx_male_het_dropped` (male/male pair sites dropped for
 a het call), `n_par_excluded`, `n_other_contig_excluded`,

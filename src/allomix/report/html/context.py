@@ -75,7 +75,8 @@ def _sex_text(declared: str | None, inferred: dict | None) -> str | None:
     if declared:
         parts.append(f"{declared} declared")
     if inferred is not None and inferred.get("sex"):
-        parts.append(f"{inferred['sex']} inferred")
+        basis = " (chrY depth)" if inferred.get("chry_resolved") else ""
+        parts.append(f"{inferred['sex']} inferred{basis}")
     return " / ".join(parts) if parts else None
 
 

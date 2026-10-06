@@ -144,6 +144,22 @@ class TestSexWiring:
         assert a.qc.n_informative_sex_chrom_excluded == 12
         assert a.qc.status != "FAIL"
 
+    def test_host_chry_depth_resolves_autosome_only_panel(self):
+        """``host_region_depth`` reaches sex inference as the chrY secondary signal."""
+        host, donor, admix = _synthetic_trio()
+        host = [m for m in host if m.chrom == "chr1"]
+        donor = [m for m in donor if m.chrom == "chr1"]
+        admix = [m for m in admix if m.chrom == "chr1"]
+        depth = [("chr1", 1_000_000 + i, 1000) for i in range(10)] + [("chrY", 2_787_394, 900)]
+        a = analyse_sample(
+            host, [donor], admix, min_dp=0, min_gq=0, error_rate=0.01, host_region_depth=depth
+        )
+        sex = a.result.sex
+        assert sex.host.sex is Sex.MALE
+        assert sex.host.chry_resolved
+        assert sex.donors[0].sex is Sex.UNAVAILABLE
+        assert sex.pair is PairStatus.UNKNOWN
+
     def test_declared_sex_resolves_autosome_only_panel(self):
         host, donor, admix = _synthetic_trio()
         host = [m for m in host if m.chrom == "chr1"]

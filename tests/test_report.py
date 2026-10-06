@@ -518,6 +518,8 @@ class TestSexOutput:
         assert host["x_het_rate"] == pytest.approx(0.48)
         assert host["log10_lr"] == pytest.approx(12.3456)
         assert host["chry_rel_depth"] is None
+        assert host["chry_call"] is None
+        assert host["chry_resolved"] is False
         assert sex["donors"][0]["declared"] is None
         assert d["n_chrx_used"] == 0
         assert d["n_par_excluded"] == 0

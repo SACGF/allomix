@@ -61,6 +61,16 @@ MIN_X_SITES = 5
 # downsamples per alignment start, so amplicon reference VCFs cap DP near 50
 # (SRP434573 does), and the admixture depth floor would discard every site.
 SEX_MIN_REF_DP = 20
+# chrY relative depth ``max(non-PAR chrY DP) / median(autosomal DP)``, the
+# secondary sex signal, read from a forced midpoint pileup of the reference
+# sample. Thresholds are the lab's amplicon-pipeline sex imputation
+# (``combine_target_region_mean_depth_for_amplicon_and_impute_sex.py``):
+# M above 0.5, M* above 0.15, F* above 0.05, else F. Only an unstarred M call is
+# used, and only to resolve an ambiguous or unavailable chrX call (see
+# ``allomix.qc.sex``).
+CHRY_REL_DEPTH_MALE = 0.5
+CHRY_REL_DEPTH_MALE_WEAK = 0.15
+CHRY_REL_DEPTH_FEMALE_WEAK = 0.05
 
 # Sex-mismatch cross-check (allomix.qc.sex_mismatch, #48): the independent
 # sex-chromosome estimate of the donor fraction for a sex-mismatched host/donor

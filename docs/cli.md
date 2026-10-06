@@ -175,7 +175,7 @@ Both `detect` and `timeline` accept these additional options:
 | `--donor-sex` | none | Declared donor sex, one per `--donor-sample` in order (repeat to match; `NA` for none). Parsed and checked like `--recipient-sex` |
 | `--contig-policy` | `sex_aware` | Which contigs may enter the estimate. `sex_aware` routes non-PAR chrX on the inferred/declared sex pair (used for a sex-matched pair, homozygous sites only for a male pair; excluded otherwise); `autosomes_only` never uses chrX. PAR, chrY, MT and non-primary contigs are excluded under both |
 | `--admix-depth-vcf` | none | Forced-pileup VCF with per-site `FORMAT/DP` for the admixture samples at the panel's interval midpoints (the pipeline's `<patient>.admix.midpoints.vcf.gz`). Enables the experimental chrY depth readout of the sex-mismatch cross-check; needs `--ref-depth-vcf`. Samples missing from the file are skipped with a warning |
-| `--ref-depth-vcf` | none | The same forced-pileup VCF for the host and donor reference samples (the pipeline's `<patient>/refs/midpoints.vcf.gz`) |
+| `--ref-depth-vcf` | none | The same forced-pileup VCF for the host and donor reference samples (the pipeline's `<patient>/refs/midpoints.vcf.gz`). Also gives sex inference its chrY-depth secondary signal (see below); usable without `--admix-depth-vcf` |
 | `--verbose` | off | Include per-marker detail in output |
 
 **Sex chromosomes.** allomix infers the sex of the recipient and of each donor
@@ -183,7 +183,14 @@ from the heterozygosity of their non-PAR chrX genotypes (see
 `allomix.qc.sex`), compares it with any declared sex, and reports both. A
 confident inference that contradicts the declaration fails QC as a likely
 sample mix-up; a declaration resolves an ambiguous or unavailable inference
-(an autosome-only panel always gives `unavailable`). The resulting pair status
+(an autosome-only panel always gives `unavailable`). With `--ref-depth-vcf`,
+chrY relative depth (`max(non-PAR chrY DP) / median(autosomal DP)`, graded
+with the lab's amplicon-pipeline thresholds M > 0.5, M* > 0.15, F* > 0.05,
+else F) is a secondary signal: a full `M` grade turns an ambiguous or
+unavailable chrX call into male (shown as "inferred (chrY depth)"). It never
+changes a confident chrX call, and low chrY depth is not used to call a female,
+because a panel that lists chrY targets its capture does not pull down would
+read every sample as female. The resulting pair status
 routes the non-PAR chrX markers: a female/female pair uses them like autosomal
 markers, a male/male pair uses the sites where both are homozygous and drops
 any site with a het call (a genotyping error on a hemizygous chromosome,

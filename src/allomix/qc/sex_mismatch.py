@@ -72,11 +72,8 @@ from allomix.constants import (
 from allomix.contigs import ContigClass, classify_contig
 from allomix.estimate.likelihood import W_EPS, PanelCalibration
 from allomix.genotype import ContigPolicy, InformativeMarker, MarkerData, classify_markers
-from allomix.qc.sex import SexResult
+from allomix.qc.sex import RegionDepth, SexResult, chry_depth_ratio, split_region_depths
 from allomix.sex_types import PairStatus, Sex
-
-#: One forced-pileup record: ``(chrom, pos, dp)`` for a single sample.
-RegionDepth = tuple[str, int, int]
 
 #: chrX copy number per sex (non-PAR).
 CHRX_COPY_NUMBER: dict[Sex, int] = {Sex.FEMALE: 2, Sex.MALE: 1}
@@ -420,29 +417,6 @@ def region_depths_from_vcf(path: str, sample: str) -> list[RegionDepth]:
     return out
 
 
-def _split_depths(depths: list[RegionDepth]) -> tuple[np.ndarray, np.ndarray]:
-    """Return ``(chrY non-PAR depths, autosomal depths)`` as arrays."""
-    y = [dp for chrom, pos, dp in depths if classify_contig(chrom, pos) is ContigClass.Y_NONPAR]
-    auto = [dp for chrom, pos, dp in depths if classify_contig(chrom, pos) is ContigClass.AUTOSOME]
-    return np.array(y, dtype=float), np.array(auto, dtype=float)
-
-
-def chry_depth_ratio(depths: list[RegionDepth]) -> tuple[float | None, int]:
-    """The lab statistic ``max(non-PAR chrY DP) / median(autosomal DP)`` for one sample.
-
-    Returns:
-        ``(ratio, n_chry_sites)``; the ratio is None when there are no chrY
-        sites, no autosomal sites, or a zero autosomal median.
-    """
-    y, auto = _split_depths(depths)
-    if y.size == 0 or auto.size == 0:
-        return None, int(y.size)
-    med = float(np.median(auto))
-    if med <= 0.0:
-        return None, int(y.size)
-    return float(y.max() / med), int(y.size)
-
-
 @dataclass(frozen=True)
 class ChrYEstimate:
     """chrY depth-ratio estimate of the male fraction in the admixture."""
@@ -477,8 +451,8 @@ def chry_male_fraction(
         return None
     frac = min(max(r_admix / r_ref, 0.0), 1.0)
 
-    y_a, auto_a = _split_depths(admix_depths)
-    y_r, auto_r = _split_depths(male_ref_depths)
+    y_a, auto_a = split_region_depths(admix_depths)
+    y_r, auto_r = split_region_depths(male_ref_depths)
     n_sites = int(min(y_a.size, y_r.size))
     if n_sites < SEXCHROM_MIN_CHRY_SITES:
         return ChrYEstimate(frac, (0.0, 1.0), n_sites, r_admix, r_ref, True)

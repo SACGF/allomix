@@ -154,6 +154,7 @@ def _timeline_context(data: dict, log_scale: bool) -> dict:
         "chart_note": note,
         "table_rows": _table_rows(timepoints, meta.sample_dates),
         "host_presence": context.host_presence_context(latest),
+        "sex_mismatch": context.sex_mismatch_context(latest),
         "qc": context.qc_context(latest),
     }
     ctx.update(context.base_context(data, latest))

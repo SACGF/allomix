@@ -26,6 +26,7 @@ from allomix.qc.relatedness import (
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
 from allomix.qc.sex import Sex, SexInference, SexResult, pair_status
+from allomix.qc.sex_mismatch import SexMismatchResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1089,3 +1090,66 @@ class TestSexQC:
         assert qc.n_informative_sex_chrom_excluded == 3
         assert qc.n_chrx_used == 4
         assert qc.n_chrx_male_het_dropped == 5
+
+
+# ---------------------------------------------------------------------------
+# Sex-mismatch cross-check (#48)
+# ---------------------------------------------------------------------------
+
+
+def _sex_mismatch(frac: float, ci: tuple[float, float], mle: float, mle_ci, concordant):
+    return SexMismatchResult(
+        male_party="host",
+        basis="chrX-cn",
+        frac_donor=frac,
+        ci_low=ci[0],
+        ci_high=ci[1],
+        n=12,
+        concordant=concordant,
+        mle_frac_donor=mle,
+        mle_ci=mle_ci,
+        chrx_n=12,
+        chrx_frac_donor=frac,
+        chrx_ci=ci,
+    )
+
+
+class TestSexMismatchQC:
+    def test_discordant_warns_without_changing_status(self):
+        # Soft warning only (like the host-presence disagreement): the readout's
+        # real-sample behaviour is still being mapped, so it does not promote.
+        result = _make_chimerism_result(donor_fraction=0.10, ci=(0.09, 0.11))
+        result.sex_mismatch = _sex_mismatch(0.20, (0.18, 0.22), 0.10, (0.09, 0.11), False)
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "PASS"
+        assert any("Sex-chromosome cross-check discordant" in w for w in qc.warnings)
+        assert any("20.00%" in w and "10.00%" in w for w in qc.warnings)
+
+    def test_concordant_no_warning(self):
+        result = _make_chimerism_result(donor_fraction=0.10, ci=(0.09, 0.11))
+        result.sex_mismatch = _sex_mismatch(0.105, (0.09, 0.12), 0.10, (0.09, 0.11), True)
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "PASS"
+        assert not any("cross-check" in w for w in qc.warnings)
+
+    def test_no_basis_no_warning(self):
+        result = _make_chimerism_result()
+        result.sex_mismatch = SexMismatchResult(
+            male_party="donor",
+            basis=None,
+            frac_donor=None,
+            ci_low=None,
+            ci_high=None,
+            n=0,
+            concordant=None,
+            mle_frac_donor=0.1,
+            mle_ci=(0.08, 0.12),
+        )
+        qc = assess_quality(result, _make_genotypes())
+        assert qc.status == "PASS"
+
+    def test_discordance_does_not_override_fail(self):
+        result = _make_chimerism_result(n_informative=1, per_marker=[_make_marker_result()])
+        result.sex_mismatch = _sex_mismatch(0.5, (0.4, 0.6), 0.10, (0.09, 0.11), False)
+        qc = assess_quality(result, _make_genotypes(), min_informative=3)
+        assert qc.status == "FAIL"

@@ -34,6 +34,11 @@ runs a separate detection test for whether the host is present at all.
         |                       |                             artifact-flagged)
         +-----------+-----------+                                  |
                     |                                              |
+       qc.sex_mismatch.sex_mismatch_check                          |
+       (sex-mismatched pair only: independent                      |
+        chrX copy-number / chrY depth estimate,                    |
+        compared with the MLE, never blended)                      |
+                    |                                              |
               qc.assess_quality                          scripts/ diagnostic plots
                     |
             report.to_tsv / to_json / timeline_json
@@ -53,7 +58,8 @@ orchestrator, the CLI, the simulator); the four subpackages each own one stage:
   `error_rates`, `contamination_table`.
 - `estimate/` -- the MLE model: `likelihood` and the `chimerism` estimators.
 - `qc/` -- quality / identity checks, detection, and metadata: `qc`,
-  `host_presence`, `sample_contamination`, `relatedness`, `sex`, `runmeta`. Its
+  `host_presence`, `sample_contamination`, `relatedness`, `sex`, `sex_mismatch`,
+  `runmeta`. Its
   `__init__` is empty on purpose (`qc.qc` <-> `results` would otherwise form a
   partial-initialisation cycle).
 - `report/` -- output formatting (`report`) and the `html/` rendering subpackage
@@ -72,7 +78,8 @@ orchestrator, the CLI, the simulator); the four subpackages each own one stage:
 | `calibration/error_rates.py` | Per-site, per-direction empirical error table (panel of normals). Same key shape as `bias`. | `estimate_error_rates`, `save_error_table`, `load_error_table` |
 | `qc/host_presence.py` | Host-presence detection at donor-homozygous markers, plus the read-level artifact filter. Independent of the fraction MLE. | `host_presence_test`, `donor_hom_markers`, `DonorHomMarker`, `HostPresenceResult`, `ArtifactThresholds` |
 | `qc/sex.py` | Sex inference per reference sample from non-PAR chrX heterozygosity (binomial LR, female model from the sample's autosomal het rate vs a male spurious-het model), reconciliation with a declared sex, and the host/donor pair status. Run by `analyse_sample` before `classify_markers` (the pair status drives the chrX routing) and attached to the result before QC, like relatedness; a declared-vs-inferred conflict is a QC FAIL. chrY depth is reserved for a later phase. | `infer_sex`, `assess_sex`, `pair_status`, `parse_declared_sex`, `Sex`, `PairStatus`, `SexInference`, `SexResult` |
-| `qc/qc.py` | Quality verdict: marker counts, beta-binomial goodness-of-fit, identity checks (relatedness, sex, swap), PASS/REVIEW/FAIL with reasons. | `assess_quality`, `QCReport` |
+| `qc/sex_mismatch.py` | Sex-chromosome cross-check of the donor fraction for a sex-mismatched single-donor pair (#48). Two readouts with their own n and CI: the chrX copy-number-weighted allele-fraction fit (non-PAR chrX markers where host and donor differ, male party homozygous; beta-binomial with profiled rho, grid + Brent, profile CI; the same bias and error handling as the main estimator) and, when forced-pileup depths are supplied, the experimental chrY depth ratio normalised by the male reference sample. Reports `basis` (`chrY-depth` / `chrX-cn` / none) and concordance with the MLE; never blended into `donor_pct`. Attached by `analyse_sample` as `result.sex_mismatch`; a discordant pair is REVIEW in `qc.assess_quality`. | `sex_mismatch_check`, `fit_chrx_fraction`, `expected_ref_fraction`, `chry_male_fraction`, `region_depths_from_vcf`, `is_concordant`, `SexMismatchResult` |
+| `qc/qc.py` | Quality verdict: marker counts, beta-binomial goodness-of-fit, identity checks (relatedness, sex, swap, sex-chromosome cross-check), PASS/REVIEW/FAIL with reasons. | `assess_quality`, `QCReport` |
 | `analysis.py` | The shared single-sample pipeline that ties classify -> estimate -> presence -> QC together. | `analyse_sample`, `AdmixtureSampleAnalysis` |
 | `report/report.py` | Output formatting (TSV, JSON, timeline JSON) for single- and multi-donor results. | `to_tsv`, `to_json`, `timeline_json` |
 | `cli.py` | Argument parsing and the `detect` / `timeline` / `estimate-bias` / `estimate-errors` commands. Thin: parses input, calls `analyse_sample`, formats output. | `main` |
@@ -125,7 +132,10 @@ dosage arithmetic is exact (for hom/hom contrasts the ploidy cancels), and
 downstream code (robust refit, per-type overdispersion, host-presence test)
 sees chrX markers as ordinary markers. For a mismatched pair the parties
 differ in copy number and the diploid model does not hold, which is why the
-gate exists (the mismatch cross-check of #48 is a separate, later module).
+gate exists. Those excluded chrX markers are not wasted: for a mismatched
+single-donor pair `qc.sex_mismatch` fits them on their own under the
+copy-number-weighted expectation (and reads chrY depth when a midpoint pileup
+is supplied) as an independent cross-check of the autosomal estimate.
 `AUTOSOMES_ONLY` (`--contig-policy autosomes_only`) excludes every
 non-autosome regardless of pair status; the diagnostic `ALL_PRIMARY` admits
 everything primary. Identity QC (`relatedness`, `sample_contamination`,

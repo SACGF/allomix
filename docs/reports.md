@@ -46,12 +46,33 @@ are `NA` when inference did not run. The HTML footer's "Sex chromosomes" line
 shows the pair status, the chrX marker count and, when non-zero, the male het
 drops.
 
+For a sex-mismatched single-donor pair the payload also carries a
+`sex_mismatch` object (`allomix.qc.sex_mismatch`, #48): the independent
+sex-chromosome estimate of the donor fraction (`frac_donor`, `ci_low`,
+`ci_high`, `n`), which readout it came from (`basis`: `chrX-cn` for the chrX
+copy-number-weighted allele-fraction fit, `chrY-depth` for the experimental
+depth ratio, null when neither had enough data), `male_party`, `concordant`
+(CI overlap with the MLE or within `SEXCHROM_CONCORDANCE_PP`), the MLE it was
+compared with (`mle_frac_donor`, `mle_ci`), and the per-readout detail
+(`chrx_n`, `chrx_n_male_het_dropped`, `chrx_frac_donor`, `chrx_ci`,
+`chrx_rho`; `chry_n_sites`, `chry_frac_donor`, `chry_ci`, `chry_ratio_admix`,
+`chry_ratio_ref`, `chry_ci_unreliable`). It is null for a sex-matched or
+unresolved pair and for multi-donor runs. The TSV appends the same as five
+columns after the sex block: `sexchrom_frac` (donor fraction, 0-1, comparable
+with `donor_pct / 100`), `sexchrom_ci` (`lo,hi`), `sexchrom_basis`,
+`sexchrom_n`, `sexchrom_concordant` (`true` / `false`); all `NA` when the
+check did not run, and `NA` except `sexchrom_n` when it ran without a usable
+readout. A discordant result is also a QC warning; it does not change the
+QC status, and the headline `donor_pct` is never changed by it.
+
 ## HTML report
 
 `--html` writes a single self-contained HTML file (all CSS and JavaScript
 inlined, no network access needed) suitable for review or attaching to a record.
 It is written for the clinician: the headline chimerism fractions with CIs, the
-host-presence callout, a plain-language QC breakdown (informative-marker
+host-presence callout, the sex-chromosome cross-check panel (shown only for a
+sex-mismatched pair: the independent estimate with its CI, basis, marker count
+and concordance verdict), a plain-language QC breakdown (informative-marker
 accounting and the number of QC flags), the QC panel, and a methods/provenance
 footer. The header shows the recipient's and each donor's sex as "declared /
 inferred" (for example `F declared / F inferred`, or just `M inferred` when

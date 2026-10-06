@@ -25,6 +25,14 @@ front of them:
         Then bcftools merge across admix samples.
         Output: <patient>.admix.vcf.gz  (raw AD at every panel site)
 
+    Phase 2b (optional, on by default): ADMIX depth at the interval midpoints
+        One multi-sample pileup of every ADMIX BAM at the same midpoint BED the
+        phase-1b reference pileup uses, so per-region depth (including any
+        non-PAR chrY sex-typing regions) is available for the admixture samples.
+        Output: <patient>.admix.midpoints.vcf.gz; feeds `allomix detect
+        --admix-depth-vcf` (with `--ref-depth-vcf <patient>/refs/midpoints.vcf.gz`)
+        for the chrY depth readout of the sex-mismatch cross-check (#48).
+
     Run metadata — stamp each admix sample's flowcell+lane into the VCF (issue #12)
         Per patient (when it has admix samples): read the sequencing run unit
         from each BAM, flag admix samples that share one with the host (the
@@ -139,6 +147,15 @@ BUILD_ERROR_TABLE = config.get("build_error_table", True)
 ALLOMIX = config.get("allomix", "allomix")
 # One single-base background position per panel interval, derived from INTERVALS.
 MIDPOINTS_BED = os.path.join(OUTPUT_DIR, f"midpoints{_intervals_tag}.bed")
+
+# Optional phase 2b: ADMIX depth at the interval midpoints (#48). The same
+# midpoint pileup phase 1b runs on the reference BAMs, run on the admix BAMs, so
+# allomix can read per-region depth for the admixture samples: GATK emits no
+# record at an invariant chrY site and the panel-site admix pileup covers SNPs
+# only, so this is the only place non-PAR chrY depth (SRY, ZFY, AMELY on the SID
+# panel) exists for an admixture sample. Needs no allomix on PATH. On by default;
+# a deployment without sex-typing regions can switch it off.
+ADMIX_MIDPOINTS = config.get("admix_midpoints", True)
 
 # Optional — a single POOLED error table built from every unique HOST/DONOR
 # reference individual across all patient CSVs (deduplicated), rather than one
@@ -277,6 +294,19 @@ def _admix_vcf(patient):
     return os.path.join(OUTPUT_DIR, f"{patient}.admix.vcf.gz")
 
 
+def _admix_bg_vcf(patient):
+    return os.path.join(OUTPUT_DIR, f"{patient}.admix.midpoints.vcf.gz")
+
+
+def _admix_bams(patient):
+    """Distinct ADMIX BAM paths for a patient, in stable order."""
+    seen: list[str] = []
+    for bam in _admix_samples(patient).values():
+        if bam not in seen:
+            seen.append(bam)
+    return seen
+
+
 def _patient_bams(patient):
     """Distinct BAM paths for a patient (ref + admix), in stable order."""
     ref, admix = _patient_samples(patient)
@@ -319,6 +349,8 @@ ALL_REF_BAMS: list[str] = list(dict.fromkeys(ALL_REF_SAMPLES.values()))
 # admix/per_sample/...).
 JOINT_VCF_TPL = os.path.join(OUTPUT_DIR, f"{{patient}}{_intervals_tag}.vcf.gz")
 ADMIX_VCF_TPL = os.path.join(OUTPUT_DIR, "{patient}.admix.vcf.gz")
+# Phase 2b: admix depth at the interval midpoints, beside the admix panel VCF.
+ADMIX_BG_TPL = os.path.join(OUTPUT_DIR, "{patient}.admix.midpoints.vcf.gz")
 # Intermediate: the ##allomixRunUnit header fragment merged into the admix VCF.
 RUN_UNITS_HDR_TPL = os.path.join(OUTPUT_DIR, "{patient}", "run_units.hdr")
 GVCF_TPL = os.path.join(OUTPUT_DIR, "gvcfs", "{sample}.g.vcf.gz")
@@ -358,6 +390,8 @@ def _all_targets():
             # The admix VCF carries the run-unit header metadata (index-hopping
             # check) via its merge step, so it needs no separate target.
             out.append(_admix_vcf(p))
+            if ADMIX_MIDPOINTS:
+                out.append(_admix_bg_vcf(p))
         # Phase 1b error table needs only HOST/DONOR BAMs, so it is built for
         # every patient (a patient always has at least one ref sample).
         if BUILD_ERROR_TABLE:
@@ -746,6 +780,56 @@ rule merge_admix:
             -h {input.hdr} \
             --threads {threads} \
             -Oz -o {output.vcf} - 2>> {log}
+        {params.tabix} -f {output.vcf}
+        """
+
+
+rule pileup_admix_bg:
+    """Raw pileup of every ADMIX BAM at the interval-midpoint sites (one multi-sample VCF).
+
+    The admix counterpart of ``pileup_refs_bg``: same midpoint BED, same
+    ``mpileup -a AD,DP`` + ``call -m -A`` (no ``-C alleles``, midpoints have no
+    panel ALT). Its purpose is per-region ``FORMAT/DP`` for the admixture
+    samples, which the panel-site admix pileup cannot give for a region with no
+    SNP (the non-PAR chrY sex-typing amplicons). ``allomix detect
+    --admix-depth-vcf`` reads it, with ``--ref-depth-vcf`` pointing at the
+    phase-1b ``refs/midpoints.vcf.gz`` of the same patient, for the chrY
+    depth-ratio readout of the sex-mismatch cross-check (#48). Sample columns
+    carry the BAM read-group SM, i.e. the CSV sample_ids.
+    """
+    input:
+        bams=lambda wc: _admix_bams(wc.patient),
+        ref=REF,
+        midpoints=MIDPOINTS_BED,
+    output:
+        vcf=ADMIX_BG_TPL,
+        tbi=ADMIX_BG_TPL + ".tbi",
+    log:
+        os.path.join(OUTPUT_DIR, "logs", "pileup_admix_bg", "{patient}.log"),
+    threads: 2
+    params:
+        bcftools=BCFTOOLS,
+        tabix=TABIX,
+        max_depth=MAX_DEPTH,
+        min_mapq=MIN_MAPQ,
+        min_baseq=MIN_BASEQ,
+        read_filters=READ_FILTERS,
+    shell:
+        """
+        {params.bcftools} mpileup \
+            -f {input.ref} \
+            -R {input.midpoints} \
+            -a FORMAT/AD,FORMAT/DP \
+            -d {params.max_depth} \
+            -q {params.min_mapq} \
+            -Q {params.min_baseq} \
+            --ff {params.read_filters} \
+            --threads {threads} \
+            {input.bams} 2> {log} \
+        | {params.bcftools} call \
+            -m \
+            -A \
+            -Oz -o {output.vcf} 2>> {log}
         {params.tabix} -f {output.vcf}
         """
 

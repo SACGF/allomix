@@ -174,6 +174,8 @@ Both `detect` and `timeline` accept these additional options:
 | `--recipient-sex` | none | Declared recipient sex. `F`/`female` or `M`/`male` (any case) is checked against the sex inferred from chrX; other text is shown in the report header only |
 | `--donor-sex` | none | Declared donor sex, one per `--donor-sample` in order (repeat to match; `NA` for none). Parsed and checked like `--recipient-sex` |
 | `--contig-policy` | `sex_aware` | Which contigs may enter the estimate. `sex_aware` routes non-PAR chrX on the inferred/declared sex pair (used for a sex-matched pair, homozygous sites only for a male pair; excluded otherwise); `autosomes_only` never uses chrX. PAR, chrY, MT and non-primary contigs are excluded under both |
+| `--admix-depth-vcf` | none | Forced-pileup VCF with per-site `FORMAT/DP` for the admixture samples at the panel's interval midpoints (the pipeline's `<patient>.admix.midpoints.vcf.gz`). Enables the experimental chrY depth readout of the sex-mismatch cross-check; needs `--ref-depth-vcf`. Samples missing from the file are skipped with a warning |
+| `--ref-depth-vcf` | none | The same forced-pileup VCF for the host and donor reference samples (the pipeline's `<patient>/refs/midpoints.vcf.gz`) |
 | `--verbose` | off | Include per-marker detail in output |
 
 **Sex chromosomes.** allomix infers the sex of the recipient and of each donor
@@ -191,6 +193,21 @@ on stderr). Pseudoautosomal, chrY, mitochondrial and non-primary-contig
 markers are never used. `--contig-policy autosomes_only` turns chrX off for a
 run. The old `--use-sex-chroms` flag is retired: giving it exits with an
 explanation, and it will be removed in a later release.
+
+**Sex-mismatch cross-check.** For a sex-mismatched single-donor pair the chrX
+markers the estimate excludes are fitted on their own, under the
+copy-number-weighted expectation (a female contributes two X copies, a male
+one), as an independent estimate of the donor fraction with its own CI
+(`allomix.qc.sex_mismatch`). When `--admix-depth-vcf` and `--ref-depth-vcf`
+are given and the panel has non-PAR chrY regions, the chrY depth ratio
+(admixture over the male reference sample) takes priority as the basis;
+this readout is experimental and has not been exercised on real data. The
+result is reported beside the MLE (TSV `sexchrom_*` columns, JSON
+`sex_mismatch`, an HTML panel, a stderr line) and compared with it: a
+discordant pair (no CI overlap and a gap above 2 percentage points) is a QC
+warning. It does not change the PASS/REVIEW/FAIL status while the readout's
+real-sample behaviour is being mapped. The headline `donor_pct` is never
+blended with it. Multi-donor runs skip the check (`NA`).
 
 Output is selected by per-artifact flags that can be combined in one run:
 `detect` accepts `--tsv PATH`, `--json PATH`, `--html PATH`, and `--pdf PATH`

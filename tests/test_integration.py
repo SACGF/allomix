@@ -847,3 +847,68 @@ class TestSexChromFixtures:
         _detect_rows(tmp_path, "joint_FF.vcf")
         err = capsys.readouterr().err
         assert "informative non-PAR chrX marker(s) (matched_female: host F, donor F)" in err
+
+
+class TestSexMismatchCrossCheck:
+    """The sex-mismatch cross-check (#48) on the MF fixture through ``detect``."""
+
+    def test_mf_fixture_chrx_estimate(self, tmp_path):
+        truth = _sexchrom_truth()
+        rows = _detect_rows(tmp_path, "joint_MF.vcf")
+        for sample, rec in rows.items():
+            t = truth[("joint_MF.vcf", sample)]
+            assert rec["sex_pair"] == "mismatched"
+            assert rec["sexchrom_basis"] == "chrX-cn"
+            assert int(rec["sexchrom_n"]) >= 5
+            est = float(rec["sexchrom_frac"])
+            assert abs(est - float(t["true_donor_fraction"])) < 0.02, (sample, est)
+            lo, hi = (float(x) for x in rec["sexchrom_ci"].split(","))
+            assert lo <= est <= hi
+            assert rec["sexchrom_concordant"] == "true"
+            assert rec["qc_status"] != "FAIL"
+
+    def test_mf_stderr_reports_cross_check(self, tmp_path, capsys):
+        _detect_rows(tmp_path, "joint_MF.vcf")
+        err = capsys.readouterr().err
+        assert "sex-chromosome cross-check (chrX-cn, n=" in err
+        assert "(concordant)" in err
+
+    def test_matched_fixture_columns_na(self, tmp_path):
+        rows = _detect_rows(tmp_path, "joint_FF.vcf")
+        for rec in rows.values():
+            assert rec["sexchrom_basis"] == "NA"
+            assert rec["sexchrom_frac"] == "NA"
+            assert rec["sexchrom_concordant"] == "NA"
+
+    def test_mf_json_and_html(self, tmp_path):
+        vcf = SEXCHROM_DIR / "joint_MF.vcf"
+        out_json = tmp_path / "mf.json"
+        out_html = tmp_path / "mf.html"
+        rc = main(
+            [
+                "detect",
+                "--genotype-vcf",
+                str(vcf),
+                "--admix-vcf",
+                str(vcf),
+                "--host-sample",
+                "HOST",
+                "--donor-sample",
+                "DONOR",
+                "--sample",
+                "ADMIX_F0.80",
+                "--min-dp",
+                "0",
+                "--min-gq",
+                "0",
+                "--json",
+                str(out_json),
+                "--html",
+                str(out_html),
+            ]
+        )
+        assert rc == 0
+        sm = json.loads(out_json.read_text())["analysis"]["sex_mismatch"]
+        assert sm["basis"] == "chrX-cn" and sm["concordant"] is True
+        assert sm["male_party"] == "host"
+        assert "Sex-chromosome cross-check" in out_html.read_text()

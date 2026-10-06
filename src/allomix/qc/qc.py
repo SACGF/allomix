@@ -11,7 +11,7 @@ from typing import NamedTuple
 
 from scipy.stats import chi2
 
-from allomix.constants import N_OTHER_BASES
+from allomix.constants import N_OTHER_BASES, SEXCHROM_CONCORDANCE_PP
 from allomix.genotype import MarkerGenotypes
 from allomix.qc.host_presence import HostPresenceResult
 from allomix.qc.relatedness import (
@@ -25,6 +25,7 @@ from allomix.qc.relatedness import (
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
 from allomix.qc.sex import SexResult
+from allomix.qc.sex_mismatch import SexMismatchResult
 from allomix.results import ChimerismResult, MarkerResult
 
 # Warn when the host-presence detector fires but the global MLE does not echo it.
@@ -397,8 +398,9 @@ def assess_quality(
     and collecting warnings. FAIL means unusable (too few informative markers, a
     relatedness declaration that crosses the related/unrelated boundary, or a
     declared sex contradicted by a confident inference). REVIEW means computed but flagged for
-    manual interpretation (poor fit, wide CI, 2-level relatedness mismatch, or a
-    significant swap test). Handles both ChimerismResult and MultiDonorResult.
+    manual interpretation (poor fit, wide CI, 2-level relatedness mismatch, a
+    significant swap test, or a sex-chromosome cross-check that disagrees with the
+    autosomal estimate). Handles both ChimerismResult and MultiDonorResult.
 
     Identity inputs are read off ``result`` (``relatedness``, ``admix_consistency``,
     attached by ``analyse_sample``) via getattr, so callers that skip them still
@@ -663,6 +665,27 @@ def assess_quality(
                 f"from non-PAR chrX heterozygosity ({inf.n_x_het}/{inf.n_x_sites} het, "
                 f"log10 LR {lr}); likely sample mix-up or mislabel"
             )
+
+    # Sex-chromosome cross-check (#48): for a sex-mismatched pair the chrX
+    # copy-number (or chrY depth) estimate of the donor fraction is independent
+    # of the autosomal MLE. Disagreement (no CI overlap and a gap beyond the
+    # tolerance) is an identity-class signal (sample mix-up, chrX copy-number
+    # event, or chrX genotyping error). Soft warning only, as for the
+    # host-presence disagreement above: the status is not promoted while the
+    # readout's real-sample operating characteristics are being mapped (on the
+    # public mixtures its CI missed the truth in 1 of 27 titrations from 11 to
+    # 20 markers), and the headline is never adjusted.
+    sm: SexMismatchResult | None = getattr(result, "sex_mismatch", None)
+    if sm is not None and sm.concordant is False:
+        mle_lo, mle_hi = sm.mle_ci
+        warnings.append(
+            f"Sex-chromosome cross-check discordant: {sm.basis} estimate of the donor "
+            f"fraction {sm.frac_donor:.2%} (95% CI {sm.ci_low:.2%}-{sm.ci_high:.2%}, "
+            f"n={sm.n}) vs autosomal MLE {sm.mle_frac_donor:.2%} "
+            f"(95% CI {mle_lo:.2%}-{mle_hi:.2%}); intervals do not overlap and the gap "
+            f"exceeds {SEXCHROM_CONCORDANCE_PP:g} pp; possible sample mix-up, chrX "
+            "copy-number event, or chrX genotyping error"
+        )
 
     ac: AdmixConsistencyResult | None = getattr(result, "admix_consistency", None)
     if ac is not None and ac.n_consensus_hom >= MIN_CONSENSUS and ac.swap_pval < SWAP_REVIEW_P:

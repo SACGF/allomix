@@ -6,7 +6,11 @@ script:
 
   1. Reads HOST / DONOR / ADMIX sample IDs from the CSV.
   2. Locates the matching panel VCF at ``<vcf_dir>/<patient>.vcf.gz`` and
-     admix VCF at ``<vcf_dir>/<patient>.admix.vcf.gz``.
+     admix VCF at ``<vcf_dir>/<patient>.admix.vcf.gz``. When the pipeline's
+     midpoint pileups ``<vcf_dir>/<patient>.admix.midpoints.vcf.gz`` and
+     ``<vcf_dir>/<patient>/refs/midpoints.vcf.gz`` both exist they are passed
+     as ``--admix-depth-vcf`` / ``--ref-depth-vcf`` (chrY depth readout of the
+     sex-mismatch cross-check, #48).
   3. Runs ``allomix detect`` once per patient with all admix timepoints,
      writing ``<output_dir>/<patient>.tsv``.
   4. Concatenates per-patient outputs into ``<output_dir>/batch.tsv``.
@@ -20,6 +24,8 @@ Usage:
         --output-dir output/batch \\
         [--bias-table bias.tsv] \\
         [--error-table errors.tsv] \\
+        [--admix-depth-suffix .admix.midpoints.vcf.gz] \\
+        [--ref-depth-subpath refs/midpoints.vcf.gz] \\
         [--extra-arg --min-dp=200 --extra-arg --min-gq=30]
 """
 
@@ -102,6 +108,19 @@ def main() -> None:
         "--admix-suffix",
         default=".admix.vcf.gz",
         help="Filename suffix for the admix VCF (default '.admix.vcf.gz')",
+    )
+    parser.add_argument(
+        "--admix-depth-suffix",
+        default=".admix.midpoints.vcf.gz",
+        help="Filename suffix of the admix midpoint-depth VCF next to the admix VCF "
+        "(default '.admix.midpoints.vcf.gz'); passed as --admix-depth-vcf when it "
+        "and the reference depth VCF exist",
+    )
+    parser.add_argument(
+        "--ref-depth-subpath",
+        default="refs/midpoints.vcf.gz",
+        help="Path of the reference midpoint-depth VCF under <vcf-dir>/<patient>/ "
+        "(default 'refs/midpoints.vcf.gz'); passed as --ref-depth-vcf",
     )
     parser.add_argument(
         "--bias-table",
@@ -196,6 +215,10 @@ def main() -> None:
                 cmd += ["--bias-table", args.bias_table]
             if args.error_table:
                 cmd += ["--error-table", args.error_table]
+            admix_depth = os.path.join(args.vcf_dir, f"{patient}{args.admix_depth_suffix}")
+            ref_depth = os.path.join(args.vcf_dir, patient, args.ref_depth_subpath)
+            if os.path.exists(admix_depth) and os.path.exists(ref_depth):
+                cmd += ["--admix-depth-vcf", admix_depth, "--ref-depth-vcf", ref_depth]
             cmd += args.extra_arg
 
             print(f"[{patient}] {' '.join(cmd)}")

@@ -120,6 +120,27 @@ excluded; the informative markers dropped are reported. The identity checks rema
 autosomal in every case, and the per-marker bias estimation applies the same rule, taking
 no heterozygous observations at non-PAR chrX or chrY from male samples.
 
+For a sex-mismatched pair the excluded chrX markers still carry information, and allomix
+uses them for an independent cross-check rather than for the estimate itself. At each
+non-PAR chrX marker where recipient and donor genotypes differ, and where the male party is
+homozygous, the expected reference-allele fraction is the copy-number-weighted average of
+the two parties' allele fractions, with a female contributing two X copies and a male one;
+the donor fraction is then fitted to those markers alone by the same beta-binomial
+likelihood, bias and error handling and profiled overdispersion as the main estimator,
+with a profile-likelihood interval. The contrast is asymmetric: a male minor contributor at
+a female-homozygous site shows half the autosomal allele-fraction change, a female minor at
+a male-homozygous site twice it, so the interval is wider when the male is the minor
+contributor. Where a forced pileup of both the admixture and the reference samples at the
+panel's interval midpoints is available and the panel carries non-PAR chrY regions, the
+ratio of maximum chrY depth to median autosomal depth in the admixture, normalised by the
+same ratio in the male reference sample, gives the male fraction directly, with a bootstrap
+interval over the chrY regions; this readout is experimental and has not been exercised on
+real data. The sex-chromosome estimate is reported beside the autosomal one with its own
+marker count and interval and is never blended into it. The two are concordant when their
+intervals overlap or differ by less than a fixed tolerance; a discordant pair is a quality
+flag for review, since it points to a sample mix-up, a chrX copy-number event or chrX
+genotyping error.
+
 #### Box 1. Reading the residual recipient off the counts
 
 Take two markers in one post-transplant sample from a patient near full donor chimerism,

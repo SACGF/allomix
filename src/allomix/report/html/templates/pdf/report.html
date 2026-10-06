@@ -38,6 +38,7 @@
 </section>
 
 {{ m.host_presence(host_presence.hp, host_presence.detected, show_help=False) }}
+{% if sex_mismatch.sm is not none %}{{ m.sex_mismatch(sex_mismatch, show_help=False) }}{% endif %}
 {{ m.qc_panel(qc, show_help=False) }}
 {{ m.footer(version, params, citation, timestamp, show_run_command=False) }}
 
@@ -45,6 +46,7 @@
 <h2>Methods and notes</h2>
 {{ m.help_fractions() }}
 {{ m.help_host_presence() }}
+{% if sex_mismatch.sm is not none %}{{ m.help_sex_mismatch() }}{% endif %}
 {{ m.help_qc() }}
 {{ m.run_command(params) }}
 </section>

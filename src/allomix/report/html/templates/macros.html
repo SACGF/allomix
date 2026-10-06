@@ -46,6 +46,24 @@ limit.</p>
 {% endcall %}
 {% endmacro %}
 
+{% macro help_sex_mismatch() %}
+{% call help("How the sex-chromosome cross-check works") %}
+<p>When recipient and donor are of different sex, the sex chromosomes give a
+second, independent reading of the donor fraction. A female contributes two X
+copies and a male one, so at chrX markers where the two genotypes differ the
+expected allele fraction follows a copy-number-weighted rule rather than the
+diploid rule used for autosomes; the donor fraction is fitted to those markers
+on their own. Where chrY depth is available, the ratio of chrY to autosomal
+depth, normalised by the same ratio in the male reference sample, gives the
+male fraction directly (experimental).</p>
+<p>The result is compared with the autosomal estimate above: the two are
+concordant when their confidence intervals overlap or they differ by a small
+tolerance. A discordant pair is reported as a warning (a possible sample mix-up,
+chrX copy-number event or chrX genotyping error) without changing the QC status. The headline fractions are
+never adjusted by this check.</p>
+{% endcall %}
+{% endmacro %}
+
 {% macro help_qc() %}
 {% call help("How the quality-control checks work") %}
 <p><strong>Goodness-of-fit</strong> compares the observed allele depths to those
@@ -126,6 +144,32 @@ it points at host copy-number change or a genotyping problem.</p>
 </div>
 {% endif %}
 {% if show_help %}{{ help_host_presence() }}{% endif %}
+</section>
+{% endmacro %}
+
+{# Sex-chromosome cross-check panel (sex-mismatched single-donor pairs only).
+   `ctx.sm` is the sex_mismatch sub-object; the caller skips the macro when it
+   is none (matched / unknown pair, or multi-donor). #}
+{% macro sex_mismatch(ctx, show_help=True) %}
+{% set sm = ctx.sm %}
+<section class="section">
+<h2>Sex-chromosome cross-check</h2>
+{% if sm.basis is none %}
+<div class="callout callout-neutral">
+<div class="callout-title">Not assessable</div>
+<div>Recipient and donor are of different sex, but too few usable chrX markers were found ({{ sm.chrx_n | count }} usable; {{ sm.chrx_n_male_het_dropped | count }} dropped for a het call in the male sample) and no chrY depth was supplied.</div>
+</div>
+{% else %}
+<div class="callout {{ 'callout-neutral' if sm.concordant else 'callout-amber' }}">
+<div class="callout-title">{{ 'Concordant with the autosomal estimate' if sm.concordant else 'Discordant with the autosomal estimate' }}</div>
+<div>Independent donor fraction from the sex chromosomes: <strong>{{ sm.frac_donor | pct(2) }}</strong> {{ ci(sm.ci_low, sm.ci_high, 2) }}; autosomal estimate {{ sm.mle_frac_donor | pct(2) }} {{ ci(sm.mle_ci[0], sm.mle_ci[1], 2) }}.</div>
+<div class="small muted">Basis: {{ ctx.basis_label }}; n = {{ sm.n | count }}; male sample: {{ sm.male_party }}{% if sm.chrx_n_male_het_dropped %}; {{ sm.chrx_n_male_het_dropped | count }} chrX marker(s) dropped for a het call in the male sample{% endif %}.</div>
+{% if sm.basis == "chrY-depth" and sm.chrx_frac_donor is not none %}
+<div class="small muted">chrX copy-number estimate: {{ sm.chrx_frac_donor | pct(2) }} {{ ci(sm.chrx_ci[0], sm.chrx_ci[1], 2) }} (n = {{ sm.chrx_n | count }}).</div>
+{% endif %}
+</div>
+{% endif %}
+{% if show_help %}{{ help_sex_mismatch() }}{% endif %}
 </section>
 {% endmacro %}
 

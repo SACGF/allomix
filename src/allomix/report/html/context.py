@@ -215,6 +215,8 @@ def _params_view(params: dict, analysis: dict | None = None) -> dict:
     file_keys = [
         ("Genotype VCF", "genotype_vcf"),
         ("Admixture VCF", "admix_vcf"),
+        ("Admixture depth VCF", "admix_depth_vcf"),
+        ("Reference depth VCF", "ref_depth_vcf"),
         ("Error table", "error_table"),
         ("Bias table", "bias_table"),
         ("Contamination table", "contamination_table"),
@@ -305,6 +307,24 @@ def host_presence_context(analysis: dict) -> dict:
     return {"hp": hp, "detected": detected}
 
 
+_BASIS_LABELS = {
+    "chrY-depth": "chrY depth ratio (experimental)",
+    "chrX-cn": "chrX copy-number-weighted allele fraction",
+}
+
+
+def sex_mismatch_context(analysis: dict) -> dict:
+    """Sex-chromosome cross-check panel context.
+
+    ``sm`` is the ``sex_mismatch`` sub-object (None for a sex-matched or unknown
+    pair and for multi-donor runs, when the section is not rendered);
+    ``basis_label`` is the readable name of the readout behind the estimate.
+    """
+    sm = analysis.get("sex_mismatch")
+    basis = sm.get("basis") if sm else None
+    return {"sm": sm, "basis_label": _BASIS_LABELS.get(basis or "", basis)}
+
+
 def single_context(data: dict) -> dict:
     """Full render context for the single-sample report."""
     analysis = data["analysis"]
@@ -330,6 +350,7 @@ def single_context(data: dict) -> dict:
         "host_ci_hi": host_ci_hi,
         "qc": qc_context(analysis),
         "host_presence": host_presence_context(analysis),
+        "sex_mismatch": sex_mismatch_context(analysis),
     }
     ctx.update(base_context(data, analysis))
     ctx["title"] = _title("allomix chimerism report", sample_name, meta.recipient_id)

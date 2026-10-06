@@ -54,6 +54,12 @@ per-patient CSV (sample_id, bam_filename, sample_type)
                 |
                 v
             <patient>.admix.vcf.gz   (raw AD at every panel site)
+
+  (phase 2b, optional, on by default)
+            bcftools mpileup -a FORMAT/AD,FORMAT/DP on ADMIX BAMs at the midpoints
+                |
+                v
+            <patient>.admix.midpoints.vcf.gz   (per-region DP for the admix samples)
 ```
 
 Phase 1 (GATK) is used only for what it is good at: producing high-confidence germline genotypes. `AD` from phase 1 is never read for chimerism work, so the AD-stripping behaviour is irrelevant there.
@@ -69,7 +75,9 @@ It cannot use GATK for the same reason phase 2 does not: the GVCF reassembly str
 
 `allomix estimate-errors <panel> --homref-vcf <midpoints> --sample HOST --sample DONOR ...` pools both into one per-site, both-direction table (`<patient>.error_table.tsv`). A midpoint that is actually polymorphic in some individual is dropped by the estimator's `--max-vaf-homref` guard, so no external allele-frequency resource is needed. Pass the table to `allomix detect --error-table`. Phase 1b needs the HOST/DONOR BAMs only, so it runs for every patient regardless of whether admix timepoints exist yet, and it needs `allomix` on `PATH` (set `allomix:` in config to point at it).
 
-The two phases live in one Snakefile and share one DAG. Snakemake skips phase-1 work that already exists when only new admix timepoints are added.
+Phase 2b (optional, `admix_midpoints: true`, on by default) runs the same midpoint pileup on the ADMIX BAMs, one multi-sample VCF per patient (`<patient>.admix.midpoints.vcf.gz`, beside the admix panel VCF). Its product is per-region `FORMAT/DP` for the admixture samples rather than allele counts: the panel-site admix pileup covers SNP positions only, and GATK emits no record at an invariant site, so a region with no SNP in it (the non-PAR chrY sex-typing amplicons SRY, ZFY and AMELY on the rhAmpSeq SID panel) has no depth anywhere else. `allomix detect --admix-depth-vcf <patient>.admix.midpoints.vcf.gz --ref-depth-vcf <patient>/refs/midpoints.vcf.gz` reads both midpoint pileups for the chrY depth-ratio readout of the sex-mismatch cross-check (see the [CLI reference](cli.md)); without them the cross-check uses chrX alone. The rule needs no `allomix` on `PATH`. Whether a hybrid-capture run gives any depth at those amplicons is an open question (plan `plans/sex_markers.md`), so the readout is marked experimental.
+
+The phases live in one Snakefile and share one DAG. Snakemake skips phase-1 work that already exists when only new admix timepoints are added.
 
 As a guard against feeding the wrong file in, `allomix detect`/`timeline` sniff the caller from each VCF header and warn on stderr if the admix VCF looks GATK-called rather than mpileup, or if bias correction is on with a table estimated from a different caller than the admix (per-marker bias is caller-specific). Both are soft warnings and do not stop the run. See the [CLI reference](cli.md#two-vcf-input).
 
@@ -184,6 +192,8 @@ Phase-1 HaplotypeCaller and phase-2 pileup are both per-sample and parallelise w
 |---|---|
 | `output/genotypes/<patient>.vcf.gz` | Phase 1: GATK joint-called VCF for HOST + DONOR. Source of host/donor `GT`. |
 | `output/genotypes/<patient>.admix.vcf.gz` | Phase 2: multi-sample admix VCF with raw pileup `AD` at every panel site. Source of admix `AD`. |
+| `output/genotypes/<patient>.admix.midpoints.vcf.gz` | Phase 2b: multi-sample admix pileup at the interval midpoints. Per-region `DP` for `--admix-depth-vcf`. |
+| `output/genotypes/<patient>/refs/midpoints.vcf.gz` | Phase 1b: HOST/DONOR pileup at the interval midpoints. ref->alt error background, and per-region `DP` for `--ref-depth-vcf`. |
 | `output/genotypes/gvcfs/*.g.vcf.gz` | Phase 1 per-sample GVCFs (intermediate, shared across patients by sample ID) |
 | `output/genotypes/<patient>/combined.g.vcf.gz` | Phase 1 per-patient combined GVCF (intermediate) |
 | `output/genotypes/<patient>/admix/per_sample/*.vcf.gz` | Phase 2 per-admix-sample VCFs (intermediate) |

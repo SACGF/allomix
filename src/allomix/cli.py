@@ -59,6 +59,7 @@ from allomix.qc.panel_qc import (
 from allomix.qc.relatedness import Relatedness
 from allomix.qc.runmeta import RunUnitInfo, read_run_units
 from allomix.qc.sex import PairStatus, Sex, SexResult, infer_sex, parse_declared_sex
+from allomix.qc.sex_mismatch import RegionDepth, region_depths_from_vcf
 from allomix.report.html.render import render_single
 from allomix.report.report import (
     DonorMeta,
@@ -185,6 +186,21 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "male pair), excluded for a mismatched or unresolved pair. "
         "'autosomes_only' never uses chrX. Pseudoautosomal, chrY, MT and "
         "non-primary-contig markers are excluded under both.",
+    )
+    parser.add_argument(
+        "--admix-depth-vcf",
+        metavar="VCF",
+        help="Forced-pileup VCF with per-site FORMAT/DP for the admixture samples at "
+        "the panel's interval midpoints (the pipeline's "
+        "<patient>.admix.midpoints.vcf.gz). Enables the experimental chrY "
+        "depth-ratio readout of the sex-mismatch cross-check; needs --ref-depth-vcf "
+        "too. Samples absent from the file are skipped with a warning.",
+    )
+    parser.add_argument(
+        "--ref-depth-vcf",
+        metavar="VCF",
+        help="The same forced-pileup VCF for the host and donor reference samples "
+        "(the pipeline's <patient>/refs/midpoints.vcf.gz).",
     )
     parser.add_argument(
         "--error-rate",
@@ -420,6 +436,8 @@ def _build_report_params(args: argparse.Namespace) -> dict:
         "error_table": args.error_table,
         "bias_table": args.bias_table,
         "contamination_table": args.contamination_table,
+        "admix_depth_vcf": getattr(args, "admix_depth_vcf", None),
+        "ref_depth_vcf": getattr(args, "ref_depth_vcf", None),
         "min_dp": args.min_dp,
         "min_gq": args.min_gq,
         "error_rate": args.error_rate,
@@ -666,6 +684,9 @@ def _run_single_sample(
     include_sites: set[tuple[str, int]] | None = None,
     exclude_sites: set[tuple[str, int]] | None = None,
     clinical_gating: bool = True,
+    admix_region_depth: list[RegionDepth] | None = None,
+    host_region_depth: list[RegionDepth] | None = None,
+    donor_region_depths: list[list[RegionDepth] | None] | None = None,
 ) -> tuple:
     """Run the chimerism pipeline for one admixture sample.
 
@@ -704,6 +725,9 @@ def _run_single_sample(
         relatedness_tolerance=relatedness_tolerance,
         run_unit=run_unit,
         clinical_gating=clinical_gating,
+        admix_region_depth=admix_region_depth,
+        host_region_depth=host_region_depth,
+        donor_region_depths=donor_region_depths,
     )
 
     g = analysis.genotypes
@@ -727,6 +751,22 @@ def _run_single_sample(
             f"{_sex_exclusion_reason(analysis.result.sex, contig_policy)}",
             file=sys.stderr,
         )
+    sm = analysis.result.sex_mismatch
+    if sm is not None:
+        if sm.basis is None:
+            print(
+                f"{admix_sample}: sex-mismatched pair, but the sex-chromosome cross-check "
+                f"had too few usable chrX markers ({sm.chrx_n}) and no chrY depth input",
+                file=sys.stderr,
+            )
+        else:
+            verdict = "concordant" if sm.concordant else "DISCORDANT"
+            print(
+                f"{admix_sample}: sex-chromosome cross-check ({sm.basis}, n={sm.n}): donor "
+                f"{sm.frac_donor:.2%} [{sm.ci_low:.2%}, {sm.ci_high:.2%}] vs autosomal MLE "
+                f"{sm.mle_frac_donor:.2%} ({verdict})",
+                file=sys.stderr,
+            )
     if analysis.genotypes.n_par_excluded:
         print(
             f"{admix_sample}: excluded {analysis.genotypes.n_par_excluded} "
@@ -776,6 +816,30 @@ def _sex_exclusion_reason(sex: SexResult | None, contig_policy: ContigPolicy) ->
             f"differs between them and the diploid model does not hold; {never}"
         )
     return never
+
+
+def _load_region_depths(
+    path: str | None, samples: list[str], flag: str
+) -> dict[str, list[RegionDepth] | None]:
+    """Per-sample forced-pileup depths from a midpoint VCF, for the chrY readout.
+
+    Returns a dict with one entry per requested sample: the ``(chrom, pos, dp)``
+    list, or None when the file was not given or the sample is absent from it
+    (reported on stderr; the chrY readout is then skipped for that sample).
+    """
+    if path is None:
+        return dict.fromkeys(samples)
+    out: dict[str, list[RegionDepth] | None] = {}
+    for s in samples:
+        try:
+            out[s] = region_depths_from_vcf(path, s)
+        except ValueError:
+            print(
+                f"warning: {flag} {path} has no sample {s!r}; chrY depth skipped",
+                file=sys.stderr,
+            )
+            out[s] = None
+    return out
 
 
 def _open_output(path: str):
@@ -1059,6 +1123,12 @@ def cmd_detect(args: argparse.Namespace) -> int:
     run_units = {}
     for path in dict.fromkeys(admix_by_sample.values()):
         run_units.update(read_run_units(path))
+    # Forced-pileup depths for the experimental chrY readout of the sex-mismatch
+    # cross-check (#48); all None when the depth VCFs were not given.
+    admix_depths = _load_region_depths(args.admix_depth_vcf, args.sample, "--admix-depth-vcf")
+    ref_depths = _load_region_depths(
+        args.ref_depth_vcf, [args.host_sample, *args.donor_sample], "--ref-depth-vcf"
+    )
 
     _warn_caller_provenance(args, list(admix_by_sample.values()))
 
@@ -1088,6 +1158,9 @@ def cmd_detect(args: argparse.Namespace) -> int:
             include_sites=include_sites,
             exclude_sites=exclude_sites,
             clinical_gating=args.clinical_gating,
+            admix_region_depth=admix_depths.get(sample_name),
+            host_region_depth=ref_depths.get(args.host_sample),
+            donor_region_depths=[ref_depths.get(d) for d in args.donor_sample],
         )
         results.append((genotypes.sample_name, result, qc))
         marker_rows.append((genotypes.sample_name, result))
@@ -1180,6 +1253,12 @@ def cmd_timeline(args: argparse.Namespace) -> int:
     run_units = {}
     for path in dict.fromkeys(admix_by_sample.values()):
         run_units.update(read_run_units(path))
+    # Forced-pileup depths for the experimental chrY readout of the sex-mismatch
+    # cross-check (#48); all None when the depth VCFs were not given.
+    admix_depths = _load_region_depths(args.admix_depth_vcf, args.sample, "--admix-depth-vcf")
+    ref_depths = _load_region_depths(
+        args.ref_depth_vcf, [args.host_sample, *args.donor_sample], "--ref-depth-vcf"
+    )
 
     _warn_caller_provenance(args, list(admix_by_sample.values()))
 
@@ -1208,6 +1287,9 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             include_sites=include_sites,
             exclude_sites=exclude_sites,
             clinical_gating=args.clinical_gating,
+            admix_region_depth=admix_depths.get(sample_name),
+            host_region_depth=ref_depths.get(args.host_sample),
+            donor_region_depths=[ref_depths.get(d) for d in args.donor_sample],
         )
         results.append((genotypes.sample_name, result, qc))
 

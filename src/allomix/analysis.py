@@ -27,6 +27,7 @@ from allomix.qc.relatedness import (
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import estimate_contamination
 from allomix.qc.sex import Sex, assess_sex
+from allomix.qc.sex_mismatch import RegionDepth, sex_mismatch_check
 from allomix.results import ChimerismResult, MultiDonorResult
 
 
@@ -76,6 +77,9 @@ def analyse_sample(
     relatedness_tolerance: int = 1,
     run_unit: RunUnitInfo | None = None,
     clinical_gating: bool = True,
+    admix_region_depth: list[RegionDepth] | None = None,
+    host_region_depth: list[RegionDepth] | None = None,
+    donor_region_depths: list[list[RegionDepth] | None] | None = None,
 ) -> AdmixtureSampleAnalysis:
     """Run the chimerism pipeline for one pre-parsed admixture sample.
 
@@ -115,6 +119,12 @@ def analyse_sample(
             when the reduced chi-sq is large, the pre-trim full-set guard only near
             the detection floor, and the consensus-hom swap test only when the
             discordant fraction is high. When False, use the legacy p-value-only rules.
+        admix_region_depth: Forced-pileup ``(chrom, pos, dp)`` depths for this
+            admixture sample (``sex_mismatch.region_depths_from_vcf``), for the
+            experimental chrY depth readout of the sex-mismatch cross-check.
+            None (the default) skips that readout.
+        host_region_depth: The same for the host reference sample.
+        donor_region_depths: The same per donor, aligned with ``donors``.
     """
     cal = calibration or PanelCalibration()
     # Sex of each reference sample from its own non-PAR chrX heterozygosity,
@@ -214,6 +224,30 @@ def analyse_sample(
     # imbalance, or a sample mix-up via VAF skew at sites het in all parties.
     result.shared_het_balance = shared_het_balance(host, donors, admix, min_dp=min_dp)
     result.sex = sex
+    # Sex-chromosome cross-check for a sex-mismatched single-donor pair (#48): an
+    # independent estimate of the donor fraction from chrX copy-number dosage (and
+    # chrY depth when the pileup depths are supplied), compared with the MLE in
+    # QC. Never blended into the headline. None for matched/unknown pairs and for
+    # multi-donor runs.
+    if len(donors) == 1:
+        if sex.host.effective is Sex.MALE:
+            male_ref_depth = host_region_depth
+        else:
+            male_ref_depth = donor_region_depths[0] if donor_region_depths else None
+        result.sex_mismatch = sex_mismatch_check(
+            host,
+            donors,
+            admix,
+            sex,
+            mle_frac_donor=result.donor_fraction,
+            mle_ci=result.donor_fraction_ci,
+            min_dp=min_dp,
+            min_gq=min_gq,
+            error_rate=error_rate,
+            calibration=cal,
+            admix_region_depth=admix_region_depth,
+            male_ref_region_depth=male_ref_depth,
+        )
     # Run-unit metadata (index-hopping provenance); attached before QC so the
     # shared-run flag can be reported.
     result.run_unit = run_unit

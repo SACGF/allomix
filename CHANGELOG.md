@@ -4,6 +4,37 @@
 
 ### Added
 
+- **Sex-mismatch cross-check** (`allomix.qc.sex_mismatch`, #48). For a
+  sex-mismatched single-donor pair the excluded non-PAR chrX markers are
+  fitted on their own under the copy-number-weighted expectation (female two
+  X copies, male one; a het call in the male sample drops the marker) as an
+  independent estimate of the donor fraction with a profile-likelihood CI,
+  using the main estimator's bias, error and overdispersion handling. An
+  experimental chrY depth-ratio readout (admixture over the male reference
+  sample, bootstrap CI over the chrY sites) takes priority when forced-pileup
+  depths are supplied via the new `--admix-depth-vcf` / `--ref-depth-vcf`
+  flags on `detect` and `timeline`; no data in hand has chrY content, so it is
+  validated on synthetic depth tables only. The result is attached as
+  `result.sex_mismatch`, reported in the TSV (`sexchrom_frac`, `sexchrom_ci`,
+  `sexchrom_basis`, `sexchrom_n`, `sexchrom_concordant`), the JSON
+  (`sex_mismatch`), a stderr line and an HTML/PDF panel beside the
+  host-presence block, and compared with the autosomal MLE: a discordant pair
+  (no CI overlap and a gap above `SEXCHROM_CONCORDANCE_PP`, provisionally 2
+  pp) is a QC warning that does not change the status (soft warning, as for
+  the host-presence disagreement, until the readout is validated on real
+  samples). The headline `donor_pct` is never blended. Multi-donor runs skip the check (`NA`).
+- Pipeline phase 2b: `pileup_admix_bg` piles up the ADMIX BAMs at the interval
+  midpoints (`<patient>.admix.midpoints.vcf.gz`, config `admix_midpoints`,
+  on by default), the admix counterpart of the phase-1b reference pileup, so
+  per-region chrY depth exists for the admixture samples;
+  `scripts/run_csv_batch.py` passes both midpoint VCFs to `detect` when
+  present.
+- Validation: `scripts/validate_sex_mismatch.py` (in-silico, both
+  directions, N seeds) and the `srp434573_sexmismatch` paper rule
+  (`paper/scripts/run_srp434573_sexmismatch.py`, facts
+  `output/facts/srp434573_sexmismatch.csv`: the five sex-mismatched public
+  titrations, autosomal MLE beside the chrX estimate). Autosomal estimates on
+  the existing fixtures and public mixtures are unchanged.
 - **Sex-matched chrX routing** (#46). Non-PAR chrX markers now enter the
   estimate when the recipient and donor are the same sex: through the normal
   diploid path for a female pair, and at homozygous/homozygous sites only for

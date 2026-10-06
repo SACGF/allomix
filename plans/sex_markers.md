@@ -396,8 +396,12 @@ Readouts, in priority order, each with its own n and CI:
 
 Concordance: compare the sex-chromosome estimate with the autosomal MLE
 (CI overlap, or absolute difference within a tolerance in percentage points
-chosen during validation). Discordance is a QC warning in the identity block
-and promotes to REVIEW. The headline `donor_pct` is never blended.
+chosen during validation). Discordance is a soft QC warning in the identity
+block. It was planned to promote to REVIEW, but on the public mismatched
+titrations the chrX readout's CI missed the truth in 1 of 27 (5 to 8 pp wide
+from 11 to 20 markers), so, as for the host-presence disagreement, it does not
+change the status until its real-sample behaviour is mapped. The headline
+`donor_pct` is never blended.
 
 Reporting: TSV/JSON columns `sexchrom_frac`, `sexchrom_ci`, `sexchrom_basis`
 (`chrY-depth`, `chrX-cn`, `NA`), `sexchrom_n`, `sexchrom_concordant`; HTML
@@ -431,7 +435,16 @@ and the haem-run VCFs and BAMs) and set the thresholds from its output.
 Phases 0, 1 and 2 are on `main` (contigs module; sex inference, declared-sex
 flags, flag retirement, 0.5.0; sex-aware chrX routing, bias guard, simulator
 fixtures, SRP434573 chrX arm and `scripts/validate_sexchrom_routing.py`).
-Phase 3 is next. Results of the Phase 2 validation: on the five same-sex
+Phase 3 is on `main` as well (sex-mismatch cross-check module, chrX
+copy-number readout validated on the five mismatched public titrations: 26 of
+27 concordant, chrX bias +0.3 to +1.3 pp host with CIs 5 to 8 pp wide against
+the MLE's 0.7 to 0.8 pp; chrY depth readout implemented but untested for want
+of data; admix midpoint pileup added to the pipeline; discordance is a soft
+warning, see Phase 3). Remaining: threshold calibration from
+`scripts/sex_calibration_summary.py` on the internal cohort, the chrY depth
+secondary for sex inference once depth input exists, and the paper rules
+(`srp434573_chrx`, `srp434573_sexmismatch`) in a full build.
+Results of the Phase 2 validation: on the five same-sex
 public titrations chrX adds 9 to 17 informative markers (1.5 to 3%) and moves
 estimates by at most 0.1 pp with CI width ratio 0.985; in silico (5 seeds) the
 FF gate adds no bias and tightens the CI in proportion to the marker gain, an

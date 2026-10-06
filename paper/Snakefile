@@ -139,6 +139,10 @@ QC_GATING_FACTS = [f"{FACTS_DIR}/qc_gating.csv"]
 # per titration with both estimates and the chrX marker counts. Reads the
 # committed VCFs; no sequencing or joint calling.
 SRP434573_CHRX_FACTS = [f"{FACTS_DIR}/srp434573_chrx.csv"]
+# Sex-mismatch cross-check arm (#48): the five sex-mismatched two-person
+# titrations with the autosomal MLE beside the independent chrX copy-number
+# estimate, its CI, marker count and concordance flag. Committed VCFs only.
+SRP434573_SEXMISMATCH_FACTS = [f"{FACTS_DIR}/srp434573_sexmismatch.csv"]
 # Optional per-patient error tables (issue #23), committed alongside the genotype
 # VCFs once built TAU-side by the pipeline's phase-1b reference pileup. Listed as
 # inputs only when present so the allomix rule reruns if they are added/updated;
@@ -255,6 +259,7 @@ ALL_FACTS = (
     + SRP434573_TIMELINE_FACTS
     + QC_GATING_FACTS
     + SRP434573_CHRX_FACTS
+    + SRP434573_SEXMISMATCH_FACTS
     + SRP_CONTAM_FACTS
     + SUBSAMPLE_LOD_FACTS
     + SYNTHETIC_FACTS  # results.md now cites the semi-synthetic sub-0.5% facts (#5)
@@ -572,6 +577,24 @@ rule srp434573_chrx:
         "output/srp434573_chrx.tsv",
     shell:
         "python paper/scripts/run_srp434573_chrx.py"
+
+
+rule srp434573_sexmismatch:
+    # Sex-mismatch cross-check arm (#48): the five sex-mismatched SRP434573
+    # titrations, autosomal MLE vs the chrX copy-number estimate the cross-check
+    # produces. Runs allomix detect once per mixture; reads the committed VCFs only.
+    input:
+        f"{SRP434573_GENOTYPES}/mix_M3_into_F1.SRP434573.vcf.gz",
+        f"{SRP434573_GENOTYPES}/mix_M3_into_F1.admix.vcf.gz",
+        "paper/scripts/run_srp434573_sexmismatch.py",
+        "paper/scripts/run_srp434573_allomix.py",
+        "paper/scripts/srp434573_common.py",
+        *SRP434573_ERROR_TABLES,
+    output:
+        SRP434573_SEXMISMATCH_FACTS,
+        "output/srp434573_sexmismatch.tsv",
+    shell:
+        "python paper/scripts/run_srp434573_sexmismatch.py"
 
 
 rule srp434573_logy_plot:

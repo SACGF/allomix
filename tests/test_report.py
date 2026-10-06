@@ -7,6 +7,7 @@ import pytest
 
 from allomix.qc.qc import ChimerismResult, MarkerResult, QCReport
 from allomix.qc.sex import PairStatus, Sex, SexInference, SexResult
+from allomix.qc.sex_mismatch import SexMismatchResult
 from allomix.report.report import timeline_json, to_json, to_tsv
 
 # ---------------------------------------------------------------------------
@@ -527,3 +528,84 @@ class TestSexOutput:
         d = to_json(_make_chimerism_result(), _make_qc_report())
         assert d["sex"] is None
         assert "n_informative_sex_chrom_excluded" in d
+
+
+# ---------------------------------------------------------------------------
+# Sex-mismatch cross-check columns (#48)
+# ---------------------------------------------------------------------------
+
+_SEXCHROM_COLS = [
+    "sexchrom_frac",
+    "sexchrom_ci",
+    "sexchrom_basis",
+    "sexchrom_n",
+    "sexchrom_concordant",
+]
+
+
+def _sex_mismatch(basis="chrX-cn", concordant=True) -> SexMismatchResult:
+    has = basis is not None
+    return SexMismatchResult(
+        male_party="donor",
+        basis=basis,
+        frac_donor=0.123456 if has else None,
+        ci_low=0.1 if has else None,
+        ci_high=0.15 if has else None,
+        n=14 if has else 3,
+        concordant=concordant if has else None,
+        mle_frac_donor=0.1234,
+        mle_ci=(0.1102, 0.1371),
+        chrx_n=14 if has else 3,
+        chrx_n_male_het_dropped=1,
+        chrx_frac_donor=0.123456 if has else None,
+        chrx_ci=(0.1, 0.15) if has else None,
+        chrx_rho=250.0 if has else None,
+    )
+
+
+class TestSexMismatchOutput:
+    def test_tsv_columns_na_when_not_run(self):
+        row = _tsv_row(_make_chimerism_result(), _make_qc_report())
+        assert [row[c] for c in _SEXCHROM_COLS] == ["NA"] * 5
+        # The new block sits after the sex block, so existing parsers are untouched.
+        header = list(row.keys())
+        assert header.index("sexchrom_frac") > header.index("n_chrx_male_het_dropped")
+
+    def test_tsv_columns_with_estimate(self):
+        result = _make_chimerism_result()
+        result.sex_mismatch = _sex_mismatch()
+        row = _tsv_row(result, _make_qc_report())
+        assert row["sexchrom_frac"] == "0.123456"
+        assert row["sexchrom_ci"] == "0.100000,0.150000"
+        assert row["sexchrom_basis"] == "chrX-cn"
+        assert row["sexchrom_n"] == "14"
+        assert row["sexchrom_concordant"] == "true"
+
+    def test_tsv_columns_discordant(self):
+        result = _make_chimerism_result()
+        result.sex_mismatch = _sex_mismatch(concordant=False)
+        assert _tsv_row(result, _make_qc_report())["sexchrom_concordant"] == "false"
+
+    def test_tsv_columns_no_basis(self):
+        result = _make_chimerism_result()
+        result.sex_mismatch = _sex_mismatch(basis=None)
+        row = _tsv_row(result, _make_qc_report())
+        assert [row[c] for c in _SEXCHROM_COLS] == ["NA", "NA", "NA", "3", "NA"]
+
+    def test_json_object(self):
+        result = _make_chimerism_result()
+        result.sex_mismatch = _sex_mismatch()
+        d = to_json(result, _make_qc_report())
+        sm = d["sex_mismatch"]
+        assert sm["basis"] == "chrX-cn"
+        assert sm["frac_donor"] == 0.123456
+        assert sm["ci_low"] == 0.1 and sm["ci_high"] == 0.15
+        assert sm["n"] == 14 and sm["concordant"] is True
+        assert sm["male_party"] == "donor"
+        assert sm["mle_ci"] == [0.1102, 0.1371]
+        assert sm["chrx_n_male_het_dropped"] == 1
+        assert sm["chry_frac_donor"] is None
+        json.dumps(d)
+
+    def test_json_null_when_not_run(self):
+        assert to_json(_make_chimerism_result(), _make_qc_report())["sex_mismatch"] is None

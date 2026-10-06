@@ -33,6 +33,7 @@
 </section>
 
 {{ m.host_presence(host_presence.hp, host_presence.detected) }}
+{% if sex_mismatch.sm is not none %}{{ m.sex_mismatch(sex_mismatch) }}{% endif %}
 {{ m.qc_panel(qc) }}
 {{ m.footer(version, params, citation, timestamp) }}
 {% endblock %}

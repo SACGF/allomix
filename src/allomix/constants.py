@@ -61,3 +61,19 @@ MIN_X_SITES = 5
 # downsamples per alignment start, so amplicon reference VCFs cap DP near 50
 # (SRP434573 does), and the admixture depth floor would discard every site.
 SEX_MIN_REF_DP = 20
+
+# Sex-mismatch cross-check (allomix.qc.sex_mismatch, #48): the independent
+# sex-chromosome estimate of the donor fraction for a sex-mismatched host/donor
+# pair, compared with the autosomal MLE in qc.assess_quality.
+#
+# Fewer usable non-PAR chrX markers than this and the chrX copy-number readout is
+# not reported (basis falls back to None).
+SEXCHROM_MIN_MARKERS = 5
+# Fewer non-PAR chrY depth sites than this and the chrY depth readout is skipped
+# in favour of chrX (and when it is the only readout, its CI is the whole [0, 1]).
+SEXCHROM_MIN_CHRY_SITES = 3
+# The two estimates are concordant when their 95% CIs overlap or they differ by
+# at most this many percentage points. Provisional: 2.0 pp is a placeholder set
+# from the first in-silico and public-data runs and is to be finalised from the
+# wetlab validation (plan: plans/sex_markers.md, Phase 3).
+SEXCHROM_CONCORDANCE_PP = 2.0

@@ -23,6 +23,7 @@ from allomix.qc.relatedness import (
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
 from allomix.qc.sex import SexInference, SexResult
+from allomix.qc.sex_mismatch import SexMismatchResult
 from allomix.report.html.meta import DonorMeta, ReportMeta
 from allomix.report.html.render import render_single
 from allomix.results import ChimerismResult, MultiDonorResult
@@ -378,6 +379,70 @@ def _sex_tsv_cells(sex: SexResult | None, qc: QCReport) -> list[str]:
     ]
 
 
+# Sex-mismatch cross-check columns (#48), appended after the sex block. ``NA``
+# throughout for a sex-matched or unknown pair and for multi-donor runs (the
+# check does not run); ``sexchrom_basis`` is ``NA`` and the numeric cells ``NA``
+# when the pair is mismatched but neither readout had enough data. The fraction
+# is the donor fraction (0-1), directly comparable with ``donor_pct / 100``.
+_SEXCHROM_TSV_COLS = [
+    "sexchrom_frac",
+    "sexchrom_ci",
+    "sexchrom_basis",
+    "sexchrom_n",
+    "sexchrom_concordant",
+]
+
+
+def _sex_mismatch_tsv_cells(sm: SexMismatchResult | None) -> list[str]:
+    """Format the sex-mismatch columns. Order matches ``_SEXCHROM_TSV_COLS``."""
+    if sm is None:
+        return [_NA] * len(_SEXCHROM_TSV_COLS)
+    if sm.basis is None or sm.frac_donor is None:
+        return [_NA, _NA, _NA, str(sm.n), _NA]
+    return [
+        f"{sm.frac_donor:.6f}",
+        f"{sm.ci_low:.6f},{sm.ci_high:.6f}",
+        sm.basis,
+        str(sm.n),
+        "true" if sm.concordant else "false",
+    ]
+
+
+def _sex_mismatch_json(sm: SexMismatchResult | None) -> dict | None:
+    """JSON view of the sex-mismatch cross-check (all fields)."""
+    if sm is None:
+        return None
+
+    def r6(v: float | None) -> float | None:
+        return round(v, 6) if v is not None else None
+
+    def ci(v: tuple[float, float] | None) -> list[float] | None:
+        return [round(v[0], 6), round(v[1], 6)] if v is not None else None
+
+    return {
+        "male_party": sm.male_party,
+        "basis": sm.basis,
+        "frac_donor": r6(sm.frac_donor),
+        "ci_low": r6(sm.ci_low),
+        "ci_high": r6(sm.ci_high),
+        "n": sm.n,
+        "concordant": sm.concordant,
+        "mle_frac_donor": r6(sm.mle_frac_donor),
+        "mle_ci": ci(sm.mle_ci),
+        "chrx_n": sm.chrx_n,
+        "chrx_n_male_het_dropped": sm.chrx_n_male_het_dropped,
+        "chrx_frac_donor": r6(sm.chrx_frac_donor),
+        "chrx_ci": ci(sm.chrx_ci),
+        "chrx_rho": round(sm.chrx_rho, 2) if sm.chrx_rho is not None else None,
+        "chry_n_sites": sm.chry_n_sites,
+        "chry_frac_donor": r6(sm.chry_frac_donor),
+        "chry_ci": ci(sm.chry_ci),
+        "chry_ratio_admix": r6(sm.chry_ratio_admix),
+        "chry_ratio_ref": r6(sm.chry_ratio_ref),
+        "chry_ci_unreliable": sm.chry_ci_unreliable,
+    }
+
+
 def _sex_inference_json(inf: SexInference) -> dict:
     """JSON view of one sample's sex inference (all fields, plus ``effective``)."""
     return {
@@ -516,6 +581,7 @@ def _write_tsv(
         *_SHARED_HET_TSV_COLS,
         *_RUNMETA_TSV_COLS,
         *_SEX_TSV_COLS,
+        *_SEXCHROM_TSV_COLS,
     ]
     fh.write("\t".join(summary_cols) + "\n")
 
@@ -544,6 +610,7 @@ def _write_tsv(
         *_shared_het_tsv_cells(getattr(result, "shared_het_balance", None)),
         *_runmeta_tsv_cells(getattr(result, "run_unit", None)),
         *_sex_tsv_cells(getattr(result, "sex", None), qc),
+        *_sex_mismatch_tsv_cells(getattr(result, "sex_mismatch", None)),
     ]
     fh.write("\t".join(summary_vals) + "\n")
 
@@ -615,6 +682,7 @@ def _write_tsv_multi(
             *_SHARED_HET_TSV_COLS,
             *_RUNMETA_TSV_COLS,
             *_SEX_TSV_COLS,
+            *_SEXCHROM_TSV_COLS,
         ]
     )
     fh.write("\t".join(cols) + "\n")
@@ -647,6 +715,7 @@ def _write_tsv_multi(
             *_shared_het_tsv_cells(getattr(result, "shared_het_balance", None)),
             *_runmeta_tsv_cells(getattr(result, "run_unit", None)),
             *_sex_tsv_cells(getattr(result, "sex", None), qc),
+            *_sex_mismatch_tsv_cells(getattr(result, "sex_mismatch", None)),
         ]
     )
     fh.write("\t".join(vals) + "\n")
@@ -750,6 +819,7 @@ def _qc_common_json(result: ChimerismResult | MultiDonorResult, qc: QCReport) ->
         "contamination": _contamination_json(qc.contamination),
         "run_unit": _runmeta_json(qc.run_unit),
         "sex": _sex_json(getattr(result, "sex", None)),
+        "sex_mismatch": _sex_mismatch_json(getattr(result, "sex_mismatch", None)),
     }
 
 

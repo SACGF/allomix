@@ -155,6 +155,22 @@ not a defect of the marker, and a female-only cohort gives the clean reading.
 het observations at non-PAR chrX and chrY (`--both-het` uses a non-PAR chrX
 site only when every party is female), so bias tables are not affected.
 
+**What the sex-mismatch cross-check needs.** For a sex-mismatched pair the
+excluded non-PAR chrX SNPs feed an independent estimate of the donor fraction
+(`allomix.qc.sex_mismatch`), so the same chrX content that drives sex
+inference also pays off here: it needs at least five chrX markers where host
+and donor differ and the male sample is homozygous (the public panel gives 11
+to 20), and the estimate is weaker when the male is the minor contributor (a
+male hom-alt minor at a female hom-ref site shows an ALT fraction of
+`f / (2 - f)`, half the autosomal contrast) than when the female is (a female
+hom-alt minor at a male hom-ref site shows `2f / (1 + f)`, double). With 11 to
+20 markers expect a CI several times wider than the autosomal one. The chrY
+depth readout needs non-PAR chrY regions in the panel BED (depth-only
+amplicons such as SRY, ZFY and AMELY are enough; they need not be SNPs) and
+the pipeline's midpoint pileups of both the admixture and the reference BAMs
+(`docs/joint_calling.md`, phase 2b); it is experimental until a panel with
+chrY content has been run through it.
+
 ## 3. Characterize the panel on a reference cohort
 
 Run a set of reference samples (any cohort genotyped through your normal pipeline;

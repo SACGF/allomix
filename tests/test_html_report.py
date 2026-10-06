@@ -22,6 +22,7 @@ from allomix.qc.relatedness import AdmixConsistencyResult, RelatednessResult
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
 from allomix.qc.sex import PairStatus, Sex, SexInference, SexResult
+from allomix.qc.sex_mismatch import SexMismatchResult
 from allomix.report.report import DonorMeta, ReportMeta, to_html
 from allomix.results import ChimerismResult, MarkerResult, MultiDonorResult
 
@@ -1026,3 +1027,57 @@ class TestPDF:
         with pytest.raises(SystemExit) as exc:
             main(_detect_pdf_argv(tmp_path / "r.pdf"))
         assert "allomix[pdf]" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# Sex-chromosome cross-check panel (#48)
+# ---------------------------------------------------------------------------
+
+
+def _sex_mismatch(basis="chrX-cn", concordant=True) -> SexMismatchResult:
+    has = basis is not None
+    return SexMismatchResult(
+        male_party="host",
+        basis=basis,
+        frac_donor=0.9871 if has else None,
+        ci_low=0.975 if has else None,
+        ci_high=0.995 if has else None,
+        n=13 if has else 2,
+        concordant=concordant if has else None,
+        mle_frac_donor=0.995,
+        mle_ci=(0.990, 0.998),
+        chrx_n=13 if has else 2,
+        chrx_n_male_het_dropped=1,
+        chrx_frac_donor=0.9871 if has else None,
+        chrx_ci=(0.975, 0.995) if has else None,
+    )
+
+
+class TestSexMismatchPanel:
+    def test_absent_for_matched_pair(self):
+        html = _render(_result(), _qc(), params=_params())
+        assert "Sex-chromosome cross-check" not in html
+
+    def test_concordant_panel(self):
+        result = _result()
+        result.sex_mismatch = _sex_mismatch()
+        html = _render(result, _qc(), params=_params())
+        assert "Sex-chromosome cross-check" in html
+        assert "Concordant with the autosomal estimate" in html
+        assert "chrX copy-number-weighted allele fraction" in html
+        assert "n = 13" in html
+        assert "1 chrX marker(s) dropped" in html
+
+    def test_discordant_is_amber(self):
+        result = _result()
+        result.sex_mismatch = _sex_mismatch(concordant=False)
+        html = _render(result, _qc(), params=_params())
+        assert "Discordant with the autosomal estimate" in html
+        assert "callout-amber" in html
+
+    def test_no_basis_not_assessable(self):
+        result = _result()
+        result.sex_mismatch = _sex_mismatch(basis=None)
+        html = _render(result, _qc(), params=_params())
+        assert "Sex-chromosome cross-check" in html
+        assert "Not assessable" in html

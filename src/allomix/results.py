@@ -18,6 +18,7 @@ from allomix.qc.relatedness import (
 from allomix.qc.runmeta import RunUnitInfo
 from allomix.qc.sample_contamination import ContaminationResult
 from allomix.qc.sex import SexResult
+from allomix.qc.sex_mismatch import SexMismatchResult
 
 
 @dataclass
@@ -89,6 +90,10 @@ class ChimerismResult:
     # Sex inference for host and donor(s) plus the pair status (see
     # ``allomix.qc.sex``), attached by ``analyse_sample``. None when not computed.
     sex: SexResult | None = None
+    # Sex-chromosome cross-check of the donor fraction for a sex-mismatched pair
+    # (see ``allomix.qc.sex_mismatch``, #48). None unless the pair is mismatched
+    # and single-donor. Never blended into ``donor_fraction``.
+    sex_mismatch: SexMismatchResult | None = None
 
 
 @dataclass
@@ -116,3 +121,5 @@ class MultiDonorResult:
     contamination: ContaminationResult | None = None
     run_unit: RunUnitInfo | None = None
     sex: SexResult | None = None
+    # Always None: the cross-check is single-donor only (see ``allomix.qc.sex_mismatch``).
+    sex_mismatch: SexMismatchResult | None = None

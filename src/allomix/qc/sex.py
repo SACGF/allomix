@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum
 
 from scipy.stats import binom
 
@@ -41,6 +40,7 @@ from allomix.constants import (
 )
 from allomix.contigs import ContigClass, classify_contig
 from allomix.genotype import MarkerData
+from allomix.sex_types import PairStatus, Sex
 
 # Clamp on the female-model het probability so a sample with an extreme
 # autosomal het rate (or none) still gives a finite, sensible likelihood.
@@ -51,32 +51,9 @@ _P_FEMALE_MAX = 0.95
 _P_FEMALE_DEFAULT = 0.5
 
 
-class Sex(str, Enum):
-    """Sex of a reference sample, inferred or declared.
-
-    Member value is the wire string used in TSV/JSON output and on the CLI, so a
-    ``Sex`` is a ``str``. ``UNAVAILABLE`` means the panel had no usable non-PAR
-    chrX content; ``AMBIGUOUS`` means there was content and it did not resolve.
-    """
-
-    FEMALE = "F"
-    MALE = "M"
-    AMBIGUOUS = "ambiguous"
-    UNAVAILABLE = "unavailable"
-
-    @property
-    def confident(self) -> bool:
-        """True for a concrete sex (female or male)."""
-        return self is Sex.FEMALE or self is Sex.MALE
-
-
-class PairStatus(str, Enum):
-    """Host-vs-donor(s) sex relationship, on effective sexes."""
-
-    MATCHED_FEMALE = "matched_female"
-    MATCHED_MALE = "matched_male"
-    MISMATCHED = "mismatched"
-    UNKNOWN = "unknown"
+# ``Sex`` and ``PairStatus`` are defined in ``allomix.sex_types`` (a leaf
+# module) so ``genotype.classify_markers`` can route chrX markers on the pair
+# status without importing this module; re-exported here for callers.
 
 
 @dataclass

@@ -173,6 +173,7 @@ Both `detect` and `timeline` accept these additional options:
 | `--include-sites` | none | BED of marker sites to restrict analysis to (mutually exclusive with `--exclude-sites`) |
 | `--recipient-sex` | none | Declared recipient sex. `F`/`female` or `M`/`male` (any case) is checked against the sex inferred from chrX; other text is shown in the report header only |
 | `--donor-sex` | none | Declared donor sex, one per `--donor-sample` in order (repeat to match; `NA` for none). Parsed and checked like `--recipient-sex` |
+| `--contig-policy` | `sex_aware` | Which contigs may enter the estimate. `sex_aware` routes non-PAR chrX on the inferred/declared sex pair (used for a sex-matched pair, homozygous sites only for a male pair; excluded otherwise); `autosomes_only` never uses chrX. PAR, chrY, MT and non-primary contigs are excluded under both |
 | `--verbose` | off | Include per-marker detail in output |
 
 **Sex chromosomes.** allomix infers the sex of the recipient and of each donor
@@ -180,11 +181,16 @@ from the heterozygosity of their non-PAR chrX genotypes (see
 `allomix.qc.sex`), compares it with any declared sex, and reports both. A
 confident inference that contradicts the declaration fails QC as a likely
 sample mix-up; a declaration resolves an ambiguous or unavailable inference
-(an autosome-only panel always gives `unavailable`). In this release
-sex-chromosome markers are excluded from the estimate regardless of sex, and
-pseudoautosomal and non-primary-contig markers are always excluded. The old
-`--use-sex-chroms` flag is retired: giving it exits with an explanation, and it
-will be removed in a later release.
+(an autosome-only panel always gives `unavailable`). The resulting pair status
+routes the non-PAR chrX markers: a female/female pair uses them like autosomal
+markers, a male/male pair uses the sites where both are homozygous and drops
+any site with a het call (a genotyping error on a hemizygous chromosome,
+counted as `n_chrx_male_het_dropped`), and a mismatched or unresolved pair
+excludes them (counted as `n_informative_sex_chrom_excluded`, with the reason
+on stderr). Pseudoautosomal, chrY, mitochondrial and non-primary-contig
+markers are never used. `--contig-policy autosomes_only` turns chrX off for a
+run. The old `--use-sex-chroms` flag is retired: giving it exits with an
+explanation, and it will be removed in a later release.
 
 Output is selected by per-artifact flags that can be combined in one run:
 `detect` accepts `--tsv PATH`, `--json PATH`, `--html PATH`, and `--pdf PATH`

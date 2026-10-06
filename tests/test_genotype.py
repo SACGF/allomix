@@ -4,13 +4,16 @@ from pathlib import Path
 
 import pytest
 
+from allomix.contigs import ContigClass
 from allomix.genotype import (
     ContigPolicy,
     MarkerData,
     MarkerType,
+    admit_contig,
     classify_markers,
     parse_vcf,
 )
+from allomix.sex_types import PairStatus
 
 TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 # Synthetic single-sample VCF (made-up coordinates, fully synthetic counts).
@@ -249,7 +252,7 @@ class TestClassifyMarkers:
             self._make_marker(chrom="chr1_KI270706v1_random", pos=100, dp=1000),
             self._make_marker(chrom="chrUn_KN707606v1_decoy", pos=100, dp=1000),
         ]
-        for policy in (ContigPolicy.AUTOSOMES, ContigPolicy.ALL_PRIMARY):
+        for policy in (ContigPolicy.AUTOSOMES_ONLY, ContigPolicy.ALL_PRIMARY):
             result = classify_markers(
                 host, [donor], admix, min_dp=0, min_gq=0, contig_policy=policy
             )
@@ -283,7 +286,7 @@ class TestClassifyMarkers:
         ]
 
         off = classify_markers(
-            host, [donor], admix, min_dp=0, min_gq=0, contig_policy=ContigPolicy.AUTOSOMES
+            host, [donor], admix, min_dp=0, min_gq=0, contig_policy=ContigPolicy.AUTOSOMES_ONLY
         )
         assert off.n_shared == 3
         assert off.n_par_excluded == 2
@@ -309,6 +312,175 @@ class TestClassifyMarkers:
         result = classify_markers(host, [donor], admix, min_dp=0, min_gq=0)
         assert result.n_par_excluded == 0
         assert result.n_other_contig_excluded == 0
+        assert result.n_chrx_male_het_dropped == 0
+
+
+# Non-PAR chrX on both builds (PAR1 ends at 2.78 Mb, PAR2 starts at 154.9 Mb).
+X_NONPAR = 50_000_000
+
+
+class TestSexAwareRouting:
+    """Phase 2 routing table (#46): non-PAR chrX by host/donor sex pair."""
+
+    @staticmethod
+    def _m(chrom, pos, gt=(0, 0), ad_ref=1000, ad_alt=0):
+        return MarkerData(chrom, pos, "A", "G", gt, ad_ref, ad_alt, ad_ref + ad_alt, 99)
+
+    def _trio(self, host_gt, donor_gt, chrom="chrX", pos=X_NONPAR):
+        """One autosomal type-0 marker plus one marker on ``chrom`` with the given GTs."""
+        host = [self._m("chr1", 100, (0, 0)), self._m(chrom, pos, host_gt)]
+        donor = [self._m("chr1", 100, (1, 1)), self._m(chrom, pos, donor_gt)]
+        admix = [
+            self._m("chr1", 100, ad_ref=900, ad_alt=100),
+            self._m(chrom, pos, ad_ref=500, ad_alt=500),
+        ]
+        return host, [donor], admix
+
+    def _run(self, host_gt, donor_gt, pair, policy=ContigPolicy.SEX_AWARE, **kw):
+        host, donors, admix = self._trio(host_gt, donor_gt, **kw)
+        return classify_markers(
+            host, donors, admix, min_dp=0, min_gq=0, contig_policy=policy, pair_status=pair
+        )
+
+    def test_default_without_pair_status_excludes_chrx(self):
+        r = self._run((0, 0), (1, 1), None)
+        assert [m.chrom for m in r.informative] == ["chr1"]
+        assert r.n_informative_sex_chrom_excluded == 1
+        assert r.n_chrx_used == 0
+        assert r.n_chrx_male_het_dropped == 0
+
+    def test_matched_female_uses_chrx_including_hets(self):
+        r = self._run((0, 1), (1, 1), PairStatus.MATCHED_FEMALE)
+        assert [m.chrom for m in r.informative] == ["chr1", "chrX"]
+        assert r.informative[1].marker_type == MarkerType.HOST_HET_DONOR_HOMALT
+        assert r.n_chrx_used == 1
+        assert r.n_informative_sex_chrom_excluded == 0
+        assert r.n_chrx_male_het_dropped == 0
+
+    def test_matched_female_non_informative_chrx_kept_as_non_informative(self):
+        r = self._run((0, 1), (0, 1), PairStatus.MATCHED_FEMALE)
+        assert [m.chrom for m in r.informative] == ["chr1"]
+        assert [m.chrom for m in r.non_informative] == ["chrX"]
+        assert r.n_chrx_used == 0
+
+    def test_matched_male_hom_hom_used(self):
+        r = self._run((0, 0), (1, 1), PairStatus.MATCHED_MALE)
+        assert [m.chrom for m in r.informative] == ["chr1", "chrX"]
+        assert r.informative[1].marker_type == MarkerType.HOST_HOMREF_DONOR_HOMALT
+        assert r.n_chrx_used == 1
+        assert r.n_chrx_male_het_dropped == 0
+
+    @pytest.mark.parametrize(
+        "host_gt,donor_gt",
+        [((0, 1), (1, 1)), ((0, 0), (0, 1)), ((0, 1), (0, 1))],
+        ids=["host_het", "donor_het", "both_het"],
+    )
+    def test_matched_male_het_dropped_and_counted(self, host_gt, donor_gt):
+        """A het in any party drops the marker, informative or not."""
+        r = self._run(host_gt, donor_gt, PairStatus.MATCHED_MALE)
+        assert [m.chrom for m in r.informative] == ["chr1"]
+        assert r.non_informative == []
+        assert r.n_chrx_male_het_dropped == 1
+        assert r.n_chrx_used == 0
+        # Not double-counted as a policy exclusion.
+        assert r.n_informative_sex_chrom_excluded == 0
+
+    def test_matched_male_multi_donor_any_het_drops(self):
+        host = [self._m("chrX", X_NONPAR, (0, 0))]
+        d1 = [self._m("chrX", X_NONPAR, (1, 1))]
+        d2 = [self._m("chrX", X_NONPAR, (0, 1))]
+        admix = [self._m("chrX", X_NONPAR, ad_ref=500, ad_alt=500)]
+        r = classify_markers(
+            host, [d1, d2], admix, min_dp=0, min_gq=0, pair_status=PairStatus.MATCHED_MALE
+        )
+        assert r.informative == []
+        assert r.n_chrx_male_het_dropped == 1
+
+    @pytest.mark.parametrize("pair", [PairStatus.MISMATCHED, PairStatus.UNKNOWN])
+    def test_mismatched_and_unknown_exclude_chrx(self, pair):
+        r = self._run((0, 0), (1, 1), pair)
+        assert [m.chrom for m in r.informative] == ["chr1"]
+        assert r.n_informative_sex_chrom_excluded == 1
+        assert r.n_chrx_used == 0
+        assert r.n_chrx_male_het_dropped == 0
+
+    @pytest.mark.parametrize(
+        "chrom,pos", [("chrY", 10_000_000), ("chrM", 500), ("MT", 500)], ids=["Y", "chrM", "MT"]
+    )
+    def test_chry_and_mt_never_used_for_a_matched_pair(self, chrom, pos):
+        for pair in (PairStatus.MATCHED_FEMALE, PairStatus.MATCHED_MALE):
+            r = self._run((0, 0), (1, 1), pair, chrom=chrom, pos=pos)
+            assert [m.chrom for m in r.informative] == ["chr1"]
+            assert r.n_informative_sex_chrom_excluded == 1
+            assert r.n_chrx_used == 0
+            assert r.n_chrx_male_het_dropped == 0
+
+    def test_autosomes_only_ignores_pair_status(self):
+        r = self._run((0, 0), (1, 1), PairStatus.MATCHED_FEMALE, policy=ContigPolicy.AUTOSOMES_ONLY)
+        assert [m.chrom for m in r.informative] == ["chr1"]
+        assert r.n_informative_sex_chrom_excluded == 1
+        assert r.n_chrx_used == 0
+
+    def test_all_primary_admits_male_het_too(self):
+        r = self._run((0, 1), (1, 1), PairStatus.MATCHED_MALE, policy=ContigPolicy.ALL_PRIMARY)
+        assert [m.chrom for m in r.informative] == ["chr1", "chrX"]
+        assert r.n_chrx_used == 1
+        assert r.n_chrx_male_het_dropped == 0
+
+    def test_par_still_excluded_for_matched_pair(self):
+        r = self._run((0, 0), (1, 1), PairStatus.MATCHED_FEMALE, pos=1_000_000)  # PAR1
+        assert [m.chrom for m in r.informative] == ["chr1"]
+        assert r.n_par_excluded == 1
+        assert r.n_chrx_used == 0
+
+    def test_policy_values(self):
+        assert ContigPolicy("sex_aware") is ContigPolicy.SEX_AWARE
+        assert ContigPolicy("autosomes_only") is ContigPolicy.AUTOSOMES_ONLY
+        assert not hasattr(ContigPolicy, "AUTOSOMES")
+
+
+HOM, HET = (0, 0), (0, 1)
+
+
+class TestAdmitContig:
+    """The pure routing function, row by row."""
+
+    @pytest.mark.parametrize("policy", list(ContigPolicy))
+    @pytest.mark.parametrize("pair", [None, *PairStatus])
+    def test_autosome_always_admitted(self, policy, pair):
+        assert admit_contig(ContigClass.AUTOSOME, policy, pair, [HET, HET]) == (True, False)
+
+    @pytest.mark.parametrize("cls", [ContigClass.X_NONPAR, ContigClass.Y_NONPAR, ContigClass.MT])
+    @pytest.mark.parametrize("pair", [None, *PairStatus])
+    def test_all_primary_admits_all(self, cls, pair):
+        assert admit_contig(cls, ContigPolicy.ALL_PRIMARY, pair, [HET, HET]) == (True, False)
+
+    @pytest.mark.parametrize("cls", [ContigClass.X_NONPAR, ContigClass.Y_NONPAR, ContigClass.MT])
+    @pytest.mark.parametrize("pair", [None, *PairStatus])
+    def test_autosomes_only_rejects_all(self, cls, pair):
+        assert admit_contig(cls, ContigPolicy.AUTOSOMES_ONLY, pair, [HOM, HOM]) == (False, False)
+
+    @pytest.mark.parametrize(
+        "pair,gts,expected",
+        [
+            (PairStatus.MATCHED_FEMALE, [HET, HOM], (True, False)),
+            (PairStatus.MATCHED_FEMALE, [HOM, (1, 1)], (True, False)),
+            (PairStatus.MATCHED_MALE, [HOM, (1, 1)], (True, False)),
+            (PairStatus.MATCHED_MALE, [HET, HOM], (False, True)),
+            (PairStatus.MATCHED_MALE, [HOM, HET], (False, True)),
+            (PairStatus.MATCHED_MALE, [HOM, HOM, HET], (False, True)),
+            (PairStatus.MISMATCHED, [HOM, (1, 1)], (False, False)),
+            (PairStatus.UNKNOWN, [HOM, (1, 1)], (False, False)),
+            (None, [HOM, (1, 1)], (False, False)),
+        ],
+    )
+    def test_sex_aware_chrx_rows(self, pair, gts, expected):
+        assert admit_contig(ContigClass.X_NONPAR, ContigPolicy.SEX_AWARE, pair, gts) == expected
+
+    @pytest.mark.parametrize("cls", [ContigClass.Y_NONPAR, ContigClass.MT])
+    @pytest.mark.parametrize("pair", [None, *PairStatus])
+    def test_sex_aware_never_uses_chry_or_mt(self, cls, pair):
+        assert admit_contig(cls, ContigPolicy.SEX_AWARE, pair, [HOM, (1, 1)]) == (False, False)
 
 
 # ---------------------------------------------------------------------------

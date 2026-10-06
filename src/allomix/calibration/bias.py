@@ -12,6 +12,12 @@ expected reference allele weight for each marker. The adjustment is applied
 multiplicatively in logit space, not as a flat additive shift, so it stays
 valid at informative markers whose expected VAF is far from 0.5 (issue #20);
 see ``allomix.estimate.likelihood.apply_bias``.
+
+Sex guard (#46): a male is hemizygous at non-PAR chrX and chrY, so a diploid
+caller's het call there is a genotyping error, not a 0.5-VAF observation.
+``estimate_biases`` skips those observations for samples known to be male,
+and ``estimate_biases_both_het`` only trusts a non-PAR chrX both-het site when
+every party is female. The CLI infers the sexes with ``allomix.qc.sex``.
 """
 
 import csv
@@ -19,7 +25,9 @@ import statistics
 from dataclasses import dataclass
 from pathlib import Path
 
+from allomix.contigs import ContigClass, classify_contig
 from allomix.genotype import MarkerData, MarkerKey, marker_key
+from allomix.sex_types import Sex
 
 
 @dataclass
@@ -34,22 +42,44 @@ class MarkerBias:
     n_het: int
 
 
+def _hemizygous_in_male(m: MarkerData) -> bool:
+    """True at non-PAR chrX and chrY, where a male carries a single copy."""
+    return classify_contig(m.chrom, m.pos) in (ContigClass.X_NONPAR, ContigClass.Y_NONPAR)
+
+
 def estimate_biases(
     marker_lists: list[list[MarkerData]],
     min_het: int = 1,
+    sample_sexes: list[Sex | None] | None = None,
 ) -> dict[MarkerKey, MarkerBias]:
     """Estimate per-marker amplification bias from heterozygous observations.
 
     For each marker, collects VAF across samples genotyped heterozygous (0/1) and
     takes ``bias = median(VAF - 0.5)`` (positive = ALT preferentially captured).
     Markers with fewer than ``min_het`` het observations are excluded.
+
+    Args:
+        marker_lists: One parsed marker list per training sample.
+        min_het: Minimum het observations for a marker to be kept.
+        sample_sexes: Sex per sample, aligned with ``marker_lists``. Het calls
+            at non-PAR chrX and chrY are skipped for a ``Sex.MALE`` sample (a
+            het on a hemizygous chromosome is a genotyping error, not a bias
+            observation). None entries, and None for the whole list, apply no
+            guard.
     """
+    if sample_sexes is not None and len(sample_sexes) != len(marker_lists):
+        raise ValueError(
+            f"sample_sexes has {len(sample_sexes)} entries for {len(marker_lists)} marker lists"
+        )
     het_deviations: dict[MarkerKey, list[float]] = {}
     marker_info: dict[MarkerKey, tuple[str, int, str, str]] = {}
 
-    for markers in marker_lists:
+    for i, markers in enumerate(marker_lists):
+        male = sample_sexes is not None and sample_sexes[i] is Sex.MALE
         for m in markers:
             if m.gt != (0, 1):
+                continue
+            if male and _hemizygous_in_male(m):
                 continue
             dp = m.ad_ref + m.ad_alt
             if dp <= 0:
@@ -82,6 +112,8 @@ def estimate_biases_both_het(
     admix_lists: list[list[MarkerData]],
     min_het: int = 1,
     min_dp: int = 1,
+    host_sex: Sex | None = None,
+    donor_sexes: list[Sex | None] | None = None,
 ) -> dict[MarkerKey, MarkerBias]:
     """Estimate per-marker bias from admix samples at both-het markers.
 
@@ -102,9 +134,17 @@ def estimate_biases_both_het(
     other pairs whose informative markers it covers. This is therefore a cohort
     table builder, not an inline single-run correction: pool across patients and
     apply the table with ``--bias-table``.
+
+    When ``host_sex`` or ``donor_sexes`` is given, a non-PAR chrX both-het site
+    is used only if the host and every donor are ``Sex.FEMALE``: a het there in
+    a male, or in a party of unresolved sex, is not a trustworthy 0.5-VAF site.
+    Other contigs are unaffected. With neither given, no guard is applied.
     """
     host_idx = {marker_key(m): m for m in host}
     donor_idxs = [{marker_key(m): m for m in d} for d in donors]
+    guard_chrx = host_sex is not None or donor_sexes is not None
+    party_sexes = [host_sex, *(donor_sexes if donor_sexes is not None else [None] * len(donors))]
+    all_female = all(s is Sex.FEMALE for s in party_sexes)
 
     # Markers where host and every donor are heterozygous.
     both_het: dict[MarkerKey, tuple[str, int, str, str]] = {}
@@ -113,6 +153,12 @@ def estimate_biases_both_het(
             continue
         donor_markers = [di.get(key) for di in donor_idxs]
         if any(d is None or d.gt != (0, 1) for d in donor_markers):
+            continue
+        if (
+            guard_chrx
+            and not all_female
+            and classify_contig(h.chrom, h.pos) is ContigClass.X_NONPAR
+        ):
             continue
         both_het[key] = (h.chrom, h.pos, h.ref, h.alt)
 

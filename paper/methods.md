@@ -101,18 +101,24 @@ markers.
 By default a site is used only if recipient and donor genotype quality is at least 20 and the
 admixture depth is at least 100, and at least three informative markers are required to
 report an estimate. Markers in the X and Y pseudoautosomal regions and on non-primary
-contigs are always excluded, and sex and mitochondrial contigs (non-PAR X, Y, M) are
-excluded from the estimate, because in a sex-mismatched donor and recipient pair the
-expected recipient and donor allele dosage on the sex chromosomes departs from the
-autosomal diploid model the estimator assumes; the informative sex-chromosome markers that
-were dropped are reported. The sex of the recipient and of each donor is inferred from
-their own genotypes, from heterozygosity at non-PAR chrX sites compared by likelihood
-ratio between a female model (heterozygous at the sample's autosomal rate) and a male
-model (heterozygous only by genotyping error), with ambiguous and unavailable states when
-the sites do not resolve or the panel has none. A declared sex is optional; a confident
-inference that contradicts it fails quality control as a likely sample mix-up. Using
-chrX markers for sex-matched pairs is planned work and is not part of the estimates
-reported here.
+contigs are always excluded, as are non-PAR chrY and mitochondrial markers. The sex of
+the recipient and of each donor is inferred from their own genotypes, from heterozygosity
+at non-PAR chrX sites compared by likelihood ratio between a female model (heterozygous at
+the sample's autosomal rate) and a male model (heterozygous only by genotyping error), with
+ambiguous and unavailable states when the sites do not resolve or the panel has none. A
+declared sex is optional; a confident inference that contradicts it fails quality control
+as a likely sample mix-up, and a declaration resolves an ambiguous or unavailable
+inference. Non-PAR chrX markers are then routed on the pair. When recipient and donor are
+both female they share the diploid copy number and the chrX markers enter the estimate
+through the same path as autosomal markers. When both are male, each carries a single
+copy, so the diploid dosage arithmetic is exact at sites where both are homozygous, and
+those sites are used; a heterozygous call in either reference sample cannot be real on a
+hemizygous chromosome, so such sites are dropped and counted as genotyping errors. When
+the pair is sex-mismatched, or the sex of either party is unresolved, the expected allele
+dosage on chrX departs from the diploid model the estimator assumes, and chrX markers are
+excluded; the informative markers dropped are reported. The identity checks remain
+autosomal in every case, and the per-marker bias estimation applies the same rule, taking
+no heterozygous observations at non-PAR chrX or chrY from male samples.
 
 #### Box 1. Reading the residual recipient off the counts
 

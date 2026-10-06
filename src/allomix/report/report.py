@@ -336,7 +336,9 @@ def _runmeta_json(run_unit: RunUnitInfo | None) -> dict | None:
 # relatedness columns. ``sex_source`` is the host's reconciliation
 # (inferred / declared / inferred+declared / conflict / unavailable) and
 # ``donor_sex_source`` the donors', joined. A conflict is also a QC FAIL in
-# qc_status / qc_warnings. The contig counters come from ``classify_markers``.
+# qc_status / qc_warnings. The contig counters come from ``classify_markers``
+# (``n_chrx_used`` and ``n_chrx_male_het_dropped`` from the sex-aware chrX
+# routing of #46).
 _SEX_TSV_COLS = [
     "host_sex",
     "donor_sex",
@@ -347,6 +349,7 @@ _SEX_TSV_COLS = [
     "n_par_excluded",
     "n_other_contig_excluded",
     "n_informative_sex_chrom_excluded",
+    "n_chrx_male_het_dropped",
 ]
 
 
@@ -361,6 +364,7 @@ def _sex_tsv_cells(sex: SexResult | None, qc: QCReport) -> list[str]:
         str(qc.n_par_excluded),
         str(qc.n_other_contig_excluded),
         str(qc.n_informative_sex_chrom_excluded),
+        str(qc.n_chrx_male_het_dropped),
     ]
     if sex is None:
         return [_NA] * 5 + counts
@@ -719,6 +723,7 @@ def _qc_common_json(result: ChimerismResult | MultiDonorResult, qc: QCReport) ->
         "n_par_excluded": qc.n_par_excluded,
         "n_other_contig_excluded": qc.n_other_contig_excluded,
         "n_chrx_used": qc.n_chrx_used,
+        "n_chrx_male_het_dropped": qc.n_chrx_male_het_dropped,
         "n_robust_excluded": getattr(result, "n_robust_excluded", 0),
         "robust_drop_fraction": getattr(result, "robust_drop_fraction", 0.0),
         "mean_depth": round(qc.mean_depth, 1),

@@ -24,6 +24,7 @@ scripts/<name>.py`. They depend on `allomix` being installed (`pip install -e
 | `generate_test_data.py` | Generate synthetic joint-called VCFs (host + donor + admixture) for tests. |
 | `generate_multidonor_test_data.py` | Generate a multi-donor synthetic dataset (host + 2 related donors). |
 | `generate_timeline_data.py` | Generate a synthetic post-HSCT timeline (serial chimeric VCFs). |
+| `validate_sexchrom_routing.py` | In-silico check of the sex-aware chrX routing (#46) over N seeds: a female/female pair with chrX on vs off at a matched autosomal count, a male/female pair with chrX forced in (the bias the gate prevents), and a male/male pair with spurious hets with and without the het drop. Prints a summary table (bias, SD, CI width, LoD, markers used). |
 | `generate_sexchrom_test_data.py` | Generate the sex-chromosome fixtures in `tests/test_data/sexchrom/`: FF, MM and MF host/donor pairs as joint VCFs with autosomal, non-PAR chrX (sex-aware ploidy, GATK-style diploid encoding, spurious male hets), PAR and alt-contig markers, plus a truth table. |
 | `make_synthetic_genotypes.py` | Create synthetic host/donor genotype VCFs (100 biallelic SNPs). |
 | `measure_panel_bias.py` | Measure per-marker bias/characteristics from joint-called genotyping VCFs. See [panel_guide.md](panel_guide.md) for using it to qualify a panel. |

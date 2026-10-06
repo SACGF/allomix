@@ -129,6 +129,32 @@ as SRY, ZFY, AMELY and their chrX counterparts are depth-only regions, not
 SNPs, and do not contribute to the het-rate inference; chrY depth is reserved
 as a secondary signal for a later release.
 
+**chrX SNPs add informative markers for sex-matched pairs.** Non-PAR chrX
+markers are used in the estimate when host and donor are the same sex: through
+the normal diploid path for a female pair, and at hom/hom sites only for a male
+pair (a het call in a male is a genotyping error and is dropped). For a
+mismatched or unresolved pair they are excluded, so chrX content costs nothing
+there (see [Marker types](marker_types.md) for the rule). A spurious het rate
+of a few percent at male chrX is normal for a diploid caller; a GQ filter
+removes most of it, and the het drop handles the rest. Because the male model's
+spurious-het rate is part of the inference, a panel with few chrX sites and a
+noisy caller can leave a male `ambiguous` (two spurious hets in twenty sites
+does it); declaring the sex resolves that for routing while the conflict check
+still runs.
+
+**Het-based panel statistics and male chrX.** `scripts/measure_panel_bias.py`
+measures per-marker bias from het VAFs and an allele-dropout signal from the
+het rate against Hardy-Weinberg, pooled over the cohort regardless of sex. At a
+non-PAR chrX marker a mixed-sex cohort therefore shows a het deficit (males
+contribute no real hets) and the few male het calls that exist are genotyping
+errors, not bias observations. `allomix panel-qc` reads those statistics as
+they are, so expect chrX markers to be flagged `het_deficit` on a mixed-sex
+cohort; that is a conservative outcome (the marker is dropped from the panel),
+not a defect of the marker, and a female-only cohort gives the clean reading.
+`allomix estimate-bias` itself infers each training sample's sex and skips male
+het observations at non-PAR chrX and chrY (`--both-het` uses a non-PAR chrX
+site only when every party is female), so bias tables are not affected.
+
 ## 3. Characterize the panel on a reference cohort
 
 Run a set of reference samples (any cohort genotyped through your normal pipeline;

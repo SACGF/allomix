@@ -68,6 +68,30 @@ By default a site is used only if host and donor genotype quality is at least 20
 and the admixture depth is at least 100, and at least three informative markers
 are required to report an estimate.
 
+## Hemizygous chrX markers
+
+The table above assumes two copies of the marker in each person, which holds on
+the autosomes and on chrX when host and donor are the same sex. allomix infers
+each reference sample's sex from its non-PAR chrX heterozygosity (see the
+[Panel Guide](panel_guide.md)) and routes non-PAR chrX markers on the pair:
+
+- **Female host, female donor.** Two copies each, so every chrX marker is an
+  ordinary marker and all six informative types apply.
+- **Male host, male donor.** One copy each. A diploid caller writes the single
+  allele as `0/0` or `1/1`, so a hom/hom contrast is a clean full-contrast
+  marker (the ploidy cancels and the type 0 / type 1 arithmetic is exact). A
+  `0/1` call in either person cannot be real on a hemizygous chromosome; such
+  markers are dropped and counted (`n_chrx_male_het_dropped`).
+- **Mismatched or unresolved pair.** The two people differ in chrX copy
+  number (or the sex of one is unknown), so the expected allele fraction is not
+  the diploid one. These markers are excluded and counted
+  (`n_informative_sex_chrom_excluded`).
+
+Pseudoautosomal (PAR) sites, which recombine between X and Y, are excluded
+whatever the pair, as are non-PAR chrY and mitochondrial markers and anything on
+a non-primary contig. The identity checks (relatedness, consensus-hom
+contamination and swap, shared-het balance) stay autosomal in every case.
+
 ## Worked example: reading the residual host off the counts
 
 Take two markers in one post-transplant sample from a patient near full donor

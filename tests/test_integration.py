@@ -18,6 +18,7 @@ from allomix.simulate import build_joint_vcf, write_joint_vcf
 TEST_DATA_DIR = Path(__file__).resolve().parent / "test_data"
 JOINT_VCF = TEST_DATA_DIR / "joint_single_donor.vcf"
 JOINT_MULTI_VCF = TEST_DATA_DIR / "joint_multi_donor.vcf"
+SEXCHROM_DIR = TEST_DATA_DIR / "sexchrom"
 
 
 def _run_pipeline(
@@ -674,7 +675,7 @@ class TestSexCli:
         # NA is "nothing declared", so no donor sex is shown in the header meta.
         assert data["meta"]["donors"][0]["sex"] is None
         assert data["meta"]["sex"] == "male"
-        assert data["params"]["contig_policy"] == "autosomes"
+        assert data["params"]["contig_policy"] == "sex_aware"
         assert "use_sex_chroms" not in data["params"]
 
     def test_unparseable_recipient_sex_warns_and_runs(self, tmp_path, capsys):
@@ -686,3 +687,163 @@ class TestSexCli:
         row = dict(zip(header, values, strict=True))
         assert row["host_sex"] == "unavailable"
         assert row["sex_source"] == "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# Sex-aware chrX routing on the sexchrom fixtures (#46)
+# ---------------------------------------------------------------------------
+
+
+def _sexchrom_truth() -> dict[tuple[str, str], dict[str, str]]:
+    rows = (SEXCHROM_DIR / "truth_table.tsv").read_text().splitlines()
+    header = rows[0].split("\t")
+    out = {}
+    for line in rows[1:]:
+        rec = dict(zip(header, line.split("\t"), strict=True))
+        out[(rec["vcf"], rec["sample_name"])] = rec
+    return out
+
+
+def _detect_rows(tmp_path, vcf_name: str, *extra: str) -> dict[str, dict[str, str]]:
+    """Run ``detect`` on one sexchrom fixture; return TSV rows keyed by sample."""
+    vcf = SEXCHROM_DIR / vcf_name
+    out = tmp_path / f"{vcf_name}.tsv"
+    rc = main(
+        [
+            "detect",
+            "--genotype-vcf",
+            str(vcf),
+            "--admix-vcf",
+            str(vcf),
+            "--host-sample",
+            "HOST",
+            "--donor-sample",
+            "DONOR",
+            "--sample",
+            "ADMIX_F0.95",
+            "--sample",
+            "ADMIX_F0.80",
+            "--min-dp",
+            "0",
+            "--min-gq",
+            "0",
+            "--tsv",
+            str(out),
+            *extra,
+        ]
+    )
+    assert rc == 0
+    lines = out.read_text().splitlines()
+    header = lines[0].split("\t")
+    # The multi-sample TSV repeats the header before every row.
+    data = [ln for ln in lines if ln and not ln.startswith("sample\t")]
+    return {
+        rec["sample"]: rec
+        for rec in (dict(zip(header, ln.split("\t"), strict=True)) for ln in data)
+    }
+
+
+class TestSexChromFixtures:
+    """``detect`` on the FF / MM / MF fixtures: routing, counts and accuracy."""
+
+    # Estimate tolerance against the blended truth, in percentage points. The
+    # fixtures have 29-45 autosomal plus up to 10 chrX informative markers at
+    # depth 1000, so the estimate sits well inside 1 pp of truth.
+    TOL_PP = 1.0
+
+    def _check_common(self, rows, truth, vcf_name):
+        for sample, rec in rows.items():
+            t = truth[(vcf_name, sample)]
+            assert rec["n_par_excluded"] == t["n_chrx_par"] == "2"
+            assert rec["n_other_contig_excluded"] == t["n_other_contig"] == "1"
+            assert rec["host_sex"] == t["host_sex"]
+            assert rec["qc_status"] != "FAIL"
+            est = float(rec["donor_pct"])
+            assert abs(est - 100 * float(t["true_donor_fraction"])) < self.TOL_PP, (sample, est)
+
+    def test_ff_uses_chrx(self, tmp_path):
+        truth = _sexchrom_truth()
+        rows = _detect_rows(tmp_path, "joint_FF.vcf")
+        self._check_common(rows, truth, "joint_FF.vcf")
+        for sample, rec in rows.items():
+            t = truth[("joint_FF.vcf", sample)]
+            assert rec["donor_sex"] == "F"
+            assert rec["sex_pair"] == "matched_female"
+            assert rec["sex_source"] == rec["donor_sex_source"] == "inferred"
+            n_chrx = int(rec["n_chrx_used"])
+            assert n_chrx > 0
+            assert n_chrx == int(t["n_chrx_nonpar_informative"])
+            assert int(rec["n_informative"]) == int(t["n_autosomal_informative"]) + n_chrx
+            assert rec["n_informative_sex_chrom_excluded"] == "0"
+            assert rec["n_chrx_male_het_dropped"] == "0"
+
+    def test_ff_autosomes_only_policy_matches_truth_without_chrx(self, tmp_path):
+        truth = _sexchrom_truth()
+        rows = _detect_rows(tmp_path, "joint_FF.vcf", "--contig-policy", "autosomes_only")
+        self._check_common(rows, truth, "joint_FF.vcf")
+        for sample, rec in rows.items():
+            t = truth[("joint_FF.vcf", sample)]
+            assert rec["sex_pair"] == "matched_female"  # inference still runs
+            assert rec["n_chrx_used"] == "0"
+            assert rec["n_informative"] == t["n_autosomal_informative"]
+            assert int(rec["n_informative_sex_chrom_excluded"]) > 0
+
+    def test_mm_hom_hom_used_and_spurious_hets_dropped(self, tmp_path):
+        """Male/male pair: hom/hom chrX contrasts used, het calls dropped.
+
+        The MM donor carries 2 spurious hets in 20 non-PAR chrX sites, which the
+        likelihood ratio (male model het rate 0.02) leaves ambiguous, so the
+        donor sex is declared; the declaration resolves the pair for routing.
+        """
+        truth = _sexchrom_truth()
+        rows = _detect_rows(tmp_path, "joint_MM.vcf", "--recipient-sex", "M", "--donor-sex", "M")
+        self._check_common(rows, truth, "joint_MM.vcf")
+        for sample, rec in rows.items():
+            t = truth[("joint_MM.vcf", sample)]
+            assert rec["donor_sex"] == "M"
+            assert rec["sex_pair"] == "matched_male"
+            assert rec["sex_source"] == "inferred+declared"
+            assert rec["donor_sex_source"] == "declared"
+            n_drop = int(rec["n_chrx_male_het_dropped"])
+            assert n_drop >= 1
+            # Every spurious het site is dropped (host and donor hets are at
+            # distinct sites in this fixture).
+            n_spurious = int(t["n_chrx_host_spurious_het"]) + int(t["n_chrx_donor_spurious_het"])
+            assert n_drop == n_spurious
+            assert int(rec["n_chrx_used"]) > 0
+            assert rec["n_informative_sex_chrom_excluded"] == "0"
+
+    def test_mm_without_declaration_is_unknown_and_excludes_chrx(self, tmp_path):
+        truth = _sexchrom_truth()
+        rows = _detect_rows(tmp_path, "joint_MM.vcf")
+        self._check_common(rows, truth, "joint_MM.vcf")
+        for rec in rows.values():
+            assert rec["donor_sex"] == "ambiguous"
+            assert rec["sex_pair"] == "unknown"
+            assert rec["n_chrx_used"] == "0"
+            assert rec["n_chrx_male_het_dropped"] == "0"
+            assert int(rec["n_informative_sex_chrom_excluded"]) > 0
+
+    def test_mf_excludes_chrx(self, tmp_path):
+        truth = _sexchrom_truth()
+        rows = _detect_rows(tmp_path, "joint_MF.vcf")
+        self._check_common(rows, truth, "joint_MF.vcf")
+        for sample, rec in rows.items():
+            t = truth[("joint_MF.vcf", sample)]
+            assert (rec["host_sex"], rec["donor_sex"]) == ("M", "F")
+            assert rec["sex_pair"] == "mismatched"
+            assert rec["n_chrx_used"] == "0"
+            assert rec["n_chrx_male_het_dropped"] == "0"
+            assert int(rec["n_informative_sex_chrom_excluded"]) > 0
+            assert rec["n_informative"] == t["n_autosomal_informative"]
+
+    def test_mf_stderr_explains_exclusion(self, tmp_path, capsys):
+        _detect_rows(tmp_path, "joint_MF.vcf")
+        err = capsys.readouterr().err
+        assert "host and donor sexes differ (mismatched: host M, donor F)" in err
+        assert "pseudoautosomal" in err and "non-primary contig" in err
+
+    def test_ff_stderr_reports_chrx_use(self, tmp_path, capsys):
+        _detect_rows(tmp_path, "joint_FF.vcf")
+        err = capsys.readouterr().err
+        assert "informative non-PAR chrX marker(s) (matched_female: host F, donor F)" in err

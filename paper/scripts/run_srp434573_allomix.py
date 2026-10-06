@@ -228,6 +228,7 @@ def run_mix(
     admix: Path | None = None,
     error_table: Path | None = None,
     contam_table: Path | None = None,
+    extra_args: list[str] | None = None,
 ) -> list[dict]:
     """Run allomix detect (TSV) and return one parsed dict per admix sample.
 
@@ -240,6 +241,8 @@ def run_mix(
         contam_table: Per-mixture Step 30 contamination table. When given, monitor
             runs with ``--contamination-correction`` (the table self-gates, so a
             clean run is still a no-op).
+        extra_args: Extra ``detect`` arguments appended verbatim (the chrX arm
+            passes ``--contig-policy``; see ``run_srp434573_chrx.py``).
     """
     if panel is None:
         panel = GEN / f"{name}.SRP434573.vcf.gz"
@@ -271,6 +274,8 @@ def run_mix(
         cmd += ["--donor-sample", d, "--expected-relatedness", "unrelated"]
     for s in admix_samples(admix):
         cmd += ["--sample", s]
+    if extra_args:
+        cmd += extra_args
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
         sys.stderr.write(f"[{name}] FAILED rc={res.returncode}\n{res.stderr}\n")

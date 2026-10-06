@@ -426,6 +426,26 @@ and the haem-run VCFs and BAMs) and set the thresholds from its output.
 
 ---
 
+## Status (2026-10-06)
+
+Phases 0, 1 and 2 are on `main` (contigs module; sex inference, declared-sex
+flags, flag retirement, 0.5.0; sex-aware chrX routing, bias guard, simulator
+fixtures, SRP434573 chrX arm and `scripts/validate_sexchrom_routing.py`).
+Phase 3 is next. Results of the Phase 2 validation: on the five same-sex
+public titrations chrX adds 9 to 17 informative markers (1.5 to 3%) and moves
+estimates by at most 0.1 pp with CI width ratio 0.985; in silico (5 seeds) the
+FF gate adds no bias and tightens the CI in proportion to the marker gain, an
+MF pair with chrX forced in is biased by +1.6 pp at 10% host, and the MM het
+drop removes a -0.9 to -2.3 pp bias.
+
+Threshold note from Phase 2: a male with 2 spurious hets in 20 chrX sites
+and an autosomal het rate of 0.38 comes out `ambiguous` (log10 LR -1.1
+against the 2.0 threshold), so with only ~20 chrX sites the LR test needs
+either a cleaner het rate (the GQ filter gives 0-1 hets per male on the public
+panel) or a declaration to resolve it. The constants `MALE_X_SPURIOUS_HET`,
+`SEX_LR_THRESHOLD` and `MIN_X_SITES` are to be set from the calibration
+script's output; until then declared sex is the safety net, as designed.
+
 ## Open questions
 
 1. **Which SID BED went into the union BED.** `scripts/build_union_bed.py` is

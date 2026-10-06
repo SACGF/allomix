@@ -22,8 +22,8 @@ runs a separate detection test for whether the host is present at all.
                     |
             genotype.classify_markers        host vs donor -> InformativeMarker
                     |                         (Vynck marker types; PAR and non-primary
-                    |                          contigs dropped; non-PAR X/Y/MT dropped
-                    |                          under ContigPolicy.AUTOSOMES)
+                    |                          contigs dropped; non-PAR chrX routed on the
+                    |                          qc.sex pair status, chrY/MT dropped)
                     v
             analysis.analyse_sample  ------------------------------+
                     |                                              |
@@ -65,12 +65,13 @@ orchestrator, the CLI, the simulator); the four subpackages each own one stage:
 | Module | Owns | Key public surface |
 | --- | --- | --- |
 | `contigs.py` | Contig classification as a pure function of `(chrom, pos)`: autosome, chrX/chrY split into PAR and non-PAR, MT, or `OTHER` (alt, decoy, unplaced, random, HLA). Owns the PAR mask (exact union of GRCh37 and GRCh38, so no genome build is needed) and the name-only `is_sex_chrom` predicate. No allomix imports. | `ContigClass`, `classify_contig`, `is_sex_chrom`, `PAR_REGIONS` |
-| `genotype.py` | VCF parsing (cyvcf2) and marker classification (the eight marker classes are described in [Marker types](marker_types.md)). The canonical home of `MarkerKey`/`marker_key`. `ContigPolicy` decides which contig classes may enter the informative set (`AUTOSOMES` default; `ALL_PRIMARY` for diagnostic views). | `parse_vcf`, `classify_markers`, `ContigPolicy`, `MarkerData`, `InformativeMarker`, `MarkerGenotypes`, `marker_type`, `MarkerKey` |
+| `genotype.py` | VCF parsing (cyvcf2) and marker classification (the eight marker classes are described in [Marker types](marker_types.md)). The canonical home of `MarkerKey`/`marker_key`. `ContigPolicy` decides which contig classes may enter the informative set (`SEX_AWARE` default, routing non-PAR chrX on the host/donor sex pair; `AUTOSOMES_ONLY`; `ALL_PRIMARY` for diagnostic views); `admit_contig` is the pure routing table. | `parse_vcf`, `classify_markers`, `admit_contig`, `ContigPolicy`, `MarkerData`, `InformativeMarker`, `MarkerGenotypes`, `marker_type`, `MarkerKey` |
+| `sex_types.py` | The `Sex` and `PairStatus` enums, in a leaf module (no allomix imports) so `genotype` can route on the pair status while `qc.sex` infers it from `genotype.MarkerData`. Re-exported by `qc.sex`. | `Sex`, `PairStatus` |
 | `estimate/chimerism.py` | The donor-fraction MLE: beta-binomial likelihood, grid + Brent (single donor) / Nelder-Mead (multi), profile-likelihood CIs. | `estimate_single_donor_bb`, `estimate_multi_donor`, `ChimerismResult`, `MultiDonorResult`, `detection_limit` |
 | `calibration/bias.py` | Per-marker amplification-bias table (median het-VAF deviation), used to shift the expected REF weight in the MLE. | `estimate_biases`, `save_bias_table`, `load_bias_table` |
 | `calibration/error_rates.py` | Per-site, per-direction empirical error table (panel of normals). Same key shape as `bias`. | `estimate_error_rates`, `save_error_table`, `load_error_table` |
 | `qc/host_presence.py` | Host-presence detection at donor-homozygous markers, plus the read-level artifact filter. Independent of the fraction MLE. | `host_presence_test`, `donor_hom_markers`, `DonorHomMarker`, `HostPresenceResult`, `ArtifactThresholds` |
-| `qc/sex.py` | Sex inference per reference sample from non-PAR chrX heterozygosity (binomial LR, female model from the sample's autosomal het rate vs a male spurious-het model), reconciliation with a declared sex, and the host/donor pair status. Attached to the result by `analyse_sample` before QC, like relatedness; a declared-vs-inferred conflict is a QC FAIL. chrY depth is reserved for a later phase. | `infer_sex`, `assess_sex`, `pair_status`, `parse_declared_sex`, `Sex`, `PairStatus`, `SexInference`, `SexResult` |
+| `qc/sex.py` | Sex inference per reference sample from non-PAR chrX heterozygosity (binomial LR, female model from the sample's autosomal het rate vs a male spurious-het model), reconciliation with a declared sex, and the host/donor pair status. Run by `analyse_sample` before `classify_markers` (the pair status drives the chrX routing) and attached to the result before QC, like relatedness; a declared-vs-inferred conflict is a QC FAIL. chrY depth is reserved for a later phase. | `infer_sex`, `assess_sex`, `pair_status`, `parse_declared_sex`, `Sex`, `PairStatus`, `SexInference`, `SexResult` |
 | `qc/qc.py` | Quality verdict: marker counts, beta-binomial goodness-of-fit, identity checks (relatedness, sex, swap), PASS/REVIEW/FAIL with reasons. | `assess_quality`, `QCReport` |
 | `analysis.py` | The shared single-sample pipeline that ties classify -> estimate -> presence -> QC together. | `analyse_sample`, `AdmixtureSampleAnalysis` |
 | `report/report.py` | Output formatting (TSV, JSON, timeline JSON) for single- and multi-donor results. | `to_tsv`, `to_json`, `timeline_json` |
@@ -106,12 +107,32 @@ coordinate against reference annotation. `classify_markers` drops markers on
 `OTHER` contigs (mapping hazards) and in the pseudoautosomal regions (ambiguous
 copy number) before anything else, under every `ContigPolicy`, counting them
 into `MarkerGenotypes.n_other_contig_excluded` and `n_par_excluded`; the CLI
-reports both on stderr when non-zero. Non-PAR chrX, chrY and MT markers are
-then dropped under the default `AUTOSOMES` policy (informative ones counted in
-`n_informative_sex_chrom_excluded`) and kept under the diagnostic
-`ALL_PRIMARY` policy (`n_chrx_used`). `qc.sex` reads the same classification
-to pick the non-PAR chrX sites it infers sex from; the sex-aware chrX routing
-of #46 will sit between these two steps.
+reports both on stderr when non-zero. The remaining non-PAR chrX, chrY and MT
+markers are routed by `genotype.admit_contig` from the `ContigPolicy` and the
+host/donor sex pair status that `qc.sex.assess_sex` computed first (it reads
+the same contig classification to pick the non-PAR chrX sites it infers sex
+from). Under the default `SEX_AWARE` policy:
+
+| class | pair | result |
+|---|---|---|
+| non-PAR chrX | `matched_female` | used through the normal diploid path (`n_chrx_used`) |
+| non-PAR chrX | `matched_male` | used where host and every donor are homozygous (`n_chrx_used`); a het call in any party drops the marker (`n_chrx_male_het_dropped`), since a het on a hemizygous chromosome is a genotyping error |
+| non-PAR chrX | `mismatched`, `unknown`, or no pair status | excluded; informative ones counted in `n_informative_sex_chrom_excluded` |
+| non-PAR chrY, MT | any | excluded from the estimate; informative ones counted in `n_informative_sex_chrom_excluded` |
+
+For a sex-matched pair the parties share the chrX copy number, so the diploid
+dosage arithmetic is exact (for hom/hom contrasts the ploidy cancels), and
+downstream code (robust refit, per-type overdispersion, host-presence test)
+sees chrX markers as ordinary markers. For a mismatched pair the parties
+differ in copy number and the diploid model does not hold, which is why the
+gate exists (the mismatch cross-check of #48 is a separate, later module).
+`AUTOSOMES_ONLY` (`--contig-policy autosomes_only`) excludes every
+non-autosome regardless of pair status; the diagnostic `ALL_PRIMARY` admits
+everything primary. Identity QC (`relatedness`, `sample_contamination`,
+`shared_het_balance`) stays autosomal under every policy. The calibration side
+has a matching guard: `calibration.bias.estimate_biases` skips non-PAR chrX /
+chrY het observations from male samples, and `estimate_biases_both_het`
+trusts a non-PAR chrX both-het site only when every party is female.
 
 The PAR intervals are vendored constants: the exact union of the GRCh37 and
 GRCh38 NCBI values (overlapping intervals merged, so PAR1 is one interval and

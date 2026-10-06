@@ -7,6 +7,8 @@ contamination estimator (tested separately in ``test_sample_contamination.py``).
 
 import math
 
+import pytest
+
 from allomix.analysis import _floor_detection_limits, analyse_sample
 from allomix.genotype import ContigPolicy, MarkerData
 from allomix.qc.sex import PairStatus, Sex
@@ -134,7 +136,7 @@ class TestSexWiring:
         assert sex.host.sex is Sex.FEMALE
         assert sex.donors[0].sex is Sex.MALE
         assert sex.pair is PairStatus.MISMATCHED
-        # Phase 1: chrX markers never reach the estimate, even when informative.
+        # Mismatched pair: chrX markers never reach the estimate, even when informative.
         assert all(m.chrom == "chr1" for m in a.genotypes.informative)
         assert a.genotypes.n_informative_sex_chrom_excluded == 12
         assert a.genotypes.n_chrx_used == 0
@@ -192,3 +194,104 @@ class TestSexWiring:
         )
         assert a.genotypes.n_chrx_used == 12
         assert a.genotypes.n_informative_sex_chrom_excluded == 0
+
+
+def _sex_matched_trio(host_sex: str, donor_sex: str, f: float = 0.10):
+    """30 autosomal type-0 markers plus 25 non-PAR chrX markers for a sex-matched pair.
+
+    chrX genotypes (sites i = 0..24): FF host het at i < 12, donor het at
+    6 <= i < 18, hom-alt elsewhere, so 12 chrX sites are informative. MM host
+    hom-alt at i < 12 then hom-ref, donor hom-ref at i < 20 then hom-alt, with
+    one spurious host het at i = 24 (the hemizygous-het genotyping error), so
+    16 hom/hom contrasts are informative and one site is dropped. Each party
+    also carries het chr2 sites absent from the admixture, for the autosomal
+    het rate the female model uses. Admixture VAFs follow the diploid dosage
+    model at ``f`` donor, which is exact for a sex-matched pair.
+    """
+    host, donor, admix = [], [], []
+    for i in range(30):
+        pos = 1000 * (i + 1)
+        host.append(_ref("chr1", pos, (0, 0)))
+        donor.append(_ref("chr1", pos, (1, 1)))
+        admix.append(_admix("chr1", pos, f))
+        host.append(_ref("chr2", pos, (0, 1)))
+        donor.append(_ref("chr2", pos, (0, 1)))
+    for i in range(25):
+        pos = 10_000_000 + 1000 * i
+        if host_sex == "F":
+            h = (0, 1) if i < 12 else (1, 1)
+            d = (0, 1) if 6 <= i < 18 else (1, 1)
+        else:
+            h = (1, 1) if i < 12 else (0, 0)
+            d = (0, 0) if i < 20 else (1, 1)
+            if i == 24:
+                h = (0, 1)
+        host.append(_ref("chrX", pos, h))
+        donor.append(_ref("chrX", pos, d))
+        admix.append(_admix("chrX", pos, ((1 - f) * sum(h) + f * sum(d)) / 2))
+    return host, donor, admix
+
+
+class TestSexAwareRoutingWiring:
+    """assess_sex runs first and its pair status drives classify_markers (#46)."""
+
+    def test_matched_female_uses_chrx(self):
+        host, donor, admix = _sex_matched_trio("F", "F")
+        a = analyse_sample(host, [donor], admix, min_dp=0, min_gq=0, error_rate=0.01)
+        assert a.result.sex.pair is PairStatus.MATCHED_FEMALE
+        assert a.genotypes.n_chrx_used == 12
+        assert a.genotypes.n_informative_sex_chrom_excluded == 0
+        assert a.genotypes.n_chrx_male_het_dropped == 0
+        assert sum(m.chrom == "chrX" for m in a.genotypes.informative) == 12
+        assert a.qc.n_chrx_used == 12
+        assert a.result.donor_fraction == pytest.approx(0.10, abs=0.01)
+
+    def test_matched_male_hom_hom_used_het_dropped(self):
+        host, donor, admix = _sex_matched_trio("M", "M")
+        a = analyse_sample(host, [donor], admix, min_dp=0, min_gq=0, error_rate=0.01)
+        assert a.result.sex.host.sex is Sex.MALE
+        assert a.result.sex.donors[0].sex is Sex.MALE
+        assert a.result.sex.pair is PairStatus.MATCHED_MALE
+        assert a.genotypes.n_chrx_used == 16
+        assert a.genotypes.n_chrx_male_het_dropped == 1
+        assert a.qc.n_chrx_male_het_dropped == 1
+        chrx = [m for m in a.genotypes.informative if m.chrom == "chrX"]
+        assert all(m.host_gt[0] == m.host_gt[1] for m in chrx)
+        assert a.result.donor_fraction == pytest.approx(0.10, abs=0.01)
+
+    def test_autosomes_only_policy_overrides_matched_pair(self):
+        host, donor, admix = _sex_matched_trio("F", "F")
+        a = analyse_sample(
+            host,
+            [donor],
+            admix,
+            min_dp=0,
+            min_gq=0,
+            error_rate=0.01,
+            contig_policy=ContigPolicy.AUTOSOMES_ONLY,
+        )
+        assert a.result.sex.pair is PairStatus.MATCHED_FEMALE
+        assert a.genotypes.n_chrx_used == 0
+        assert a.genotypes.n_informative_sex_chrom_excluded == 12
+
+    def test_declared_sex_resolves_pair_for_routing(self):
+        """A declared donor sex turns an unknown pair into a matched one."""
+        host, donor, admix = _sex_matched_trio("F", "F")
+        donor_auto = [m for m in donor if m.chrom != "chrX"]  # donor chrX ungenotyped
+        a = analyse_sample(host, [donor_auto], admix, min_dp=0, min_gq=0, error_rate=0.01)
+        assert a.result.sex.pair is PairStatus.UNKNOWN
+        assert a.genotypes.n_chrx_used == 0
+        b = analyse_sample(
+            host,
+            [donor_auto],
+            admix,
+            min_dp=0,
+            min_gq=0,
+            error_rate=0.01,
+            declared_donor_sexes=[Sex.FEMALE],
+        )
+        assert b.result.sex.pair is PairStatus.MATCHED_FEMALE
+        # No shared chrX markers (donor has none), so nothing is routed, but the
+        # pair status now permits it.
+        assert b.genotypes.n_chrx_used == 0
+        assert b.genotypes.n_informative_sex_chrom_excluded == 0

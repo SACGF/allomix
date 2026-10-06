@@ -21,6 +21,7 @@ from allomix.estimate.likelihood import (
     total_log_likelihood_bb,
 )
 from allomix.genotype import InformativeMarker, MarkerData
+from allomix.sex_types import Sex
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -166,6 +167,49 @@ class TestEstimateBiases:
         assert ("chr1", 100, "A", "T") in biases
 
 
+# Non-PAR chrX / chrY on both builds; PAR1 on both builds.
+X_NONPAR, Y_NONPAR, X_PAR1 = 50_000_000, 10_000_000, 1_000_000
+
+
+class TestEstimateBiasesSexGuard:
+    """Male samples contribute no het observations at non-PAR chrX / chrY (#46)."""
+
+    @staticmethod
+    def _sample():
+        return [
+            _make_het_marker(chrom="chr1", pos=100, ad_ref=470, ad_alt=530),
+            _make_het_marker(chrom="chrX", pos=X_NONPAR, ad_ref=470, ad_alt=530),
+            _make_het_marker(chrom="chrX", pos=X_PAR1, ad_ref=470, ad_alt=530),
+            _make_het_marker(chrom="chrY", pos=Y_NONPAR, ad_ref=470, ad_alt=530),
+        ]
+
+    def test_no_sexes_keeps_every_het(self):
+        biases = estimate_biases([self._sample()])
+        assert len(biases) == 4
+
+    def test_male_skips_nonpar_x_and_y_but_keeps_par_and_autosome(self):
+        biases = estimate_biases([self._sample()], sample_sexes=[Sex.MALE])
+        assert set(biases) == {("chr1", 100, "A", "T"), ("chrX", X_PAR1, "A", "T")}
+
+    @pytest.mark.parametrize("sex", [Sex.FEMALE, Sex.AMBIGUOUS, Sex.UNAVAILABLE, None])
+    def test_non_male_sexes_apply_no_guard(self, sex):
+        biases = estimate_biases([self._sample()], sample_sexes=[sex])
+        assert len(biases) == 4
+
+    def test_guard_is_per_sample(self):
+        """A male's chrX het is skipped while a female's at the same site counts."""
+        female = [_make_het_marker(chrom="chrX", pos=X_NONPAR, ad_ref=450, ad_alt=550)]
+        male = [_make_het_marker(chrom="chrX", pos=X_NONPAR, ad_ref=900, ad_alt=100)]
+        biases = estimate_biases([female, male], sample_sexes=[Sex.FEMALE, Sex.MALE])
+        mb = biases[("chrX", X_NONPAR, "A", "T")]
+        assert mb.n_het == 1
+        assert mb.bias == pytest.approx(0.05)
+
+    def test_misaligned_sexes_rejected(self):
+        with pytest.raises(ValueError, match="sample_sexes has 1"):
+            estimate_biases([self._sample(), self._sample()], sample_sexes=[Sex.MALE])
+
+
 class TestEstimateBiasesBothHet:
     """Estimate bias from admix samples at host+donor both-het markers (issue #11)."""
 
@@ -227,6 +271,57 @@ class TestEstimateBiasesBothHet:
         donors = [[self._gt_marker(100, (0, 1), 500, 500)]]
         admix = [[self._gt_marker(100, (0, 1), 480, 520)]]
         assert estimate_biases_both_het(host, donors, admix, min_het=2) == {}
+
+    def _chrx_case(self):
+        """One autosomal and one non-PAR chrX both-het marker, admix VAF 0.53 at each."""
+        host = [
+            self._gt_marker(100, (0, 1), 500, 500),
+            self._gt_marker(X_NONPAR, (0, 1), 500, 500, "chrX"),
+        ]
+        donors = [
+            [
+                self._gt_marker(100, (0, 1), 500, 500),
+                self._gt_marker(X_NONPAR, (0, 1), 500, 500, "chrX"),
+            ]
+        ]
+        admix = [
+            [
+                self._gt_marker(100, (0, 1), 470, 530),
+                self._gt_marker(X_NONPAR, (0, 1), 470, 530, "chrX"),
+            ]
+        ]
+        return host, donors, admix
+
+    def test_chrx_both_het_used_when_all_female(self):
+        host, donors, admix = self._chrx_case()
+        biases = estimate_biases_both_het(
+            host, donors, admix, host_sex=Sex.FEMALE, donor_sexes=[Sex.FEMALE]
+        )
+        assert set(biases) == {("chr1", 100, "A", "T"), ("chrX", X_NONPAR, "A", "T")}
+
+    def test_chrx_both_het_used_without_sex_information(self):
+        host, donors, admix = self._chrx_case()
+        assert len(estimate_biases_both_het(host, donors, admix)) == 2
+
+    @pytest.mark.parametrize(
+        "host_sex,donor_sexes",
+        [
+            (Sex.MALE, [Sex.MALE]),
+            (Sex.MALE, [Sex.FEMALE]),
+            (Sex.FEMALE, [Sex.MALE]),
+            (Sex.FEMALE, [Sex.AMBIGUOUS]),
+            (Sex.UNAVAILABLE, [Sex.FEMALE]),
+            (Sex.FEMALE, [None]),
+            (None, [Sex.FEMALE]),
+        ],
+    )
+    def test_chrx_both_het_skipped_unless_every_party_female(self, host_sex, donor_sexes):
+        host, donors, admix = self._chrx_case()
+        biases = estimate_biases_both_het(
+            host, donors, admix, host_sex=host_sex, donor_sexes=donor_sexes
+        )
+        # The autosomal site is unaffected.
+        assert set(biases) == {("chr1", 100, "A", "T")}
 
     def test_low_depth_excluded(self):
         """Observations below min_dp are not counted."""

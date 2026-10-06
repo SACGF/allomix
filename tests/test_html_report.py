@@ -127,7 +127,7 @@ def _params() -> dict:
         "contamination_correction": False,
         "host_presence": True,
         "artifact_filter": True,
-        "contig_policy": "autosomes",
+        "contig_policy": "sex_aware",
     }
 
 
@@ -355,6 +355,23 @@ class TestSexHeaderAndFooter:
         assert 'Sex:</span><span class="meta-value">F inferred' in html
         assert "female declared / unavailable inferred" in html
         assert "sex-matched (female); chrX not used" in html
+
+    def test_footer_chrx_used_and_male_het_drops(self):
+        result = _result()
+        result.sex = SexResult(
+            host=_sex_inference(Sex.MALE),
+            donors=[_sex_inference(Sex.MALE)],
+            pair=PairStatus.MATCHED_MALE,
+        )
+        qc = _qc()
+        qc.n_chrx_used = 8
+        qc.n_chrx_male_het_dropped = 3
+        html = _render(result, qc, params=_params())
+        assert "sex-matched (male); 8 chrX markers used; 3 male chrX het calls dropped" in html
+        qc.n_chrx_used = 1
+        qc.n_chrx_male_het_dropped = 1
+        html = _render(result, qc, params=_params())
+        assert "1 chrX marker used; 1 male chrX het call dropped" in html
 
     def test_contig_exclusions_shown_when_nonzero(self):
         qc = _qc()

@@ -145,8 +145,10 @@ class QCReport:
             (always excluded).
         n_other_contig_excluded: Shared markers on non-primary contigs (always
             excluded).
-        n_chrx_used: Non-PAR chrX markers admitted to the informative set (0
-            until sex-aware routing lands).
+        n_chrx_used: Non-PAR chrX markers admitted to the informative set (a
+            sex-matched host/donor pair under the default contig policy).
+        n_chrx_male_het_dropped: Non-PAR chrX markers of a male/male pair
+            dropped because a reference sample has a het call there.
     """
 
     n_total_markers: int
@@ -175,6 +177,7 @@ class QCReport:
     n_par_excluded: int = 0
     n_other_contig_excluded: int = 0
     n_chrx_used: int = 0
+    n_chrx_male_het_dropped: int = 0
 
     @property
     def pass_(self) -> bool:
@@ -778,4 +781,5 @@ def assess_quality(
         n_par_excluded=genotypes.n_par_excluded,
         n_other_contig_excluded=genotypes.n_other_contig_excluded,
         n_chrx_used=genotypes.n_chrx_used,
+        n_chrx_male_het_dropped=genotypes.n_chrx_male_het_dropped,
     )

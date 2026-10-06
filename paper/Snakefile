@@ -134,6 +134,11 @@ SRP434573_TIMELINE_FIGS = [f"{FACTS_DIR}/fig_srp434573_timeline.png"]
 # and summarises the goodness-of-fit reduced chi-squared. Reads the committed VCFs
 # (plus the two-person TSV for the mixture list); no sequencing or joint calling.
 QC_GATING_FACTS = [f"{FACTS_DIR}/qc_gating.csv"]
+# Sex-aware chrX routing arm (#46): the five same-sex two-person titrations run
+# with chrX routed in (default) and with --contig-policy autosomes_only, one row
+# per titration with both estimates and the chrX marker counts. Reads the
+# committed VCFs; no sequencing or joint calling.
+SRP434573_CHRX_FACTS = [f"{FACTS_DIR}/srp434573_chrx.csv"]
 # Optional per-patient error tables (issue #23), committed alongside the genotype
 # VCFs once built TAU-side by the pipeline's phase-1b reference pileup. Listed as
 # inputs only when present so the allomix rule reruns if they are added/updated;
@@ -249,6 +254,7 @@ ALL_FACTS = (
     + SRP434573_FACTS
     + SRP434573_TIMELINE_FACTS
     + QC_GATING_FACTS
+    + SRP434573_CHRX_FACTS
     + SRP_CONTAM_FACTS
     + SUBSAMPLE_LOD_FACTS
     + SYNTHETIC_FACTS  # results.md now cites the semi-synthetic sub-0.5% facts (#5)
@@ -548,6 +554,24 @@ rule qc_gating_sensitivity:
         QC_GATING_FACTS,
     shell:
         "python paper/scripts/qc_gating_sensitivity.py"
+
+
+rule srp434573_chrx:
+    # chrX routing arm (#46): same-sex SRP434573 titrations with non-PAR chrX
+    # routed in vs autosomes only. Runs allomix detect twice per mixture; reads
+    # the committed VCFs only.
+    input:
+        f"{SRP434573_GENOTYPES}/mix_F1_into_F3.SRP434573.vcf.gz",
+        f"{SRP434573_GENOTYPES}/mix_F1_into_F3.admix.vcf.gz",
+        "paper/scripts/run_srp434573_chrx.py",
+        "paper/scripts/run_srp434573_allomix.py",
+        "paper/scripts/srp434573_common.py",
+        *SRP434573_ERROR_TABLES,
+    output:
+        SRP434573_CHRX_FACTS,
+        "output/srp434573_chrx.tsv",
+    shell:
+        "python paper/scripts/run_srp434573_chrx.py"
 
 
 rule srp434573_logy_plot:

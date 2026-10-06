@@ -424,6 +424,7 @@ _SEX_COLS = [
     "n_par_excluded",
     "n_other_contig_excluded",
     "n_informative_sex_chrom_excluded",
+    "n_chrx_male_het_dropped",
 ]
 
 
@@ -454,7 +455,7 @@ class TestSexOutput:
         for col in _SEX_COLS:
             assert col in row
         assert [row[c] for c in _SEX_COLS[:5]] == ["NA"] * 5
-        assert [row[c] for c in _SEX_COLS[5:]] == ["0", "0", "0", "0"]
+        assert [row[c] for c in _SEX_COLS[5:]] == ["0"] * 5
 
     def test_tsv_columns_with_inference(self):
         result = _make_chimerism_result()
@@ -467,16 +468,19 @@ class TestSexOutput:
         qc.n_par_excluded = 2
         qc.n_other_contig_excluded = 1
         qc.n_informative_sex_chrom_excluded = 7
+        qc.n_chrx_used = 8
+        qc.n_chrx_male_het_dropped = 3
         row = _tsv_row(result, qc)
         assert row["host_sex"] == "F"
         assert row["donor_sex"] == "M"
         assert row["sex_pair"] == "mismatched"
         assert row["sex_source"] == "inferred+declared"
         assert row["donor_sex_source"] == "inferred"
-        assert row["n_chrx_used"] == "0"
+        assert row["n_chrx_used"] == "8"
         assert row["n_par_excluded"] == "2"
         assert row["n_other_contig_excluded"] == "1"
         assert row["n_informative_sex_chrom_excluded"] == "7"
+        assert row["n_chrx_male_het_dropped"] == "3"
 
     def test_tsv_multi_donor_joined(self):
         result = _make_chimerism_result()
@@ -516,6 +520,7 @@ class TestSexOutput:
         assert sex["donors"][0]["declared"] is None
         assert d["n_chrx_used"] == 0
         assert d["n_par_excluded"] == 0
+        assert d["n_chrx_male_het_dropped"] == 0
         json.dumps(d)  # everything JSON-serialisable
 
     def test_json_sex_null_without_inference(self):

@@ -30,16 +30,21 @@ reconciled (`source`: `inferred`, `declared`, `inferred+declared`, `conflict`,
 `unavailable`), the `effective` sex used for routing, and the counts behind the
 call (`n_x_sites`, `n_x_het`, `x_het_rate`, `log10_lr`; `chry_rel_depth` is
 reserved and null). The contig accounting sits beside the other marker counts:
-`n_chrx_used`, `n_par_excluded`, `n_other_contig_excluded`,
-`n_informative_sex_chrom_excluded`.
+`n_chrx_used` (non-PAR chrX markers in the informative set, non-zero only for a
+sex-matched pair), `n_chrx_male_het_dropped` (male/male pair sites dropped for
+a het call), `n_par_excluded`, `n_other_contig_excluded`,
+`n_informative_sex_chrom_excluded` (informative chrX markers of a mismatched
+or unresolved pair, plus any informative chrY/MT markers).
 
 The TSV summary appends the same information as columns, after the run-unit
 block: `host_sex`, `donor_sex` (per donor, joined with `;`), `sex_pair`
 (`matched_female` / `matched_male` / `mismatched` / `unknown`), `sex_source`
 (host), `donor_sex_source` (per donor, joined), `n_chrx_used`,
 `n_par_excluded`, `n_other_contig_excluded`,
-`n_informative_sex_chrom_excluded`. The sex cells are `NA` when inference did
-not run.
+`n_informative_sex_chrom_excluded`, `n_chrx_male_het_dropped`. The sex cells
+are `NA` when inference did not run. The HTML footer's "Sex chromosomes" line
+shows the pair status, the chrX marker count and, when non-zero, the male het
+drops.
 
 ## HTML report
 

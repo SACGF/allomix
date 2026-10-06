@@ -64,7 +64,7 @@ def analyse_sample(
     error_rate: float,
     calibration: PanelCalibration | None = None,
     run_host_presence: bool = True,
-    contig_policy: ContigPolicy = ContigPolicy.AUTOSOMES,
+    contig_policy: ContigPolicy = ContigPolicy.SEX_AWARE,
     declared_host_sex: Sex | None = None,
     declared_donor_sexes: list[Sex | None] | None = None,
     artifact_filter: bool = True,
@@ -89,8 +89,10 @@ def analyse_sample(
         run_host_presence: When False, ``result.host_presence`` is left unset and
             ``donor_hom_markers`` is empty.
         contig_policy: Which contig classes enter the informative set (see
-            ``ContigPolicy``). The default admits autosomes only; ``ALL_PRIMARY``
-            is for diagnostic genomic views.
+            ``ContigPolicy``). The default ``SEX_AWARE`` admits autosomes and
+            routes non-PAR chrX on the inferred/declared host-donor sex pair
+            (#46); ``AUTOSOMES_ONLY`` never uses chrX; ``ALL_PRIMARY`` is for
+            diagnostic genomic views.
         declared_host_sex: Declared host sex (``Sex.FEMALE`` / ``Sex.MALE``) or
             None. Compared with the chrX-inferred sex in QC; see ``allomix.qc.sex``.
         declared_donor_sexes: Declared sex per donor, aligned with ``donors``
@@ -115,8 +117,29 @@ def analyse_sample(
             discordant fraction is high. When False, use the legacy p-value-only rules.
     """
     cal = calibration or PanelCalibration()
+    # Sex of each reference sample from its own non-PAR chrX heterozygosity,
+    # reconciled with any declared sex, plus the host/donor pair status (#50).
+    # Computed before classification because the ``SEX_AWARE`` contig policy
+    # routes non-PAR chrX markers on the pair status (#46), and attached to the
+    # result before QC, which fails a confident inference that contradicts the
+    # declaration. The depth floor is the reference-sample one, not the
+    # admixture ``min_dp`` (see ``SEX_MIN_REF_DP``).
+    sex = assess_sex(
+        host,
+        donors,
+        min_dp=SEX_MIN_REF_DP,
+        min_gq=min_gq,
+        declared_host=declared_host_sex,
+        declared_donors=declared_donor_sexes,
+    )
     genotypes = classify_markers(
-        host, donors, admix, min_dp=min_dp, min_gq=min_gq, contig_policy=contig_policy
+        host,
+        donors,
+        admix,
+        min_dp=min_dp,
+        min_gq=min_gq,
+        contig_policy=contig_policy,
+        pair_status=sex.pair,
     )
     if sample_name is not None:
         genotypes.sample_name = sample_name
@@ -190,19 +213,7 @@ def analyse_sample(
     # contamination checks above (issue #38). Flags contamination, CNV/allelic
     # imbalance, or a sample mix-up via VAF skew at sites het in all parties.
     result.shared_het_balance = shared_het_balance(host, donors, admix, min_dp=min_dp)
-    # Sex of each reference sample from its own non-PAR chrX heterozygosity,
-    # reconciled with any declared sex, plus the host/donor pair status (#50).
-    # Attached before QC, which fails a confident inference that contradicts
-    # the declaration. The depth floor is the reference-sample one, not the
-    # admixture ``min_dp`` (see ``SEX_MIN_REF_DP``).
-    result.sex = assess_sex(
-        host,
-        donors,
-        min_dp=SEX_MIN_REF_DP,
-        min_gq=min_gq,
-        declared_host=declared_host_sex,
-        declared_donors=declared_donor_sexes,
-    )
+    result.sex = sex
     # Run-unit metadata (index-hopping provenance); attached before QC so the
     # shared-run flag can be reported.
     result.run_unit = run_unit

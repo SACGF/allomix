@@ -23,6 +23,7 @@ from allomix.constants import (
 # ``is_sex_chrom`` moved to ``allomix.contigs``; re-exported here so existing
 # ``from allomix.genotype import is_sex_chrom`` callers keep working.
 from allomix.contigs import ContigClass, classify_contig, is_sex_chrom  # noqa: F401
+from allomix.sex_types import PairStatus
 
 
 class ContigPolicy(Enum):
@@ -32,20 +33,27 @@ class ContigPolicy(Enum):
     policy; the policy only decides what happens to non-PAR chrX, non-PAR chrY
     and MT.
 
-    - ``AUTOSOMES`` (default): autosomes only. Informative non-PAR X/Y/MT
-      markers are dropped and counted in
+    - ``SEX_AWARE`` (default): autosomes always; non-PAR chrX routed on the
+      host/donor sex pair status from ``allomix.qc.sex`` (#46). For a
+      ``MATCHED_FEMALE`` pair chrX markers go through the normal diploid path.
+      For a ``MATCHED_MALE`` pair they are admitted only where the host and
+      every donor are homozygous (a het call on a hemizygous chromosome is a
+      genotyping error; those markers are dropped and counted in
+      ``MarkerGenotypes.n_chrx_male_het_dropped``). For a ``MISMATCHED`` or
+      ``UNKNOWN`` pair, or when no pair status is given, chrX is excluded.
+      Non-PAR chrY and MT are never used in the estimate. Informative markers
+      excluded this way are counted in
       ``MarkerGenotypes.n_informative_sex_chrom_excluded``.
+    - ``AUTOSOMES_ONLY``: autosomes only, whatever the pair status. Informative
+      non-PAR X/Y/MT markers are dropped and counted as above.
     - ``ALL_PRIMARY``: diagnostic only. Also admits non-PAR chrX, non-PAR chrY
       and MT so genomic views can show them. The diploid dosage model is wrong
       on those contigs for a sex-mismatched pair, so this is never the clinical
       path.
-
-    Phase 2 of the sex-marker work (#46) adds sex-aware routing on top of this:
-    non-PAR chrX admitted for a sex-matched host/donor pair (het sites dropped
-    for male pairs) and excluded otherwise, driven by ``allomix.qc.sex``.
     """
 
-    AUTOSOMES = "autosomes"
+    SEX_AWARE = "sex_aware"
+    AUTOSOMES_ONLY = "autosomes_only"
     ALL_PRIMARY = "all_primary"
 
 
@@ -197,16 +205,23 @@ class MarkerGenotypes:
     n_filtered: int
     sample_name: str = ""
     marker_counts: MarkerCounts | None = None  # per-input diagnostic counts
-    # Informative non-PAR X/Y/MT markers dropped under ``ContigPolicy.AUTOSOMES``.
+    # Informative non-PAR X/Y/MT markers dropped by the contig policy: all of
+    # them under ``AUTOSOMES_ONLY``; under ``SEX_AWARE`` the non-PAR chrY and MT
+    # ones plus chrX for a mismatched or unknown pair.
     n_informative_sex_chrom_excluded: int = 0
     # Shared markers excluded by contig class under every ``ContigPolicy``:
     # pseudoautosomal X/Y sites, and sites on non-primary contigs (alt, decoy,
     # unplaced, random). See ``allomix.contigs``.
     n_par_excluded: int = 0
     n_other_contig_excluded: int = 0
-    # Non-PAR chrX markers admitted to the informative set. Always 0 under
-    # ``AUTOSOMES``; populated by the sex-aware routing of Phase 2 (#46).
+    # Non-PAR chrX markers admitted to the informative set: a sex-matched pair
+    # under ``SEX_AWARE`` (#46), or anything under ``ALL_PRIMARY``. Always 0
+    # under ``AUTOSOMES_ONLY``.
     n_chrx_used: int = 0
+    # Non-PAR chrX markers dropped from a male/male pair because the host or a
+    # donor carries a het call there (a genotyping error on a hemizygous
+    # chromosome). Counted informative or not; only ``SEX_AWARE`` produces them.
+    n_chrx_male_het_dropped: int = 0
 
 
 # Reference-sample GT/AD consistency thresholds (see parse_vcf, gt_ad_consistency).
@@ -380,6 +395,49 @@ def marker_key(m: MarkerData) -> MarkerKey:
     return (m.chrom, m.pos, m.ref, m.alt)
 
 
+def _is_hom(gt: tuple[int, int]) -> bool:
+    return gt[0] == gt[1]
+
+
+def admit_contig(
+    contig_class: ContigClass,
+    policy: ContigPolicy,
+    pair_status: PairStatus | None,
+    gts: list[tuple[int, int]],
+) -> tuple[bool, bool]:
+    """Decide whether a non-PAR, primary-contig marker may enter the informative set.
+
+    The routing table of the sex-marker plan (#46), for the contig classes that
+    survive the unconditional PAR and non-primary exclusions. Pure, so it can
+    be tested row by row.
+
+    Args:
+        contig_class: ``AUTOSOME``, ``X_NONPAR``, ``Y_NONPAR`` or ``MT``.
+        policy: The ``ContigPolicy`` in force.
+        pair_status: Host/donor sex pair status from ``allomix.qc.sex``, or None
+            when sex was not assessed (treated like ``UNKNOWN``).
+        gts: Host genotype followed by every donor genotype at the marker.
+
+    Returns:
+        ``(admit, male_het_drop)``. ``admit`` is True when the marker may be
+        used. ``male_het_drop`` is True only for a non-PAR chrX marker of a
+        ``MATCHED_MALE`` pair that is rejected because some party is
+        heterozygous there.
+    """
+    if contig_class is ContigClass.AUTOSOME or policy is ContigPolicy.ALL_PRIMARY:
+        return True, False
+    if policy is ContigPolicy.AUTOSOMES_ONLY or contig_class is not ContigClass.X_NONPAR:
+        return False, False
+    # SEX_AWARE, non-PAR chrX.
+    if pair_status is PairStatus.MATCHED_FEMALE:
+        return True, False
+    if pair_status is PairStatus.MATCHED_MALE:
+        if all(_is_hom(gt) for gt in gts):
+            return True, False
+        return False, True
+    return False, False
+
+
 def classify_markers(
     host: list[MarkerData],
     donors: list[list[MarkerData]],
@@ -388,7 +446,8 @@ def classify_markers(
     min_gq: int = DEFAULT_MIN_GQ,
     pass_only: bool = True,
     sample_name: str = "",
-    contig_policy: ContigPolicy = ContigPolicy.AUTOSOMES,
+    contig_policy: ContigPolicy = ContigPolicy.SEX_AWARE,
+    pair_status: PairStatus | None = None,
 ) -> MarkerGenotypes:
     """Classify shared markers as informative or non-informative.
 
@@ -397,8 +456,10 @@ def classify_markers(
     first donor (multi-donor types are stored in the donor_gts list).
 
     ``contig_policy`` decides which contig classes may enter the informative
-    set (see ``ContigPolicy``). PAR and non-primary contigs are excluded under
-    every policy.
+    set (see ``ContigPolicy``); under the default ``SEX_AWARE`` policy
+    ``pair_status`` (from ``allomix.qc.sex.assess_sex``) drives the non-PAR
+    chrX routing, and None is treated as an unknown pair (chrX excluded). PAR
+    and non-primary contigs are excluded under every policy.
     """
     n_total = len(admixture)
 
@@ -429,6 +490,7 @@ def classify_markers(
     n_par_excluded = 0
     n_other_contig_excluded = 0
     n_chrx_used = 0
+    n_chrx_male_het_dropped = 0
 
     for key in sorted(shared_keys):
         h = host_idx[key]
@@ -469,10 +531,16 @@ def classify_markers(
         mtypes = [MarkerType.classify(h.gt, d.gt) for d in ds]
         any_informative = any(mt is not None for mt in mtypes)
 
-        # Drop non-PAR sex / mitochondrial contigs under the autosomes-only
-        # policy, counting the informative ones lost so the cost is visible.
-        if contig_policy is ContigPolicy.AUTOSOMES and contig_class is not ContigClass.AUTOSOME:
-            if any_informative:
+        # Non-PAR sex / mitochondrial contigs: route on the policy and the
+        # host/donor sex pair (see ``admit_contig``), counting what is lost so
+        # the cost is visible.
+        admit, male_het_drop = admit_contig(
+            contig_class, contig_policy, pair_status, [h.gt, *donor_gts]
+        )
+        if not admit:
+            if male_het_drop:
+                n_chrx_male_het_dropped += 1
+            elif any_informative:
                 n_informative_sex_chrom_excluded += 1
             continue
 
@@ -535,4 +603,5 @@ def classify_markers(
         n_par_excluded=n_par_excluded,
         n_other_contig_excluded=n_other_contig_excluded,
         n_chrx_used=n_chrx_used,
+        n_chrx_male_het_dropped=n_chrx_male_het_dropped,
     )

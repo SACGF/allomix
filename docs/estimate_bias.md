@@ -160,6 +160,13 @@ of samples you can instead repeat `--sample NAME`, and the two can be combined.
 
 With 100+ samples passing QC, raise `--min-het` to around 30: every site should accumulate plenty of hets, and a stricter threshold drops any locus with unexpectedly thin coverage.
 
+`estimate-bias` infers each training sample's sex from its non-PAR chrX
+heterozygosity (the same inference `detect` runs) and takes no het observations
+at non-PAR chrX or chrY from male samples, since a het call on a hemizygous
+chromosome is a genotyping error rather than a bias observation. It prints a
+one-line female / male / unresolved count on stderr; in `--both-het` mode a
+non-PAR chrX site is used only when the host and every donor are female.
+
 ## Command
 
 Two input modes are supported. Use whichever matches how your donor VCFs are organised.

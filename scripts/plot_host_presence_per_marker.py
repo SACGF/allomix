@@ -297,7 +297,7 @@ def main() -> None:
             args.min_gq,
             args.min_dp,
             args.error_rate,
-            ContigPolicy.ALL_PRIMARY if args.use_sex_chroms else ContigPolicy.AUTOSOMES,
+            ContigPolicy.ALL_PRIMARY if args.use_sex_chroms else ContigPolicy.SEX_AWARE,
         )
         # Cross-check the recomputed MLE against the reported run value.
         b = batch.get(admix_sample)

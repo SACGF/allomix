@@ -1082,7 +1082,10 @@ class TestSexQC:
         g.n_par_excluded = 2
         g.n_other_contig_excluded = 1
         g.n_informative_sex_chrom_excluded = 3
+        g.n_chrx_used = 4
+        g.n_chrx_male_het_dropped = 5
         qc = assess_quality(result, g)
         assert (qc.n_par_excluded, qc.n_other_contig_excluded) == (2, 1)
         assert qc.n_informative_sex_chrom_excluded == 3
-        assert qc.n_chrx_used == 0
+        assert qc.n_chrx_used == 4
+        assert qc.n_chrx_male_het_dropped == 5

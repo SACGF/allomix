@@ -39,6 +39,7 @@ from allomix.constants import (
     DEFAULT_MIN_DP,
     DEFAULT_MIN_GQ,
     ROBUST_K_DEFAULT,
+    SEX_MIN_REF_DP,
 )
 from allomix.estimate.likelihood import PanelCalibration
 from allomix.genotype import ContigPolicy, parse_vcf
@@ -57,7 +58,7 @@ from allomix.qc.panel_qc import (
 )
 from allomix.qc.relatedness import Relatedness
 from allomix.qc.runmeta import RunUnitInfo, read_run_units
-from allomix.qc.sex import Sex, parse_declared_sex
+from allomix.qc.sex import PairStatus, Sex, SexResult, infer_sex, parse_declared_sex
 from allomix.report.html.render import render_single
 from allomix.report.report import (
     DonorMeta,
@@ -174,6 +175,17 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     # instead of argparse's generic "unrecognized arguments"; removed in a
     # later release.
     parser.add_argument("--use-sex-chroms", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--contig-policy",
+        choices=[ContigPolicy.SEX_AWARE.value, ContigPolicy.AUTOSOMES_ONLY.value],
+        default=ContigPolicy.SEX_AWARE.value,
+        help="Which contigs may enter the estimate. 'sex_aware' (default) uses "
+        "autosomes and routes non-PAR chrX on the inferred/declared recipient and "
+        "donor sex: used for a sex-matched pair (homozygous sites only for a "
+        "male pair), excluded for a mismatched or unresolved pair. "
+        "'autosomes_only' never uses chrX. Pseudoautosomal, chrY, MT and "
+        "non-primary-contig markers are excluded under both.",
+    )
     parser.add_argument(
         "--error-rate",
         type=float,
@@ -420,7 +432,7 @@ def _build_report_params(args: argparse.Namespace) -> dict:
         "contamination_correction": args.contamination_correction,
         "host_presence": args.host_presence,
         "artifact_filter": args.artifact_filter,
-        "contig_policy": ContigPolicy.AUTOSOMES.value,
+        "contig_policy": getattr(args, "contig_policy", ContigPolicy.SEX_AWARE.value),
     }
 
 
@@ -548,9 +560,10 @@ def _reject_retired_flags(parser: argparse.ArgumentParser, args: argparse.Namesp
             "--use-sex-chroms has been retired. Sex chromosomes are now handled "
             "automatically: allomix infers recipient and donor sex from non-PAR chrX "
             "heterozygosity, checks it against --recipient-sex / --donor-sex when "
-            "given, and routes sex-chromosome markers on the result (in this release "
-            "they are excluded from the estimate; PAR and non-primary contigs are "
-            "always excluded). Drop the flag; it will be removed in a later release."
+            "given, and routes non-PAR chrX markers on the result (used for a "
+            "sex-matched pair, excluded otherwise; PAR, chrY, MT and non-primary "
+            "contigs are always excluded). Use --contig-policy autosomes_only to "
+            "keep chrX out. Drop the flag; it will be removed in a later release."
         )
 
 
@@ -640,7 +653,7 @@ def _run_single_sample(
     error_rate: float,
     calibration: PanelCalibration | None = None,
     run_host_presence: bool = True,
-    contig_policy: ContigPolicy = ContigPolicy.AUTOSOMES,
+    contig_policy: ContigPolicy = ContigPolicy.SEX_AWARE,
     declared_host_sex: Sex | None = None,
     declared_donor_sexes: list[Sex | None] | None = None,
     artifact_filter: bool = True,
@@ -693,11 +706,25 @@ def _run_single_sample(
         clinical_gating=clinical_gating,
     )
 
-    if analysis.genotypes.n_informative_sex_chrom_excluded:
+    g = analysis.genotypes
+    if g.n_chrx_used:
         print(
-            f"{admix_sample}: excluded {analysis.genotypes.n_informative_sex_chrom_excluded} "
-            "informative non-PAR sex-chromosome / MT marker(s); sex-chromosome markers "
-            "are not used in the estimate in this release",
+            f"{admix_sample}: used {g.n_chrx_used} informative non-PAR chrX marker(s) "
+            f"({_pair_label(analysis.result.sex)})",
+            file=sys.stderr,
+        )
+    if g.n_chrx_male_het_dropped:
+        print(
+            f"{admix_sample}: dropped {g.n_chrx_male_het_dropped} non-PAR chrX marker(s) "
+            "with a heterozygous call in a male reference sample (a het on a "
+            "hemizygous chromosome is a genotyping error)",
+            file=sys.stderr,
+        )
+    if g.n_informative_sex_chrom_excluded:
+        print(
+            f"{admix_sample}: excluded {g.n_informative_sex_chrom_excluded} informative "
+            f"non-PAR sex-chromosome / MT marker(s): "
+            f"{_sex_exclusion_reason(analysis.result.sex, contig_policy)}",
             file=sys.stderr,
         )
     if analysis.genotypes.n_par_excluded:
@@ -714,6 +741,41 @@ def _run_single_sample(
         )
 
     return analysis.result, analysis.qc, analysis.genotypes
+
+
+def _pair_label(sex: SexResult | None) -> str:
+    """Short host/donor sex-pair description for stderr notes."""
+    if sex is None:
+        return "sex pair unknown"
+    donors = ", ".join(f"donor {d.effective.value}" for d in sex.donors)
+    return f"{sex.pair.value}: host {sex.host.effective.value}, {donors}"
+
+
+def _sex_exclusion_reason(sex: SexResult | None, contig_policy: ContigPolicy) -> str:
+    """Explain why informative non-PAR sex-chromosome / MT markers were excluded.
+
+    Under ``AUTOSOMES_ONLY`` the policy is the reason. Under ``SEX_AWARE`` it is
+    the pair status: chrX is dropped for a mismatched pair (the parties differ
+    in chrX copy number, so the diploid dosage model does not hold) or an
+    unresolved one (a declared sex can resolve it); non-PAR chrY and MT are
+    never used, which is the whole story for a sex-matched pair.
+    """
+    if contig_policy is ContigPolicy.AUTOSOMES_ONLY:
+        return "--contig-policy autosomes_only (chrX, chrY and MT are not used)"
+    never = "non-PAR chrY and MT are never used in the estimate"
+    if sex is None or sex.pair is PairStatus.UNKNOWN:
+        who = _pair_label(sex)
+        return (
+            f"host or donor sex unresolved ({who}), so chrX is not used; declare it "
+            f"with --recipient-sex / --donor-sex to enable chrX for a sex-matched pair; "
+            f"{never}"
+        )
+    if sex.pair is PairStatus.MISMATCHED:
+        return (
+            f"host and donor sexes differ ({_pair_label(sex)}), so chrX copy number "
+            f"differs between them and the diploid model does not hold; {never}"
+        )
+    return never
 
 
 def _open_output(path: str):
@@ -838,8 +900,9 @@ def _load_calibration(args: argparse.Namespace) -> PanelCalibration:
     if estimate_bias and args.bias_correction:
         samples = list(VCF(args.genotype_vcf).samples)
         marker_lists = [parse_vcf(args.genotype_vcf, sample=s, min_dp=0, min_gq=0) for s in samples]
+        sexes = _infer_sexes_for_bias(marker_lists, args.min_gq)
         biases = biases_to_simple_dict(
-            estimate_biases(marker_lists, min_het=args.estimate_bias_min_het)
+            estimate_biases(marker_lists, min_het=args.estimate_bias_min_het, sample_sexes=sexes)
         )
         sys.stderr.write(
             f"Estimated per-marker bias for {len(biases)} marker(s) from "
@@ -1012,6 +1075,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
             args.error_rate,
             calibration=calibration,
             run_host_presence=args.host_presence,
+            contig_policy=ContigPolicy(args.contig_policy),
             declared_host_sex=declared_host_sex,
             declared_donor_sexes=declared_donor_sexes,
             artifact_filter=args.artifact_filter,
@@ -1131,6 +1195,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             args.error_rate,
             calibration=calibration,
             run_host_presence=args.host_presence,
+            contig_policy=ContigPolicy(args.contig_policy),
             declared_host_sex=declared_host_sex,
             declared_donor_sexes=declared_donor_sexes,
             artifact_filter=args.artifact_filter,
@@ -1231,6 +1296,24 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _infer_sexes_for_bias(marker_lists: list[list], min_gq: int) -> list[Sex]:
+    """Infer each training sample's sex for the bias guard and summarise on stderr.
+
+    Same inference ``analyse_sample`` runs on reference samples
+    (``SEX_MIN_REF_DP`` depth floor, the run's ``min_gq``). Male samples then
+    contribute no het observations at non-PAR chrX/chrY (#46).
+    """
+    sexes = [infer_sex(m, min_dp=SEX_MIN_REF_DP, min_gq=min_gq).sex for m in marker_lists]
+    n_f = sum(s is Sex.FEMALE for s in sexes)
+    n_m = sum(s is Sex.MALE for s in sexes)
+    print(
+        f"Sex inferred for the chrX/chrY bias guard: {n_f} female, {n_m} male, "
+        f"{len(sexes) - n_f - n_m} unresolved (male het calls at non-PAR chrX/chrY skipped)",
+        file=sys.stderr,
+    )
+    return sexes
+
+
 def cmd_estimate_bias(args: argparse.Namespace) -> int:
     """Run the estimate-bias subcommand."""
     if args.both_het:
@@ -1256,7 +1339,8 @@ def cmd_estimate_bias(args: argparse.Namespace) -> int:
     # Record the source caller so a later run can warn if the table is applied to
     # differently-called admix data (issue #42); bias is caller-specific.
     source_vcf = joint if samples else args.genotype_vcfs[0]
-    biases = estimate_biases(marker_lists, min_het=args.min_het)
+    sexes = _infer_sexes_for_bias(marker_lists, args.min_gq)
+    biases = estimate_biases(marker_lists, min_het=args.min_het, sample_sexes=sexes)
     save_bias_table(biases, args.output, caller=detect_caller(source_vcf).caller.value)
     print(
         f"Estimated bias for {len(biases)} markers from {n_source} -> {args.output}",
@@ -1298,9 +1382,30 @@ def _cmd_estimate_bias_both_het(args: argparse.Namespace) -> int:
         for sample in VCF(vcf_path).samples:
             admix_lists.append(parse_vcf(vcf_path, sample=sample, min_dp=args.min_dp, min_gq=0))
 
+    # Non-PAR chrX both-het sites are trusted only when every party is female
+    # (#46); the sexes are inferred the way ``analyse_sample`` does it.
+    host_sex = infer_sex(host, min_dp=SEX_MIN_REF_DP, min_gq=args.min_gq).sex
+    donor_sexes = [infer_sex(d, min_dp=SEX_MIN_REF_DP, min_gq=args.min_gq).sex for d in donors]
+    print(
+        f"Sex inferred for the chrX bias guard: host {host_sex.value}, "
+        f"donor(s) {', '.join(s.value for s in donor_sexes)}"
+        + (
+            ""
+            if all(s is Sex.FEMALE for s in [host_sex, *donor_sexes])
+            else " (non-PAR chrX both-het sites skipped: not every party is female)"
+        ),
+        file=sys.stderr,
+    )
     # The bias comes from the admix samples themselves, so stamp their caller
     # (issue #42): applying this table to same-caller admix is the matched case.
-    biases = estimate_biases_both_het(host, donors, admix_lists, min_het=args.min_het)
+    biases = estimate_biases_both_het(
+        host,
+        donors,
+        admix_lists,
+        min_het=args.min_het,
+        host_sex=host_sex,
+        donor_sexes=donor_sexes,
+    )
     save_bias_table(biases, args.output, caller=detect_caller(args.admix_vcfs[0]).caller.value)
     print(
         f"Estimated both-het bias for {len(biases)} markers from "

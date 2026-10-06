@@ -4,6 +4,34 @@
 
 ### Added
 
+- **Sex-matched chrX routing** (#46). Non-PAR chrX markers now enter the
+  estimate when the recipient and donor are the same sex: through the normal
+  diploid path for a female pair, and at homozygous/homozygous sites only for
+  a male pair, where a het call in either reference sample (a genotyping error
+  on a hemizygous chromosome) drops the marker. For a sex-mismatched or
+  unresolved pair chrX stays excluded, and the stderr note now says why.
+  `assess_sex` runs before `classify_markers` so the pair status can drive the
+  routing; `classify_markers` takes `pair_status`, and `genotype.admit_contig`
+  is the pure routing table.
+- `--contig-policy {sex_aware,autosomes_only}` on `detect` and `timeline`
+  (default `sex_aware`); the value is recorded in the JSON `params`.
+- `MarkerGenotypes.n_chrx_male_het_dropped` / `QCReport.n_chrx_male_het_dropped`,
+  in the TSV (new last column) and JSON, in the HTML footer line when non-zero,
+  and as a stderr note.
+- **Bias-fitting sex guard.** `estimate_biases` takes `sample_sexes` and skips
+  het observations at non-PAR chrX/chrY for male samples;
+  `estimate_biases_both_het` takes `host_sex` / `donor_sexes` and uses a non-PAR
+  chrX both-het site only when every party is female. `allomix estimate-bias`
+  (and inline `--estimate-bias`) infers the sexes with the same inference
+  `detect` uses and prints a one-line summary. `estimate-errors` uses only
+  homozygous sites and needs no guard.
+- `allomix.sex_types`, a leaf module holding the `Sex` and `PairStatus` enums
+  (re-exported by `allomix.qc.sex`).
+- Validation: `scripts/validate_sexchrom_routing.py` (in-silico, N seeds) and
+  the `srp434573_chrx` paper rule (`paper/scripts/run_srp434573_chrx.py`,
+  facts `output/facts/srp434573_chrx.csv`: the five same-sex public titrations
+  with chrX on vs off). Autosomal results on the existing fixtures and public
+  mixtures are unchanged.
 - **Sex inference for reference samples** (`allomix.qc.sex`, #50). Recipient and
   donor sex is inferred from non-PAR chrX heterozygosity (binomial likelihood
   ratio of a female model, het rate from the sample's own autosomes, against a
@@ -23,8 +51,8 @@
   payload with the full per-sample inference. The HTML header shows recipient
   and donor sex as "declared / inferred" and the footer shows the pair status
   and chrX marker count in place of the old included/excluded line.
-- `genotype.ContigPolicy` (`AUTOSOMES`, the default, and the diagnostic
-  `ALL_PRIMARY`).
+- `genotype.ContigPolicy` (`SEX_AWARE`, the default; `AUTOSOMES_ONLY`; and the
+  diagnostic `ALL_PRIMARY`).
 - **Contig classification module** `allomix.contigs` (#50). `classify_contig(chrom, pos)`
   labels a marker as autosome, chrX/chrY PAR or non-PAR, MT, or other (alt, decoy,
   unplaced, random, HLA). The pseudoautosomal mask is the exact union of the GRCh37
@@ -38,8 +66,8 @@
 - **`--use-sex-chroms` is retired** (#50). It is now a hidden option that exits
   with an error explaining that sex chromosomes are handled automatically from
   the inferred and declared sex (`--recipient-sex` / `--donor-sex`). It will be
-  removed entirely in a later release. In this release sex-chromosome markers
-  are still excluded from the estimate; sex-matched chrX routing follows (#46).
+  removed entirely in a later release. Its replacement is the sex-aware chrX
+  routing above (#46); `--contig-policy autosomes_only` keeps chrX out.
 - `classify_markers` and `analyse_sample` take `contig_policy: ContigPolicy`
   instead of `use_sex_chroms: bool`; `analyse_sample` also takes
   `declared_host_sex` and `declared_donor_sexes`.

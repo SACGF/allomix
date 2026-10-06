@@ -12,6 +12,8 @@ from allomix.qc.sex import (
     pair_status,
     parse_declared_sex,
 )
+from allomix.sex_types import PairStatus as PairStatusLeaf
+from allomix.sex_types import Sex as SexLeaf
 
 # Non-PAR chrX on both builds (PAR1 ends at 2.78 Mb, PAR2 starts at 154.9 Mb).
 X_NONPAR_START = 10_000_000
@@ -215,3 +217,10 @@ class TestAssessSex:
         assert res.host.sex is Sex.UNAVAILABLE
         assert res.donors[0].sex is Sex.UNAVAILABLE
         assert res.pair is PairStatus.UNKNOWN
+
+
+class TestReexports:
+    def test_enums_are_the_leaf_module_objects(self):
+        """``qc.sex`` re-exports the ``sex_types`` enums (no duplicate definitions)."""
+        assert Sex is SexLeaf
+        assert PairStatus is PairStatusLeaf

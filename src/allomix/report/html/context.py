@@ -181,6 +181,9 @@ def _sex_chrom_line(analysis: dict | None) -> str:
     pair = _PAIR_LABELS.get(sex.get("pair") or "", "sex pair unknown")
     n_chrx = analysis.get("n_chrx_used") or 0
     used = f"{n_chrx} chrX marker{'s' if n_chrx != 1 else ''} used" if n_chrx else "chrX not used"
+    n_het = analysis.get("n_chrx_male_het_dropped") or 0
+    if n_het:
+        used += f"; {n_het} male chrX het call{'s' if n_het != 1 else ''} dropped"
     return f"{pair}; {used}"
 
 

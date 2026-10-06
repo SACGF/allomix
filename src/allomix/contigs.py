@@ -11,10 +11,11 @@ contig naming conventions or genome build.
 Pseudoautosomal regions (PAR), 1-based inclusive. The constants below are the
 EXACT UNION of the GRCh37 and GRCh38 intervals: overlapping intervals are
 merged, non-overlapping ones are kept separate. Per-build source values, 1-based
-inclusive as NCBI publishes them in each assembly's ``par_align.gff``. The same
-data is packaged in ``bioutils.par`` (fork ``davmlaw/bioutils`` branch
-``add-par-regions``, datasets ``ncbi-GRCh37`` and ``ncbi-GRCh38``) in interbase
-coordinates, i.e. ``[start - 1, end]``; the cross-check test converts back::
+inclusive as NCBI publishes them in the ``PAR`` rows of each assembly's
+``assembly_regions.txt`` (GRCh37.p13, GRCh38.p14). The same data is packaged in
+``bioutils.par`` (fork ``davmlaw/bioutils`` branch ``add-par-regions``, datasets
+``GRCh37`` and ``GRCh38``) in interbase coordinates, i.e. ``[start - 1, end]``;
+the cross-check test converts back::
 
                 GRCh37                    GRCh38
     X PAR1      60001-2699520             10001-2781479

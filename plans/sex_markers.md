@@ -515,6 +515,18 @@ Code, once the above is known:
    build and decide what goes in the text (decision 10).
 6. Full test suite run before the next release (only phase subsets were run).
 7. Remove the hidden `--use-sex-chroms` option in a later release.
+8. Replace the vendored PAR constants with `bioutils.par` once biocommons/bioutils
+   PR #88 is merged **and released on PyPI** (check the PR and the bioutils
+   release list). Not done earlier because a git-URL dependency blocks allomix
+   PyPI uploads and the fork API may still change in review. The switch, when
+   it lands: add a `bioutils>=<release>` runtime dependency (drop it from the
+   `scripts` extra); drop Python 3.10 (bioutils requires >=3.11; update
+   `requires-python`, classifiers, the CI matrix, CLAUDE.md and README); build
+   the union in `allomix.contigs` from `get_par_map("GRCh37")` and
+   `get_par_map("GRCh38")` (interbase, convert with `start + 1`); make
+   `test_constants_match_bioutils_union` unconditional and update
+   `docs/architecture.md`. The fork also carries `T2T-CHM13v2.0` PAR data;
+   keep the union to GRCh37 and GRCh38 unless T2T VCFs are to be supported.
 
 ## Open questions
 

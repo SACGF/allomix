@@ -73,6 +73,8 @@ class ContigClass(Enum):
     OTHER = "other"
 
 
+# TODO: replace these constants with bioutils.par once biocommons/bioutils
+# PR #88 is released on PyPI (plans/sex_markers.md, Remaining item 8).
 #: Exact union of the GRCh37 and GRCh38 PAR intervals, 1-based inclusive
 #: ``(start, end)``, sorted, per normalised chromosome name. Built the same way
 #: the cross-check test builds it from ``bioutils.par.get_par_map`` (after

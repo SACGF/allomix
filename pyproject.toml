@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "NGS-based donor chimerism monitoring for HSCT"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     { name = "Dave Lawrence" },
 ]
@@ -16,7 +16,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -27,6 +26,7 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "jinja2>=3.1",
+    "bioutils>=0.6.2",  # bioutils.par: PAR intervals for the chrX/chrY mask
 ]
 
 [project.optional-dependencies]
@@ -61,14 +61,13 @@ pdf = [
     "weasyprint>=60",
 ]
 # User-facing helper scripts (joint-calling prep, QC, diagnosis) run on the
-# base runtime deps. Only the plotting/visualisation scripts need matplotlib;
-# the karyogram also pulls chromosome lengths per genome build from bioutils.
+# base runtime deps. Only the plotting/visualisation scripts need matplotlib.
+# (The karyogram's chromosome lengths come from bioutils, a runtime dep.)
 scripts = [
     "matplotlib>=3.7",
-    "bioutils>=0.5",
 ]
-# snakemake >=8 requires Python 3.11+, so the paper build needs a 3.11 venv
-# (`uv venv --python 3.11`) even though the core tool supports 3.10. See README.
+# snakemake >=8 requires Python 3.11+, the same floor as the core tool (set by
+# bioutils). Pin the paper venv to 3.13; see docs/paper.md.
 paper = [
     "allomix[scripts]",
     "snakemake>=8.0",
@@ -104,10 +103,13 @@ allomix = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP"]
+# UP042 (str, Enum) -> StrEnum changes str()/format() output of Sex, PairStatus
+# and Relatedness, which reach reports; leave that to a deliberate change.
+ignore = ["UP042"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

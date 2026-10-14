@@ -144,23 +144,18 @@ has a matching guard: `calibration.bias.estimate_biases` skips non-PAR chrX /
 chrY het observations from male samples, and `estimate_biases_both_het`
 trusts a non-PAR chrX both-het site only when every party is female.
 
-The PAR intervals are vendored constants: the exact union of the GRCh37 and
-GRCh38 NCBI values (overlapping intervals merged, so PAR1 is one interval and
-each PAR2 is two), 1-based inclusive, with the per-build source values in the
-module comment. Because PAR markers are always excluded, over-excluding the
+The PAR intervals are the exact union of the GRCh37 and GRCh38 NCBI values
+(overlapping intervals merged, so PAR1 is one interval and each PAR2 is two),
+1-based inclusive, built at import from `bioutils.par` (bioutils >= 0.6.2,
+interbase intervals converted as `start + 1`), with the per-build values in the
+module docstring. Because PAR markers are always excluded, over-excluding the
 positions that are PAR in only one build (the PAR1 edges, and the GRCh37 chrX
 PAR2 interval, about 330 kb of non-PAR Xq28 in GRCh38 coordinates) is
-acceptable and removes any need to know the genome build. The transcription is
-guarded by
-`tests/test_contigs.py::test_constants_match_bioutils_union`, which compares the
-constants with `bioutils.par` (converting its interbase, 0-based half-open
-intervals to 1-based inclusive) and is skipped unless that module is
-importable. It lives on a fork branch (proposed upstream as biocommons/bioutils
-PR #88), not in any released bioutils; to run the check:
-
-```bash
-pip install "git+https://github.com/davmlaw/bioutils@add-par-regions"
-```
+acceptable and removes any need to know the genome build.
+`tests/test_contigs.py` pins both the per-build values that `bioutils.par`
+returns and the resulting union to the recorded numbers, so a change in a
+bioutils release fails the tests rather than moving the mask silently. The
+bioutils data also carries T2T-CHM13v2.0, which is left out of the union.
 
 ## Diagnostics in `scripts/`
 

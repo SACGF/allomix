@@ -12,10 +12,10 @@ Pseudoautosomal regions (PAR), 1-based inclusive. The constants below are the
 EXACT UNION of the GRCh37 and GRCh38 intervals: overlapping intervals are
 merged, non-overlapping ones are kept separate. Per-build source values, 1-based
 inclusive as NCBI publishes them in the ``PAR`` rows of each assembly's
-``assembly_regions.txt`` (GRCh37.p13, GRCh38.p14). The same data is packaged in
-``bioutils.par`` (fork ``davmlaw/bioutils`` branch ``add-par-regions``, datasets
-``GRCh37`` and ``GRCh38``) in interbase coordinates, i.e. ``[start - 1, end]``;
-the cross-check test converts back::
+``assembly_regions.txt`` (GRCh37.p13, GRCh38.p14). The intervals are read at
+import from ``bioutils.par`` (bioutils >= 0.6.2, datasets ``GRCh37`` and
+``GRCh38``), which packages that data in interbase coordinates, i.e.
+``[start - 1, end]``; this module converts back to 1-based inclusive::
 
                 GRCh37                    GRCh38
     X PAR1      60001-2699520             10001-2781479
@@ -44,15 +44,19 @@ there. On chrY: 2649521-2781479 from PAR1 (132 kb), and the GRCh38 PAR2
 interval 56887903-57217415, which is non-PAR distal Yq in GRCh37 coordinates
 (330 kb); the GRCh37 chrY PAR2 interval lies beyond GRCh38's chrY length. No
 sample-ID panel known to us targets any of this, and the exclusions are
-counted and reported so a panel that does would show it. The transcription of
-the per-build values is covered by a test that cross-checks these constants
-against ``bioutils.par`` when the fork is installed (see
-``tests/test_contigs.py`` and ``docs/architecture.md``).
+counted and reported so a panel that does would show it. The tests pin both
+the bioutils per-build values and the resulting union to the numbers above, so
+a change to the bioutils data cannot move the mask silently (see
+``tests/test_contigs.py`` and ``docs/architecture.md``). The bioutils data also
+carries T2T-CHM13v2.0; it is left out of the union because allomix does not
+support T2T VCFs.
 """
 
 from __future__ import annotations
 
 from enum import Enum
+
+from bioutils.par import get_par_map
 
 
 class ContigClass(Enum):
@@ -73,24 +77,36 @@ class ContigClass(Enum):
     OTHER = "other"
 
 
-# TODO: replace these constants with bioutils.par once biocommons/bioutils
-# PR #88 is released on PyPI (plans/sex_markers.md, Remaining item 8).
+#: Genome builds whose PAR intervals are pooled into the mask.
+PAR_BUILDS: tuple[str, ...] = ("GRCh37", "GRCh38")
+
+
+def _par_union(builds: tuple[str, ...]) -> dict[str, tuple[tuple[int, int], ...]]:
+    """Exact union of the builds' PAR intervals, 1-based inclusive, per chromosome.
+
+    ``bioutils.par.get_par_map`` gives interbase ``[start_i, end_i]`` intervals,
+    converted here as ``(start_i + 1, end_i)``. Intervals from all builds are
+    pooled per chromosome, sorted, and merged where they overlap or abut.
+    """
+    union = {}
+    for chrom in ("X", "Y"):
+        ivs = sorted((s + 1, e) for b in builds for s, e in get_par_map(b)[chrom].values())
+        merged: list[tuple[int, int]] = []
+        for start, end in ivs:
+            if merged and start <= merged[-1][1] + 1:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        union[chrom] = tuple(merged)
+    return union
+
+
 #: Exact union of the GRCh37 and GRCh38 PAR intervals, 1-based inclusive
-#: ``(start, end)``, sorted, per normalised chromosome name. Built the same way
-#: the cross-check test builds it from ``bioutils.par.get_par_map`` (after
-#: converting its interbase intervals to 1-based): pool both builds' intervals
-#: and merge any that overlap.
-PAR_X: tuple[tuple[int, int], ...] = (
-    (10001, 2781479),  # PAR1, merged
-    (154931044, 155260560),  # PAR2, GRCh37
-    (155701383, 156030895),  # PAR2, GRCh38
-)
-PAR_Y: tuple[tuple[int, int], ...] = (
-    (10001, 2781479),  # PAR1, merged
-    (56887903, 57217415),  # PAR2, GRCh38
-    (59034050, 59363566),  # PAR2, GRCh37
-)
-PAR_REGIONS: dict[str, tuple[tuple[int, int], ...]] = {"X": PAR_X, "Y": PAR_Y}
+#: ``(start, end)``, sorted, per normalised chromosome name ("X", "Y"). See the
+#: module docstring for the values.
+PAR_REGIONS: dict[str, tuple[tuple[int, int], ...]] = _par_union(PAR_BUILDS)
+PAR_X: tuple[tuple[int, int], ...] = PAR_REGIONS["X"]
+PAR_Y: tuple[tuple[int, int], ...] = PAR_REGIONS["Y"]
 
 _AUTOSOME_NAMES = frozenset(str(i) for i in range(1, 23))
 _MT_NAMES = frozenset({"M", "MT"})

@@ -1,6 +1,7 @@
 """Tests for allomix.contigs: contig classification and the PAR mask."""
 
 import pytest
+from bioutils.par import get_par_map, get_par_meta
 
 from allomix.contigs import (
     PAR_REGIONS,
@@ -234,25 +235,22 @@ class TestReexport:
 
 
 # ---------------------------------------------------------------------------
-# Cross-check against bioutils.par (fork davmlaw/bioutils@add-par-regions)
+# bioutils.par source data
 # ---------------------------------------------------------------------------
 
 
-def test_constants_match_bioutils_union():
-    """Constants equal the union of the two NCBI builds as packaged in bioutils.par.
+def test_bioutils_par_matches_recorded_builds():
+    """bioutils.par still carries the NCBI values recorded in the module docstring.
 
-    Skipped unless the fork is installed:
-    ``pip install "git+https://github.com/davmlaw/bioutils@add-par-regions"``.
+    ``PAR_REGIONS`` is built from ``bioutils.par`` at import, so this pins the
+    source data: a change in a bioutils release fails here rather than moving
+    the mask silently.
     """
-    bioutils_par = pytest.importorskip("bioutils.par")
-    grch37 = bioutils_par.get_par_map("GRCh37")
-    grch38 = bioutils_par.get_par_map("GRCh38")
     # bioutils returns {chrom: {par_name: [start_i, end_i]}} in interbase
     # (0-based, half-open) coordinates like bioutils.cytobands; allomix keeps
     # the NCBI 1-based inclusive values, so convert as (start_i + 1, end_i).
-    assert bioutils_par.get_par_meta("GRCh38")["coordinates"].startswith("interbase")
-    as_tuples37 = {c: {n: (iv[0] + 1, iv[1]) for n, iv in r.items()} for c, r in grch37.items()}
-    as_tuples38 = {c: {n: (iv[0] + 1, iv[1]) for n, iv in r.items()} for c, r in grch38.items()}
-    assert as_tuples37 == GRCH37
-    assert as_tuples38 == GRCH38
-    assert PAR_REGIONS == _union(as_tuples37, as_tuples38)
+    assert get_par_meta("GRCh38")["coordinates"].startswith("interbase")
+    for build, expected in (("GRCh37", GRCH37), ("GRCh38", GRCH38)):
+        par_map = get_par_map(build)
+        as_tuples = {c: {n: (iv[0] + 1, iv[1]) for n, iv in r.items()} for c, r in par_map.items()}
+        assert as_tuples == expected, build

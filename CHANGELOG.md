@@ -97,12 +97,18 @@
 - **Contig classification module** `allomix.contigs` (#50). `classify_contig(chrom, pos)`
   labels a marker as autosome, chrX/chrY PAR or non-PAR, MT, or other (alt, decoy,
   unplaced, random, HLA). The pseudoautosomal mask is the exact union of the GRCh37
-  and GRCh38 NCBI intervals, so no genome build is needed; a test cross-checks the
-  constants against `bioutils.par` when the fork is installed.
+  and GRCh38 NCBI intervals, so no genome build is needed.
 - `MarkerGenotypes.n_par_excluded` and `MarkerGenotypes.n_other_contig_excluded`
   counters, and matching stderr notes from `detect` when either is non-zero.
 
 ### Changed
+
+- **PAR intervals now come from `bioutils.par`** (#52). `allomix.contigs`
+  builds the GRCh37/GRCh38 union at import from bioutils 0.6.2 instead of
+  vendored constants; the mask itself is unchanged. `bioutils>=0.6.2` is now a
+  runtime dependency (previously only in the `scripts` extra), and the minimum
+  Python is 3.11 (bioutils requires >=3.11 and <3.14). The bioutils
+  cross-check test now runs unconditionally.
 
 - **`--use-sex-chroms` is retired** (#50). It is now a hidden option that exits
   with an error explaining that sex chromosomes are handled automatically from

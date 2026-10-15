@@ -104,8 +104,9 @@
 ### Changed
 
 - **PAR intervals now come from `bioutils.par`** (#52). `allomix.contigs`
-  builds the GRCh37/GRCh38 union at import from bioutils 0.6.2 instead of
-  vendored constants; the mask itself is unchanged. `bioutils>=0.6.2` is now a
+  masks the GRCh37/GRCh38 union using the bioutils 0.6.2 intervals as given
+  (interbase, one per build) instead of vendored constants; the mask itself is
+  unchanged. `bioutils>=0.6.2` is now a
   runtime dependency (previously only in the `scripts` extra), and the minimum
   Python is 3.11 (bioutils requires >=3.11 and <3.14). The bioutils
   cross-check test now runs unconditionally.

@@ -8,27 +8,22 @@ classification of a contig as autosome, sex chromosome, mitochondrion, or
 contigs), so the rest of the package can route markers without caring about
 contig naming conventions or genome build.
 
-Pseudoautosomal regions (PAR), 1-based inclusive. The constants below are the
-EXACT UNION of the GRCh37 and GRCh38 intervals: overlapping intervals are
-merged, non-overlapping ones are kept separate. Per-build source values, 1-based
-inclusive as NCBI publishes them in the ``PAR`` rows of each assembly's
-``assembly_regions.txt`` (GRCh37.p13, GRCh38.p14). The intervals are read at
-import from ``bioutils.par`` (bioutils >= 0.6.2, datasets ``GRCh37`` and
-``GRCh38``), which packages that data in interbase coordinates, i.e.
-``[start - 1, end]``; this module converts back to 1-based inclusive::
+Pseudoautosomal regions (PAR) come from ``bioutils.par`` (bioutils >= 0.6.2),
+which packages the ``PAR`` rows of NCBI's ``assembly_regions.txt`` for each
+build (GRCh37.p13, GRCh38.p14) in interbase coordinates: ``[start_i, end_i]``
+covers the 1-based positions ``start_i + 1`` to ``end_i``, so a VCF ``POS`` is
+inside when ``start_i < pos <= end_i``. The intervals, as bioutils gives them::
 
                 GRCh37                    GRCh38
-    X PAR1      60001-2699520             10001-2781479
-    X PAR2      154931044-155260560       155701383-156030895
-    Y PAR1      10001-2649520             10001-2781479
-    Y PAR2      59034050-59363566         56887903-57217415
+    X PAR1      60000-2699520             10000-2781479
+    X PAR2      154931043-155260560       155701382-156030895
+    Y PAR1      10000-2649520             10000-2781479
+    Y PAR2      59034049-59363566         56887902-57217415
 
-Union (what this module masks). The PAR1 intervals overlap and merge; the PAR2
-intervals do not overlap on either chromosome (GRCh38 moved the chrX PAR2 by
-770 kb and the chrY PAR2 by 2.1 Mb), so each PAR2 stays as two intervals::
-
-    X    10001-2781479,  154931044-155260560,  155701383-156030895
-    Y    10001-2781479,  56887903-57217415,    59034050-59363566
+The mask is the union of both builds: a position is PAR if it is PAR in
+either. The PAR1 intervals overlap; the PAR2 intervals do not overlap on
+either chromosome (GRCh38 moved the chrX PAR2 by 770 kb and the chrY PAR2 by
+2.1 Mb), so the positions between them are non-PAR.
 
 Why the union, and why no genome build: allomix always excludes PAR markers,
 so a site that is PAR in one build and non-PAR in the other can be excluded
@@ -36,20 +31,19 @@ in both. Outside the union the PAR status of a position is the same in both
 builds, so the classification is a pure function of ``(chrom, pos)`` and the
 tool does not need to know which build the VCF is on.
 
-The cost is the positions that are PAR in one build only. On chrX: 10001-60000
-and 2699521-2781479 from PAR1 (50 kb and 82 kb), and the GRCh37 PAR2 interval
-154931044-155260560, which is non-PAR Xq28 in GRCh38 coordinates (330 kb). The
-GRCh38 chrX PAR2 interval lies beyond GRCh37's chrX length, so it costs nothing
-there. On chrY: 2649521-2781479 from PAR1 (132 kb), and the GRCh38 PAR2
-interval 56887903-57217415, which is non-PAR distal Yq in GRCh37 coordinates
-(330 kb); the GRCh37 chrY PAR2 interval lies beyond GRCh38's chrY length. No
-sample-ID panel known to us targets any of this, and the exclusions are
-counted and reported so a panel that does would show it. The tests pin both
-the bioutils per-build values and the resulting union to the numbers above, so
-a change to the bioutils data cannot move the mask silently (see
-``tests/test_contigs.py`` and ``docs/architecture.md``). The bioutils data also
-carries T2T-CHM13v2.0; it is left out of the union because allomix does not
-support T2T VCFs.
+The cost is the positions that are PAR in one build only. In 1-based positions,
+on chrX: 10001-60000 and 2699521-2781479 from PAR1 (50 kb and 82 kb), and the
+GRCh37 PAR2 interval 154931044-155260560, which is non-PAR Xq28 in GRCh38
+coordinates (330 kb). The GRCh38 chrX PAR2 interval lies beyond GRCh37's chrX
+length, so it costs nothing there. On chrY: 2649521-2781479 from PAR1 (132 kb),
+and the GRCh38 PAR2 interval 56887903-57217415, which is non-PAR distal Yq in
+GRCh37 coordinates (330 kb); the GRCh37 chrY PAR2 interval lies beyond GRCh38's
+chrY length. No sample-ID panel known to us targets any of this, and the
+exclusions are counted and reported so a panel that does would show it. The
+tests pin the bioutils per-build values to the table above, so a change to the
+bioutils data cannot move the mask silently (see ``tests/test_contigs.py`` and
+``docs/architecture.md``). The bioutils data also carries T2T-CHM13v2.0; it is
+left out of the union because allomix does not support T2T VCFs.
 """
 
 from __future__ import annotations
@@ -77,36 +71,18 @@ class ContigClass(Enum):
     OTHER = "other"
 
 
-#: Genome builds whose PAR intervals are pooled into the mask.
+#: Genome builds whose PAR intervals are masked.
 PAR_BUILDS: tuple[str, ...] = ("GRCh37", "GRCh38")
 
-
-def _par_union(builds: tuple[str, ...]) -> dict[str, tuple[tuple[int, int], ...]]:
-    """Exact union of the builds' PAR intervals, 1-based inclusive, per chromosome.
-
-    ``bioutils.par.get_par_map`` gives interbase ``[start_i, end_i]`` intervals,
-    converted here as ``(start_i + 1, end_i)``. Intervals from all builds are
-    pooled per chromosome, sorted, and merged where they overlap or abut.
-    """
-    union = {}
-    for chrom in ("X", "Y"):
-        ivs = sorted((s + 1, e) for b in builds for s, e in get_par_map(b)[chrom].values())
-        merged: list[tuple[int, int]] = []
-        for start, end in ivs:
-            if merged and start <= merged[-1][1] + 1:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-            else:
-                merged.append((start, end))
-        union[chrom] = tuple(merged)
-    return union
-
-
-#: Exact union of the GRCh37 and GRCh38 PAR intervals, 1-based inclusive
-#: ``(start, end)``, sorted, per normalised chromosome name ("X", "Y"). See the
-#: module docstring for the values.
-PAR_REGIONS: dict[str, tuple[tuple[int, int], ...]] = _par_union(PAR_BUILDS)
-PAR_X: tuple[tuple[int, int], ...] = PAR_REGIONS["X"]
-PAR_Y: tuple[tuple[int, int], ...] = PAR_REGIONS["Y"]
+#: Every PAR interval of ``PAR_BUILDS``, interbase ``(start_i, end_i)`` as
+#: ``bioutils.par`` gives them, sorted, per normalised chromosome name ("X", "Y").
+#: The builds' PAR1 intervals overlap; see the module docstring.
+PAR_REGIONS: dict[str, tuple[tuple[int, int], ...]] = {
+    chrom: tuple(
+        sorted((s, e) for build in PAR_BUILDS for s, e in get_par_map(build)[chrom].values())
+    )
+    for chrom in ("X", "Y")
+}
 
 _AUTOSOME_NAMES = frozenset(str(i) for i in range(1, 23))
 _MT_NAMES = frozenset({"M", "MT"})
@@ -124,7 +100,7 @@ def normalize_chrom(chrom: str) -> str:
 
 
 def _in_par(regions: tuple[tuple[int, int], ...], pos: int) -> bool:
-    return any(start <= pos <= end for start, end in regions)
+    return any(start_i < pos <= end_i for start_i, end_i in regions)
 
 
 def classify_contig(chrom: str, pos: int) -> ContigClass:

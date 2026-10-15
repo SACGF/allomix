@@ -26,7 +26,7 @@ from allomix.constants import (
     HOM_REF_MAX_VAF,
     N_OTHER_BASES,
 )
-from allomix.contigs import PAR_X
+from allomix.contigs import ContigClass, classify_contig
 from allomix.estimate.likelihood import inject_bias
 from allomix.genotype import InformativeMarker, MarkerData
 
@@ -188,11 +188,10 @@ SEX_CHRX_COPY_NUMBER = {"F": 2, "M": 1}
 def is_chrx_par(pos: int) -> bool:
     """True when a chrX position falls in the PAR mask of ``allomix.contigs``.
 
-    The simulator shares the analysis side's mask (the exact union of the
-    GRCh37 and GRCh38 intervals) so a site it treats as hemizygous in a male is
-    exactly a site the estimator treats as non-PAR.
+    The simulator shares the analysis side's classification so a site it treats
+    as hemizygous in a male is exactly a site the estimator treats as non-PAR.
     """
-    return any(lo <= pos <= hi for lo, hi in PAR_X)
+    return classify_contig("X", pos) is ContigClass.X_PAR
 
 
 def chrx_copy_number(chrom: str, pos: int, sex: str | None) -> int:

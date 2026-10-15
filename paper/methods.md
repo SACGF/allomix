@@ -6,7 +6,7 @@ Supplementary Methods; this section describes each mechanism in operational term
 
 ### Overview
 
-allomix is implemented in Python (version 3.10 or later) and operates on standard
+allomix is implemented in Python (version 3.11 or later) and operates on standard
 Variant Call Format (VCF) files. The workflow has four stages: parse the VCFs and decide
 which markers are informative, estimate the donor fraction, optionally correct
 per-marker amplification bias, and run a panel of quality and sample-integrity checks.

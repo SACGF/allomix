@@ -69,11 +69,11 @@ output/               # Script output (gitignored)
 
 ### Python Version
 
-Python >=3.10. Use modern syntax (match statements, `X | Y` unions, etc.) where appropriate.
+Python >=3.11 (the floor is set by the `bioutils` runtime dependency, which also caps at <3.14). Use modern syntax (match statements, `X | Y` unions, etc.) where appropriate.
 
 ### Dependencies
 
-Runtime: `cyvcf2`, `numpy`, `scipy`
+Runtime: `cyvcf2`, `numpy`, `scipy`, `jinja2`, `bioutils` (PAR intervals, `bioutils.par`)
 
 Optional-dependency extras:
 
@@ -101,7 +101,7 @@ Add `scripts` and/or `paper` when running those: `pip install -e ".[dev,scripts]
 ### Linting and Formatting
 
 - Use `ruff` for linting and formatting: `ruff check src/ tests/` and `ruff format src/ tests/`
-- Config is in `pyproject.toml` — line length 100, target py310
+- Config is in `pyproject.toml` — line length 100, target py311
 - Lint rules: E, F, I (isort), W, UP (pyupgrade)
 
 ### Writing Style (Paper and Comments)
@@ -128,7 +128,7 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 The paper build uses Snakemake (`paper/Snakefile`). The validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
-The paper dependencies (snakemake >=8) require Python 3.11+, even though the core tool runs on 3.10+. Pin the venv to Python 3.13. Do not use `--python '>=3.11'`: it resolves to the newest available interpreter (e.g. 3.14), and snakemake's transitive dependency `immutables==0.21` ships no wheel for 3.14, so it falls back to compiling a C extension from source and fails without a compiler installed.
+The paper dependencies (snakemake >=8) require Python 3.11+, the same floor as the core tool. Pin the venv to Python 3.13. Do not use `--python '>=3.11'`: it resolves to the newest available interpreter (e.g. 3.14), and snakemake's transitive dependency `immutables==0.21` ships no wheel for 3.14, so it falls back to compiling a C extension from source and fails without a compiler installed.
 
 ```bash
 uv venv --python 3.13 && source .venv/bin/activate

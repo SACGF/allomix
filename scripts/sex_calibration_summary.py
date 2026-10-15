@@ -52,9 +52,9 @@ from cyvcf2 import VCF
 
 # Pseudoautosomal regions, 1-based inclusive, exact union of GRCh37 and GRCh38
 # so the mask is conservative whichever build the VCF is on (PAR1 merges, the
-# two builds' PAR2 intervals do not overlap and stay separate). Same values as
-# allomix.contigs. Source: NCBI assembly_regions.txt via the bioutils fork (see
-# plans/sex_markers.md, Phase 0).
+# two builds' PAR2 intervals do not overlap and stay separate). Same mask as
+# allomix.contigs (which uses the bioutils.par intervals). Source: NCBI
+# assembly_regions.txt. Kept inline so this script runs without allomix.
 PAR_X = [(10001, 2781479), (154931044, 155260560), (155701383, 156030895)]
 PAR_Y = [(10001, 2781479), (56887903, 57217415), (59034050, 59363566)]
 

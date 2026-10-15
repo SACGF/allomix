@@ -144,18 +144,17 @@ has a matching guard: `calibration.bias.estimate_biases` skips non-PAR chrX /
 chrY het observations from male samples, and `estimate_biases_both_het`
 trusts a non-PAR chrX both-het site only when every party is female.
 
-The PAR mask is the union of the GRCh37 and GRCh38 NCBI intervals: a
-position is PAR if it is PAR in either build. `PAR_REGIONS` holds both builds'
-intervals from `bioutils.par` (bioutils >= 0.6.2) as it gives them, interbase,
-so a 1-based `POS` is inside when `start_i < pos <= end_i`; the per-build
-values are in the module docstring. Because PAR markers are always excluded,
+The PAR mask is the union of the GRCh37 and GRCh38 NCBI intervals: a position
+is PAR if it is PAR in either build. `PAR_REGIONS` holds both builds' intervals
+from `bioutils.par` (bioutils >= 0.6.2) as it gives them, interbase, so a
+1-based `POS` is inside when `start_i < pos <= end_i`; the per-build values are
+in the module docstring. Because PAR markers are always excluded,
 over-excluding the positions that are PAR in only one build (the PAR1 edges,
 and the GRCh37 chrX PAR2 interval, about 330 kb of non-PAR Xq28 in GRCh38
 coordinates) is acceptable and removes any need to know the genome build.
-`tests/test_contigs.py` pins the per-build values that `bioutils.par` returns,
-so a change in a bioutils release fails the tests rather than moving the mask
-silently. The bioutils data also carries T2T-CHM13v2.0, which is left out of
-the union.
+`tests/test_contigs.py` classifies both sides of every PAR edge, so a change in
+a bioutils release fails the tests rather than moving the mask silently. The
+bioutils data also carries T2T-CHM13v2.0, which is left out of the union.
 
 ## Diagnostics in `scripts/`
 

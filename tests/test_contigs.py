@@ -1,10 +1,8 @@
 """Tests for allomix.contigs: contig classification and the PAR mask."""
 
 import pytest
-from bioutils.par import get_par_map, get_par_meta
 
 from allomix.contigs import (
-    PAR_REGIONS,
     ContigClass,
     classify_contig,
     is_sex_chrom,
@@ -12,55 +10,12 @@ from allomix.contigs import (
 )
 from allomix.genotype import is_sex_chrom as is_sex_chrom_reexport
 
-# Per-build values as bioutils.par gives them (interbase), recorded in the module docstring.
-GRCH37 = {
-    "X": {"PAR1": [60000, 2699520], "PAR2": [154931043, 155260560]},
-    "Y": {"PAR1": [10000, 2649520], "PAR2": [59034049, 59363566]},
-}
-GRCH38 = {
-    "X": {"PAR1": [10000, 2781479], "PAR2": [155701382, 156030895]},
-    "Y": {"PAR1": [10000, 2781479], "PAR2": [56887902, 57217415]},
-}
-
-
 # ---------------------------------------------------------------------------
 # PAR boundaries
 # ---------------------------------------------------------------------------
 
 
-class TestParConstants:
-    def test_shape(self):
-        """Both builds' intervals per chromosome, sorted."""
-        assert PAR_REGIONS == {
-            "X": (
-                (10000, 2781479),
-                (60000, 2699520),
-                (154931043, 155260560),
-                (155701382, 156030895),
-            ),
-            "Y": (
-                (10000, 2649520),
-                (10000, 2781479),
-                (56887902, 57217415),
-                (59034049, 59363566),
-            ),
-        }
-
-    def test_par1_overlaps_but_par2_does_not(self):
-        """Document the build relationship behind the mask.
-
-        PAR1 overlaps between builds. PAR2 does not overlap on either chromosome
-        (GRCh38 moved the chrX PAR2 by 770 kb and the chrY PAR2 by 2.1 Mb), so
-        the gap between the two PAR2 intervals is non-PAR.
-        """
-
-        def overlaps(a, b):
-            return max(a[0], b[0]) < min(a[1], b[1])
-
-        for chrom in ("X", "Y"):
-            assert overlaps(GRCH37[chrom]["PAR1"], GRCH38[chrom]["PAR1"]), chrom
-            assert not overlaps(GRCH37[chrom]["PAR2"], GRCH38[chrom]["PAR2"]), chrom
-
+class TestPar2Gap:
     @pytest.mark.parametrize(
         ("chrom", "pos", "expected"),
         [
@@ -218,22 +173,3 @@ class TestReexport:
     def test_genotype_reexports_is_sex_chrom(self):
         """Existing ``from allomix.genotype import is_sex_chrom`` keeps working."""
         assert is_sex_chrom_reexport is is_sex_chrom
-
-
-# ---------------------------------------------------------------------------
-# bioutils.par source data
-# ---------------------------------------------------------------------------
-
-
-def test_bioutils_par_matches_recorded_builds():
-    """bioutils.par still carries the NCBI values recorded in the module docstring.
-
-    ``PAR_REGIONS`` is built from ``bioutils.par`` at import, so this pins the
-    source data: a change in a bioutils release fails here rather than moving
-    the mask silently.
-    """
-    # classify_contig tests a 1-based POS as start_i < pos <= end_i, which
-    # relies on bioutils keeping interbase coordinates.
-    assert get_par_meta("GRCh38")["coordinates"].startswith("interbase")
-    for build, expected in (("GRCh37", GRCH37), ("GRCh38", GRCH38)):
-        assert get_par_map(build) == expected, build

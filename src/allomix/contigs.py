@@ -40,10 +40,10 @@ and the GRCh38 PAR2 interval 56887903-57217415, which is non-PAR distal Yq in
 GRCh37 coordinates (330 kb); the GRCh37 chrY PAR2 interval lies beyond GRCh38's
 chrY length. No sample-ID panel known to us targets any of this, and the
 exclusions are counted and reported so a panel that does would show it. The
-tests pin the bioutils per-build values to the table above, so a change to the
-bioutils data cannot move the mask silently (see ``tests/test_contigs.py`` and
-``docs/architecture.md``). The bioutils data also carries T2T-CHM13v2.0; it is
-left out of the union because allomix does not support T2T VCFs.
+classification tests check both sides of every PAR edge, so a change to the
+bioutils data fails them rather than moving the mask silently. The bioutils
+data also carries T2T-CHM13v2.0; it is left out of the union because allomix
+does not support T2T VCFs.
 """
 
 from __future__ import annotations

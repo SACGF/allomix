@@ -108,8 +108,7 @@
   (interbase, one per build) instead of vendored constants; the mask itself is
   unchanged. `bioutils>=0.6.2` is now a
   runtime dependency (previously only in the `scripts` extra), and the minimum
-  Python is 3.11 (bioutils requires >=3.11 and <3.14). The bioutils
-  cross-check test now runs unconditionally.
+  Python is 3.11 (bioutils requires >=3.11 and <3.14).
 
 - **`--use-sex-chroms` is retired** (#50). It is now a hidden option that exits
   with an error explaining that sex chromosomes are handled automatically from

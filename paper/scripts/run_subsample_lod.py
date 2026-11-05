@@ -502,9 +502,21 @@ def _contamination_floor_pct(raw_rows: list[dict]) -> float:
 
 
 def write_headline(
-    summaries: list[dict], raw_rows: list[dict], path: Path, n_mixtures: int, n_seeds: int
+    summaries: list[dict],
+    raw_rows: list[dict],
+    path: Path,
+    n_mixtures: int,
+    n_seeds: int,
+    n_mixtures_to_min: int,
+    n_mixtures_to_high: int,
+    high_min_titration_pct: float,
 ) -> None:
-    """One-row CSV of cells/values later prose may quote."""
+    """One-row CSV of cells/values later prose may quote.
+
+    ``n_mixtures_to_min`` counts the mixtures titrated down to the lowest probed
+    fraction; ``n_mixtures_to_high`` the rest, whose own lowest titration is
+    ``high_min_titration_pct``. These are the two disjoint rows of the figure.
+    """
 
     def lookup(test: str, d: int, nm: int) -> float:
         for s in summaries:
@@ -522,6 +534,9 @@ def write_headline(
         "n_seeds": n_seeds,
         "n_fractions": len(FRACTIONS_PCT),
         "min_titration_pct": min(FRACTIONS_PCT),
+        "n_mixtures_to_min": n_mixtures_to_min,
+        "n_mixtures_to_high": n_mixtures_to_high,
+        "high_min_titration_pct": high_min_titration_pct,
         "mle_lod_1000x_100markers_pct": lookup("mle", 1000, 100),
         "presence_lod_1000x_100markers_pct": lookup("presence", 1000, 100),
         "mle_analytical_lod_1000x_100markers_pct": lookup("mle_analytical", 1000, 100),
@@ -760,6 +775,9 @@ def main(argv: list[str] | None = None) -> int:
         FACTS_DIR / "subsample_lod_headline.csv",
         n_mixtures=len(mixtures_seen),
         n_seeds=n_seeds_eff,
+        n_mixtures_to_min=len(lowdf_mixtures),
+        n_mixtures_to_high=len(highdf_mixtures),
+        high_min_titration_pct=highdf_min_pct,
     )
     print(f"Wrote {FACTS_DIR / 'subsample_lod_headline.csv'}", file=sys.stderr)
 

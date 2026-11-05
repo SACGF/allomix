@@ -458,6 +458,14 @@ def main(argv: list[str] | None = None) -> int:
             "ci_width_mean": round(agg["mean_ci_width_mean"] * 100, 2),
         })
 
+    # Range across depths, so prose quotes the true extremes rather than naming
+    # the depths it expects them at.
+    write_fact("depth_summary", {
+        "ci_coverage_min_pct": min(r["ci_cov_mean"] for r in summary_rows),
+        "ci_coverage_max_pct": max(r["ci_cov_mean"] for r in summary_rows),
+        "mae_max_pct": max(r["mae_mean"] for r in summary_rows),
+    })
+
     summary_path = outdir / "depth_summary.tsv"
     with open(summary_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(

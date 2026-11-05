@@ -65,6 +65,7 @@ def main() -> None:
     n_pass_clinical = 0
     reduced_chisq: list[float] = []
     n_gof_p_significant = 0  # post-trim GoF p < 0.01 (would-be legacy GoF flag)
+    review_known: list[float] = []  # known recipient % of each clinical REVIEW
 
     for mix, rows in sorted(by_mix.items()):
         host, donor = rows[0]["host"], rows[0]["donor"]
@@ -103,6 +104,7 @@ def main() -> None:
             )
             if an.qc.status == "REVIEW":
                 n_review_clinical += 1
+                review_known.append(float(row["known_pct"]))
             if an.qc.status == "PASS":
                 n_pass_clinical += 1
             if legacy.status == "REVIEW":
@@ -126,6 +128,9 @@ def main() -> None:
         "n_pass_clinical": str(n_pass_clinical),
         "n_review_clinical": str(n_review_clinical),
         "n_review_legacy": str(n_review_legacy),
+        # Highest known recipient % among clinical REVIEW timepoints; backs the
+        # "all at the lowest recipient fractions" wording.
+        "review_max_known_pct": f"{max(review_known):g}" if review_known else "0",
         "gof_p_significant": str(n_gof_p_significant),
         "gof_reduced_median": f"{statistics.median(reduced_chisq):.2f}",
         "gof_reduced_max": f"{max(reduced_chisq):.2f}",

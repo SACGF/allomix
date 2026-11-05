@@ -452,7 +452,7 @@ the EP17-A2 LoD in two directions (recipient clone as the minor component, the r
 direction; and donor as the minor component against a CNV-bearing recipient
 background) at {{ cnv_loh_headline.ref_markers }} markers and
 {{ cnv_loh_headline.ref_depth }}x depth, with and without the one-sided
-outlier-resistant refit, sweeping burden over 0, 10%, 25%, and 50%.
+outlier-resistant refit, sweeping burden over 0, 10%, 25%, and 50%. {# lint-ok: 'over' means across the swept burden values, not an approximation #}
 
 ### Real-data validation dataset
 
@@ -484,7 +484,7 @@ provides, and it affects only the recipient/donor labelling, not the genotyping 
 recovered fractions.
 Reads were aligned to hg38 with bwa-mem;[@LiDurbin2009bwa; @Li2013bwamem] because every
 MIP amplicon shares start and end coordinates, duplicate marking was not applied (it
-would discard almost all coverage). Because the thesis publishes no panel coordinates,
+would discard almost all coverage). Because the thesis publishes no panel coordinates, {# lint-ok: 'all'/'no' describe the MIP chemistry and the source thesis, not facts #}
 panel intervals were reconstructed from the aligned reads as high-depth amplicon
 clusters ({{ srp434573.n_intervals | commas }} intervals:
 {{ srp434573.n_intervals_autosomal | commas }} autosomal and

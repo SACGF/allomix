@@ -44,6 +44,7 @@ from allomix.simulate import (  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+from paper_seed import derive_seed  # noqa: E402
 
 HOST_VCF = "tests/test_data/host.vcf"
 DONOR_VCF = "tests/test_data/donor.vcf"
@@ -325,7 +326,7 @@ def run_ablation(host_vcf: str, donor_vcf: str, tmpdir: Path) -> dict[str, list[
         for rep in range(N_ABLATION_REPS):
             seed = 1000 * rep + 1
             for frac in FRACTIONS:
-                frac_seed = seed + hash(str(frac)) % (2**31)
+                frac_seed = derive_seed(seed, frac)
                 blend = blend_vcfs(
                     host_vcf,
                     donor_vcf,
@@ -441,7 +442,7 @@ def run_calibration_batch(
         print(f"    Calibration rep {rep}", file=sys.stderr)
         with tempfile.TemporaryDirectory() as tmpdir:
             for frac in FRACTIONS:
-                frac_seed = seed + hash(str(frac)) % (2**31)
+                frac_seed = derive_seed(seed, frac)
                 blend = blend_vcfs(
                     host_vcf,
                     donor_vcf,

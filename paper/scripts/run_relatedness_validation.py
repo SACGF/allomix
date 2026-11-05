@@ -24,6 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+from paper_seed import derive_seed  # noqa: E402
 
 from allomix.estimate.chimerism import estimate_single_donor_bb  # noqa: E402
 from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
@@ -80,7 +81,7 @@ def run_one_replicate(
             donor_fraction=frac,
             target_depth=DEPTH,
             sample_name=name,
-            seed=seed + hash(str(frac)) % (2**31),
+            seed=derive_seed(seed, frac),
             realistic_biases=True,
             error_rate=0.01,
             locus_dropout_rate=0.016,

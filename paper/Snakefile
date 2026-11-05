@@ -43,6 +43,7 @@ CAL_REPS_PER_BATCH = 3 if QUICK else 10
 # --- Outputs produced by each script ----------------------------------------
 
 DEPTH_FACTS = expand(f"{FACTS_DIR}/depth_{{d}}.csv", d=[50, 100, 200, 500, 1000])
+DEPTH_FACTS.append(f"{FACTS_DIR}/depth_summary.csv")
 DEPTH_FIGS = [
     f"{FACTS_DIR}/fig_depth_scatter.png",
     f"{FACTS_DIR}/fig_depth_boxplots.png",

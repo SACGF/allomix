@@ -42,6 +42,7 @@ from allomix.simulate import (  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+from paper_seed import derive_seed  # noqa: E402
 
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
 DEFAULT_DEPTHS = [50, 100, 200, 500, 1000]
@@ -80,7 +81,7 @@ def generate_and_run(
     bias_dict = None
     for frac in FRACTIONS:
         name = fraction_to_name(frac)
-        sample_seed = seed + hash(str(frac)) % (2**31)
+        sample_seed = derive_seed(seed, frac)
         result = blend_vcfs(
             host_path=host_vcf, donor_path=donor_vcf,
             donor_fraction=frac, target_depth=depth,
@@ -457,6 +458,14 @@ def main(argv: list[str] | None = None) -> int:
             "ci_cov_mean": round(agg["ci_coverage_mean"] * 100, 1),
             "ci_width_mean": round(agg["mean_ci_width_mean"] * 100, 2),
         })
+
+    # Range across depths, so prose quotes the true extremes rather than naming
+    # the depths it expects them at.
+    write_fact("depth_summary", {
+        "ci_coverage_min_pct": min(r["ci_cov_mean"] for r in summary_rows),
+        "ci_coverage_max_pct": max(r["ci_cov_mean"] for r in summary_rows),
+        "mae_max_pct": max(r["mae_mean"] for r in summary_rows),
+    })
 
     summary_path = outdir / "depth_summary.tsv"
     with open(summary_path, "w", newline="", encoding="utf-8") as f:

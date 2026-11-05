@@ -81,6 +81,25 @@ sudo apt-get install -y libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 l
 `vibepaper build --is-pdf-available` reports whether the PDF toolchain is
 usable.
 
+## Wording that depends on facts
+
+Every number in the paper is a `{{ namespace.field }}` fact, and so is every word
+that makes a claim about one. Direction, magnitude, approximation and a/an come from
+vibepaper word filters (`approx`, `number_word`, `article`, `fold`, ...). Ordering,
+totality ("all", "none") and threshold words ("close to", "essentially unchanged")
+are pinned by an `{% assert condition, "message" %}` line directly above the
+paragraph. The build fails if an assert is false and prints the fact values. A
+paragraph whose claim words are deliberate hedges or describe cited work carries a
+`{# lint-ok: reason #}` comment.
+
+- `vibepaper lint` lists sentences with a claim word beside a fact and no filter or
+  assert in the paragraph. CI runs `vibepaper lint --check`.
+- After re-running any analysis, run `vibepaper diff` before re-reading the paper. It
+  names the facts that changed and the unchecked sentences that use them.
+- A derived value a filter or assert needs (a ratio, a count of exceptions, a
+  min/max across conditions) is emitted by the analysis script as a fact. It is
+  never computed in the template for display.
+
 ## Appendix: regenerating the real-data inputs (SRP434573)
 
 Not part of a normal build. Skip this unless you are changing how the real-data

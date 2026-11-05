@@ -330,7 +330,7 @@ bounds are reported for all simulated mixture levels.
 
 {% assert depth_summary.mae_max_pct < 1, "Table S4: 'Mean absolute error stayed below 1% at every depth'" %}
 {% assert depth_1000.mean_abs_error_pct < depth_50.mean_abs_error_pct, "Table S4: MAE 'improving from ... at 50x to ... at 1,000x'" %}
-{% assert depth_summary.ci_coverage_min_pct >= 90 and depth_summary.ci_coverage_max_pct <= 99, "Table S4: intervals 'cover close to nominal' 95% (90% to 99%)" %}
+{% assert depth_summary.ci_coverage_min_pct >= 90, "Table S4: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)" %}
 We generated synthetic chimeric VCFs spanning 0% to 100% donor using 100 markers with
 empirically calibrated per-marker bias, non-uniform depth (CV =
 {{ sim_calibration.depth_cv }}), and {{ sim_calibration.locus_dropout_pct }}% locus
@@ -560,7 +560,7 @@ main-text Figures 2 and 3. {# lint-ok: 'all replicates' describes what is plotte
 ![Figure S15]({{ facts_dir }}/fig_error_table_arms.png)
 
 {% assert error_table_arms_headline.flat_detect_0p2 < error_table_arms_headline.per_mixture_detect_0p2 and error_table_arms_headline.flat_detect_0p2 < error_table_arms_headline.pooled_detect_0p2, "Figure S15: 'Detection at 0.2% recipient rises from ... with the flat default to ... per-mixture ... and ... pooled'" %}
-{% assert error_table_arms_headline.pooled_detect_0p3 == 1 and error_table_arms_headline.flat_detect_0p3 < 1 and error_table_arms_headline.flat_detect_0p4 == 1, "Figure S15: 'with the pooled table full detection is reached at 0.3% rather than 0.4%'" %}
+{% assert error_table_arms_headline.pooled_full_detect_min_pct < error_table_arms_headline.flat_full_detect_min_pct, "Figure S15: 'with the pooled table full detection is reached at ... rather than ...' (pooled earlier than flat)" %}
 {% assert error_table_arms_headline.flat_real_0p5_mle_med_pct <= error_table_arms_headline.per_mixture_real_0p5_mle_med_pct <= error_table_arms_headline.pooled_real_0p5_mle_med_pct, "Figure S15: 'The real titration moves the same way' (flat to per-mixture to pooled)" %}
 **Figure S15.** Effect of the per-site error model on low-fraction performance,
 on the SRP434573 public mixtures. Three background models are compared: the
@@ -572,7 +572,9 @@ against nominal recipient fraction on the semi-synthetic ladder. Detection at
 {{ error_table_arms_headline.flat_detect_0p2 }} with the flat default to
 {{ error_table_arms_headline.per_mixture_detect_0p2 }} with per-mixture tables
 and {{ error_table_arms_headline.pooled_detect_0p2 }} when pooled, and with the
-pooled table full detection is reached at 0.3% rather than 0.4%. The real titration moves the same
+pooled table full detection is reached at
+{{ error_table_arms_headline.pooled_full_detect_min_pct }}% rather than
+{{ error_table_arms_headline.flat_full_detect_min_pct }}%. The real titration moves the same
 way: the median estimate at a known 0.5% recipient goes
 {{ error_table_arms_headline.flat_real_0p5_mle_med_pct }}% to
 {{ error_table_arms_headline.per_mixture_real_0p5_mle_med_pct }}% to

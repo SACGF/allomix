@@ -42,6 +42,7 @@ from allomix.simulate import (  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+from paper_seed import derive_seed  # noqa: E402
 
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
 DEFAULT_DEPTHS = [50, 100, 200, 500, 1000]
@@ -80,7 +81,7 @@ def generate_and_run(
     bias_dict = None
     for frac in FRACTIONS:
         name = fraction_to_name(frac)
-        sample_seed = seed + hash(str(frac)) % (2**31)
+        sample_seed = derive_seed(seed, frac)
         result = blend_vcfs(
             host_path=host_vcf, donor_path=donor_vcf,
             donor_fraction=frac, target_depth=depth,

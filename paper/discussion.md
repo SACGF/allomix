@@ -64,7 +64,7 @@ significant at depth (Supplementary Methods S10). For the same reason allomix do
 weight marker contributions by per-base or per-genotype quality (Supplementary Methods
 S11).
 
-{% assert depth_summary.ci_coverage_min_pct >= 90 and depth_summary.ci_coverage_max_pct <= 99, "discussion: intervals 'cover close to nominal' 95% (90% to 99%)" %}
+{% assert depth_summary.ci_coverage_min_pct >= 90, "discussion: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)" %}
 Across the simulated depths the 95% intervals cover close to nominal
 ({{ depth_summary.ci_coverage_min_pct }}--{{ depth_summary.ci_coverage_max_pct }}%) with overdispersion
 fit separately for the donor-heterozygous and donor-homozygous marker classes (the default

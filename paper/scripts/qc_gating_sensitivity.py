@@ -22,6 +22,7 @@ from srp434573_common import resolve_srp434573_genotypes_dir
 
 from allomix.analysis import analyse_sample
 from allomix.calibration.error_rates import load_error_table
+from allomix.constants import DEFAULT_ERROR_RATE, DEFAULT_MIN_DP, DEFAULT_MIN_GQ
 from allomix.estimate.likelihood import PanelCalibration
 from allomix.genotype import parse_vcf
 from allomix.qc.qc import (
@@ -39,9 +40,12 @@ TWO_TSV = OUT / "srp434573_two_person.tsv"
 GEN = resolve_srp434573_genotypes_dir()
 
 # Match the run_srp434573_allomix.py / CLI defaults so the facts line up with the
-# main SRP434573 results.
-ERROR_RATE = 0.01
-MIN_DP = 100
+# main SRP434573 results. The error table below matters most: with per-mixture
+# tables instead of the pooled one the CLI uses, this script flagged 4 REVIEW
+# against the CLI's 3, so two counts in the same results paragraph disagreed.
+ERROR_RATE = DEFAULT_ERROR_RATE
+MIN_DP = DEFAULT_MIN_DP
+MIN_GQ = DEFAULT_MIN_GQ
 
 
 def _dilution_rows() -> dict[str, list[dict]]:
@@ -73,9 +77,13 @@ def main() -> None:
         avcf = GEN / f"{mix}.admix.vcf.gz"
         if not gvcf.exists():
             continue
-        h = parse_vcf(gvcf, sample=host, gt_ad_consistency=True)
-        d = parse_vcf(gvcf, sample=donor, gt_ad_consistency=True)
-        etab = GEN / f"{mix}.error_table.tsv"
+        h = parse_vcf(gvcf, sample=host, min_gq=MIN_GQ, gt_ad_consistency=True)
+        d = parse_vcf(gvcf, sample=donor, min_gq=MIN_GQ, gt_ad_consistency=True)
+        # Same table the headline CLI run resolves to (run_srp434573_allomix.
+        # resolve_error_table): the pooled table when built, else per-mixture.
+        etab = GEN / "pooled.error_table.tsv"
+        if not etab.exists():
+            etab = GEN / f"{mix}.error_table.tsv"
         cal = PanelCalibration(errors=load_error_table(etab) if etab.exists() else {})
 
         for row in rows:
@@ -87,7 +95,7 @@ def main() -> None:
                 [d],
                 a,
                 min_dp=MIN_DP,
-                min_gq=0,
+                min_gq=MIN_GQ,
                 error_rate=ERROR_RATE,
                 calibration=cal,
                 robust="auto",

@@ -99,6 +99,7 @@ mixtures), the level below which a corrected estimate is not separable from
 contamination.
 
 {% assert srp434573.review_max_known_pct <= 1, "QC REVIEW flags 'all at the lowest recipient fractions (... to 1%)'" %}
+{% assert qc_gating.n_review_clinical == srp434573.n_review, "the gating comparison's clinical REVIEW count is the same flag count quoted at the start of the paragraph" %}
 {% assert qc_gating.n_review_clinical < qc_gating.n_review_legacy, "'holds the flag count at ... rather than the ... a p-value-only rule raises'" %}
 The QC layer promotes {{ srp434573.n_review | dp(0) }} of
 {{ srp434573.n_timepoints | dp(0) }} admixtures to REVIEW, all at the lowest recipient
@@ -126,7 +127,7 @@ markers are included, not the genotypes at the markers that are.
 
 {% assert srp434573_synthetic.mle_med_0p1 < srp434573_synthetic.mle_med_0p5, "semi-synthetic ladder: 'the median estimate rising in step with the nominal one'" %}
 {% assert srp434573_synthetic.two_person_med_signed_off_pct > 0, "semi-synthetic ladder: 'a small constant positive offset'" %}
-{% assert srp434573_synthetic.detect_rate_0p1 < 1 and srp434573_synthetic.detect_rate_0p4 == 1 and srp434573_synthetic.detect_rate_0p5 == 1, "semi-synthetic ladder: presence detection rising from 0.1% recipient 'to full detection by 0.4%'" %}
+{% assert srp434573_synthetic.detect_rate_0p1 < 1 and srp434573_synthetic.full_detect_min_pct > srp434573_synthetic.frac_min_pct, "semi-synthetic ladder: presence detection 'climbed' from below full at the lowest rung to full detection" %}
 {% assert srp434573_synthetic.three_host_med_signed_err_pct > 0, "two-donor series: 'a near-constant positive offset'" %}
 {% assert srp434573_synthetic.three_host_lowest_ratio > 1, "two-donor series: '-fold overestimate' at the lowest rung" %}
 The real series floors at 0.5% recipient, where the co-pooled contamination competes with the
@@ -144,7 +145,7 @@ recipient, with the median estimate rising in step with the nominal one (median
 positive offset of {{ srp434573_synthetic.two_person_med_signed_off_pct }} percentage points.
 The residual-recipient presence test gives an independent low-fraction readout: it climbed
 from a detection rate of {{ srp434573_synthetic.detect_rate_0p1 }} at 0.1% recipient to full
-detection by 0.4% ({{ srp434573_synthetic.detect_rate_0p4 }}), reading only the
+detection from {{ srp434573_synthetic.full_detect_min_pct }}% upward, reading only the
 donor-homozygous markers. The same construction produced a recipient-plus-two-donor series
 (recipient F2 titrated below 1% against donors M1 and M2), where allomix recovered the sub-1%
 recipient and both donors with median absolute errors of
@@ -161,21 +162,25 @@ therefore carries a materially higher effective floor than the single-donor case
 sub-1% recipient fractions against two donors should be read as bounded above by this
 floor rather than as point estimates.
 
-{% assert srp434573_synthetic.two_person_med_signed_off_pct > 0.29 / 9 and srp434573_synthetic.two_person_med_signed_off_pct < 0.29 / 5, "'reduces the offset roughly sevenfold' from the shared-parameter 'about 0.29 percentage points' (5- to 9-fold band; 0.29 is hand-typed, not a fact)" %}
+{% assert srp434573_synthetic.two_person_offset_reduction_fold > 1.5, "per-marker-type fit 'reduces the offset' relative to the shared fit" %}
+{% assert srp434573_synthetic.two_person_med_signed_off_pct > 0, "'though it does not eliminate it' (offset still positive)" %}
 On the two-person ladder most of the offset is a property of the overdispersion model
 rather than of the reads.
 A single overdispersion parameter shared across marker
-types leaves a near-constant positive recipient offset of about 0.29 percentage points at
+types leaves a near-constant positive recipient offset of
+{{ srp434573_synthetic.two_person_shared_rho_med_signed_off_pct }} percentage points at
 these fractions, coming from the donor-heterozygous markers, where the two contributors
 balance the alleles near 0.5 and their symmetric extra-binomial scatter rectifies into a
 small positive recipient signal. Fitting a separate overdispersion for the
 donor-heterozygous and donor-homozygous classes (the default per-marker-type model) absorbs
-that scatter where it occurs and reduces the offset roughly sevenfold, to the
+that scatter where it occurs and reduces the offset by a factor of
+{{ srp434573_synthetic.two_person_offset_reduction_fold | approx }}, to the
 {{ srp434573_synthetic.two_person_med_signed_off_pct }} percentage points quoted above,
 though it does not eliminate it. The mixing itself is faithful (the realised minor fraction
 tracks the nominal one with unit slope, and the donor-homozygous markers alone return the
 nominal fraction).
 
+{% assert srp434573_synthetic.three_host_shared_minus_default_err_pct | abs < 0.01, "two-donor offset 'unchanged by the overdispersion model ... under both the shared and the per-marker-type fit' (within 0.01 pp)" %}
 {% assert srp434573_synthetic.three_host_med_signed_err_pct >= 0.5 * srp434573.contam_floor_median_pct and srp434573_synthetic.three_host_med_signed_err_pct <= 2 * srp434573.contam_floor_median_pct, "two-donor offset 'comparable to the co-pooled contamination floor' (within a factor of two)" %}
 The residual offset in the two-donor series has a different origin. It is unchanged by the
 overdispersion model, sitting at
@@ -221,7 +226,7 @@ in silico accuracy across sequencing depths (mean absolute error below 1% from 5
 {% assert srp434573.presence_n_detected == srp434573.presence_n_total, "presence test: 'returned a positive call (p < 0.05) at all ... of ... two-person admixtures'" %}
 {% assert srp434573.zero_host_presence_absent_n == srp434573.zero_host_n, "presence test: 'correctly withheld a recipient-present call at all ... of ... pure-donor controls'" %}
 {% assert srp434573.zero_host_presence_max_pct == 0, "presence test: '(recipient-fraction estimate 0%)' at the pure-donor controls" %}
-{% assert srp434573_synthetic.detect_rate_0p1 < 1 and srp434573_synthetic.detect_rate_0p4 == 1 and srp434573_synthetic.detect_rate_0p5 == 1, "presence test: presence detection rising from 0.1% recipient 'to full detection by 0.4%'" %}
+{% assert srp434573_synthetic.detect_rate_0p1 < 1 and srp434573_synthetic.full_detect_min_pct > srp434573_synthetic.frac_min_pct and srp434573_synthetic.full_detect_min_pct < 0.5, "presence test: detects residual recipient 'below 0.5%', rising from 0.1% recipient to full" %}
 The magnitude estimate above answers how much donor is present, and by complement how
 much recipient remains. The second test answers whether any recipient is left at all, and reports a
 recipient-fraction estimate for it, reading only the donor-homozygous markers where the recipient
@@ -248,7 +253,8 @@ separate residual recipient from the co-pooled contamination floor (below), so a
 call there reflects both. That 0.5% floor is set by this dataset's co-pooled contamination
 (index hopping on the patterned flowcell), not by the test itself: on a semi-synthetic
 remix of the same reads with the contamination removed, the presence test detects residual
-recipient below 0.5%, its detection rate rising from 0.1% recipient to full by 0.4%
+recipient below 0.5%, its detection rate rising from 0.1% recipient to full by
+{{ srp434573_synthetic.full_detect_min_pct }}%
 (above). We present this as a validated capability, not a clinical relapse-detection result: it is
 demonstrated in silico and on this titrated panel down to 1% recipient, but its operating
 characteristics on real patient samples and the clinical thresholds for action remain to

@@ -89,6 +89,20 @@ def _median(xs: list[float]) -> float | None:
     return st.median(xs) if xs else None
 
 
+def full_detect_min(rates: dict[float, float]) -> float | None:
+    """Lowest fraction from which every rung up the ladder is detected in all replicates.
+
+    ``rates`` maps nominal fraction to detection rate. None if the top rung is not
+    fully detected.
+    """
+    lowest = None
+    for fr in sorted(rates, reverse=True):
+        if rates[fr] < 1.0:
+            break
+        lowest = fr
+    return lowest
+
+
 def arm_metrics(arm: str) -> dict | None:
     """Detection, accuracy and floor metrics for one arm, or None if absent."""
     d = arm_dir(arm)
@@ -102,17 +116,21 @@ def arm_metrics(arm: str) -> dict | None:
     # Semi-synthetic ladder: detection rate and signed offset per nominal level.
     fracs = sorted({_f(r["frac_pct"]) for r in syn if _f(r.get("frac_pct")) is not None})
     devs = []
+    rates: dict[float, float] = {}
     for fr in fracs:
         rows = [r for r in syn if _f(r["frac_pct"]) == fr]
         pv = [_f(r["presence_p"]) for r in rows if _f(r.get("presence_p")) is not None]
         mle = [_f(r["mle_pct"]) for r in rows if _f(r.get("mle_pct")) is not None]
         tag = f"{fr:g}".replace(".", "p")
         if pv:
-            m[f"detect_{tag}"] = f"{sum(1 for p in pv if p < DETECT_ALPHA) / len(pv):.2f}"
+            rates[fr] = sum(1 for p in pv if p < DETECT_ALPHA) / len(pv)
+            m[f"detect_{tag}"] = f"{rates[fr]:.2f}"
         mm = _median(mle)
         if mm is not None:
             m[f"mle_med_{tag}"] = f"{mm:.3f}"
             devs.append(abs(mm - fr))
+    full = full_detect_min(rates)
+    m["full_detect_min_pct"] = f"{full:g}" if full is not None else ""
     if devs:
         m["ladder_mean_abs_dev_pct"] = f"{sum(devs) / len(devs):.3f}"
 

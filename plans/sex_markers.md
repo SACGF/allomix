@@ -15,7 +15,7 @@ not yet measured.
 
 | topic | decision |
 |---|---|
-| PAR data | Vendor the PAR boundaries into allomix with provenance; cross-check test against `bioutils.par` from the fork when installed. The module is not in any released bioutils (0.6.1, Nov 2024); it lives on the fork branch `davmlaw/bioutils@add-par-regions` (interbase coordinates, flat JSON like `_data/assemblies`) and is proposed upstream as biocommons/bioutils PR #88 (opened 2026-10-06). Switch to a `bioutils>=` pin once a release carries it. |
+| PAR data | Superseded (#52): the PAR intervals now come from `bioutils.par` (bioutils >= 0.6.2, a runtime dependency). Original decision: vendor the PAR boundaries into allomix with provenance and cross-check against `bioutils.par` from the fork (`davmlaw/bioutils@add-par-regions`, upstream as biocommons/bioutils PR #88) until a release carried the module. |
 | Genome build | Not needed. PAR mask is the union of the GRCh37 and GRCh38 intervals (see "Why no genome build" below). Build inference and `--genome-build` are dropped from the plan. |
 | chrY content | The rhAmpSeq SID BED carries three chrY sex-typing amplicons (SRY, ZFY, AMELY intron 3), all non-PAR. The idt_haem kit has none. |
 | Male-male chrX | Included in Phase 2 (drop het calls, route hom/hom). |
@@ -209,13 +209,12 @@ New module `src/allomix/contigs.py`.
   unplaced, random): excluded from every analysis, counted and reported.
 - `classify_contig(chrom: str, pos: int) -> ContigClass`. Handles the `chr`
   prefix as `is_sex_chrom` does today.
-- PAR intervals as module constants: the union of GRCh37 and GRCh38, 1-based
-  inclusive, with the per-build source values and NCBI provenance in the
-  comment. A test imports `bioutils.par` when installed
-  (`pytest.importorskip`) and asserts the union of its two builds equals the
-  constants, so the transcription hazard is covered without a runtime
-  dependency on the fork. `docs/` records how to install the fork for that
-  test.
+- PAR intervals: as first built, module constants (the union of GRCh37 and
+  GRCh38, 1-based inclusive) cross-checked against `bioutils.par` from the
+  fork. Since #52, `PAR_REGIONS` holds the `bioutils.par` GRCh37 and GRCh38
+  intervals as bioutils gives them (interbase), and `classify_contig` tests a
+  1-based `POS` as `start_i < pos <= end_i`. The PAR edge classification tests
+  catch a bioutils data change that would move the mask.
 - `is_sex_chrom(chrom)` stays, documented as "not an autosome", for the
   identity-QC callers that only have a contig name and only need that. It gains
   `OTHER` contigs (they are not autosomes either).
@@ -448,10 +447,9 @@ the remaining items need internal data or a decision.
 
 Also written: `scripts/sex_calibration_summary.py` (de-identified calibration
 summary for the internal cohort) and `scripts/build_union_bed.py` (rebuilds
-the union intervals BED). The PAR data source is proposed upstream as
-biocommons/bioutils PR #88 (fork branch `davmlaw/bioutils@add-par-regions`,
-interbase coordinates, flat JSON like `_data/assemblies`); allomix keeps the
-vendored constants until a release carries the module.
+the union intervals BED). The PAR data source was proposed upstream as
+biocommons/bioutils PR #88 (merged 2026-10-13, released in bioutils 0.6.2);
+allomix now reads it from `bioutils.par` (#52) instead of vendored constants.
 
 ### Validation results
 
@@ -516,8 +514,10 @@ Code, once the above is known:
 6. Full test suite run before the next release (only phase subsets were run).
 7. Remove the hidden `--use-sex-chroms` option in a later release.
 8. ~~Replace the vendored PAR constants with `bioutils.par`.~~ Done (2026-10-15,
-   #52): `allomix.contigs` builds the union from bioutils 0.6.2; 3.14 dropped
-   from CI because bioutils caps requires-python at <3.14. Original note:
+   #52): `allomix.contigs` takes the GRCh37 and GRCh38 intervals from
+   bioutils 0.6.2 as given (interbase, no union or conversion step; the
+   membership test is an `any()` over both builds); 3.14 dropped from CI
+   because bioutils caps requires-python at <3.14. Original note:
    Replace the vendored PAR constants with `bioutils.par` once biocommons/bioutils
    PR #88 is merged **and released on PyPI** (check the PR and the bioutils
    release list). Not done earlier because a git-URL dependency blocks allomix

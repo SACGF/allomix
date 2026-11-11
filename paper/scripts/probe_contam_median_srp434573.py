@@ -20,6 +20,7 @@ from pathlib import Path
 from statistics import median
 
 from cyvcf2 import VCF
+from facts_io import write_fact_csv
 from srp434573_common import resolve_srp434573_genotypes_dir
 
 GEN = resolve_srp434573_genotypes_dir()
@@ -175,10 +176,7 @@ def main() -> int:
         "dose_1carrier_pct": f"{median(carrier_fracs_by_dose[1]) * 100:.2f}",
         "dose_5carrier_pct": f"{median(carrier_fracs_by_dose[5]) * 100:.2f}",
     }
-    with open(facts_dir / "srp_contam.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(facts.keys())
-        w.writerow(facts.values())
+    write_fact_csv(facts_dir / "srp_contam.csv", facts)
     print(f"\nWrote {facts_dir / 'srp_contam.csv'}")
 
     # Long-format per-site export for the contamination-floor figure (#19). One row
@@ -186,7 +184,7 @@ def main() -> int:
     # and the cited medians describe the same data. No genomic coordinates needed.
     persite_path = facts_dir / "srp_contam_persite.csv"
     with open(persite_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, lineterminator="\n")
         w.writerow(["n_carriers", "n_alleles", "minor_frac"])
         for n_carriers, n_alleles, frac in persite_rows:
             w.writerow([n_carriers, n_alleles, f"{frac:.8f}"])

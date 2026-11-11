@@ -7,10 +7,8 @@ Usage:
     python scripts/generate_paper_facts.py
 """
 
-import csv
 import math
 import random
-import shutil
 import sys
 from pathlib import Path
 
@@ -22,21 +20,17 @@ from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.estimate.likelihood import PanelCalibration  # noqa: E402
 from allomix.simulate import blend_vcfs, generate_marker_biases, write_vcf  # noqa: E402
 from allomix.simulate import parse_text_vcf as sim_parse_vcf  # noqa: E402
+from facts_io import read_fact_csv, write_fact_csv  # noqa: E402
 from paper_seed import derive_seed  # noqa: E402
 
 FACTS_DIR = Path("output/facts")
 
-STANDARD_FRACTIONS = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.0]
 BIAS_FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
 
 
 def write_fact(name: str, data: dict) -> None:
-    """Write a single-row facts CSV."""
-    path = FACTS_DIR / f"{name}.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(data.keys()))
-        writer.writeheader()
-        writer.writerow(data)
+    """Write a typed facts CSV (see facts_io)."""
+    path = write_fact_csv(FACTS_DIR / f"{name}.csv", data)
     print(f"  Wrote {path}")
 
 
@@ -82,57 +76,6 @@ def main():
 
     host_vcf = "tests/test_data/host.vcf"
     donor_vcf = "tests/test_data/donor.vcf"
-
-    # Standard validation (no bias correction)
-    print("Running standard validation...")
-    std_rows = []
-    for frac in STANDARD_FRACTIONS:
-        name = fraction_to_name(frac)
-        vcf_path = f"tests/test_data/{name}.vcf"
-        result, _genotypes = run_sample(host_vcf, donor_vcf, vcf_path)
-        error = result.donor_fraction - frac
-        ci_covers = result.donor_fraction_ci[0] <= frac <= result.donor_fraction_ci[1]
-        ci_width = result.donor_fraction_ci[1] - result.donor_fraction_ci[0]
-        std_rows.append({
-            "sample_name": name,
-            "true_frac": frac,
-            "est_frac": result.donor_fraction,
-            "error": error,
-            "ci_lo": result.donor_fraction_ci[0],
-            "ci_hi": result.donor_fraction_ci[1],
-            "ci_width": ci_width,
-            "ci_covers": ci_covers,
-            "n_informative": result.n_informative,
-        })
-
-    std_metrics = compute_metrics(std_rows)
-
-    write_fact("validation_summary", {
-        "n_samples": std_metrics["n_samples"],
-        "n_markers": 100,
-        "n_informative": 80,
-        "depth": 2000,
-        "bias_sd": 0.02,
-        "mean_signed_error_pct": round(std_metrics["mean_signed_error"] * 100, 4),
-        "mean_abs_error_pct": round(std_metrics["mean_abs_error"] * 100, 4),
-        "rmse_pct": round(std_metrics["rmse"] * 100, 4),
-        "max_abs_error_pct": round(std_metrics["max_abs_error"] * 100, 4),
-        "ci_coverage_pct": round(std_metrics["ci_coverage"] * 100, 1),
-        "mean_ci_width_pct": round(std_metrics["mean_ci_width"] * 100, 4),
-    })
-
-    for r in std_rows:
-        write_fact(f"val_{fraction_to_name(r['true_frac'])}", {
-            "true_pct": round(r["true_frac"] * 100, 1),
-            "est_pct": round(r["est_frac"] * 100, 2),
-            "error_pct": round(r["error"] * 100, 4),
-            "abs_error_pct": round(abs(r["error"]) * 100, 4),
-            "ci_lo_pct": round(r["ci_lo"] * 100, 2),
-            "ci_hi_pct": round(r["ci_hi"] * 100, 2),
-            "ci_width_pct": round(r["ci_width"] * 100, 2),
-            "ci_covers": r["ci_covers"],
-            "n_informative": r["n_informative"],
-        })
 
     # Bias correction comparison
     print("Running bias correction comparison...")
@@ -208,20 +151,8 @@ def main():
         "seq_error_pct": 1,
     })
 
-    # Tool landscape facts
-    write_fact("tool_landscape", {
-        "n_commercial_tools": 4,
-        "commercial_tools": "AlloSeq HCT; Devyser Chimerism; NGStrack; ScisGo Chimerism MD",
-        "alloseq_n_markers": 202,
-        "alloseq_lod": 0.3,
-        "devyser_n_markers": 24,
-        # EP17 limit of detection from Qama et al. 2026 (J Mol Diagn) full text:
-        # "limit of detection and limit of quantitation were 0.06% and 0.1%"
-        # (LoB 0.04%). The 0.1% in the abstract is the limit of quantitation.
-        "devyser_lod": 0.06,
-        "n_open_source_chimerism": 0,
-        "n_tools_surveyed": 30,
-    })
+    # The commercial-tool figures (tool_landscape.*) are literature values, not
+    # measured here: they live in paper/frozen_facts.csv with their citations.
 
     # Panel specs
     write_fact("panel_specs", {
@@ -232,10 +163,11 @@ def main():
         "min_informative_markers": 3,
     })
 
-    # Copy empirical panel stats into facts dir
+    # Empirical panel stats (measured on the internal data by
+    # scripts/measure_panel_bias.py, committed as a one-row CSV) rewritten typed.
     empirical_src = Path("paper/empirical_results/panel_empirical.csv")
-    shutil.copy2(empirical_src, FACTS_DIR / "panel_empirical.csv")
-    print(f"  Copied {empirical_src} -> {FACTS_DIR / 'panel_empirical.csv'}")
+    write_fact_csv(FACTS_DIR / "panel_empirical.csv", read_fact_csv(empirical_src))
+    print(f"  Wrote {empirical_src} -> {FACTS_DIR / 'panel_empirical.csv'} (typed)")
 
     print("\nDone! Facts written to output/facts/")
 

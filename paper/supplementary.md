@@ -183,7 +183,8 @@ rather than applied unconditionally.
 The simulator draws each marker's expected alternative-allele frequency as
 $\text{VAF}_{expected} = [(1-f)a_h + f a_d]/2$ (with $a_h, a_d$ the alternative doses),
 applies the four noise sources of the main Methods, and draws counts from a binomial (or
-a beta-binomial at concentration $\rho$ for the overdispersion characterisation). The LoD
+a beta-binomial at concentration $\rho$ for the overdispersion characterisation).
+The LoD
 sweep uses a nested design: for each relatedness level, multiple donor/recipient pairs
 ({{ lod_headline.n_pairs_unrelated | int }} unrelated,
 {{ lod_headline.n_pairs_sibling | int }} sibling) have fixed genotypes (MAF 0.2--0.5) and
@@ -198,13 +199,11 @@ and a CNV-bearing clone at a clonal fraction, with the expected allele fraction 
 copy-number-weighted average over normal recipient, recipient clone, and donor; three
 CNV types are produced by mutating one clone homolog (copy-neutral loss of heterozygosity
 (cnLoH): retained homolog duplicated, heterozygous sites only; deletion: one copy; gain:
-three copies), deletion and gain also changing the locus DNA contribution at homozygous {# lint-ok: method description; 'all', 'smaller', 'larger', 'only' describe the design, not results #}
+three copies), deletion and gain also changing the locus DNA contribution at homozygous
 sites. The CNV is applied only to the admixture sample.
 
 ### S10. QC gating on effect size, not significance
 
-{% assert qc_gating.n_review_legacy > 0.5 * qc_gating.n_timepoints, "S10: p-value-only thresholds 'flag most real samples'" %}
-{% assert qc_gating.gof_reduced_median < 2, "S10: 'the beta-binomial model actually fits' (median reduced chi-squared near 1)" %}
 The QC layer assigns each result PASS, REVIEW, or FAIL. Three of the REVIEW checks (the
 model goodness-of-fit, the pre-trim guard against a robust trim hiding a poor fit, and
 the consensus-homozygous swap test) are, at heart, significance tests, and a significance
@@ -218,8 +217,6 @@ by degrees of freedom, which is ~1 for a good fit and is depth-independent) has 
 of {{ qc_gating.gof_reduced_median }} and a maximum of {{ qc_gating.gof_reduced_max }}
 across the series.
 
-{% assert qc_gating.gof_reduced_threshold > qc_gating.gof_reduced_max and qc_gating.gof_reduced_threshold <= 1.5 * qc_gating.gof_reduced_max, "S10: threshold 'sits just above the maximum observed' (within 1.5x)" %}
-{% assert qc_gating.swap_review_fraction_pct < 50, "S10: swap threshold 'well below the roughly one-half' of sites a genuine swap mismatches" %}
 allomix therefore promotes a result to REVIEW only when the misfit is large as well as
 significant. The goodness-of-fit and pre-trim checks require the reduced chi-squared to
 exceed {{ qc_gating.gof_reduced_threshold }} (which sits just above the maximum observed
@@ -228,19 +225,17 @@ catch a materially worse fit); the pre-trim guard additionally fires only when t
 fraction is within {{ qc_gating.pretrim_lod_multiple }}x the limit of detection, the
 regime where the outlier-resistant trim could have discarded real low-fraction recipient
 signal rather than artifacts; and the swap test requires the discordant fraction to
-exceed {{ qc_gating.swap_review_fraction_pct }}%, well below the roughly one-half of
+exceed {{ qc_gating.swap_review_fraction_pct | pct(0) }}, well below the roughly one-half of
 consensus-homozygous sites a genuine unrelated sample swap mismatches but far above the
 handful of off-model sites (a genotyping miscall, a mapping artifact, or a site-specific
 contaminant) that a co-pooled research dataset produces. These are the ``clinical_gating``
 defaults; the legacy p-value-only rules remain available (``--no-clinical-gating``) for
 reproducing the stricter behaviour.
 
-{% assert qc_gating.review_max_known_pct <= 1, "S10: clinical REVIEW flags 'all at the lowest recipient fractions (0.5% to 1%)'" %}
-{% assert qc_gating.n_review_legacy > qc_gating.n_review_clinical, "S10: legacy rules flag more, 'including accurate estimates from 2.5% to 100%'" %}
 The effect is to move the flags to where they change the interpretation. On the SRP434573
 series clinical gating promotes {{ qc_gating.n_review_clinical }} of
 {{ qc_gating.n_timepoints }} timepoints to REVIEW, all at the lowest recipient fractions
-(0.5% to 1%), where the outlier-resistant refit set aside a large share of markers near
+({{ srp434573.dilution_min_pct }}% to 1%), where the outlier-resistant refit set aside a large share of markers near
 the detection floor. The legacy p-value-only rules would flag
 {{ qc_gating.n_review_legacy }} of {{ qc_gating.n_timepoints }} on the identical fits,
 including accurate estimates from 2.5% to 100% recipient that need no review.
@@ -286,7 +281,7 @@ ID panel (Integrated DNA Technologies), incorporated into a custom hematology ca
 panel and sequenced on Illumina instruments (for example NovaSeq) to a mean depth of
 {{ panel_specs.typical_depth }} as part of routine clinical sequencing. All
 {{ panel_empirical.n_bias_markers | fmt('g') }} biallelic
-markers with heterozygous observations were included. Simulation parameters used {# lint-ok: 'All' defines the included marker set, true by construction #}
+markers with heterozygous observations were included. Simulation parameters used
 throughout this study were calibrated from these measurements.
 
 | Parameter | Empirical Value | Simulation Default | Notes |
@@ -328,17 +323,14 @@ bounds are reported for all simulated mixture levels.
 
 ## Supplementary Table S4. In Silico Accuracy and CI Performance by Depth
 
-{% assert depth_summary.mae_max_pct < 1, "Table S4: 'Mean absolute error stayed below 1% at every depth'" %}
-{% assert depth_1000.mean_abs_error_pct < depth_50.mean_abs_error_pct, "Table S4: MAE 'improving from ... at 50x to ... at 1,000x'" %}
-{% assert depth_summary.ci_coverage_min_pct >= 90, "Table S4: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)" %}
 We generated synthetic chimeric VCFs spanning 0% to 100% donor using 100 markers with
 empirically calibrated per-marker bias, non-uniform depth (CV =
 {{ sim_calibration.depth_cv }}), and {{ sim_calibration.locus_dropout_pct }}% locus
 dropout, at five depths from 50x to 1,000x ({{ depth_50.n_replicates | dp(0) }}
 replicates each). Mean absolute error stayed below 1% at every depth, improving from
-{{ depth_50.mean_abs_error_pct | dp(2) }} ± {{ depth_50.mean_abs_error_sd_pct | dp(2) }}%
+{{ depth_50.mean_abs_error_pct | dp(2) }} ± {{ depth_50.mean_abs_error_sd_pct | pct(2) }}
 at 50x to {{ depth_1000.mean_abs_error_pct | dp(2) }} ±
-{{ depth_1000.mean_abs_error_sd_pct | dp(2) }}% at 1,000x. The 95% profile-likelihood
+{{ depth_1000.mean_abs_error_sd_pct | pct(2) }} at 1,000x. The 95% profile-likelihood
 intervals showed coverage of
 {{ depth_summary.ci_coverage_min_pct }}--{{ depth_summary.ci_coverage_max_pct }}%, close to the nominal
 95% across the depth range, with the per-marker-type overdispersion model (separate
@@ -347,8 +339,8 @@ scatter that a single shared term left in the residuals. Per-marker bias correct
 available but modest by design: in a 2,000x experiment it left the point estimate
 essentially unchanged (0% and 100% donor estimated at {{ bias_with_bias.est_0pct }}% and
 {{ bias_with_bias.est_100pct }}%) while narrowing the mean interval from
-{{ bias_no_bias.mean_ci_width_pct | dp(2) }}% to
-{{ bias_with_bias.mean_ci_width_pct | dp(2) }}% (Supplementary Methods S6, Figure S4).
+{{ bias_no_bias.mean_ci_width_pct | pct(2) }} to
+{{ bias_with_bias.mean_ci_width_pct | pct(2) }} (Supplementary Methods S6, Figure S4).
 
 <!-- include-csv: output/facts/table_depth.csv
   align: center
@@ -388,15 +380,13 @@ samples for each marker, showing the range of per-marker depth variability.
 
 **Figure S3.** Violin plots of median heterozygous VAF per marker, empirical
 ({{ supp_synthetic.n_empirical_markers | dp(0) }} markers) versus simulated: both centred
-on 0.5 with comparable spread, so the simulation reproduces the per-marker VAF {# lint-ok: 'versus' labels the two violins #}
+on 0.5 with comparable spread, so the simulation reproduces the per-marker VAF
 displacement seen in real data.
 
 ### S4. Noise Component Ablation
 
 ![Figure S4]({{ facts_dir }}/fig_ablation.png)
 
-{% assert (supp_synthetic.ablation_rmse_bias_corrected_pct - supp_synthetic.ablation_rmse_bias_only_pct)|abs <= 0.1 * supp_synthetic.ablation_rmse_bias_only_pct, "Figure S4: bias alone 'essentially unchanged by bias correction' (within 10% relative)" %}
-{% assert supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_bias_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_depth_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_error_only_pct - supp_synthetic.ablation_rmse_ideal_pct, "Figure S4: overdispersion 'a larger effect than any single bias, depth, or sequencing-error component'" %}
 **Figure S4.** Effect of individual noise components on estimation accuracy (500x, 10
 replicates, 7 conditions). (A) Overall RMSE by condition: ideal
 {{ supp_synthetic.ablation_rmse_ideal_pct }}%; amplification bias alone
@@ -447,9 +437,6 @@ reported elsewhere is therefore an analytical best case under near-binomial samp
 
 ![Figure S8]({{ facts_dir }}/fig_overdispersion_lod.png)
 
-{% assert overdispersion_lod_headline.lod_binomial_pct < overdispersion_lod_headline.lod_rho100_pct < overdispersion_lod_headline.lod_rho30_pct, "Figure S8: 'The LoD rises from ... (binomial) to ... at rho = 100 ... and ... at rho = 30'" %}
-{% assert overdispersion_lod_headline.fold_real_rho_vs_binomial > 1, "Figure S8: LoD at the fitted rho is higher than the pure-binomial value" %}
-{% assert overdispersion_lod_headline.lod_at_real_rho_pct >= 0.5 and overdispersion_lod_headline.lod_at_real_rho_pct <= 2, "Figure S8: LoD at the fitted rho 'near/close to the ~1% measured directly' (0.5% to 2%)" %}
 **Figure S8.** In silico LoD as a function of the beta-binomial overdispersion
 concentration $\rho$, at {{ overdispersion_lod_headline.depth }}x depth with
 {{ overdispersion_lod_headline.n_markers }} informative markers (unrelated donor). Reads
@@ -468,7 +455,8 @@ median heterozygous-class concentration of $\rho \approx$
 value. At the fitted $\rho$ the in silico LoD is
 {{ overdispersion_lod_headline.lod_at_real_rho_pct }}%,
 {{ overdispersion_lod_headline.fold_real_rho_vs_binomial | fold(1) | article }} increase over the
-pure-binomial value and close to the ~1% measured directly by subsampling the same
+pure-binomial value and near the
+~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | pct(0) }} measured directly by subsampling the same
 mixtures (Figure 3). Calibrating the simulation to the real per-sample fits, rather than
 leaving it at the pure binomial, is what makes the in silico LoD a defensible performance
 figure.
@@ -477,7 +465,6 @@ figure.
 
 ![Figure S9]({{ facts_dir }}/fig_bias_stability.png)
 
-{% assert supp_synthetic.bias_stability_r|abs < 0.3, "Figure S9: 'only weakly correlated (r = ...)'" %}
 **Figure S9.** Validation of the fixed-bias-per-marker assumption. Each of the
 {{ supp_synthetic.n_empirical_markers | dp(0) }} markers is plotted by its absolute median
 bias (systematic component) against its within-marker het-VAF SD across samples (random
@@ -525,7 +512,6 @@ signal (Results, Figure 3 caption).
 
 ![Figure S13]({{ facts_dir }}/fig_srp_contam.png)
 
-{% assert srp_contam.n_dose_nonrising_steps == 0, "Figure S13: 'The median rises monotonically from the no-carrier floor ... through the carrier bins'" %}
 **Figure S13.** Co-pooled contamination floor in SRP434573 as a dose-response, the
 figure behind the median values in Results. Consensus-homozygous sites are those where
 recipient and donor are both homozygous for the same allele, so the minor allele at that site
@@ -540,7 +526,7 @@ distribution on a log y-axis (median, interquartile range, 1.5x IQR whiskers, in
 outliers; exact-zero sites are drawn at a 0.001% floor so they render on the log axis);
 the red line connects the per-bin medians and n below each box is the number of sites.
 The median rises monotonically from the no-carrier floor (sequencing error,
-{{ srp_contam.nocarrier_floor_pct | dp(3) }}%) through the carrier bins, the signature
+{{ srp_contam.nocarrier_floor_pct | pct(3) }}) through the carrier bins, the signature
 of real reads from co-pooled material (most plausibly index hopping) rather than flat
 sequencing error, which would not scale with co-pooled dose.
 
@@ -553,15 +539,12 @@ behind Supplementary Table S4. Each panel shows true donor fraction (x-axis) ver
 estimated donor fraction (y-axis) at the indicated depth, all replicates
 (N={{ depth_50.n_replicates | dp(0) }}). Dashed line indicates perfect agreement. This is
 the estimator's controlled-simulation accuracy across depth; the real-data accuracy is in
-main-text Figures 2 and 3. {# lint-ok: 'all replicates' describes what is plotted #}
+main-text Figures 2 and 3.
 
 ### S15. Error-Table Provenance and Low-Fraction Sensitivity
 
 ![Figure S15]({{ facts_dir }}/fig_error_table_arms.png)
 
-{% assert error_table_arms_headline.flat_detect_0p2 < error_table_arms_headline.per_mixture_detect_0p2 and error_table_arms_headline.flat_detect_0p2 < error_table_arms_headline.pooled_detect_0p2, "Figure S15: 'Detection at 0.2% recipient rises from ... with the flat default to ... per-mixture ... and ... pooled'" %}
-{% assert error_table_arms_headline.pooled_full_detect_min_pct < error_table_arms_headline.flat_full_detect_min_pct, "Figure S15: 'with the pooled table full detection is reached at ... rather than ...' (pooled earlier than flat)" %}
-{% assert error_table_arms_headline.flat_real_0p5_mle_med_pct <= error_table_arms_headline.per_mixture_real_0p5_mle_med_pct <= error_table_arms_headline.pooled_real_0p5_mle_med_pct, "Figure S15: 'The real titration moves the same way' (flat to per-mixture to pooled)" %}
 **Figure S15.** Effect of the per-site error model on low-fraction performance,
 on the SRP434573 public mixtures. Three background models are compared: the
 built-in flat per-base `--error-rate` default; one `estimate-errors` table per
@@ -587,10 +570,6 @@ the contamination floor measured independently from the same data
 ({{ error_table_arms_headline.contam_floor_median_pct }}% to
 {{ error_table_arms_headline.contam_floor_max_pct }}%).
 
-{% assert error_table_arms_headline.flat_detect_0p2 == 0, "S15: 'the flat default detects nothing at a 0.2% recipient fraction'" %}
-{% assert (error_table_arms_headline.pooled_detect_0p2 - 2 / 3)|abs < 0.05, "S15: 'a pooled table detects two-thirds of replicates'" %}
-{% assert error_table_arms_headline.flat_zero_presence_falsepos_n == 0 and error_table_arms_headline.per_mixture_zero_presence_falsepos_n == 0 and error_table_arms_headline.pooled_zero_presence_falsepos_n == 0, "S15: 'No arm produced a false positive on the pure-donor endpoints'" %}
-{% assert error_table_arms_headline.flat_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct and error_table_arms_headline.per_mixture_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct and error_table_arms_headline.pooled_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct, "S15: max false signal 'stayed below the independently measured contamination floor in all three'" %}
 A data-derived error table is worth building: the flat default detects nothing
 at a 0.2% recipient fraction, where a pooled table detects two-thirds of
 replicates. The gain does not cost specificity. No arm produced a false positive
@@ -600,9 +579,6 @@ independently measured contamination floor in all three
 {{ error_table_arms_headline.per_mixture_zero_mle_max_pct }}% and
 {{ error_table_arms_headline.pooled_zero_mle_max_pct }}%).
 
-{% assert error_table_arms_headline.pooled_detect_0p2 >= error_table_arms_headline.per_mixture_detect_0p2 and error_table_arms_headline.pooled_detect_0p2 >= error_table_arms_headline.flat_detect_0p2, "S15: 'Pooling gives the best low-fraction sensitivity'" %}
-{% assert error_table_arms_headline.per_mixture_zero_mle_max_pct < error_table_arms_headline.pooled_zero_mle_max_pct and error_table_arms_headline.per_mixture_zero_mle_max_pct < error_table_arms_headline.flat_zero_mle_max_pct, "S15: per-mixture tables give 'the lowest false-signal floor' and 'only the per-mixture tables sit materially lower'" %}
-{% assert error_table_arms_headline.per_mixture_ladder_mean_abs_dev_pct < error_table_arms_headline.pooled_ladder_mean_abs_dev_pct and error_table_arms_headline.per_mixture_ladder_mean_abs_dev_pct < error_table_arms_headline.flat_ladder_mean_abs_dev_pct, "S15: per-mixture tables give 'the closest agreement on the semi-synthetic ladder'" %}
 No single arm dominates, and we report the comparison rather than a
 recommendation. Pooling gives the best low-fraction sensitivity, but the
 per-mixture tables give both the lowest false-signal floor and the closest

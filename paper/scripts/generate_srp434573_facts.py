@@ -24,6 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
+from facts_io import write_fact_csv  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 OUT = Path("output")
@@ -433,10 +434,7 @@ def main() -> int:
     facts.update(contamination_facts(two, two_base))
     facts.update(zero_host_facts(two))
     path = FACTS_DIR / "srp434573.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
-        writer.writeheader()
-        writer.writerow(facts)
+    write_fact_csv(path, facts)
     print(f"Wrote {path}", file=sys.stderr)
 
     make_figure(two, three, FACTS_DIR / "fig_srp434573.png")

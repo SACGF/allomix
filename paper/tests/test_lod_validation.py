@@ -178,6 +178,8 @@ def test_summarise_cell_clamps_all_detected_pair() -> None:
         {"lod": 0.002, "lob": 0.0007, "mean_n_informative": 122, "note": ""},
     ]
     s = lod.summarise_cell("unrelated", 2000, 200, pairs, n_seq_reps=30)
-    # median of [0.001 (clamped floor), 0.002] = 0.0015 -> 0.15%
-    assert s["lod_pct"] == pytest.approx(0.15)
+    # median of [clamped floor, 0.002]; the floor is the smallest probed fraction,
+    # which is 0.1% on the full grid (-> 0.15%) and larger on the quick grid.
+    expected_pct = (lod.MIN_POS_FRACTION + 0.002) / 2 * 100
+    assert s["lod_pct"] == pytest.approx(expected_pct)
     assert s["n_pairs_used"] == 2

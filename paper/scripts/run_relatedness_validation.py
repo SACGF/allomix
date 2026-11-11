@@ -24,6 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+from facts_io import write_fact_csv  # noqa: E402
 from paper_seed import derive_seed  # noqa: E402
 
 from allomix.estimate.chimerism import estimate_single_donor_bb  # noqa: E402
@@ -288,27 +289,20 @@ def main() -> int:
         print(f"  Mean RMSE: {mean_rmse:.2f}%", file=sys.stderr)
 
         csv_path = FACTS_DIR / f"rel_{rel.replace('-', '_')}.csv"
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=[
-                "relatedness", "n_replicates", "n_markers",
-                "mean_informative", "min_informative", "max_informative",
-                "mean_mae_pct", "mean_rmse_pct",
-            ])
-            w.writeheader()
-            w.writerow({
-                "relatedness": rel,
-                "n_replicates": N_REPLICATES,
-                "n_markers": N_MARKERS,
-                "mean_informative": round(mean_inf, 1),
-                "min_informative": min(n_infs),
-                "max_informative": max(n_infs),
-                "mean_mae_pct": round(mean_mae, 2),
-                "mean_rmse_pct": round(mean_rmse, 2),
-            })
+        write_fact_csv(csv_path, {
+            "relatedness": rel,
+            "n_replicates": N_REPLICATES,
+            "n_markers": N_MARKERS,
+            "mean_informative": round(mean_inf, 1),
+            "min_informative": min(n_infs),
+            "max_informative": max(n_infs),
+            "mean_mae_pct": round(mean_mae, 2),
+            "mean_rmse_pct": round(mean_rmse, 2),
+        })
 
     summary_path = outdir / "relatedness_summary.tsv"
     with open(summary_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f, delimiter="\t")
+        w = csv.writer(f, delimiter="\t", lineterminator="\n")
         w.writerow(["relatedness", "mean_informative", "min", "max", "mean_mae_pct", "mean_rmse_pct"])
         for rel in RELATEDNESS_LEVELS:
             reps = all_results[rel]

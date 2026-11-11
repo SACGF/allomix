@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cyvcf2  # noqa: E402
+from facts_io import write_fact_csv  # noqa: E402
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
 from srp434573_common import SRP434573_COMMITTED_GENOTYPES  # noqa: E402
 
@@ -347,7 +348,7 @@ def _plot(rows: list[dict], args: argparse.Namespace, real_fit: dict) -> None:
 
 def _write_facts(rows: list[dict], args: argparse.Namespace) -> None:
     with args.facts.open("w", encoding="utf-8", newline="") as fh:
-        w = csv.writer(fh)
+        w = csv.writer(fh, lineterminator="\n")
         w.writerow(
             [
                 "depth",
@@ -391,40 +392,23 @@ def _write_headline(rows: list[dict], args: argparse.Namespace, real_fit: dict) 
     hom = real_fit["rho_hom_median"]
     real_ok = math.isfinite(fitted)
     lod_real = lod_at(fitted) if real_ok else float("nan")
-    with args.headline.open("w", encoding="utf-8", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(
-            [
-                "depth",
-                "n_markers",
-                "lod_binomial_pct",
-                "lod_rho1000_pct",
-                "lod_rho100_pct",
-                "lod_rho30_pct",
-                "fold_rho100_vs_binomial",
-                "real_rho_het_median",
-                "real_rho_hom_median",
-                "n_real_mixed_samples",
-                "lod_at_real_rho_pct",
-                "fold_real_rho_vs_binomial",
-            ]
-        )
-        w.writerow(
-            [
-                args.depth,
-                args.markers,
-                f"{binom:.3f}",
-                f"{lod_at(1000):.3f}",
-                f"{lod100:.3f}",
-                f"{lod_at(30):.3f}",
-                f"{lod100 / binom:.1f}",
-                f"{fitted:.0f}" if real_ok else "nan",
-                f"{hom:.0f}" if math.isfinite(hom) else "nan",
-                real_fit["n_samples"],
-                f"{lod_real:.3f}" if real_ok else "nan",
-                f"{lod_real / binom:.1f}" if real_ok else "nan",
-            ]
-        )
+    write_fact_csv(
+        args.headline,
+        {
+            "depth": args.depth,
+            "n_markers": args.markers,
+            "lod_binomial_pct": f"{binom:.3f}",
+            "lod_rho1000_pct": f"{lod_at(1000):.3f}",
+            "lod_rho100_pct": f"{lod100:.3f}",
+            "lod_rho30_pct": f"{lod_at(30):.3f}",
+            "fold_rho100_vs_binomial": f"{lod100 / binom:.1f}",
+            "real_rho_het_median": f"{fitted:.0f}" if real_ok else "nan",
+            "real_rho_hom_median": f"{hom:.0f}" if math.isfinite(hom) else "nan",
+            "n_real_mixed_samples": real_fit["n_samples"],
+            "lod_at_real_rho_pct": f"{lod_real:.3f}" if real_ok else "nan",
+            "fold_real_rho_vs_binomial": f"{lod_real / binom:.1f}" if real_ok else "nan",
+        },
+    )
     print(f"Wrote {args.headline}")
 
 

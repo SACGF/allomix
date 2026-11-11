@@ -343,8 +343,8 @@ subsampling the SRP434573 mixtures (Figure 3, above) rather than this analytical
 **Table 1.** NGS-based chimerism monitoring tools. LoD = limit of detection. Commercial
 specifications are from published evaluations.[@Blouin2024comparison;
 @Pedini2021devyser; @Kakodkar2023alloseq; @Qama2026devyser] *The AlloSeq HCT figure is
-the vendor-stated LoD; the analytical sensitivity reported in independent evaluation
-varies.[@Kakodkar2023alloseq] The allomix cell lists the LoD by evidence class, from most {# lint-ok: 'most/least real' orders evidence classes, not values #}
+the detection limit Kakodkar et al. set in their laboratory validation, the lowest
+fraction they measured reproducibly (they also ran mixtures down to 0.05%).[@Kakodkar2023alloseq] The allomix cell lists the LoD by evidence class, from most {# lint-ok: 'most/least real' orders evidence classes, not values #}
 to least real: ~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | pct(0) }} on
 real titrated mixtures (SRP434573) at the reference operating point (100 markers, 1,000x
 mean depth), an EP17-A2 LoD; ≤0.5% on the same mixtures subsampled to the largest panel

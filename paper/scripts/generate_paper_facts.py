@@ -25,7 +25,6 @@ from paper_seed import derive_seed  # noqa: E402
 
 FACTS_DIR = Path("output/facts")
 
-STANDARD_FRACTIONS = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.0]
 BIAS_FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
 
 
@@ -77,57 +76,6 @@ def main():
 
     host_vcf = "tests/test_data/host.vcf"
     donor_vcf = "tests/test_data/donor.vcf"
-
-    # Standard validation (no bias correction)
-    print("Running standard validation...")
-    std_rows = []
-    for frac in STANDARD_FRACTIONS:
-        name = fraction_to_name(frac)
-        vcf_path = f"tests/test_data/{name}.vcf"
-        result, _genotypes = run_sample(host_vcf, donor_vcf, vcf_path)
-        error = result.donor_fraction - frac
-        ci_covers = result.donor_fraction_ci[0] <= frac <= result.donor_fraction_ci[1]
-        ci_width = result.donor_fraction_ci[1] - result.donor_fraction_ci[0]
-        std_rows.append({
-            "sample_name": name,
-            "true_frac": frac,
-            "est_frac": result.donor_fraction,
-            "error": error,
-            "ci_lo": result.donor_fraction_ci[0],
-            "ci_hi": result.donor_fraction_ci[1],
-            "ci_width": ci_width,
-            "ci_covers": ci_covers,
-            "n_informative": result.n_informative,
-        })
-
-    std_metrics = compute_metrics(std_rows)
-
-    write_fact("validation_summary", {
-        "n_samples": std_metrics["n_samples"],
-        "n_markers": 100,
-        "n_informative": 80,
-        "depth": 2000,
-        "bias_sd": 0.02,
-        "mean_signed_error_pct": round(std_metrics["mean_signed_error"] * 100, 4),
-        "mean_abs_error_pct": round(std_metrics["mean_abs_error"] * 100, 4),
-        "rmse_pct": round(std_metrics["rmse"] * 100, 4),
-        "max_abs_error_pct": round(std_metrics["max_abs_error"] * 100, 4),
-        "ci_coverage_pct": round(std_metrics["ci_coverage"] * 100, 1),
-        "mean_ci_width_pct": round(std_metrics["mean_ci_width"] * 100, 4),
-    })
-
-    for r in std_rows:
-        write_fact(f"val_{fraction_to_name(r['true_frac'])}", {
-            "true_pct": round(r["true_frac"] * 100, 1),
-            "est_pct": round(r["est_frac"] * 100, 2),
-            "error_pct": round(r["error"] * 100, 4),
-            "abs_error_pct": round(abs(r["error"]) * 100, 4),
-            "ci_lo_pct": round(r["ci_lo"] * 100, 2),
-            "ci_hi_pct": round(r["ci_hi"] * 100, 2),
-            "ci_width_pct": round(r["ci_width"] * 100, 2),
-            "ci_covers": r["ci_covers"],
-            "n_informative": r["n_informative"],
-        })
 
     # Bias correction comparison
     print("Running bias correction comparison...")

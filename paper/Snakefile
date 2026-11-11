@@ -231,18 +231,12 @@ PRESENCE_LOD_FACTS = [
 PRESENCE_LOD_FIGS = [f"{FACTS_DIR}/fig_presence_lod_curves.png"]
 
 PAPER_FACTS = [
-    f"{FACTS_DIR}/validation_summary.csv",
     f"{FACTS_DIR}/bias_no_bias.csv",
     f"{FACTS_DIR}/bias_with_bias.csv",
     f"{FACTS_DIR}/sim_calibration.csv",
     f"{FACTS_DIR}/panel_specs.csv",
     f"{FACTS_DIR}/panel_empirical.csv",
-] + expand(
-    f"{FACTS_DIR}/val_host_{{h}}_donor_{{d}}.csv",
-    zip,
-    h=[100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0],
-    d=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-)
+]
 
 ALL_FACTS = (
     DEPTH_FACTS

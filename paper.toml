@@ -64,9 +64,6 @@ allowed_numbers = [
 unused_ok = [
     # Rows that feed the include-csv tables (paper/scripts/build_tables.py).
     "depth_*.*", "rel_*.*", "multidonor.*",
-    # Early per-fraction validation run by generate_paper_facts.py; nothing reads
-    # it now (candidate for removal).
-    "val_host_*.*", "validation_summary.*",
     # Alternative error metrics beside the ones quoted.
     "bias_no_bias.*", "bias_with_bias.*",
     # Every arm x metric of error_table_arms.csv; the prose quotes a few.

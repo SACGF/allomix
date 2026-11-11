@@ -160,7 +160,7 @@ def compute_shared_rho_facts(syn: list[dict], syn3: list[dict],
     }
 
 
-def compute_facts(syn: list[dict], two: list[dict]) -> dict:
+def compute_facts(syn: list[dict]) -> dict:
     facts: dict[str, str] = {}
     fracs = sorted({_f(r["frac_pct"]) for r in syn if _f(r.get("frac_pct")) is not None})
     pairs = {r["mixture"] for r in syn}
@@ -204,17 +204,6 @@ def compute_facts(syn: list[dict], two: list[dict]) -> dict:
     off = ladder_offset(syn)
     facts["two_person_med_signed_off_pct"] = f"{off:+.3f}" if off is not None else ""
 
-    # Synthetic-vs-real cross-check at 0.5% (the anchored pairs have a real 0.5%).
-    real_mle, real_pres = real_05_medians(two)
-    syn_05 = [_f(r["mle_pct"]) for r in syn if _f(r["frac_pct"]) == 0.5]
-    syn_05 = [m for m in syn_05 if m is not None]
-    syn_05_med = _median(syn_05)
-    facts["real_05_mle_med_pct"] = f"{real_mle:.3f}" if real_mle is not None else ""
-    facts["syn_05_mle_med_pct"] = f"{syn_05_med:.3f}" if syn_05_med is not None else ""
-    if real_mle is not None and syn_05_med is not None:
-        facts["syn_minus_real_05_mle_pct"] = f"{syn_05_med - real_mle:.3f}"
-    else:
-        facts["syn_minus_real_05_mle_pct"] = ""
     return facts
 
 
@@ -406,7 +395,7 @@ def main() -> int:
     two = _read(TWO_TSV)
     syn3 = _read(SYN3_TSV)
 
-    facts = compute_facts(syn, two)
+    facts = compute_facts(syn)
     facts.update(compute_facts3(syn3))
     facts.update(compute_shared_rho_facts(syn, syn3, _read(SYN_SHARED_TSV), _read(SYN3_SHARED_TSV)))
     path = FACTS_DIR / "srp434573_synthetic.csv"

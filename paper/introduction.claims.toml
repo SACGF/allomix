@@ -1,0 +1,6 @@
+# Claims for introduction.md (vibepaper claims sidecar, see the
+# README's "Claims sidecars"). A quote must match one sentence.
+
+[[ok]]
+quote = "0.06--0.2% for single-donor detection, with NGS detecting residual recipient DNA in the majority of samples classified as full donor chimerism by STR.[@Qama2026devyser; @Blouin2024comparison] Head-to-head comparisons have shown that NGS yields substantially more informative markers than STR or quantitative PCR (qPCR) approaches, with corresponding improvements in sensitivity and dynamic range.[@ZhangA2024comparison] The clinical value of this improved sensitivity is supported by evidence that increasing mixed chimerism detected by sensitive methods is predictive of leukemia relapse.[@ZhangR2024relapse] However, all"
+reason = "claim words describe cited studies and commercial tools, not our facts"

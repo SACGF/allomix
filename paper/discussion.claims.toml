@@ -1,0 +1,29 @@
+# Claims for discussion.md (vibepaper claims sidecar, see the
+# README's "Claims sidecars"). A quote must match one sentence.
+
+[[ok]]
+quote = "0.9987 across the full chimerism range for ScisGo.[@Blouin2024comparison] Qama et al. validated the Devyser assay at a LoD of … % with high STR concordance (R^2 = 0.998), and found that NGS detected residual recipient DNA (>0.1%) in 85%"
+reason = "figures quoted from the cited studies"
+
+[[check]]
+assert = "overdispersion_lod_headline.fold_real_rho_vs_binomial > 1"
+message = "discussion: LoD at the fitted rho is higher than the pure-binomial value"
+
+[[claim]]
+quote = "value (rising to"
+assert = "overdispersion_lod_headline.lod_at_real_rho_pct is near(subsample_lod_headline.mle_lod_1000x_100markers_pct)"
+message = "discussion: LoD at the fitted rho 'near the ~...% measured directly on the same mixtures'"
+
+[[claim]]
+quote = "raises RMSE more than amplification bias, depth non-uniformity, or sequencing error individually"
+assert = "supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_bias_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_depth_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_error_only_pct - supp_synthetic.ablation_rmse_ideal_pct"
+message = "discussion: overdispersion 'raises RMSE more than amplification bias, depth non-uniformity, or sequencing error individually'"
+
+[[claim]]
+quote = "cover close to nominal"
+assert = "depth_summary.ci_coverage_min_pct >= 90"
+message = "discussion: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)"
+
+[[ok]]
+quote = "at 6.6 pg"
+reason = "physical constant (DNA mass of a diploid human genome)"

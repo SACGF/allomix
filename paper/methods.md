@@ -6,7 +6,7 @@ Supplementary Methods; this section describes each mechanism in operational term
 
 ### Overview
 
-allomix is implemented in Python (version 3.11 or later){# lint-ok(3.11): the supported Python floor, not a result #} and operates on standard
+allomix is implemented in Python (version 3.11 or later) and operates on standard
 Variant Call Format (VCF) files. The workflow has four stages: parse the VCFs and decide
 which markers are informative, estimate the donor fraction, optionally correct
 per-marker amplification bias, and run a panel of quality and sample-integrity checks.
@@ -194,7 +194,7 @@ First, a background-artifact term. Even a marker where one allele should be abse
 low background of that allele, chiefly from miscalled bases. allomix sets the expected
 level of these stray reads so it does not read pure background as real signal. The default
 is a fixed per-base rate (1%) spread across the three possible miscalls, giving a
-per-direction floor near 0.33%.{# lint-ok(0.33%): 1% divided over three miscalls, arithmetic on the default #} This default is a conservative fallback, not a number fit
+per-direction floor near 0.33%. This default is a conservative fallback, not a number fit
 from the run: where the data support it, each marker can instead use its own measured
 per-site, per-direction rate, estimated from homozygous calls in a training cohort
 (Per-site error calibration, below). The other co-pooled artifacts named above, index
@@ -452,7 +452,7 @@ the EP17-A2 LoD in two directions (recipient clone as the minor component, the r
 direction; and donor as the minor component against a CNV-bearing recipient
 background) at {{ cnv_loh_headline.ref_markers }} markers and
 {{ cnv_loh_headline.ref_depth }}x depth, with and without the one-sided
-outlier-resistant refit, sweeping burden over 0, 10%, 25%, and 50%. {# lint-ok: 'over' means across the swept burden values, not an approximation #}
+outlier-resistant refit, sweeping burden over 0, 10%, 25%, and 50%.
 
 ### Real-data validation dataset
 
@@ -484,7 +484,7 @@ provides, and it affects only the recipient/donor labelling, not the genotyping 
 recovered fractions.
 Reads were aligned to hg38 with bwa-mem;[@LiDurbin2009bwa; @Li2013bwamem] because every
 MIP amplicon shares start and end coordinates, duplicate marking was not applied (it
-would discard almost all coverage). Because the thesis publishes no panel coordinates, {# lint-ok: 'all'/'no' describe the MIP chemistry and the source thesis, not facts #}
+would discard almost all coverage). Because the thesis publishes no panel coordinates,
 panel intervals were reconstructed from the aligned reads as high-depth amplicon
 clusters ({{ srp434573.n_intervals | commas }} intervals:
 {{ srp434573.n_intervals_autosomal | commas }} autosomal and

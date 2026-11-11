@@ -1,0 +1,175 @@
+# Claims for supplementary.md (vibepaper claims sidecar, see the
+# README's "Claims sidecars"). A quote must match one sentence.
+
+[[ok]]
+quote = "all depths and panel sizes, panels strictly nested (a smaller panel is a bit-identical prefix of a larger one), and … sequencing replicates per cell varying only"
+reason = "method description; the words describe the design, not results"
+
+[[ok]]
+quote = "(MAF 0.2--0.5) and"
+reason = "MAF range 0.2--0.5 is a simulation setting"
+
+[[claim]]
+quote = "post-trim reduced chi-squared"
+assert = "qc_gating.n_review_legacy > 0.5 * qc_gating.n_timepoints"
+message = "S10: p-value-only thresholds 'flag most real samples'"
+
+[[claim]]
+quote = "the beta-binomial model actually fits"
+assert = "qc_gating.gof_reduced_median < 2"
+message = "S10: 'the beta-binomial model actually fits' (median reduced chi-squared near 1)"
+
+[[claim]]
+quote = "reduced chi-squared to exceed … (which sits just above the maximum observed on this well-behaved dataset, so it does not fire on model-consistent scatter but will catch a materially worse"
+assert = "qc_gating.gof_reduced_threshold > qc_gating.gof_reduced_max and qc_gating.gof_reduced_threshold <= 1.5 * qc_gating.gof_reduced_max"
+message = "S10: threshold 'sits just above the maximum observed' (within 1.5x)"
+
+[[claim]]
+quote = "well below the roughly one-half"
+assert = "qc_gating.swap_review_fraction_pct < 50"
+message = "S10: swap threshold 'well below the roughly one-half' of sites a genuine swap mismatches"
+
+[[ok]]
+quote = "only when the recipient fraction is within"
+reason = "describes what each gate is designed to catch"
+
+[[claim]]
+quote = "all at the lowest recipient fractions (... to 1%)"
+assert = "qc_gating.n_review_clinical == 0 or qc_gating.review_max_known_pct <= 1"
+message = "S10: clinical REVIEW flags 'all at the lowest recipient fractions (... to 1%)'"
+
+[[claim]]
+quote = "including accurate estimates from 2.5% to 100%"
+assert = "qc_gating.n_review_legacy > qc_gating.n_review_clinical"
+message = "S10: legacy rules flag more, 'including accurate estimates from 2.5% to 100%'"
+
+[[ok]]
+quote = "need no review."
+reason = "'need no review' is the interpretation, not a count"
+
+[[ok]]
+quote = "All … biallelic"
+reason = "defines the included marker set, true by construction"
+
+[[claim]]
+quote = "Mean absolute error stayed below 1% at every depth"
+assert = "depth_summary.mae_max_pct < 1"
+message = "Table S4: 'Mean absolute error stayed below 1% at every depth'"
+
+[[claim]]
+quote = "at every depth,"
+assert = "depth_1000.mean_abs_error_pct < depth_50.mean_abs_error_pct"
+message = "Table S4: MAE 'improving from ... at 50x to ... at 1,000x'"
+
+[[claim]]
+quote = "close to the nominal"
+assert = "depth_summary.ci_coverage_min_pct >= 90"
+message = "Table S4: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)"
+
+[[ok]]
+quote = "0.012), 5% N(0, 0.08))"
+reason = "simulator settings"
+
+[[ok]]
+quote = "markers) versus simulated:"
+reason = "'versus' labels the two violins"
+
+[[claim]]
+quote = "near zero and"
+assert = "supp_synthetic.ablation_rmse_bias_corrected_pct is essentially_unchanged(supp_synthetic.ablation_rmse_bias_only_pct)"
+message = "Figure S4: bias alone 'essentially unchanged by bias correction'"
+
+[[claim]]
+quote = "(all noise sources, bias corrected) gives … %, the no-overdispersion baseline; adding per-marker overdispersion (beta-binomial at fitted rho = 100) raises it to … %, a larger"
+assert = "supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_bias_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_depth_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_error_only_pct - supp_synthetic.ablation_rmse_ideal_pct"
+message = "Figure S4: overdispersion 'a larger effect than any single bias, depth, or sequencing-error component'"
+
+[[claim]]
+quote = "rises from … % under"
+assert = "overdispersion_lod_headline.lod_binomial_pct < overdispersion_lod_headline.lod_rho100_pct < overdispersion_lod_headline.lod_rho30_pct"
+message = "Figure S8: 'The LoD rises from ... (binomial) to ... at rho = 100 ... and ... at rho = 30'"
+
+[[check]]
+assert = "overdispersion_lod_headline.fold_real_rho_vs_binomial > 1"
+message = "Figure S8: LoD at the fitted rho is higher than the pure-binomial value"
+
+[[check]]
+assert = "overdispersion_lod_headline.lod_at_real_rho_pct is near(subsample_lod_headline.mle_lod_1000x_100markers_pct)"
+message = "Figure S8: LoD at the fitted rho 'near the ~...% measured directly by subsampling'"
+
+[[claim]]
+quote = "only weakly correlated (r = … ), so bias behaves as a stable per-marker offset rather than a quantity that grows"
+assert = "supp_synthetic.bias_stability_r|abs < 0.3"
+message = "Figure S9: 'only weakly correlated (r = ...)'"
+
+[[claim]]
+quote = "rises monotonically from the no-carrier floor (sequencing error, … ) through the carrier bins, the signature of real reads from co-pooled material (most"
+assert = "srp_contam.n_dose_nonrising_steps == 0 and srp_contam.nocarrier_floor_pct < srp_contam.dose_1carrier_pct"
+message = "Figure S13: 'The median rises monotonically from the no-carrier floor ... through the carrier bins'"
+
+[[ok]]
+quote = "no carrier (the no-carrier bin) and … have at least"
+reason = "define the carrier bins"
+
+[[ok]]
+quote = "a 0.001% floor"
+reason = "plotting floor"
+
+[[ok]]
+quote = "versus estimated donor fraction (y-axis) at the indicated depth, all"
+reason = "axis labels; 'all replicates' describes what is plotted"
+
+[[claim]]
+quote = "Detection at 0.2% recipient rises from ... with the flat default to ... per-mixture ... and ... pooled"
+assert = "error_table_arms_headline.flat_detect_0p2 < error_table_arms_headline.per_mixture_detect_0p2 and error_table_arms_headline.flat_detect_0p2 < error_table_arms_headline.pooled_detect_0p2"
+message = "Figure S15: 'Detection at 0.2% recipient rises from ... with the flat default to ... per-mixture ... and ... pooled'"
+
+[[claim]]
+quote = "with the pooled table full detection is reached at ... rather than ..."
+assert = "error_table_arms_headline.pooled_full_detect_min_pct < error_table_arms_headline.flat_full_detect_min_pct"
+message = "Figure S15: 'with the pooled table full detection is reached at ... rather than ...' (pooled earlier than flat)"
+
+[[claim]]
+quote = "The real titration moves the same way"
+assert = "error_table_arms_headline.flat_real_0p5_mle_med_pct <= error_table_arms_headline.per_mixture_real_0p5_mle_med_pct <= error_table_arms_headline.pooled_real_0p5_mle_med_pct"
+message = "Figure S15: 'The real titration moves the same way' (flat to per-mixture to pooled)"
+
+[[claim]]
+quote = "the flat default detects nothing at a 0.2% recipient fraction"
+assert = "error_table_arms_headline.flat_detect_0p2 == 0"
+message = "S15: 'the flat default detects nothing at a 0.2% recipient fraction'"
+
+[[claim]]
+quote = "a pooled table detects two-thirds of replicates"
+assert = "(error_table_arms_headline.pooled_detect_0p2 - 2 / 3)|abs < 0.05"
+message = "S15: 'a pooled table detects two-thirds of replicates'"
+
+[[claim]]
+quote = "No arm produced a false positive on the pure-donor endpoints"
+assert = "error_table_arms_headline.flat_zero_presence_falsepos_n == 0 and error_table_arms_headline.per_mixture_zero_presence_falsepos_n == 0 and error_table_arms_headline.pooled_zero_presence_falsepos_n == 0"
+message = "S15: 'No arm produced a false positive on the pure-donor endpoints'"
+
+[[claim]]
+quote = "No arm produced a false positive on the pure-donor endpoints, and the maximum false signal stayed below the independently measured contamination floor in all"
+assert = "error_table_arms_headline.flat_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct and error_table_arms_headline.per_mixture_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct and error_table_arms_headline.pooled_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct"
+message = "S15: max false signal 'stayed below the independently measured contamination floor in all three'"
+
+[[claim]]
+quote = "Pooling gives the best low-fraction sensitivity"
+assert = "error_table_arms_headline.pooled_detect_0p2 >= error_table_arms_headline.per_mixture_detect_0p2 and error_table_arms_headline.pooled_detect_0p2 >= error_table_arms_headline.flat_detect_0p2"
+message = "S15: 'Pooling gives the best low-fraction sensitivity'"
+
+[[claim]]
+quote = "the lowest false-signal floor"
+assert = "error_table_arms_headline.per_mixture_zero_mle_max_pct < error_table_arms_headline.pooled_zero_mle_max_pct and error_table_arms_headline.per_mixture_zero_mle_max_pct < error_table_arms_headline.flat_zero_mle_max_pct"
+message = "S15: per-mixture tables give 'the lowest false-signal floor' and 'only the per-mixture tables sit materially lower'"
+
+[[claim]]
+quote = "the lowest false-signal"
+assert = "error_table_arms_headline.per_mixture_ladder_mean_abs_dev_pct < error_table_arms_headline.pooled_ladder_mean_abs_dev_pct and error_table_arms_headline.per_mixture_ladder_mean_abs_dev_pct < error_table_arms_headline.flat_ladder_mean_abs_dev_pct"
+message = "S15: per-mixture tables give 'the closest agreement on the semi-synthetic ladder'"
+
+[[claim]]
+quote = "pooling sits close to the flat default, and only the per-mixture tables sit materially lower"
+assert = "(error_table_arms_headline.pooled_zero_mle_max_pct - error_table_arms_headline.flat_zero_mle_max_pct)|abs < error_table_arms_headline.flat_zero_mle_max_pct - error_table_arms_headline.per_mixture_zero_mle_max_pct"
+message = "S15: 'pooling sits close to the flat default, and only the per-mixture tables sit materially lower' (pooled is nearer flat than per-mixture is)"

@@ -28,7 +28,7 @@ from 24 to 202 markers.[@Aloisio2016amplicon; @Lee2019snp; @Vynck2021devyser;
 @Kakodkar2023alloseq; @ZhangA2024comparison; @Blouin2024comparison; @Qama2026devyser]
 Recent clinical validations have confirmed analytical sensitivity of 0.06--0.2% for
 single-donor detection, with NGS detecting residual recipient DNA in the majority of samples
-classified as full donor chimerism by STR.[@Qama2026devyser; @Blouin2024comparison] {# lint-ok: claim words describe cited studies and commercial tools, not our facts #}
+classified as full donor chimerism by STR.[@Qama2026devyser; @Blouin2024comparison]
 Head-to-head comparisons have shown that NGS yields substantially more informative
 markers than STR or quantitative PCR (qPCR) approaches, with corresponding improvements
 in sensitivity and dynamic range.[@ZhangA2024comparison] The clinical value of this

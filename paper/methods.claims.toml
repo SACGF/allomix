@@ -1,0 +1,18 @@
+# Claims for methods.md (vibepaper claims sidecar, see the
+# README's "Claims sidecars"). A quote must match one sentence.
+
+[[ok]]
+quote = "(version 3.11 or"
+reason = "the supported Python floor, not a result"
+
+[[ok]]
+quote = "floor near 0.33%."
+reason = "1% divided over three miscalls, arithmetic on the default"
+
+[[ok]]
+quote = "over 0, 10%, 25%,"
+reason = "'over' means across the swept burden values, not an approximation"
+
+[[ok]]
+quote = "publishes no panel"
+reason = "'all'/'no' describe the MIP chemistry and the source thesis, not facts"

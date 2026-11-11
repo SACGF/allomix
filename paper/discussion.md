@@ -17,7 +17,7 @@ for the Devyser system,[@Pedini2021devyser; @Vynck2021devyser] and Blouin et al.
 reported R^2 = 0.9987 across the full chimerism range for ScisGo.[@Blouin2024comparison]
 Qama et al. validated the Devyser assay at a LoD of {{ tool_landscape.devyser_lod }}% with high STR
 concordance (R^2 = 0.998), and found that NGS detected residual recipient DNA (>0.1%) in 85%
-of samples with >95% donor chimerism, against 5% by{# lint-ok(0.9987, 0.998, 85%): figures quoted from the cited studies #}
+of samples with >95% donor chimerism, against 5% by
 STR.[@Qama2026devyser] That gap suggests STR-based definitions of full donor chimerism
 can miss residual recipient hematopoiesis. The clinical significance of such low-level
 residual chimerism is debated, and detecting it is not the same as predicting relapse, but
@@ -31,9 +31,6 @@ boundary fractions.[@Vynck2023bias]
 
 ### Overdispersion is the real limiter at clinical depth
 
-{% assert overdispersion_lod_headline.fold_real_rho_vs_binomial > 1, "discussion: LoD at the fitted rho is higher than the pure-binomial value" %}
-{% assert overdispersion_lod_headline.lod_at_real_rho_pct is near(subsample_lod_headline.mle_lod_1000x_100markers_pct), "discussion: LoD at the fitted rho 'near the ~...% measured directly on the same mixtures'" %}
-{% assert supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_bias_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_depth_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_error_only_pct - supp_synthetic.ablation_rmse_ideal_pct, "discussion: overdispersion 'raises RMSE more than amplification bias, depth non-uniformity, or sequencing error individually'" %}
 The likelihood of Crysup and Woerner was evaluated at read depths of 2--100, where
 sampling noise dominates. Clinical targeted panels run at 500--2,000x or higher, where
 per-marker systematic effects (amplification efficiency, GC content, capture-probe
@@ -65,7 +62,6 @@ significant at depth (Supplementary Methods S10). For the same reason allomix do
 weight marker contributions by per-base or per-genotype quality (Supplementary Methods
 S11).
 
-{% assert depth_summary.ci_coverage_min_pct >= 90, "discussion: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)" %}
 Across the simulated depths the 95% intervals cover close to nominal
 ({{ depth_summary.ci_coverage_min_pct }}--{{ depth_summary.ci_coverage_max_pct }}%) with overdispersion
 fit separately for the donor-heterozygous and donor-homozygous marker classes (the default
@@ -274,7 +270,7 @@ sub-0.2% analytical figures in near-binomial simulation, and places each against
 commercial assays. The gap between the analytical figure and real-panel performance is
 expected to be driven largely by overdispersion (above), and wetlab validation will set
 the floor allomix actually delivers in routine use. A second floor is set by how much
-material enters the library: at 6.6 pg per diploid genome{# lint-ok(6.6): physical constant (DNA mass of a diploid human genome) #} the minor component contributes
+material enters the library: at 6.6 pg per diploid genome the minor component contributes
 roughly 150 genome equivalents per nanogram of input, and the Poisson error on that count
 is shared by every marker, so unlike read-sampling noise it falls with neither deeper
 sequencing nor more markers. Measuring a 0.1% fraction to within 10% relative error needs

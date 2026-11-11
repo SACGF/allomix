@@ -71,7 +71,10 @@ scripts = [
 paper = [
     "allomix[scripts]",
     "snakemake>=8.0",
-    "vibepaper>=0.12.0",  # per-claim-word lint, `vibepaper check`, [claims] tolerances, provenance (bundles pandoc)
+    # Pinned to vibepaper main for claims sidecars (paper/*.claims.toml), [limits]
+    # and typed frozen facts, which are not on PyPI yet. Switch back to a PyPI
+    # release ("vibepaper>=0.13") once one is out; also in .github/workflows/tests.yml.
+    "vibepaper @ git+https://github.com/SACGF/vibepaper@45053ae",  # bundles pandoc
 ]
 
 [project.scripts]

@@ -71,7 +71,9 @@ jobs:
       - name: Install vibepaper
         run: |
           python -m pip install --upgrade pip
-          pip install "vibepaper>=0.12.0"
+          # Pinned to vibepaper main for claims sidecars; switch back to a PyPI
+          # release ("vibepaper>=0.13") once one is out (also in pyproject.toml).
+          pip install "vibepaper @ git+https://github.com/SACGF/vibepaper@45053ae"
 
       - name: vibepaper lint
         run: vibepaper lint --numbers --check

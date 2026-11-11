@@ -12,8 +12,8 @@ they produce in `output/facts/`.
 
 ## Environment
 
-The paper dependencies (snakemake >=8) require Python 3.11+, even though the
-core tool runs on 3.10+. Pin the venv to Python 3.13. Do not use
+The paper dependencies (snakemake >=8) require Python 3.11+, the same floor
+as the core tool. Pin the venv to Python 3.13. Do not use
 `--python '>=3.11'`: it resolves to the newest available interpreter (e.g.
 3.14), and snakemake's transitive dependency `immutables==0.21` ships no wheel
 for 3.14, so it falls back to compiling a C extension from source and fails

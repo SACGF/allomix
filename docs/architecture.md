@@ -70,7 +70,7 @@ orchestrator, the CLI, the simulator); the four subpackages each own one stage:
 
 | Module | Owns | Key public surface |
 | --- | --- | --- |
-| `contigs.py` | Contig classification as a pure function of `(chrom, pos)`: autosome, chrX/chrY split into PAR and non-PAR, MT, or `OTHER` (alt, decoy, unplaced, random, HLA). Owns the PAR mask (exact union of GRCh37 and GRCh38, so no genome build is needed) and the name-only `is_sex_chrom` predicate. No allomix imports. | `ContigClass`, `classify_contig`, `is_sex_chrom`, `PAR_REGIONS` |
+| `contigs.py` | Contig classification as a pure function of `(chrom, pos)`: autosome, chrX/chrY split into PAR and non-PAR, MT, or `OTHER` (alt, decoy, unplaced, random, HLA). Owns the PAR mask (union of GRCh37 and GRCh38, so no genome build is needed) and the name-only `is_sex_chrom` predicate. No allomix imports. | `ContigClass`, `classify_contig`, `is_sex_chrom`, `PAR_REGIONS` |
 | `genotype.py` | VCF parsing (cyvcf2) and marker classification (the eight marker classes are described in [Marker types](marker_types.md)). The canonical home of `MarkerKey`/`marker_key`. `ContigPolicy` decides which contig classes may enter the informative set (`SEX_AWARE` default, routing non-PAR chrX on the host/donor sex pair; `AUTOSOMES_ONLY`; `ALL_PRIMARY` for diagnostic views); `admit_contig` is the pure routing table. | `parse_vcf`, `classify_markers`, `admit_contig`, `ContigPolicy`, `MarkerData`, `InformativeMarker`, `MarkerGenotypes`, `marker_type`, `MarkerKey` |
 | `sex_types.py` | The `Sex` and `PairStatus` enums, in a leaf module (no allomix imports) so `genotype` can route on the pair status while `qc.sex` infers it from `genotype.MarkerData`. Re-exported by `qc.sex`. | `Sex`, `PairStatus` |
 | `estimate/chimerism.py` | The donor-fraction MLE: beta-binomial likelihood, grid + Brent (single donor) / Nelder-Mead (multi), profile-likelihood CIs. | `estimate_single_donor_bb`, `estimate_multi_donor`, `ChimerismResult`, `MultiDonorResult`, `detection_limit` |
@@ -144,23 +144,17 @@ has a matching guard: `calibration.bias.estimate_biases` skips non-PAR chrX /
 chrY het observations from male samples, and `estimate_biases_both_het`
 trusts a non-PAR chrX both-het site only when every party is female.
 
-The PAR intervals are vendored constants: the exact union of the GRCh37 and
-GRCh38 NCBI values (overlapping intervals merged, so PAR1 is one interval and
-each PAR2 is two), 1-based inclusive, with the per-build source values in the
-module comment. Because PAR markers are always excluded, over-excluding the
-positions that are PAR in only one build (the PAR1 edges, and the GRCh37 chrX
-PAR2 interval, about 330 kb of non-PAR Xq28 in GRCh38 coordinates) is
-acceptable and removes any need to know the genome build. The transcription is
-guarded by
-`tests/test_contigs.py::test_constants_match_bioutils_union`, which compares the
-constants with `bioutils.par` (converting its interbase, 0-based half-open
-intervals to 1-based inclusive) and is skipped unless that module is
-importable. It lives on a fork branch (proposed upstream as biocommons/bioutils
-PR #88), not in any released bioutils; to run the check:
-
-```bash
-pip install "git+https://github.com/davmlaw/bioutils@add-par-regions"
-```
+The PAR mask is the union of the GRCh37 and GRCh38 NCBI intervals: a position
+is PAR if it is PAR in either build. `PAR_REGIONS` holds both builds' intervals
+from `bioutils.par` (bioutils >= 0.6.2) as it gives them, interbase, so a
+1-based `POS` is inside when `start_i < pos <= end_i`; the per-build values are
+in the module docstring. Because PAR markers are always excluded,
+over-excluding the positions that are PAR in only one build (the PAR1 edges,
+and the GRCh37 chrX PAR2 interval, about 330 kb of non-PAR Xq28 in GRCh38
+coordinates) is acceptable and removes any need to know the genome build.
+`tests/test_contigs.py` classifies both sides of every PAR edge, so a change in
+a bioutils release fails the tests rather than moving the mask silently. The
+bioutils data also carries T2T-CHM13v2.0, which is left out of the union.
 
 ## Diagnostics in `scripts/`
 

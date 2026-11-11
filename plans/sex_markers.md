@@ -515,7 +515,10 @@ Code, once the above is known:
    build and decide what goes in the text (decision 10).
 6. Full test suite run before the next release (only phase subsets were run).
 7. Remove the hidden `--use-sex-chroms` option in a later release.
-8. Replace the vendored PAR constants with `bioutils.par` once biocommons/bioutils
+8. ~~Replace the vendored PAR constants with `bioutils.par`.~~ Done (2026-10-15,
+   #52): `allomix.contigs` builds the union from bioutils 0.6.2; 3.14 dropped
+   from CI because bioutils caps requires-python at <3.14. Original note:
+   Replace the vendored PAR constants with `bioutils.par` once biocommons/bioutils
    PR #88 is merged **and released on PyPI** (check the PR and the bioutils
    release list). Not done earlier because a git-URL dependency blocks allomix
    PyPI uploads and the fork API may still change in review. The switch, when

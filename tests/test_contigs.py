@@ -3,7 +3,6 @@
 import pytest
 
 from allomix.contigs import (
-    PAR_REGIONS,
     ContigClass,
     classify_contig,
     is_sex_chrom,
@@ -11,69 +10,12 @@ from allomix.contigs import (
 )
 from allomix.genotype import is_sex_chrom as is_sex_chrom_reexport
 
-# Per-build source values, 1-based inclusive, as recorded in the module comment.
-GRCH37 = {
-    "X": {"PAR1": (60001, 2699520), "PAR2": (154931044, 155260560)},
-    "Y": {"PAR1": (10001, 2649520), "PAR2": (59034050, 59363566)},
-}
-GRCH38 = {
-    "X": {"PAR1": (10001, 2781479), "PAR2": (155701383, 156030895)},
-    "Y": {"PAR1": (10001, 2781479), "PAR2": (56887903, 57217415)},
-}
-
-
-def _union(*par_maps):
-    """Exact union of PAR intervals across builds: pool per chromosome, merge overlaps."""
-    out = {}
-    for chrom in sorted({c for m in par_maps for c in m}):
-        ivs = sorted(tuple(iv) for m in par_maps for iv in m.get(chrom, {}).values())
-        merged: list[tuple[int, int]] = []
-        for s_, e_ in ivs:
-            if merged and s_ <= merged[-1][1] + 1:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], e_))
-            else:
-                merged.append((s_, e_))
-        out[chrom] = tuple(merged)
-    return out
-
-
 # ---------------------------------------------------------------------------
 # PAR boundaries
 # ---------------------------------------------------------------------------
 
 
-class TestParConstants:
-    def test_union_of_recorded_builds(self):
-        """The module constants are exactly the union of the two builds' values."""
-        assert PAR_REGIONS == _union(GRCH37, GRCH38)
-
-    def test_shape(self):
-        """PAR1 merges into one interval; each PAR2 stays as two."""
-        assert PAR_REGIONS == {
-            "X": ((10001, 2781479), (154931044, 155260560), (155701383, 156030895)),
-            "Y": ((10001, 2781479), (56887903, 57217415), (59034050, 59363566)),
-        }
-        for ivs in PAR_REGIONS.values():
-            assert list(ivs) == sorted(ivs)
-            assert all(s_ <= e_ for s_, e_ in ivs)
-            assert all(ivs[i][1] < ivs[i + 1][0] for i in range(len(ivs) - 1))
-
-    def test_par1_overlaps_but_par2_does_not(self):
-        """Document the build relationship behind the constants' shape.
-
-        PAR1 overlaps between builds and merges to one interval. PAR2 does not
-        overlap on either chromosome (GRCh38 moved the chrX PAR2 by 770 kb and
-        the chrY PAR2 by 2.1 Mb), so each PAR2 is kept as two intervals and the
-        gap between them is non-PAR.
-        """
-
-        def overlaps(a, b):
-            return max(a[0], b[0]) <= min(a[1], b[1])
-
-        for chrom in ("X", "Y"):
-            assert overlaps(GRCH37[chrom]["PAR1"], GRCH38[chrom]["PAR1"]), chrom
-            assert not overlaps(GRCH37[chrom]["PAR2"], GRCH38[chrom]["PAR2"]), chrom
-
+class TestPar2Gap:
     @pytest.mark.parametrize(
         ("chrom", "pos", "expected"),
         [
@@ -231,28 +173,3 @@ class TestReexport:
     def test_genotype_reexports_is_sex_chrom(self):
         """Existing ``from allomix.genotype import is_sex_chrom`` keeps working."""
         assert is_sex_chrom_reexport is is_sex_chrom
-
-
-# ---------------------------------------------------------------------------
-# Cross-check against bioutils.par (fork davmlaw/bioutils@add-par-regions)
-# ---------------------------------------------------------------------------
-
-
-def test_constants_match_bioutils_union():
-    """Constants equal the union of the two NCBI builds as packaged in bioutils.par.
-
-    Skipped unless the fork is installed:
-    ``pip install "git+https://github.com/davmlaw/bioutils@add-par-regions"``.
-    """
-    bioutils_par = pytest.importorskip("bioutils.par")
-    grch37 = bioutils_par.get_par_map("GRCh37")
-    grch38 = bioutils_par.get_par_map("GRCh38")
-    # bioutils returns {chrom: {par_name: [start_i, end_i]}} in interbase
-    # (0-based, half-open) coordinates like bioutils.cytobands; allomix keeps
-    # the NCBI 1-based inclusive values, so convert as (start_i + 1, end_i).
-    assert bioutils_par.get_par_meta("GRCh38")["coordinates"].startswith("interbase")
-    as_tuples37 = {c: {n: (iv[0] + 1, iv[1]) for n, iv in r.items()} for c, r in grch37.items()}
-    as_tuples38 = {c: {n: (iv[0] + 1, iv[1]) for n, iv in r.items()} for c, r in grch38.items()}
-    assert as_tuples37 == GRCH37
-    assert as_tuples38 == GRCH38
-    assert PAR_REGIONS == _union(as_tuples37, as_tuples38)

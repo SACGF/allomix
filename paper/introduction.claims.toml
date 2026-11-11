@@ -1,6 +1,25 @@
 # Claims for introduction.md (vibepaper claims sidecar, see the
 # README's "Claims sidecars"). A quote must match one sentence.
+#
+# The citation after each full stop (".[@key] Next") keeps lint from splitting
+# this paragraph into sentences, so each cited claim gets its own [[ok]].
 
 [[ok]]
-quote = "0.06--0.2% for single-donor detection, with NGS detecting residual recipient DNA in the majority of samples classified as full donor chimerism by STR.[@Qama2026devyser; @Blouin2024comparison] Head-to-head comparisons have shown that NGS yields substantially more informative markers than STR or quantitative PCR (qPCR) approaches, with corresponding improvements in sensitivity and dynamic range.[@ZhangA2024comparison] The clinical value of this improved sensitivity is supported by evidence that increasing mixed chimerism detected by sensitive methods is predictive of leukemia relapse.[@ZhangR2024relapse] However, all"
-reason = "claim words describe cited studies and commercial tools, not our facts"
+quote = "analytical sensitivity of 0.06--0.2%"
+reason = "figures quoted from the cited clinical validations (Qama 2026, Blouin 2024)"
+
+[[ok]]
+quote = "in the majority of samples"
+reason = "finding of the cited clinical validations, not our facts"
+
+[[ok]]
+quote = "this improved sensitivity"
+reason = "refers to the cited head-to-head comparisons"
+
+[[ok]]
+quote = "increasing mixed chimerism"
+reason = "finding of the cited relapse study (Zhang 2024)"
+
+[[ok]]
+quote = "all currently available NGS chimerism tools"
+reason = "describes the commercial tool landscape; the marker counts are cited constants in frozen_facts.csv"

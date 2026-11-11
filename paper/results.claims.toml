@@ -7,7 +7,7 @@ assert = "srp434573.dilution_min_pct == srp434573.lowest_known_pct"
 message = "'At the lowest titration (0.5% recipient, ...)'"
 
 [[claim]]
-quote = "all three contributors close to"
+quote = ["ordered the two donors correctly", "the dominant genome is a donor (M2)"]
 assert = "srp434573.three_m2_est_pct > srp434573.three_m1_est_pct and srp434573.three_m2_est_pct > srp434573.three_f2_est_pct"
 message = "three-person mixture: 'ordered the two donors correctly' and 'the dominant genome is a donor (M2)'"
 
@@ -17,17 +17,29 @@ assert = "srp434573.three_f2_est_pct is close_to(srp434573.three_f2_known_pct) a
 message = "three-person mixture: 'resolved all three contributors close to their known fractions'"
 
 [[ok]]
-quote = "over the range at or above 2.5% (R^2 = … for estimated versus"
-reason = "'over the range' and 'estimated versus known' name the fit, not a comparison"
+quote = "error over the range at or above 2.5%"
+reason = "'over the range' names the range the error is computed on, not a comparison"
 
 [[ok]]
-quote = "with all …"
+quote = "for estimated versus known"
+reason = "'estimated versus known' names the regression axes"
+
+[[ok]]
+quote = "with all … of the 1% admixtures estimated between"
 reason = "the range is the min and max over those same admixtures, true by construction"
 
+[[ok]]
+quote = "most plausibly index hopping"
+reason = "hedge: the mechanism is attributed by the source study, not measured here"
+
 [[claim]]
-quote = "most plausibly index hopping on the patterned flowcell, which the source study independently identified in these data as index misassignment.[@Chu2024mipsnp] allomix establishes it from the data by a dose-response argument rather than assuming it: at consensus-homozygous sites (recipient and donor both homozygous for the same allele, so the minor allele cannot come from either contributor), the median per-site minor-allele fraction rises with the number of other co-pooled panel individuals carrying that allele, from … at the … sites with no"
+quote = ["the median per-site minor-allele fraction rises with the number of other co-pooled panel individuals carrying that allele", "That monotonic rise is the signature"]
 assert = "srp_contam.n_dose_nonrising_steps == 0 and srp_contam.nocarrier_floor_pct < srp_contam.dose_1carrier_pct < srp_contam.dose_5carrier_pct"
 message = "'the median per-site minor-allele fraction rises with the number of ... carriers' and 'That monotonic rise'"
+
+[[ok]]
+quote = "sites with no co-pooled carrier"
+reason = "defines the no-carrier bin"
 
 [[claim]]
 quote = "All ... of ... two-person mixtures gate in"
@@ -69,7 +81,7 @@ assert = "qc_gating.n_review_clinical < qc_gating.n_review_legacy"
 message = "'holds the flag count at ... rather than the ... a p-value-only rule raises'"
 
 [[ok]]
-quote = "(post-trim reduced chi-squared"
+quote = "post-trim reduced chi-squared median"
 reason = "the statistic's name"
 
 [[claim]]
@@ -78,7 +90,7 @@ assert = "srp434573.mle_lowest_mean_pct < srp434573.lowest_known_pct"
 message = "Figure 1 caption: the 0.5% points fall away 'downward rather than upward'"
 
 [[ok]]
-quote = ["fraction versus allomix", "known versus estimated"]
+quote = ["known recipient fraction versus allomix estimate", "known versus estimated component fractions"]
 reason = "axis labels"
 
 [[claim]]
@@ -92,26 +104,31 @@ assert = "srp434573_synthetic.two_person_med_signed_off_pct > 0"
 message = "semi-synthetic ladder: 'a small constant positive offset'"
 
 [[claim]]
-quote = "upward, reading only the donor-homozygous"
+quote = "it climbed from a detection rate of … at 0.1% recipient to full detection from … upward"
 assert = "srp434573_synthetic.detect_rate_0p1 < 1 and srp434573_synthetic.full_detect_min_pct > srp434573_synthetic.frac_min_pct"
 message = "semi-synthetic ladder: presence detection 'climbed' from below full at the lowest rung to full detection"
 
+[[ok]]
+quote = "upward, reading only the donor-homozygous markers"
+reason = "describes which markers the test reads (Methods)"
+
 [[claim]]
-quote = "scatter around truth"
+quote = "not scatter around truth but a near-constant positive offset"
 assert = "srp434573_synthetic.three_host_med_signed_err_pct > 0"
 message = "two-donor series: 'a near-constant positive offset'"
 
-[[check]]
+[[claim]]
+quote = "the median estimate is …, … overestimate"
 assert = "srp434573_synthetic.three_host_lowest_ratio > 1"
 message = "two-donor series: '-fold overestimate' at the lowest rung"
 
 [[claim]]
-quote = ["scatter around truth", "offset dominates at"]
+quote = "that offset dominates at the bottom"
 assert = "srp434573_synthetic.three_host_med_signed_err_pct > srp434573_synthetic.three_host_lowest_known_pct"
 message = "two-donor series: 'that offset dominates at the bottom' (offset larger than the lowest known recipient fraction)"
 
 [[claim]]
-quote = "reduces the offset"
+quote = "reduces the offset by a factor of"
 assert = "srp434573_synthetic.two_person_offset_reduction_fold > 1.5"
 message = "per-marker-type fit 'reduces the offset' relative to the shared fit"
 
@@ -126,19 +143,27 @@ assert = "srp434573_synthetic.three_host_shared_minus_default_err_pct is unchang
 message = "two-donor offset 'unchanged by the overdispersion model ... under both the shared and the per-marker-type fit'"
 
 [[claim]]
-quote = ["points under both", "most likely source, though this dataset has no"]
+quote = "Its size is comparable to the co-pooled contamination floor"
 assert = "srp434573_synthetic.three_host_med_signed_err_pct is comparable_to(srp434573.contam_floor_median_pct)"
 message = "two-donor offset 'comparable to the co-pooled contamination floor'"
 
+[[ok]]
+quote = "which is the most likely source"
+reason = "hedge: the attribution is stated as the likely cause, not established"
+
+[[ok]]
+quote = "this dataset has no contamination-free sample"
+reason = "describes the dataset design"
+
 [[claim]]
-quote = "donor chimerism rising"
+quote = ["donor chimerism rising", "allomix followed the decline"]
 assert = "srp434573_timeline.host_start_pct > srp434573_timeline.host_end_pct"
 message = "timeline: 'declining-chimerism series', 'dilution from ... down to ...', 'donor chimerism rising'"
 
 [[claim]]
-quote = "decline with … mean absolute error across the … rungs, tracking the known fraction down to 1% recipient before the estimate floors near the dataset's co-pooled contamination level (~ … ) at the 0.5% rung, and the residual-recipient presence test returned a positive call at all"
+quote = ["the 0.5% rung, and the residual-recipient presence test returned a positive call at all … timepoints", "the 0.5% rung; the residual-recipient presence test returned a positive call at all … timepoints"]
 assert = "srp434573_timeline.presence_n_detected == srp434573_timeline.n_timepoints"
-message = "timeline: presence test 'returned a positive call at all ... timepoints'"
+message = "timeline and Figure 2 caption: presence test 'returned a positive call at all ... timepoints'"
 
 [[claim]]
 quote = "mean absolute error below 1% from 50x to 1,000x"
@@ -146,17 +171,16 @@ assert = "depth_summary.mae_max_pct < 1"
 message = "timeline: 'mean absolute error below 1% from 50x to 1,000x'"
 
 [[claim]]
-quote = "rung; the residual-recipient presence test returned a positive call at all … timepoints."
-assert = "srp434573_timeline.presence_n_detected == srp434573_timeline.n_timepoints"
-message = "Figure 2 caption: presence test 'returned a positive call at all ... timepoints'"
-
-[[claim]]
 quote = "returned a positive call (p < 0.05) at all ... of ... two-person admixtures"
 assert = "srp434573.presence_n_detected == srp434573.presence_n_total"
 message = "presence test: 'returned a positive call (p < 0.05) at all ... of ... two-person admixtures'"
 
+[[ok]]
+quote = "the specificity at true zero"
+reason = "'true zero' is the 0%-recipient design of the pure-donor controls"
+
 [[claim]]
-quote = "zero: each pair's pure-donor sample, the donor's own DNA piled through the identical mpileup path, is a genuine 0%-recipient input, and the test correctly withheld a recipient-present call at all"
+quote = "the test correctly withheld a recipient-present call at all … of … pure-donor controls"
 assert = "srp434573.zero_host_presence_absent_n == srp434573.zero_host_n"
 message = "presence test: 'correctly withheld a recipient-present call at all ... of ... pure-donor controls'"
 
@@ -166,12 +190,12 @@ assert = "srp434573.zero_host_presence_max_pct == 0"
 message = "presence test: '(recipient-fraction estimate 0%)' at the pure-donor controls"
 
 [[claim]]
-quote = "rate rising from"
+quote = ["the presence test detects residual recipient below 0.5%", "its detection rate rising from 0.1% recipient to full"]
 assert = "srp434573_synthetic.detect_rate_0p1 < 1 and srp434573_synthetic.full_detect_min_pct > srp434573_synthetic.frac_min_pct and srp434573_synthetic.full_detect_min_pct < 0.5"
 message = "presence test: detects residual recipient 'below 0.5%', rising from 0.1% recipient to full"
 
 [[ok]]
-quote = "the lowest 0.5%"
+quote = "at the lowest 0.5% titration"
 reason = "the design's lowest titration level"
 
 [[claim]]
@@ -179,12 +203,21 @@ quote = "the LoD fell with both panel size and depth"
 assert = "subsample_lod_headline.mle_lod_250x_50markers_pct >= subsample_lod_headline.mle_lod_1000x_100markers_pct >= subsample_lod_headline.mle_lod_2000x_400markers_pct and subsample_lod_headline.presence_lod_250x_50markers_pct >= subsample_lod_headline.presence_lod_1000x_100markers_pct >= subsample_lod_headline.presence_lod_2000x_400markers_pct"
 message = "real-data LoD: 'the LoD fell with both panel size and depth'"
 
-[[check]]
+[[claim]]
+quote = "mixtures titrated only to 1% the median LoD"
 assert = "subsample_lod_headline.high_min_titration_pct == 1"
 message = "real-data LoD: 'mixtures titrated only to 1%'"
 
+[[ok]]
+quote = "(its lowest real titration)"
+reason = "names the series' lowest dilution, a property of the design"
+
+[[ok]]
+quote = "at the deepest, largest panel"
+reason = "names the grid's operating point"
+
 [[claim]]
-quote = "lowest real titration), and the dataset's co-pooled contamination floor (a median … at the deepest, largest"
+quote = "sits beneath it, so sub-1% cells are upper bounds"
 assert = "subsample_lod_headline.contamination_floor_pct < subsample_lod_headline.min_titration_pct"
 message = "real-data LoD: contamination floor 'sits beneath' the lowest titration"
 
@@ -194,12 +227,17 @@ assert = "subsample_lod_headline.high_min_titration_pct == 1"
 message = "Figure 3 caption: 'titrated only to 1% (top)'"
 
 [[claim]]
-quote = "rose to … (residual recipient … ), reflecting the smaller"
+quote = "the magnitude LoD rose to"
 assert = "lod_headline.sibling_lod_1000x_100markers_pct > lod_headline.unrelated_lod_1000x_100markers_pct and presence_lod_curve_headline.presence_sibling_lod_1000x_100markers_pct > presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct"
 message = "in silico LoD: 'with full-sibling donors ... the magnitude LoD rose to ...'"
 
 [[claim]]
-quote = "the smaller number"
+quote = "reflecting the smaller number of informative markers"
+assert = "rel_sibling.mean_informative < rel_unrelated.mean_informative"
+message = "in silico LoD: sibling LoD 'reflecting the smaller number of informative markers' (as in the relatedness sweep)"
+
+[[claim]]
+quote = "Both readouts improve monotonically with panel size and depth"
 assert = "presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct >= presence_lod_curve_headline.presence_unrelated_lod_2000x_400markers_pct and presence_lod_curve_headline.presence_sibling_lod_1000x_100markers_pct >= presence_lod_curve_headline.presence_sibling_lod_2000x_400markers_pct"
 message = "in silico LoD: 'Both readouts improve ... with panel size and depth' (spot check: 1,000x/100 markers vs 2,000x/400 markers)"
 
@@ -207,25 +245,34 @@ message = "in silico LoD: 'Both readouts improve ... with panel size and depth' 
 quote = "commercial NGS chimerism kits (0.06--0.5%)"
 reason = "vendor figures from Table 1's cited sources"
 
-[[ok]]
-quote = "mixtures); ~0.1-0.2% (analytical"
-reason = "range pinned by the analytical-floor assert after this table"
-
 [[claim]]
-quote = "(the lowest fraction"
+quote = "~0.1-0.2% (analytical floor)"
 assert = "lod_headline.unrelated_lod_1000x_100markers_pct >= 0.05 and lod_headline.unrelated_lod_1000x_100markers_pct < 0.25 and presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct >= 0.05 and presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct < 0.25"
 message = "Table 1: analytical floor '0.1% to 0.2%' (both in silico LoDs round to 0.1 or 0.2)"
 
-[[check]]
+[[ok]]
+quote = "~0.1-0.2% (analytical floor)"
+reason = "hand-typed range; the [[claim]] above pins it to the two in silico LoDs"
+
+[[claim]]
+quote = "≤0.5% on the same mixtures subsampled to the largest panel"
 assert = "subsample_lod_headline.mle_lod_2000x_400markers_pct <= subsample_lod_headline.min_titration_pct"
 message = "Table 1 caption: '<=0.5% on the same mixtures subsampled to the largest panel and deepest coverage'"
 
 [[ok]]
-quote = "lowest fraction they measured reproducibly (they also ran mixtures down to 0.05%).[@Kakodkar2023alloseq] The allomix cell lists the LoD by evidence class, from most to least real: ~ … on real titrated mixtures (SRP434573) at the reference operating point (100 markers, 1,000x mean depth), an EP17-A2 LoD; ≤0.5% on the same mixtures subsampled to the largest"
+quote = "the lowest fraction tracked, not an EP17-A2 LoD"
+reason = "defines the semi-synthetic figure"
+
+[[ok]]
+quote = ["the lowest fraction they measured reproducibly", "they also ran mixtures down to 0.05%"]
+reason = "describes the cited AlloSeq validation (Kakodkar 2023)"
+
+[[ok]]
+quote = "from most to least real"
 reason = "'most/least real' orders evidence classes, not values"
 
 [[ok]]
-quote = "pair under the"
+quote = "estimated per pair under the CLSI EP17-A2 workflow"
 reason = "'under' means following the EP17-A2 workflow"
 
 [[claim]]
@@ -254,13 +301,17 @@ assert = "multidonor.ci_coverage_d1_pct < 95 and multidonor.ci_coverage_d2_pct <
 message = "multi-donor: 'Per-donor CI coverage was lower' (below nominal 95%)"
 
 [[ok]]
-quote = "at least one"
+quote = "informative for at least one donor"
 reason = "'at least one donor' defines the count"
 
 [[claim]]
-quote = "across every CNV"
+quote = "CNVs had a modest effect"
 assert = "cnv_loh_headline.relapse_lod_max_pct <= 3 * cnv_loh_headline.relapse_lod_baseline_unrel_pct"
 message = "CNV: relapse direction 'CNVs had a modest effect' (worst cell within 3x of the unrelated baseline)"
+
+[[ok]]
+quote = "across every CNV type and burden"
+reason = "relapse_lod_max_pct is the maximum over every CNV type and burden, so 'every' holds by construction"
 
 [[claim]]
 quote = "returning the high-burden gain donor LoD from ... to ..."

@@ -2,7 +2,7 @@
 # README's "Claims sidecars"). A quote must match one sentence.
 
 [[claim]]
-quote = "all … mixtures with no"
+quote = "called residual recipient at all … mixtures"
 assert = "srp434573.presence_n_detected == srp434573.presence_n_total"
 message = "abstract: 'called residual recipient at all ... mixtures'"
 
@@ -12,7 +12,7 @@ assert = "srp434573.zero_host_presence_falsepos_n == 0"
 message = "abstract: 'no false positive in the ... pure-donor controls'"
 
 [[claim]]
-quote = "0.1% to 0.2%"
+quote = "place the estimator's floor near 0.1% to 0.2%"
 assert = "lod_headline.unrelated_lod_1000x_100markers_pct >= 0.05 and lod_headline.unrelated_lod_1000x_100markers_pct < 0.25 and presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct >= 0.05 and presence_lod_curve_headline.presence_unrelated_lod_1000x_100markers_pct < 0.25"
 message = "abstract: analytical floor '0.1% to 0.2%' (both in silico LoDs round to 0.1 or 0.2)"
 

@@ -2,15 +2,15 @@
 # README's "Claims sidecars"). A quote must match one sentence.
 
 [[ok]]
-quote = "all depths and panel sizes, panels strictly nested (a smaller panel is a bit-identical prefix of a larger one), and … sequencing replicates per cell varying only"
+quote = ["reused across all depths and panel sizes", "a smaller panel is a bit-identical prefix of a larger one", "sequencing replicates per cell varying only read-sampling noise"]
 reason = "method description; the words describe the design, not results"
 
 [[ok]]
-quote = "(MAF 0.2--0.5) and"
+quote = "have fixed genotypes (MAF 0.2--0.5)"
 reason = "MAF range 0.2--0.5 is a simulation setting"
 
 [[claim]]
-quote = "post-trim reduced chi-squared"
+quote = "p-value-only thresholds flag most real samples"
 assert = "qc_gating.n_review_legacy > 0.5 * qc_gating.n_timepoints"
 message = "S10: p-value-only thresholds 'flag most real samples'"
 
@@ -19,10 +19,22 @@ quote = "the beta-binomial model actually fits"
 assert = "qc_gating.gof_reduced_median < 2"
 message = "S10: 'the beta-binomial model actually fits' (median reduced chi-squared near 1)"
 
+[[ok]]
+quote = "the post-trim reduced chi-squared (chi-squared divided"
+reason = "the statistic's name"
+
+[[ok]]
+quote = "require the reduced chi-squared to exceed"
+reason = "the statistic's name"
+
 [[claim]]
-quote = "reduced chi-squared to exceed … (which sits just above the maximum observed on this well-behaved dataset, so it does not fire on model-consistent scatter but will catch a materially worse"
+quote = "which sits just above the maximum observed"
 assert = "qc_gating.gof_reduced_threshold > qc_gating.gof_reduced_max and qc_gating.gof_reduced_threshold <= 1.5 * qc_gating.gof_reduced_max"
 message = "S10: threshold 'sits just above the maximum observed' (within 1.5x)"
+
+[[ok]]
+quote = "will catch a materially worse fit"
+reason = "what the threshold is designed to catch, not a measured result"
 
 [[claim]]
 quote = "well below the roughly one-half"
@@ -30,7 +42,7 @@ assert = "qc_gating.swap_review_fraction_pct < 50"
 message = "S10: swap threshold 'well below the roughly one-half' of sites a genuine swap mismatches"
 
 [[ok]]
-quote = "only when the recipient fraction is within"
+quote = "fires only when the recipient fraction is within"
 reason = "describes what each gate is designed to catch"
 
 [[claim]]
@@ -44,11 +56,11 @@ assert = "qc_gating.n_review_legacy > qc_gating.n_review_clinical"
 message = "S10: legacy rules flag more, 'including accurate estimates from 2.5% to 100%'"
 
 [[ok]]
-quote = "need no review."
+quote = "recipient that need no review"
 reason = "'need no review' is the interpretation, not a count"
 
 [[ok]]
-quote = "All … biallelic"
+quote = "All … biallelic markers with heterozygous observations were included"
 reason = "defines the included marker set, true by construction"
 
 [[claim]]
@@ -57,66 +69,80 @@ assert = "depth_summary.mae_max_pct < 1"
 message = "Table S4: 'Mean absolute error stayed below 1% at every depth'"
 
 [[claim]]
-quote = "at every depth,"
+quote = "improving from … ± … at 50x to"
 assert = "depth_1000.mean_abs_error_pct < depth_50.mean_abs_error_pct"
 message = "Table S4: MAE 'improving from ... at 50x to ... at 1,000x'"
 
 [[claim]]
-quote = "close to the nominal"
+quote = "close to the nominal 95% across the depth range"
 assert = "depth_summary.ci_coverage_min_pct >= 90"
 message = "Table S4: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)"
 
 [[ok]]
-quote = "0.012), 5% N(0, 0.08))"
+quote = "(95% N(0, 0.012), 5% N(0, 0.08))"
 reason = "simulator settings"
 
 [[ok]]
-quote = "markers) versus simulated:"
+quote = "versus simulated: both centred"
 reason = "'versus' labels the two violins"
 
 [[claim]]
-quote = "near zero and"
+quote = "essentially unchanged by bias correction"
 assert = "supp_synthetic.ablation_rmse_bias_corrected_pct is essentially_unchanged(supp_synthetic.ablation_rmse_bias_only_pct)"
 message = "Figure S4: bias alone 'essentially unchanged by bias correction'"
 
+[[ok]]
+quote = "since injected biases average near zero"
+reason = "the simulated biases are drawn with mean zero (simulator design, S6)"
+
+[[ok]]
+quote = "(all noise sources, bias corrected)"
+reason = "names the ablation condition"
+
 [[claim]]
-quote = "(all noise sources, bias corrected) gives … %, the no-overdispersion baseline; adding per-marker overdispersion (beta-binomial at fitted rho = 100) raises it to … %, a larger"
+quote = "a larger effect than any single bias, depth, or sequencing-error component"
 assert = "supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_bias_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_depth_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_error_only_pct - supp_synthetic.ablation_rmse_ideal_pct"
 message = "Figure S4: overdispersion 'a larger effect than any single bias, depth, or sequencing-error component'"
 
 [[claim]]
-quote = "rises from … % under"
+quote = "The LoD rises from … % under pure-binomial sampling"
 assert = "overdispersion_lod_headline.lod_binomial_pct < overdispersion_lod_headline.lod_rho100_pct < overdispersion_lod_headline.lod_rho30_pct"
 message = "Figure S8: 'The LoD rises from ... (binomial) to ... at rho = 100 ... and ... at rho = 30'"
 
-[[check]]
+[[claim]]
+quote = "increase over the pure-binomial value"
 assert = "overdispersion_lod_headline.fold_real_rho_vs_binomial > 1"
 message = "Figure S8: LoD at the fitted rho is higher than the pure-binomial value"
 
-[[check]]
+[[claim]]
+quote = "near the ~… measured directly by subsampling"
 assert = "overdispersion_lod_headline.lod_at_real_rho_pct is near(subsample_lod_headline.mle_lod_1000x_100markers_pct)"
 message = "Figure S8: LoD at the fitted rho 'near the ~...% measured directly by subsampling'"
 
 [[claim]]
-quote = "only weakly correlated (r = … ), so bias behaves as a stable per-marker offset rather than a quantity that grows"
+quote = ["The two are only weakly correlated (r = … )", "rather than a quantity that grows with noise"]
 assert = "supp_synthetic.bias_stability_r|abs < 0.3"
 message = "Figure S9: 'only weakly correlated (r = ...)'"
 
 [[claim]]
-quote = "rises monotonically from the no-carrier floor (sequencing error, … ) through the carrier bins, the signature of real reads from co-pooled material (most"
+quote = "The median rises monotonically from the no-carrier floor"
 assert = "srp_contam.n_dose_nonrising_steps == 0 and srp_contam.nocarrier_floor_pct < srp_contam.dose_1carrier_pct"
 message = "Figure S13: 'The median rises monotonically from the no-carrier floor ... through the carrier bins'"
 
 [[ok]]
-quote = "no carrier (the no-carrier bin) and … have at least"
+quote = "(most plausibly index hopping)"
+reason = "hedge: the mechanism is attributed by the source study, not measured here"
+
+[[ok]]
+quote = ["sites have no carrier (the no-carrier bin)", "have at least one"]
 reason = "define the carrier bins"
 
 [[ok]]
-quote = "a 0.001% floor"
+quote = "exact-zero sites are drawn at a 0.001% floor"
 reason = "plotting floor"
 
 [[ok]]
-quote = "versus estimated donor fraction (y-axis) at the indicated depth, all"
+quote = ["true donor fraction (x-axis) versus estimated donor fraction (y-axis)", "at the indicated depth, all replicates"]
 reason = "axis labels; 'all replicates' describes what is plotted"
 
 [[claim]]
@@ -150,7 +176,7 @@ assert = "error_table_arms_headline.flat_zero_presence_falsepos_n == 0 and error
 message = "S15: 'No arm produced a false positive on the pure-donor endpoints'"
 
 [[claim]]
-quote = "No arm produced a false positive on the pure-donor endpoints, and the maximum false signal stayed below the independently measured contamination floor in all"
+quote = "the maximum false signal stayed below the independently measured contamination floor in all three"
 assert = "error_table_arms_headline.flat_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct and error_table_arms_headline.per_mixture_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct and error_table_arms_headline.pooled_zero_mle_max_pct < error_table_arms_headline.contam_floor_median_pct"
 message = "S15: max false signal 'stayed below the independently measured contamination floor in all three'"
 
@@ -165,7 +191,7 @@ assert = "error_table_arms_headline.per_mixture_zero_mle_max_pct < error_table_a
 message = "S15: per-mixture tables give 'the lowest false-signal floor' and 'only the per-mixture tables sit materially lower'"
 
 [[claim]]
-quote = "the lowest false-signal"
+quote = "the closest agreement on the semi-synthetic ladder"
 assert = "error_table_arms_headline.per_mixture_ladder_mean_abs_dev_pct < error_table_arms_headline.pooled_ladder_mean_abs_dev_pct and error_table_arms_headline.per_mixture_ladder_mean_abs_dev_pct < error_table_arms_headline.flat_ladder_mean_abs_dev_pct"
 message = "S15: per-mixture tables give 'the closest agreement on the semi-synthetic ladder'"
 

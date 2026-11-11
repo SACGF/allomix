@@ -2,15 +2,24 @@
 # README's "Claims sidecars"). A quote must match one sentence.
 
 [[ok]]
-quote = "0.9987 across the full chimerism range for ScisGo.[@Blouin2024comparison] Qama et al. validated the Devyser assay at a LoD of … % with high STR concordance (R^2 = 0.998), and found that NGS detected residual recipient DNA (>0.1%) in 85%"
-reason = "figures quoted from the cited studies"
+quote = "reported R^2 = 0.9987 across the full chimerism range"
+reason = "figure quoted from the cited study (Blouin 2024)"
 
-[[check]]
-assert = "overdispersion_lod_headline.fold_real_rho_vs_binomial > 1"
-message = "discussion: LoD at the fitted rho is higher than the pure-binomial value"
+[[ok]]
+quote = "with high STR concordance (R^2 = 0.998)"
+reason = "figure quoted from the cited study (Qama 2026)"
+
+[[ok]]
+quote = "residual recipient DNA (>0.1%) in 85%"
+reason = "figures quoted from the cited study (Qama 2026)"
 
 [[claim]]
-quote = "value (rising to"
+quote = "pure-binomial value (rising to"
+assert = "overdispersion_lod_headline.fold_real_rho_vs_binomial > 1"
+message = "discussion: LoD at the fitted rho is higher than the pure-binomial value ('rising to')"
+
+[[claim]]
+quote = "near the ~… measured directly on the same mixtures"
 assert = "overdispersion_lod_headline.lod_at_real_rho_pct is near(subsample_lod_headline.mle_lod_1000x_100markers_pct)"
 message = "discussion: LoD at the fitted rho 'near the ~...% measured directly on the same mixtures'"
 
@@ -25,5 +34,5 @@ assert = "depth_summary.ci_coverage_min_pct >= 90"
 message = "discussion: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)"
 
 [[ok]]
-quote = "at 6.6 pg"
+quote = "at 6.6 pg per diploid genome"
 reason = "physical constant (DNA mass of a diploid human genome)"

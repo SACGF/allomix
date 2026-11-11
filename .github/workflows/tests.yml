@@ -56,9 +56,10 @@ jobs:
         run: ruff format --check src/ tests/
 
   paper-lint:
-    # Flags claim words beside {{ facts }} that no word filter or {% assert %}
-    # checks, and result-like numbers typed into the prose. Needs no facts CSVs,
-    # so it runs on a bare checkout.
+    # Flags claim words beside {{ facts }} that no word filter or claims-sidecar
+    # entry (paper/*.claims.toml) covers, sidecar quotes whose wording changed,
+    # and result-like numbers typed into the prose. Needs no facts CSVs, so it
+    # runs on a bare checkout.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -78,7 +79,7 @@ jobs:
       - name: vibepaper lint
         run: vibepaper lint --numbers --check
 
-      # Parses every {% assert %} and [claims] test. With no facts CSVs each
+      # Parses every sidecar assert and [claims] test. With no facts CSVs each
       # assert reports MISSING, which does not fail; a broken assert (unknown
       # claim test, syntax error) reports ERROR and does.
       - name: vibepaper check

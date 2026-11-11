@@ -722,6 +722,14 @@ PAPER_SECTIONS = [
     "paper/supplementary.md",
 ]
 
+# Each section's checks ([[claim]] asserts, [[check]] invariants, [[ok]]
+# acceptances) live beside it in a claims sidecar; build and check evaluate
+# them, so they are inputs too. Acknowledgements has none.
+PAPER_CLAIMS = [
+    s.replace(".md", ".claims.toml") for s in PAPER_SECTIONS
+    if s != "paper/acknowledgements.md"
+]
+
 rule paper_test:
     # Paper-glue tests: the parsers/helpers in paper/scripts (including the
     # semisynthetic generator) that the runners depend on. These do
@@ -755,6 +763,7 @@ rule paper:
         "paper.toml",
         "paper/frozen_facts.csv",
         PAPER_SECTIONS,
+        PAPER_CLAIMS,
         "output/.paper_tests_passed",
     output:
         touch("output/.paper_built"),
@@ -764,7 +773,8 @@ rule paper:
 
 rule paper_check:
     # Fast claim checks without a full build: lint (claim words, hand-typed
-    # numbers, fact types) and every {% assert %} against the facts that exist.
+    # numbers, fact types, claims-sidecar quotes that no longer match) and every
+    # sidecar assert against the facts that exist.
     # Asserts whose facts are not produced yet report MISSING and do not fail,
     # so this runs on a partial facts directory. Not a dependency of `paper`
     # (the build evaluates the asserts itself); run it on its own:
@@ -773,6 +783,7 @@ rule paper_check:
         "paper.toml",
         "paper/frozen_facts.csv",
         PAPER_SECTIONS,
+        PAPER_CLAIMS,
     shell:
         "vibepaper lint --numbers --check && vibepaper check --check"
 

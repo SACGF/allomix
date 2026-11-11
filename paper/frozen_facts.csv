@@ -1,5 +1,5 @@
-fact,value,reason
-tool_landscape.alloseq_lod,0.3,"Literature value, not measured here: AlloSeq HCT detection limit set in the Kakodkar2023alloseq laboratory validation (Results 3.2: lowest fraction measured reproducibly, SD 0.005)"
-tool_landscape.alloseq_n_markers,202,"Literature value: AlloSeq HCT marker count, 202 biallelic SNPs (Kakodkar2023alloseq, Methods 2.4 and Abstract)"
-tool_landscape.devyser_lod,0.06,"Literature value, not measured here: Devyser Chimerism EP17 LoD 0.06% (LoQ 0.1%, LoB 0.04%) from the Qama2026devyser full text"
-tool_landscape.devyser_n_markers,24,Literature value: Devyser Chimerism marker count (indels) as described in the cited kit literature
+fact,value,reason,type
+tool_landscape.alloseq_lod,0.3,"Literature value, not measured here: AlloSeq HCT detection limit set in the Kakodkar2023alloseq laboratory validation (Results 3.2: lowest fraction measured reproducibly, SD 0.005)",percent
+tool_landscape.alloseq_n_markers,202,"Literature value: AlloSeq HCT marker count, 202 biallelic SNPs (Kakodkar2023alloseq, Methods 2.4 and Abstract)",count
+tool_landscape.devyser_lod,0.06,"Literature value, not measured here: Devyser Chimerism EP17 LoD 0.06% (LoQ 0.1%, LoB 0.04%) from the Qama2026devyser full text",percent
+tool_landscape.devyser_n_markers,24,Literature value: Devyser Chimerism marker count (indels) as described in the cited kit literature,count

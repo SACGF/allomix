@@ -295,8 +295,8 @@ subsampling the SRP434573 mixtures (Figure 3, above) rather than this analytical
 
 | Tool | Markers | LoD | Open Source | Panel Agnostic | Input |
 |:---|:---:|:---:|:---:|:---:|:---:|
-| AlloSeq HCT | {{ tool_landscape.alloseq_n_markers }} SNPs | {{ tool_landscape.alloseq_lod }}%* | No | No | Proprietary |
-| Devyser Chimerism | {{ tool_landscape.devyser_n_markers }} indels | {{ tool_landscape.devyser_lod }}% | No | No | Proprietary |
+| AlloSeq HCT | {{ tool_landscape.alloseq_n_markers }} SNPs | {{ tool_landscape.alloseq_lod | pct(1) }}* | No | No | Proprietary |
+| Devyser Chimerism | {{ tool_landscape.devyser_n_markers }} indels | {{ tool_landscape.devyser_lod | pct(2) }} | No | No | Proprietary |
 | NGStrack | 34 indels | 0.1% | No | No | Proprietary |
 | ScisGo Chimerism MD | >200 SNPs + indels | 0.2% (single) / 0.5% (multi) | No | No | Proprietary |
 | **allomix** | **Any biallelic** | **~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | pct(0) }} (real mixtures); ~0.1-0.2% (analytical floor)** | **Yes (MIT)** | **Yes** | **VCF** |

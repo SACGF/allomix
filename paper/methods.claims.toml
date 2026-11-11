@@ -16,3 +16,11 @@ reason = "'over' means across the swept burden values, not an approximation"
 [[ok]]
 quote = "the thesis publishes no panel coordinates"
 reason = "'no' describes the source thesis, not a fact"
+
+[[ok]]
+quote = ["near 0.5 whatever the mixing fraction, so", "heterozygous sites (true frequency 0.5)", "near 0.5 whatever the mixing fraction;"]
+reason = "the heterozygous allele fraction 0.5, a constant of the model, not a result"
+
+[[ok]]
+quote = "15 A reads = 1.5% observed"
+reason = "worked-example arithmetic (15 of 1,000 reads)"

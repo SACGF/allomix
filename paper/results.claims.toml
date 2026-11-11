@@ -317,3 +317,7 @@ reason = "relapse_lod_max_pct is the maximum over every CNV type and burden, so 
 quote = "returning the high-burden gain donor LoD from ... to ..."
 assert = "cnv_loh_headline.donor_lod_gain_high_unrel_robust_pct < cnv_loh_headline.donor_lod_gain_high_unrel_std_pct"
 message = "CNV: refit 'returning the high-burden gain donor LoD from ... to ...'"
+
+[[ok]]
+quote = "balance the alleles near 0.5"
+reason = "the heterozygous allele fraction 0.5, a constant of the model, not a result"

@@ -199,3 +199,19 @@ message = "S15: per-mixture tables give 'the closest agreement on the semi-synth
 quote = "pooling sits close to the flat default, and only the per-mixture tables sit materially lower"
 assert = "(error_table_arms_headline.pooled_zero_mle_max_pct - error_table_arms_headline.flat_zero_mle_max_pct)|abs < error_table_arms_headline.flat_zero_mle_max_pct - error_table_arms_headline.per_mixture_zero_mle_max_pct"
 message = "S15: 'pooling sits close to the flat default, and only the per-mixture tables sit materially lower' (pooled is nearer flat than per-mixture is)"
+
+[[ok]]
+quote = "\\chi^2_{1,\\,0.95} \\approx 3.84"
+reason = "the chi-squared(1) 95% critical value, a constant"
+
+[[ok]]
+quote = ["should sit near 0.5 whatever the mixing fraction", "(\\text{VAF}_{het,i} - 0.5)", "valid only near 0.5", "\\text{logit}(0.5 + b_i)", "($w_i = 0.5$) this reduces to $0.5 - b_i$", "(true VAF 0.5 regardless of mixing)", "median het VAF deviation from 0.5", "centred on 0.5 with comparable spread"]
+reason = "the heterozygous allele fraction 0.5, a constant of the model, not a result"
+
+[[ok]]
+quote = "0.02 | close match"
+reason = "the simulation default for the per-marker bias SD, a design value"
+
+[[ok]]
+quote = ["1.0 = no ADO", "markers with ratio < 0.8"]
+reason = "definitions in the Notes column: the het/HWE ratio of a marker without allelic dropout, and the low-ratio cut-off"

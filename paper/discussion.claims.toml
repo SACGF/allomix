@@ -36,3 +36,7 @@ message = "discussion: intervals 'cover close to nominal' 95% (no depth below 90
 [[ok]]
 quote = "at 6.6 pg per diploid genome"
 reason = "physical constant (DNA mass of a diploid human genome)"
+
+[[ok]]
+quote = "MAFs near 0.5 give a"
+reason = "a minor allele frequency of 0.5 is the panel-design optimum in the cited study (Vynck 2021)"

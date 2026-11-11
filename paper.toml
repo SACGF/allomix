@@ -54,12 +54,12 @@ allowed_numbers = [
     "0%", "0.1%", "0.2%", "0.5%", "1%", "2%", "2.5%", "3%", "5%", "10%", "15%", "20%",
     "30%", "50%", "60%", "97%", "100%",
     "50x", "100x", "200x", "500x", "1000x", "1,000x", "2,000x",
-    "95%", "0.05", "0.01", "0.5", "1.5x", "1.5×",
-    # Worked-example arithmetic (Methods marker-reading table), the chi-squared
-    # 95% critical value, and simulation-default / threshold columns of the
-    # panel-calibration table.
-    "1.5%", "3.84", "0.02", "1.0", "0.8",
+    "95%", "0.05", "0.01", "1.5x", "1.5×",
 ]
+# One-off constants (the heterozygous allele fraction 0.5, the chi-squared
+# critical value, worked-example arithmetic, panel-calibration table defaults)
+# are accepted where they are used, by an [[ok]] in the section's claims
+# sidecar, so a stale result that happens to print as 0.5 is still flagged.
 # Facts kept on purpose that the prose does not quote.
 unused_ok = [
     # Rows that feed the include-csv tables (paper/scripts/build_tables.py).

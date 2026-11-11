@@ -136,6 +136,7 @@ The paper needs vibepaper with claims sidecars (pinned to a GitHub commit in `py
 - Judgement words ("close to", "near", "comparable to", "essentially unchanged", "unchanged") use the tolerances in `paper.toml` `[claims]` (`is near(...)`); never hand-write a tolerance in an assert.
 - Literature values that the pipeline does not measure live in `paper/frozen_facts.csv` with a `type` (`vibepaper freeze ns.field --value V --type percent --reason "..."`), not hard-coded in a producer.
 - After editing the paper, run `vibepaper lint --numbers --check` and `vibepaper check` (or `snakemake -s paper/Snakefile --cores 1 paper_check`). A `quick=1` build cannot render the paper (its low-iteration LoD grid fails the floor asserts); use `paper_check` there.
+- Open work on the paper (what needs a full run, wording to check, decisions for the author) is in `paper/todo.md`. Add to it rather than to this file, and delete items when done.
 
 The paper dependencies (snakemake >=8) require Python 3.11+, the same floor as the core tool. Pin the venv to Python 3.13. Do not use `--python '>=3.11'`: it resolves to the newest available interpreter (e.g. 3.14), and snakemake's transitive dependency `immutables==0.21` ships no wheel for 3.14, so it falls back to compiling a C extension from source and fails without a compiler installed.
 

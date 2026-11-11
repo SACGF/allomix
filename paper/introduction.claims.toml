@@ -1,24 +1,9 @@
 # Claims for introduction.md (vibepaper claims sidecar, see the
 # README's "Claims sidecars"). A quote must match one sentence.
-#
-# The citation after each full stop (".[@key] Next") keeps lint from splitting
-# this paragraph into sentences, so each cited claim gets its own [[ok]].
 
 [[ok]]
 quote = "analytical sensitivity of 0.06--0.2%"
 reason = "figures quoted from the cited clinical validations (Qama 2026, Blouin 2024)"
-
-[[ok]]
-quote = "in the majority of samples"
-reason = "finding of the cited clinical validations, not our facts"
-
-[[ok]]
-quote = "this improved sensitivity"
-reason = "refers to the cited head-to-head comparisons"
-
-[[ok]]
-quote = "increasing mixed chimerism"
-reason = "finding of the cited relapse study (Zhang 2024)"
 
 [[ok]]
 quote = "all currently available NGS chimerism tools"

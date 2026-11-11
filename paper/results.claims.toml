@@ -264,10 +264,6 @@ quote = "the lowest fraction tracked, not an EP17-A2 LoD"
 reason = "defines the semi-synthetic figure"
 
 [[ok]]
-quote = ["the lowest fraction they measured reproducibly", "they also ran mixtures down to 0.05%"]
-reason = "describes the cited AlloSeq validation (Kakodkar 2023)"
-
-[[ok]]
 quote = "from most to least real"
 reason = "'most/least real' orders evidence classes, not values"
 

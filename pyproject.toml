@@ -74,7 +74,7 @@ paper = [
     # Pinned to vibepaper main for claims sidecars (paper/*.claims.toml), [limits]
     # and typed frozen facts, which are not on PyPI yet. Switch back to a PyPI
     # release ("vibepaper>=0.13") once one is out; also in .github/workflows/tests.yml.
-    "vibepaper @ git+https://github.com/SACGF/vibepaper@363eb8a",  # bundles pandoc
+    "vibepaper @ git+https://github.com/SACGF/vibepaper@cec8979",  # bundles pandoc
 ]
 
 [project.scripts]

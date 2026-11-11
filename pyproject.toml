@@ -71,7 +71,7 @@ scripts = [
 paper = [
     "allomix[scripts]",
     "snakemake>=8.0",
-    "vibepaper>=0.9.0",  # word filters, {% assert %}, `vibepaper lint` (also bundles pandoc)
+    "vibepaper>=0.12.0",  # per-claim-word lint, `vibepaper check`, [claims] tolerances, provenance (bundles pandoc)
 ]
 
 [project.scripts]

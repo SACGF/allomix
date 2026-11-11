@@ -30,7 +30,7 @@ Outputs:
   output/facts/lod_grid_raw.csv     # one row per (pair, seq_rep) per cell
   output/facts/lod_per_pair.csv     # one row per (relatedness, depth, n_markers, pair)
   output/facts/lod_summary.csv      # one row per (relatedness, depth, n_markers)
-  output/facts/lod_headline.csv     # single-row snapshot of headline numbers
+  output/facts/lod_headline.csv     # typed facts snapshot of headline numbers
 
 Usage:
     python paper/scripts/run_lod_validation.py
@@ -75,6 +75,7 @@ from allomix.simulate import (  # noqa: E402
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from facts_io import write_fact_csv  # noqa: E402
 from fast_grid_estimator import estimate_single_donor_bb_grid  # noqa: E402
 from paper_quick import qval  # noqa: E402
 
@@ -539,7 +540,7 @@ def write_grid_raw(rows: list[dict], path: Path) -> None:
         "est_frac", "ci_lo", "ci_hi", "n_informative", "n_informative_truth",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for r in rows:
             w.writerow({k: r[k] for k in fields})
@@ -556,7 +557,7 @@ def write_per_pair(pair_rows: list[dict], path: Path) -> None:
         "lod_pct", "lob_pct", "note", "mean_n_informative",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for r in pair_rows:
             w.writerow({k: r.get(k, "") for k in fields})
@@ -570,7 +571,7 @@ def write_summary(summaries: list[dict], path: Path) -> None:
         "n_pairs", "n_pairs_used", "n_pairs_dropped", "n_seq_reps", "note",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for s in summaries:
             w.writerow({k: s.get(k, "") for k in fields})
@@ -598,11 +599,13 @@ def write_headline(
         "unrelated_lod_2000x_400markers_pct": lookup("unrelated", 2000, 400),
         "sibling_lod_2000x_400markers_pct": lookup("sibling", 2000, 400),
     }
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(headline.keys()))
-        w.writeheader()
-        w.writerow({k: (round(v, 4) if isinstance(v, float) and math.isfinite(v) else v)
-                    for k, v in headline.items()})
+    write_fact_csv(
+        path,
+        {
+            k: (round(v, 4) if isinstance(v, float) and math.isfinite(v) else v)
+            for k, v in headline.items()
+        },
+    )
 
 
 def _worker(args: tuple) -> list[dict]:

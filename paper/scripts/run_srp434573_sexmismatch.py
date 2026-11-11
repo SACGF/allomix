@@ -125,7 +125,7 @@ def collect() -> list[dict]:
 def write_facts(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=COLS)
+        w = csv.DictWriter(fh, fieldnames=COLS, lineterminator="\n")
         w.writeheader()
         for r in rows:
             w.writerow({c: (f"{v:.4f}" if isinstance(v, float) else v) for c, v in r.items()})

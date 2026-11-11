@@ -7,10 +7,8 @@ Usage:
     python scripts/generate_paper_facts.py
 """
 
-import csv
 import math
 import random
-import shutil
 import sys
 from pathlib import Path
 
@@ -22,6 +20,7 @@ from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.estimate.likelihood import PanelCalibration  # noqa: E402
 from allomix.simulate import blend_vcfs, generate_marker_biases, write_vcf  # noqa: E402
 from allomix.simulate import parse_text_vcf as sim_parse_vcf  # noqa: E402
+from facts_io import read_fact_csv, write_fact_csv  # noqa: E402
 from paper_seed import derive_seed  # noqa: E402
 
 FACTS_DIR = Path("output/facts")
@@ -31,12 +30,8 @@ BIAS_FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.9
 
 
 def write_fact(name: str, data: dict) -> None:
-    """Write a single-row facts CSV."""
-    path = FACTS_DIR / f"{name}.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(data.keys()))
-        writer.writeheader()
-        writer.writerow(data)
+    """Write a typed facts CSV (see facts_io)."""
+    path = write_fact_csv(FACTS_DIR / f"{name}.csv", data)
     print(f"  Wrote {path}")
 
 
@@ -208,20 +203,8 @@ def main():
         "seq_error_pct": 1,
     })
 
-    # Tool landscape facts
-    write_fact("tool_landscape", {
-        "n_commercial_tools": 4,
-        "commercial_tools": "AlloSeq HCT; Devyser Chimerism; NGStrack; ScisGo Chimerism MD",
-        "alloseq_n_markers": 202,
-        "alloseq_lod": 0.3,
-        "devyser_n_markers": 24,
-        # EP17 limit of detection from Qama et al. 2026 (J Mol Diagn) full text:
-        # "limit of detection and limit of quantitation were 0.06% and 0.1%"
-        # (LoB 0.04%). The 0.1% in the abstract is the limit of quantitation.
-        "devyser_lod": 0.06,
-        "n_open_source_chimerism": 0,
-        "n_tools_surveyed": 30,
-    })
+    # The commercial-tool figures (tool_landscape.*) are literature values, not
+    # measured here: they live in paper/frozen_facts.csv with their citations.
 
     # Panel specs
     write_fact("panel_specs", {
@@ -232,10 +215,11 @@ def main():
         "min_informative_markers": 3,
     })
 
-    # Copy empirical panel stats into facts dir
+    # Empirical panel stats (measured on the internal data by
+    # scripts/measure_panel_bias.py, committed as a one-row CSV) rewritten typed.
     empirical_src = Path("paper/empirical_results/panel_empirical.csv")
-    shutil.copy2(empirical_src, FACTS_DIR / "panel_empirical.csv")
-    print(f"  Copied {empirical_src} -> {FACTS_DIR / 'panel_empirical.csv'}")
+    write_fact_csv(FACTS_DIR / "panel_empirical.csv", read_fact_csv(empirical_src))
+    print(f"  Wrote {empirical_src} -> {FACTS_DIR / 'panel_empirical.csv'} (typed)")
 
     print("\nDone! Facts written to output/facts/")
 

@@ -1,0 +1,5 @@
+fact,value,reason
+tool_landscape.alloseq_lod,0.3,"Literature value, not measured here: AlloSeq HCT LoD (vendor-stated; Kakodkar2023alloseq, Table 1 footnote)"
+tool_landscape.alloseq_n_markers,202,Literature value: AlloSeq HCT marker count (SNPs) as described in the cited kit literature
+tool_landscape.devyser_lod,0.06,"Literature value, not measured here: Devyser Chimerism EP17 LoD 0.06% (LoQ 0.1%, LoB 0.04%) from the Qama2026devyser full text"
+tool_landscape.devyser_n_markers,24,Literature value: Devyser Chimerism marker count (indels) as described in the cited kit literature

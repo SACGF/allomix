@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from allomix.estimate.chimerism import estimate_multi_donor
 from allomix.genotype import classify_markers, parse_vcf
+from facts_io import write_fact_csv
 
 DATA_DIR = Path("tests/test_data/multidonor")
 FACTS_DIR = Path("output/facts")
@@ -164,12 +165,8 @@ def compute_total_metrics(rows: list[dict]) -> dict:
 
 
 def write_fact(name: str, data: dict) -> None:
-    """Write a single-row facts CSV."""
-    path = FACTS_DIR / f"{name}.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(data.keys()))
-        writer.writeheader()
-        writer.writerow(data)
+    """Write a typed facts CSV (see facts_io)."""
+    path = write_fact_csv(FACTS_DIR / f"{name}.csv", data)
     print(f"  Wrote {path}", file=sys.stderr)
 
 
@@ -272,7 +269,7 @@ def main() -> int:
         "rank_correct",
     ]
     with open(results_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for r in results:
             w.writerow(

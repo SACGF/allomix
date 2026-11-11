@@ -23,3 +23,65 @@ facts_dir = "output/facts"
 output_dir = "output"
 bibliography = "paper/references.bib"
 csl = "paper/the-journal-of-molecular-diagnostics.csl"
+
+# Judgement words, each with one tolerance used wherever the paper says it
+# (`{% assert x is close_to(y), "..." %}`). If one word ever needs two
+# tolerances, it is two words.
+[claims]
+# An estimated contributor fraction against its known fraction, in percentage
+# points. 5 pp is well under the smallest gap between the three-person
+# mixture's known fractions (11.1, 33.3, 55.6%: 22 pp), so it cannot pass a
+# swapped contributor.
+close_to = { within = 5 }
+# One limit of detection against another. The simulated LoD grid steps by a
+# factor of 2 to 2.5 (0.1, 0.2, 0.5, 1, 2, 5%), so a factor of two is about one
+# grid step.
+near = { factor = 2 }
+# An offset against the contamination floor it is attributed to: same order,
+# within a factor of two either way.
+comparable_to = { factor = 2 }
+# A metric before and after a change that should not move it: within 10%
+# relative, the tolerance these asserts used before [claims] existed.
+essentially_unchanged = { within_pct = 10 }
+# A difference the paper calls unchanged outright: below the 0.01 pp display
+# precision of the facts it compares.
+unchanged = { within = 0.01 }
+
+[lint]
+# Design values typed into the prose: titration and burden levels, simulated
+# depths, nominal coverage and significance levels, worked-example arithmetic.
+allowed_numbers = [
+    "0%", "0.1%", "0.2%", "0.5%", "1%", "2%", "2.5%", "3%", "5%", "10%", "15%", "20%",
+    "30%", "50%", "60%", "97%", "100%",
+    "50x", "100x", "200x", "500x", "1000x", "1,000x", "2,000x",
+    "95%", "0.05", "0.01", "0.5", "1.5x", "1.5×",
+    # Worked-example arithmetic (Methods marker-reading table), the chi-squared
+    # 95% critical value, and simulation-default / threshold columns of the
+    # panel-calibration table.
+    "1.5%", "3.84", "0.02", "1.0", "0.8",
+]
+# Facts kept on purpose that the prose does not quote.
+unused_ok = [
+    # Rows that feed the include-csv tables (paper/scripts/build_tables.py).
+    "depth_*.*", "rel_*.*", "multidonor.*",
+    # Early per-fraction validation run by generate_paper_facts.py; nothing reads
+    # it now (candidate for removal).
+    "val_host_*.*", "validation_summary.*",
+    # Alternative error metrics beside the ones quoted.
+    "bias_no_bias.*", "bias_with_bias.*",
+    # Every arm x metric of error_table_arms.csv; the prose quotes a few.
+    "error_table_arms_headline.*",
+    # LoD grid cells beside the quoted operating points.
+    "lod_headline.*", "presence_lod_curve_headline.*", "cnv_loh_headline.*",
+    "subsample_lod_headline.*", "overdispersion_lod_headline.lod_rho1000_pct",
+    # Per-rung detail of the semi-synthetic ladder.
+    "srp434573_synthetic.*_0p?", "srp434573_synthetic.n_points",
+    "srp434573_synthetic.n_fractions", "srp434573_synthetic.frac_ladder",
+    "srp434573_synthetic.three_n_*", "srp434573_synthetic.three_host_shared_rho_med_signed_err_pct",
+    # Dataset and panel descriptors and diagnostics.
+    "panel_empirical.*", "panel_specs.*", "qc_gating.n_pass_clinical",
+    "srp434573.depth_*", "srp434573.raw_depth_*", "srp434573.n_pass",
+    "srp434573.n_dilution_levels", "srp434573.n_reliable", "srp434573.r_reliable",
+    "srp434573.r2_log_all", "srp434573.max_abs_err_reliable_pct",
+    "srp434573.contam_floor_max_pct", "srp434573.zero_host_mle_median_pct",
+]

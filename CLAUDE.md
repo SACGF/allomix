@@ -128,6 +128,13 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 The paper build uses Snakemake (`paper/Snakefile`). The validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
+The paper needs vibepaper >= 0.12. Conventions (details in `docs/paper.md`, "Wording that depends on facts"):
+
+- Facts are typed vertical CSVs written by `paper/scripts/facts_io.py` (`write_fact_csv`), with a provenance sidecar. Types come from the field name (`*_pct` percent, `n_*` count, `*_rate` fraction, `*_fold`/`*_ratio` ratio). Format a typed percent with `| pct(N)`, not `| dp(N) }}%`.
+- Judgement words ("close to", "near", "comparable to", "essentially unchanged", "unchanged") use the tolerances in `paper.toml` `[claims]` (`is near(...)`); never hand-write a tolerance in an assert.
+- Literature values that the pipeline does not measure live in `paper/frozen_facts.csv` (`vibepaper freeze`), not hard-coded in a producer.
+- After editing the paper, run `vibepaper lint --numbers --check` and `vibepaper check` (or `snakemake -s paper/Snakefile --cores 1 paper_check`). A `quick=1` build cannot render the paper (its low-iteration LoD grid fails the floor asserts); use `paper_check` there.
+
 The paper dependencies (snakemake >=8) require Python 3.11+, the same floor as the core tool. Pin the venv to Python 3.13. Do not use `--python '>=3.11'`: it resolves to the newest available interpreter (e.g. 3.14), and snakemake's transitive dependency `immutables==0.21` ships no wheel for 3.14, so it falls back to compiling a C extension from source and fails without a compiler installed.
 
 ```bash

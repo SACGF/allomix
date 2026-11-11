@@ -49,6 +49,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
+from facts_io import write_fact_csv  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 OUT = Path("output")
@@ -409,10 +410,7 @@ def main() -> int:
     facts.update(compute_facts3(syn3))
     facts.update(compute_shared_rho_facts(syn, syn3, _read(SYN_SHARED_TSV), _read(SYN3_SHARED_TSV)))
     path = FACTS_DIR / "srp434573_synthetic.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
-        writer.writeheader()
-        writer.writerow(facts)
+    write_fact_csv(path, facts)
     print(f"Wrote {path} (n_points={facts['n_points']}, "
           f"three_n_host_points={facts['three_n_host_points']})", file=sys.stderr)
 

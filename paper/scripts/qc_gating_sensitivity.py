@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 from srp434573_common import resolve_srp434573_genotypes_dir
+from facts_io import write_fact_csv
 
 from allomix.analysis import analyse_sample
 from allomix.calibration.error_rates import load_error_table
@@ -149,10 +150,7 @@ def main() -> None:
 
     FACTS_DIR.mkdir(parents=True, exist_ok=True)
     out = FACTS_DIR / "qc_gating.csv"
-    with open(out, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(list(facts))
-        w.writerow([facts[k] for k in facts])
+    write_fact_csv(out, facts)
     sys.stderr.write(
         f"Wrote {out}: clinical REVIEW {n_review_clinical}/{n_timepoints}, "
         f"legacy {n_review_legacy}/{n_timepoints}, "

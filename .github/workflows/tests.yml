@@ -57,7 +57,8 @@ jobs:
 
   paper-lint:
     # Flags claim words beside {{ facts }} that no word filter or {% assert %}
-    # checks. Needs no facts CSVs, so it runs on a bare checkout.
+    # checks, and result-like numbers typed into the prose. Needs no facts CSVs,
+    # so it runs on a bare checkout.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -70,7 +71,13 @@ jobs:
       - name: Install vibepaper
         run: |
           python -m pip install --upgrade pip
-          pip install "vibepaper>=0.9.0"
+          pip install "vibepaper>=0.12.0"
 
       - name: vibepaper lint
-        run: vibepaper lint --check
+        run: vibepaper lint --numbers --check
+
+      # Parses every {% assert %} and [claims] test. With no facts CSVs each
+      # assert reports MISSING, which does not fail; a broken assert (unknown
+      # claim test, syntax error) reports ERROR and does.
+      - name: vibepaper check
+        run: vibepaper check --check

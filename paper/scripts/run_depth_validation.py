@@ -42,6 +42,7 @@ from allomix.simulate import (  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+from facts_io import write_fact_csv  # noqa: E402
 from paper_seed import derive_seed  # noqa: E402
 
 FRACTIONS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50, 0.70, 0.90, 0.95, 1.0]
@@ -175,11 +176,8 @@ def aggregate_replicate_metrics(replicate_metrics: list[dict]) -> dict:
 
 
 def write_fact(name: str, data: dict) -> None:
-    path = FACTS_DIR / f"{name}.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(data.keys()))
-        writer.writeheader()
-        writer.writerow(data)
+    """Write a typed facts CSV (see facts_io)."""
+    write_fact_csv(FACTS_DIR / f"{name}.csv", data)
 
 
 def plot_results(
@@ -476,6 +474,7 @@ def main(argv: list[str] | None = None) -> int:
                 "max_err_mean", "max_err_sd", "ci_cov_mean", "ci_width_mean",
             ],
             delimiter="\t",
+            lineterminator="\n",
         )
         w.writeheader()
         w.writerows(summary_rows)
@@ -489,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
                     "sample_name", "true_pct", "est_pct", "error_pct",
                     "ci_lo_pct", "ci_hi_pct", "ci_covers",
                 ]
-                w = csv.DictWriter(f, fieldnames=fields, delimiter="\t")
+                w = csv.DictWriter(f, fieldnames=fields, delimiter="\t", lineterminator="\n")
                 w.writeheader()
                 for r in rep_rows:
                     w.writerow({

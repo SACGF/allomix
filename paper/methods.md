@@ -6,7 +6,7 @@ Supplementary Methods; this section describes each mechanism in operational term
 
 ### Overview
 
-allomix is implemented in Python (version 3.11 or later) and operates on standard
+allomix is implemented in Python (version 3.11 or later){# lint-ok(3.11): the supported Python floor, not a result #} and operates on standard
 Variant Call Format (VCF) files. The workflow has four stages: parse the VCFs and decide
 which markers are informative, estimate the donor fraction, optionally correct
 per-marker amplification bias, and run a panel of quality and sample-integrity checks.
@@ -194,7 +194,7 @@ First, a background-artifact term. Even a marker where one allele should be abse
 low background of that allele, chiefly from miscalled bases. allomix sets the expected
 level of these stray reads so it does not read pure background as real signal. The default
 is a fixed per-base rate (1%) spread across the three possible miscalls, giving a
-per-direction floor near 0.33%. This default is a conservative fallback, not a number fit
+per-direction floor near 0.33%.{# lint-ok(0.33%): 1% divided over three miscalls, arithmetic on the default #} This default is a conservative fallback, not a number fit
 from the run: where the data support it, each marker can instead use its own measured
 per-site, per-direction rate, estimated from homozygous calls in a training cohort
 (Per-site error calibration, below). The other co-pooled artifacts named above, index
@@ -521,6 +521,7 @@ the dilution grid rather than serving as an independent wet-lab limit.
 allomix is implemented in Python with dependencies on cyvcf2, NumPy,[@Harris2020numpy]
 SciPy,[@Virtanen2020scipy] and Jinja2. It is available under the MIT license at
 https://github.com/SACGF/allomix, installable via pip (`pip install allomix`). The
+analyses reported here were run with allomix {{ srp434573._prov.tools.allomix }}. The
 command-line interface provides `detect` for single-sample or multi-timepoint analysis,
 `timeline` for consolidated multi-timepoint reporting, `estimate-bias` for panel bias
 calibration, and `estimate-errors` for per-site error calibration. The repository also

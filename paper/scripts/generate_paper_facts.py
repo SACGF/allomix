@@ -22,6 +22,7 @@ from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.estimate.likelihood import PanelCalibration  # noqa: E402
 from allomix.simulate import blend_vcfs, generate_marker_biases, write_vcf  # noqa: E402
 from allomix.simulate import parse_text_vcf as sim_parse_vcf  # noqa: E402
+from paper_seed import derive_seed  # noqa: E402
 
 FACTS_DIR = Path("output/facts")
 
@@ -150,7 +151,7 @@ def main():
 
     for frac in BIAS_FRACTIONS:
         name = fraction_to_name(frac)
-        sample_seed = seed + hash(str(frac)) % (2**31)
+        sample_seed = derive_seed(seed, frac)
         result = blend_vcfs(
             host_path=host_vcf, donor_path=donor_vcf,
             donor_fraction=frac, target_depth=depth,

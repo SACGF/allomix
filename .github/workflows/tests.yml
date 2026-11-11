@@ -54,3 +54,23 @@ jobs:
 
       - name: ruff format
         run: ruff format --check src/ tests/
+
+  paper-lint:
+    # Flags claim words beside {{ facts }} that no word filter or {% assert %}
+    # checks. Needs no facts CSVs, so it runs on a bare checkout.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install vibepaper
+        run: |
+          python -m pip install --upgrade pip
+          pip install "vibepaper>=0.9.0"
+
+      - name: vibepaper lint
+        run: vibepaper lint --check

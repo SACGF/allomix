@@ -25,6 +25,7 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
+from paper_seed import derive_seed  # noqa: E402
 
 from allomix.calibration.bias import load_bias_table  # noqa: E402
 from allomix.estimate.chimerism import estimate_single_donor_bb  # noqa: E402
@@ -84,7 +85,7 @@ def generate_biased_data(
         name = _fraction_to_name(frac)
         # Per-fraction seed for allele-count sampling, but the SAME fixed_biases for
         # panel capture bias.
-        sample_seed = seed + hash(str(frac)) % (2**31)
+        sample_seed = derive_seed(seed, frac)
 
         result = blend_vcfs(
             host_path=host_vcf,

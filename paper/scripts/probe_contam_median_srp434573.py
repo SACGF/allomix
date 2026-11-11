@@ -159,11 +159,17 @@ def main() -> int:
     # Write headline facts for the paper (single-row CSV -> vibepaper namespace
     # ``srp_contam``). These back the contamination dose-response described in
     # the Results section.
+    dose_medians = [median(nocarrier_fracs)] + [
+        median(carrier_fracs_by_dose[b]) for b in sorted(carrier_fracs_by_dose)
+    ]
     facts_dir = Path("output/facts")
     facts_dir.mkdir(parents=True, exist_ok=True)
     facts = {
         "n_nocarrier_sites": len(nocarrier_fracs),
         "n_carrier_sites": len(carrier_fracs_all),
+        # Steps along the dose axis (no-carrier bin, then 1..N carriers) where the
+        # median does not rise. Zero backs the "rises monotonically" wording.
+        "n_dose_nonrising_steps": sum(1 for a, b in zip(dose_medians, dose_medians[1:]) if b <= a),
         "nocarrier_floor_pct": f"{median(nocarrier_fracs) * 100:.3f}",
         "carrier_median_pct": f"{median(carrier_fracs_all) * 100:.2f}",
         "dose_1carrier_pct": f"{median(carrier_fracs_by_dose[1]) * 100:.2f}",

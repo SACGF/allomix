@@ -101,6 +101,10 @@ def compute_facts(two: list[dict], three: list[dict]) -> dict:
     facts["depth_max"] = f"{depth.max():.0f}"
     facts["n_review"] = str(sum(1 for q in qc if q == "REVIEW"))
     facts["n_pass"] = str(sum(1 for q in qc if q == "PASS"))
+    # Highest known recipient fraction among REVIEW admixtures, so the prose claim
+    # that every REVIEW flag falls at the lowest fractions is checked by an assert.
+    review_known = [k for k, q in zip(known, qc, strict=True) if q == "REVIEW"]
+    facts["review_max_known_pct"] = f"{max(review_known):g}" if review_known else "0"
 
     # Panel and platform metadata (paper/public_data/SRP434573/README.md). SNP count is
     # the thesis-stated 1,062; intervals are reconstructed from aligned reads (1,052 =

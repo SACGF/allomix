@@ -31,6 +31,9 @@ boundary fractions.[@Vynck2023bias]
 
 ### Overdispersion is the real limiter at clinical depth
 
+{% assert overdispersion_lod_headline.fold_real_rho_vs_binomial > 1, "discussion: LoD at the fitted rho is higher than the pure-binomial value" %}
+{% assert overdispersion_lod_headline.lod_at_real_rho_pct >= 0.5 and overdispersion_lod_headline.lod_at_real_rho_pct <= 2, "discussion: LoD at the fitted rho 'near/close to the ~1% measured directly' (0.5% to 2%)" %}
+{% assert supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_bias_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_depth_only_pct - supp_synthetic.ablation_rmse_ideal_pct and supp_synthetic.ablation_rmse_overdispersion_pct - supp_synthetic.ablation_rmse_full_pct > supp_synthetic.ablation_rmse_error_only_pct - supp_synthetic.ablation_rmse_ideal_pct, "discussion: overdispersion 'raises RMSE more than amplification bias, depth non-uniformity, or sequencing error individually'" %}
 The likelihood of Crysup and Woerner was evaluated at read depths of 2--100, where
 sampling noise dominates. Clinical targeted panels run at 500--2,000x or higher, where
 per-marker systematic effects (amplification efficiency, GC content, capture-probe
@@ -41,7 +44,7 @@ depth grows, the per-marker variance stops falling and the effective depth is ca
 the LoD saturates at a floor rather than continuing to improve as 1/√n (Supplementary
 Figures S7, S8). At the overdispersion fitted from our real mixtures (heterozygous-class
 $\rho \approx$ {{ overdispersion_lod_headline.real_rho_het_median }}) the in silico LoD is
-roughly {{ overdispersion_lod_headline.fold_real_rho_vs_binomial }}-fold higher than the
+{{ overdispersion_lod_headline.fold_real_rho_vs_binomial | approx }}-fold higher than the
 pure-binomial value (rising to
 {{ overdispersion_lod_headline.lod_at_real_rho_pct }}%, near the ~1% measured directly on
 the same mixtures), so beyond that regime adding depth buys little and the panel's
@@ -61,8 +64,9 @@ significant at depth (Supplementary Methods S10). For the same reason allomix do
 weight marker contributions by per-base or per-genotype quality (Supplementary Methods
 S11).
 
+{% assert depth_summary.ci_coverage_min_pct >= 90, "discussion: intervals 'cover close to nominal' 95% (no depth below 90%; no upper bound, since 100% from ~25 intervals per depth is consistent with 95%)" %}
 Across the simulated depths the 95% intervals cover close to nominal
-({{ depth_1000.ci_coverage_pct }}--{{ depth_200.ci_coverage_pct }}%) with overdispersion
+({{ depth_summary.ci_coverage_min_pct }}--{{ depth_summary.ci_coverage_max_pct }}%) with overdispersion
 fit separately for the donor-heterozygous and donor-homozygous marker classes (the default
 per-marker-type model). A residual calibration gap remains on the real
 titrated ladder, where the intervals mildly undercover the nominal fraction. The driver

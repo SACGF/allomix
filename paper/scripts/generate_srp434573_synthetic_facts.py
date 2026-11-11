@@ -27,33 +27,16 @@ figure so the Snakemake rule is still satisfied and the build stays green.
 These points are always labelled "semi-synthetic" so a synthetic fraction is
 never presented as a measured one.
 
-Provenance of the shared-overdispersion number in ``paper/results.md``
-----------------------------------------------------------------------
-``results.md`` states the shared-overdispersion recipient offset as "about 0.29
-percentage points". That number is not templated from this script, because the
-shared-rho arm is not part of the default build. It was measured on 2026-07-21
-with::
-
-    ALLOMIX_NO_MARKER_TYPE_OVERDISPERSION=1 python3 paper/scripts/run_srp434573_allomix.py
-
-run against the pooled error table, then taking the median over ladder levels of
-(median MLE - nominal fraction) on ``output/srp434573_synthetic.tsv``:
-
-    series              shared-rho    per-marker-type (default)
-    two-person ladder   +0.285        +0.040
-    two-donor series    +0.170        +0.170
-
-The two-donor offset is identical under both models to three decimal places,
-which is why ``results.md`` attributes it to the co-pooled contamination floor
-rather than to the overdispersion fit.
-
-That run overwrites ``output/srp434573_synthetic*.tsv`` and the facts CSVs, so
-back them up first and restore afterwards or the default-model facts are lost.
-
-Re-measure and update ``results.md`` if the error model changes. Better still,
-add a build rule for the shared-rho arm and template it: the 0.29 replaced an
-earlier hardcoded 0.22 that had gone stale and contradicted the numbers printed
-beside it, and it carries the same risk.
+Shared-overdispersion comparison
+--------------------------------
+``results.md`` contrasts the default per-marker-type overdispersion fit with a
+single overdispersion shared across marker types. ``run_srp434573_allomix.py``
+runs both semi-synthetic series a second time with
+``--no-marker-type-overdispersion`` and writes ``*_shared_rho.tsv``; this script
+summarises them into the ``*_shared_rho_*`` facts and the reduction fold. (These
+replaced a hand-typed "about 0.29 percentage points", which itself replaced a
+hardcoded 0.22 that had gone stale.) If the shared-rho TSVs are absent the facts
+are written empty.
 """
 
 import csv
@@ -72,6 +55,8 @@ OUT = Path("output")
 FACTS_DIR = OUT / "facts"
 SYN_TSV = OUT / "srp434573_synthetic.tsv"
 SYN3_TSV = OUT / "srp434573_synthetic_three_person.tsv"
+SYN_SHARED_TSV = OUT / "srp434573_synthetic_shared_rho.tsv"
+SYN3_SHARED_TSV = OUT / "srp434573_synthetic_three_person_shared_rho.tsv"
 TWO_TSV = OUT / "srp434573_two_person.tsv"
 
 # A presence test counts as a detection when the host-present p-value clears 0.05.
@@ -113,6 +98,67 @@ def real_05_medians(two: list[dict]) -> tuple[float | None, float | None]:
     )
 
 
+def full_detect_min(rates: dict[float, float]) -> float | None:
+    """Lowest fraction from which every rung up the ladder is detected in all replicates.
+
+    ``rates`` maps nominal fraction to detection rate. None if the top rung is not
+    fully detected.
+    """
+    lowest = None
+    for fr in sorted(rates, reverse=True):
+        if rates[fr] < 1.0:
+            break
+        lowest = fr
+    return lowest
+
+
+def ladder_offset(syn: list[dict]) -> float | None:
+    """Median over ladder levels of (median MLE estimate - nominal fraction)."""
+    offs = []
+    for fr in sorted({_f(r["frac_pct"]) for r in syn if _f(r.get("frac_pct")) is not None}):
+        mle = [_f(r["mle_pct"]) for r in syn
+               if _f(r["frac_pct"]) == fr and _f(r["mle_pct"]) is not None]
+        mm = _median(mle)
+        if mm is not None:
+            offs.append(mm - fr)
+    return _median(offs)
+
+
+def host_signed_err(syn3: list[dict]) -> float | None:
+    """Median signed host error (estimate - known) over the three-person rows."""
+    return _median([
+        _f(r["est_pct"]) - _f(r["known_pct"])
+        for r in syn3
+        if r.get("role") == "host"
+        and _f(r.get("est_pct")) is not None and _f(r.get("known_pct")) is not None
+    ])
+
+
+def compute_shared_rho_facts(syn: list[dict], syn3: list[dict],
+                             syn_sh: list[dict], syn3_sh: list[dict]) -> dict:
+    """Offsets under one overdispersion shared across marker types, vs the default.
+
+    ``two_person_offset_reduction_fold`` is computed from the unrounded medians
+    so the prose ratio does not inherit rounding from the printed offsets.
+    """
+    off = ladder_offset(syn)
+    off_sh = ladder_offset(syn_sh) if syn_sh else None
+    err3 = host_signed_err(syn3)
+    err3_sh = host_signed_err(syn3_sh) if syn3_sh else None
+    return {
+        "two_person_shared_rho_med_signed_off_pct": f"{off_sh:+.3f}" if off_sh is not None else "",
+        "two_person_offset_reduction_fold": (
+            f"{off_sh / off:.1f}" if off_sh is not None and off else ""
+        ),
+        "three_host_shared_rho_med_signed_err_pct": (
+            f"{err3_sh:+.3f}" if err3_sh is not None else ""
+        ),
+        "three_host_shared_minus_default_err_pct": (
+            f"{err3_sh - err3:+.3f}" if err3_sh is not None and err3 is not None else ""
+        ),
+    }
+
+
 def compute_facts(syn: list[dict], two: list[dict]) -> dict:
     facts: dict[str, str] = {}
     fracs = sorted({_f(r["frac_pct"]) for r in syn if _f(r.get("frac_pct")) is not None})
@@ -128,6 +174,7 @@ def compute_facts(syn: list[dict], two: list[dict]) -> dict:
     facts["frac_ladder"] = ", ".join(f"{x:g}%" for x in fracs)
 
     # Per-fraction median MLE / presence host % and presence detection rate.
+    rates: dict[float, float] = {}
     for fr in fracs:
         rows = [r for r in syn if _f(r["frac_pct"]) == fr]
         mle = [_f(r["mle_pct"]) for r in rows if _f(r["mle_pct"]) is not None]
@@ -142,21 +189,18 @@ def compute_facts(syn: list[dict], two: list[dict]) -> dict:
         facts[f"detect_rate_{tag}"] = (
             f"{detected / len(pvals):.2f}" if pvals else ""
         )
+        if pvals:
+            rates[fr] = detected / len(pvals)
         facts[f"n_{tag}"] = str(len(rows))
+    full = full_detect_min(rates)
+    facts["full_detect_min_pct"] = f"{full:g}" if full is not None else ""
 
     # Constant offset of the two-person ladder: the per-level median estimate
     # minus its nominal fraction, summarised across levels. Near-zero means the
     # ladder sits on the identity line; a positive value is a floor the estimator
     # carries at every level. Reported as a fact rather than in prose because the
     # value moves with the error model (issue #23).
-    offs = []
-    for fr in fracs:
-        rows = [r for r in syn if _f(r["frac_pct"]) == fr]
-        mle = [_f(r["mle_pct"]) for r in rows if _f(r["mle_pct"]) is not None]
-        mm = _median(mle)
-        if mm is not None:
-            offs.append(mm - fr)
-    off = _median(offs)
+    off = ladder_offset(syn)
     facts["two_person_med_signed_off_pct"] = f"{off:+.3f}" if off is not None else ""
 
     # Synthetic-vs-real cross-check at 0.5% (the anchored pairs have a real 0.5%).
@@ -200,12 +244,7 @@ def compute_facts3(syn3: list[dict]) -> dict:
     # the two-donor mode carries at these fractions. Reported alongside the
     # estimate at the bottom of the ladder, where the same absolute offset is
     # largest in relative terms.
-    signed = [
-        _f(r["est_pct"]) - _f(r["known_pct"])
-        for r in host
-        if _f(r.get("est_pct")) is not None and _f(r.get("known_pct")) is not None
-    ]
-    hs = _median(signed)
+    hs = host_signed_err(syn3)
     facts["three_host_med_signed_err_pct"] = f"{hs:+.3f}" if hs is not None else ""
 
     known = (_f(r.get("known_pct")) for r in host)
@@ -368,6 +407,7 @@ def main() -> int:
 
     facts = compute_facts(syn, two)
     facts.update(compute_facts3(syn3))
+    facts.update(compute_shared_rho_facts(syn, syn3, _read(SYN_SHARED_TSV), _read(SYN3_SHARED_TSV)))
     path = FACTS_DIR / "srp434573_synthetic.csv"
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(facts.keys()))

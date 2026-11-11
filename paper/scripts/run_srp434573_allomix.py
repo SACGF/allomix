@@ -22,6 +22,8 @@ series; the semi-synthetic outputs appear only when that snapshot is present):
   output/srp434573_three_person.tsv  one row per component of the real 3-person mix
   output/srp434573_synthetic.tsv     semi-synthetic two-person sub-0.5% series (#5)
   output/srp434573_synthetic_three_person.tsv  semi-synthetic host + 2 donor mix (#5)
+  output/srp434573_synthetic*_shared_rho.tsv   the same two series fitted with one
+                                     overdispersion shared across marker types (#33)
 
 Genotype VCFs are read from the committed snapshot in
 ``paper/public_data/SRP434573/genotypes`` so the paper builds out of the box,
@@ -349,12 +351,13 @@ def two_person_row(name: str, host: str, donor: str, known: float | None, rec: d
     }
 
 
-def run_synthetic(syn_dir: Path) -> list[dict]:
+def run_synthetic(syn_dir: Path, extra_args: list[str] | None = None) -> list[dict]:
     """Run allomix on the committed semi-synthetic admix VCFs (issue #5).
 
     Reuses each pair's real per-patient error table (the host/donor individuals
     are unchanged). Returns one row per synthetic mixture sample, with the known
     host fraction and replicate parsed from the ``syn_..._f<pct>_rep<n>`` name.
+    ``extra_args`` is passed through to ``detect`` (the shared-rho arm).
     """
     rows: list[dict] = []
     for name, (host, donors) in MIXES.items():
@@ -369,7 +372,7 @@ def run_synthetic(syn_dir: Path) -> list[dict]:
         # table when built, else this mixture's per-patient table.
         error_table = resolve_error_table(name)
         recs = run_mix(name, host, donors, panel=panel, admix=admix,
-                       error_table=error_table)
+                       error_table=error_table, extra_args=extra_args)
         for rec in recs:
             parsed = parse_synthetic_sample(rec.get("sample") or "")
             if parsed is None:
@@ -382,7 +385,7 @@ def run_synthetic(syn_dir: Path) -> list[dict]:
     return rows
 
 
-def run_synthetic_three(syn_dir: Path) -> list[dict]:
+def run_synthetic_three(syn_dir: Path, extra_args: list[str] | None = None) -> list[dict]:
     """Run allomix on the semi-synthetic host + 2 donor mixtures (issue #5).
 
     The three-person trio (host F2, donors M1 + M2) is titrated with the host at
@@ -401,7 +404,7 @@ def run_synthetic_three(syn_dir: Path) -> list[dict]:
             continue
         error_table = resolve_error_table(name)
         recs = run_mix(name, host, donors, panel=panel, admix=admix,
-                       error_table=error_table)
+                       error_table=error_table, extra_args=extra_args)
         for rec in recs:
             parsed = parse_synthetic3_sample(rec.get("sample") or "")
             if parsed is None:
@@ -522,6 +525,20 @@ def main() -> int:
                      "known_pct", "est_pct", "ci_lo", "ci_hi", "seed", "qc"]
         write_tsv(OUT / "srp434573_synthetic_three_person.tsv", syn3_cols, syn3)
         sys.stderr.write(f"Wrote {len(syn3)} semi-synthetic three-person rows.\n")
+
+        # Shared-rho comparison arm (issue #33): the same semi-synthetic series
+        # with a single overdispersion shared across marker types. results.md
+        # contrasts the two models' offsets, so both come from this build rather
+        # than from a one-off run. Skipped when the whole run is already shared-rho.
+        if not NO_MARKER_TYPE_OVERDISPERSION:
+            shared = ["--no-marker-type-overdispersion"]
+            syn_sh = run_synthetic(syn_dir, extra_args=shared)
+            write_tsv(OUT / "srp434573_synthetic_shared_rho.tsv", syn_cols, syn_sh)
+            syn3_sh = run_synthetic_three(syn_dir, extra_args=shared)
+            write_tsv(OUT / "srp434573_synthetic_three_person_shared_rho.tsv", syn3_cols, syn3_sh)
+            sys.stderr.write(
+                f"Wrote {len(syn_sh)} + {len(syn3_sh)} shared-rho semi-synthetic rows.\n"
+            )
     else:
         sys.stderr.write("No semi-synthetic snapshot found; skipping synthetic run.\n")
     return 0

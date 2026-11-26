@@ -128,11 +128,11 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 The paper build uses Snakemake (`paper/Snakefile`). The validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 
-The paper needs vibepaper with claims sidecars (pinned to a GitHub commit in `pyproject.toml` and CI until a PyPI release >= 0.13 has them). Conventions (details in `docs/paper.md`, "Wording that depends on facts"):
+The paper needs vibepaper 0.13 (`vibepaper>=0.13,<0.14` from PyPI, pinned in `pyproject.toml` and CI). Conventions (details in `docs/paper.md`, "Wording that depends on facts"):
 
 - The prose is plain Markdown plus `{{ facts }}`: no inline `{% assert %}` or `{# lint-ok #}`. Each section's checks live in `paper/<section>.claims.toml`: `[[claim]]` (quote + assert), `[[ok]]` (quote + reason, for hedges, definitions and cited figures) and `[[check]]` (an assert with no wording). A quote must match one sentence; when you edit a sentence and lint says its quote no longer matches, re-check the claim against the facts before updating the quote.
 
-- Facts are typed vertical CSVs written by `paper/scripts/facts_io.py` (`write_fact_csv`), with a provenance sidecar. Types come from the field name (`*_pct` percent, `n_*` count, `*_rate` fraction, `*_fold`/`*_ratio` ratio). Format a typed percent with `| pct(N)`, not `| dp(N) }}%`.
+- Facts are typed vertical CSVs written by the vibepaper `FactsWriter` in `paper/scripts/facts_io.py` (`FACTS.write`, alias `write_fact_csv`), with a provenance sidecar. Types come from the field-name globs listed in that module (`*_pct` percent, `n_*` count, `*_rate` fraction, `*_fold`/`*_ratio` ratio); a missing value is written blank. Read a facts CSV with `vibepaper.facts.read_facts`. Format a typed percent with `| pct(N)`, not `| dp(N) }}%`.
 - Judgement words ("close to", "near", "comparable to", "essentially unchanged", "unchanged") use the tolerances in `paper.toml` `[claims]` (`is near(...)`); never hand-write a tolerance in an assert.
 - Literature values that the pipeline does not measure live in `paper/frozen_facts.csv` with a `type` (`vibepaper freeze ns.field --value V --type percent --reason "..."`), not hard-coded in a producer.
 - After editing the paper, run `vibepaper lint --numbers --check` and `vibepaper check` (or `snakemake -s paper/Snakefile --cores 1 paper_check`). A `quick=1` build cannot render the paper (its low-iteration LoD grid fails the floor asserts); use `paper_check` there.

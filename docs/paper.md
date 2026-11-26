@@ -83,8 +83,8 @@ usable.
 
 ## Wording that depends on facts
 
-The paper needs vibepaper with claims sidecars (pinned to a GitHub commit in
-`pyproject.toml` until a PyPI release has them). Every number in the paper is a
+The paper needs vibepaper 0.13 from PyPI (`vibepaper>=0.13,<0.14`, pinned in
+`pyproject.toml` and CI). Every number in the paper is a
 `{{ namespace.field }}` fact, and so is every word that makes a claim about one.
 Direction, magnitude, approximation and a/an come from vibepaper word filters
 (`approx`, `number_word`, `article`, `fold`, ...).
@@ -142,15 +142,17 @@ message = "the gating comparison's REVIEW count is the one quoted earlier"
 
 ### Typed facts and provenance
 
-Producers write facts through `paper/scripts/facts_io.py` (`write_fact_csv`), which
-writes a vertical `field,value,type` CSV with vibepaper's `write_facts` and a
-`<name>.provenance.json` sidecar with the allomix version, date and command. Types
-come from the naming convention: `*_pct` is a `percent` (already multiplied by
-100), `n_*` / `*_n` a `count`, `*_rate` / `detect_rate_*` / `*_detect_0p<N>` a
-`fraction`, `*_ratio` / `*_fold` / `fold_*` a `ratio`; everything else is untyped.
-Follow the convention when you add a fact, and format a typed percent with
-`{{ x | pct(N) }}` rather than `{{ x | dp(N) }}%`. Scripts that read a facts CSV use
-`read_fact_csv`. Multi-row data tables keep their own `csv` writers, with
+Producers write facts through the one vibepaper `FactsWriter` in
+`paper/scripts/facts_io.py` (`FACTS.write`, alias `write_fact_csv`), which writes a
+vertical `field,value,type` CSV and a `<name>.provenance.json` sidecar with the
+allomix version, date and command. The module docstring is the convention: `*_pct`
+/ `est_*pct` is a `percent` (already multiplied by 100), `n_*` / `*_n` a `count`,
+`*_rate` / `detect_rate_*` / `*_detect_0p*` a `fraction`, `*_ratio` / `*_fold` /
+`fold_*` a `ratio`; everything else is untyped. A missing value (None or NaN) is
+written as an empty cell. Follow the convention when you add a fact, and format a
+typed percent with `{{ x | pct(N) }}` rather than `{{ x | dp(N) }}%`. Scripts that
+read a facts CSV use `vibepaper.facts.read_facts`, which returns the typed values a
+template sees. Multi-row data tables keep their own `csv` writers, with
 `lineterminator="\n"`.
 
 The Methods cite the allomix version from `srp434573._prov`, and `vibepaper lint`

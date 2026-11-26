@@ -7,6 +7,7 @@ Usage:
     python scripts/generate_paper_facts.py
 """
 
+import csv
 import math
 import random
 import sys
@@ -20,7 +21,7 @@ from allomix.genotype import classify_markers, parse_vcf  # noqa: E402
 from allomix.estimate.likelihood import PanelCalibration  # noqa: E402
 from allomix.simulate import blend_vcfs, generate_marker_biases, write_vcf  # noqa: E402
 from allomix.simulate import parse_text_vcf as sim_parse_vcf  # noqa: E402
-from facts_io import read_fact_csv, write_fact_csv  # noqa: E402
+from facts_io import write_fact_csv  # noqa: E402
 from paper_seed import derive_seed  # noqa: E402
 
 FACTS_DIR = Path("output/facts")
@@ -166,7 +167,11 @@ def main():
     # Empirical panel stats (measured on the internal data by
     # scripts/measure_panel_bias.py, committed as a one-row CSV) rewritten typed.
     empirical_src = Path("paper/empirical_results/panel_empirical.csv")
-    write_fact_csv(FACTS_DIR / "panel_empirical.csv", read_fact_csv(empirical_src))
+    # Passed as raw strings, not through vibepaper's read_facts: for a one-row
+    # (horizontal) CSV that upcasts every integer to float (1732 -> 1732.0).
+    with open(empirical_src, newline="", encoding="utf-8") as fh:
+        (empirical,) = csv.DictReader(fh)
+    write_fact_csv(FACTS_DIR / "panel_empirical.csv", empirical)
     print(f"  Wrote {empirical_src} -> {FACTS_DIR / 'panel_empirical.csv'} (typed)")
 
     print("\nDone! Facts written to output/facts/")

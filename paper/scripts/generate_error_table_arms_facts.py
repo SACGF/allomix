@@ -34,7 +34,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from facts_io import read_fact_csv, write_fact_csv
+from facts_io import write_fact_csv
+from vibepaper.facts import read_facts
 
 FRESH_ARMS_DIR = Path("output/error_table_arms")
 SNAPSHOT_ARMS_DIR = Path("paper/public_data/SRP434573/error_table_arms")
@@ -172,7 +173,7 @@ def contamination_band() -> tuple[float, float] | None:
     p = FACTS / "srp434573.csv"
     if not p.exists():
         return None
-    facts = read_fact_csv(p)
+    facts = read_facts(p)
     med, mx = _f(facts.get("contam_floor_median_pct")), _f(facts.get("contam_floor_max_pct"))
     return (med, mx) if med is not None and mx is not None else None
 

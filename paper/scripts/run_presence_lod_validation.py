@@ -71,6 +71,7 @@ from allomix.simulate import (  # noqa: E402
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from facts_io import write_fact_csv  # noqa: E402
 from paper_quick import qval  # noqa: E402
 
 # Reuse the MLE sweep's grids, two-level defaults, and fit/seed helpers so the
@@ -322,7 +323,7 @@ def write_grid_raw(rows: list[dict], path: Path) -> None:
         "detected",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for r in rows:
             w.writerow({k: r[k] for k in fields})
@@ -345,7 +346,7 @@ def write_summary(summaries: list[dict], path: Path) -> None:
         "note",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for s in summaries:
             w.writerow({k: s.get(k, "") for k in fields})
@@ -354,7 +355,7 @@ def write_summary(summaries: list[dict], path: Path) -> None:
 def write_headline(
     summaries: list[dict], path: Path, n_pairs: dict[str, int], n_seq_reps: int
 ) -> None:
-    """One-row CSV of cells later prose may quote (parallels lod_headline.csv)."""
+    """Typed facts CSV of cells later prose may quote (parallels lod_headline.csv)."""
 
     def lookup(rel: str, d: int, nm: int) -> float:
         for s in summaries:
@@ -371,15 +372,13 @@ def write_headline(
         "presence_unrelated_lod_2000x_400markers_pct": lookup("unrelated", 2000, 400),
         "presence_sibling_lod_2000x_400markers_pct": lookup("sibling", 2000, 400),
     }
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(headline.keys()))
-        w.writeheader()
-        w.writerow(
-            {
-                k: (round(v, 4) if isinstance(v, float) and math.isfinite(v) else v)
-                for k, v in headline.items()
-            }
-        )
+    write_fact_csv(
+        path,
+        {
+            k: (round(v, 4) if isinstance(v, float) and math.isfinite(v) else v)
+            for k, v in headline.items()
+        },
+    )
 
 
 def _worker(arg: tuple) -> list[dict]:

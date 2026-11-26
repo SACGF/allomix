@@ -56,8 +56,10 @@ jobs:
         run: ruff format --check src/ tests/
 
   paper-lint:
-    # Flags claim words beside {{ facts }} that no word filter or {% assert %}
-    # checks. Needs no facts CSVs, so it runs on a bare checkout.
+    # Flags claim words beside {{ facts }} that no word filter or claims-sidecar
+    # entry (paper/*.claims.toml) covers, sidecar quotes whose wording changed,
+    # and result-like numbers typed into the prose. Needs no facts CSVs, so it
+    # runs on a bare checkout.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -70,7 +72,15 @@ jobs:
       - name: Install vibepaper
         run: |
           python -m pip install --upgrade pip
-          pip install "vibepaper>=0.9.0"
+          # Pinned to vibepaper main for claims sidecars; switch back to a PyPI
+          # release ("vibepaper>=0.13") once one is out (also in pyproject.toml).
+          pip install "vibepaper @ git+https://github.com/SACGF/vibepaper@cec8979"
 
       - name: vibepaper lint
-        run: vibepaper lint --check
+        run: vibepaper lint --numbers --check
+
+      # Parses every sidecar assert and [claims] test. With no facts CSVs each
+      # assert reports MISSING, which does not fail; a broken assert (unknown
+      # claim test, syntax error) reports ERROR and does.
+      - name: vibepaper check
+        run: vibepaper check --check

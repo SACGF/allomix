@@ -83,22 +83,114 @@ usable.
 
 ## Wording that depends on facts
 
-Every number in the paper is a `{{ namespace.field }}` fact, and so is every word
-that makes a claim about one. Direction, magnitude, approximation and a/an come from
-vibepaper word filters (`approx`, `number_word`, `article`, `fold`, ...). Ordering,
-totality ("all", "none") and threshold words ("close to", "essentially unchanged")
-are pinned by an `{% assert condition, "message" %}` line directly above the
-paragraph. The build fails if an assert is false and prints the fact values. A
-paragraph whose claim words are deliberate hedges or describe cited work carries a
-`{# lint-ok: reason #}` comment.
+The paper needs vibepaper with claims sidecars (pinned to a GitHub commit in
+`pyproject.toml` until a PyPI release has them). Every number in the paper is a
+`{{ namespace.field }}` fact, and so is every word that makes a claim about one.
+Direction, magnitude, approximation and a/an come from vibepaper word filters
+(`approx`, `number_word`, `article`, `fold`, ...).
 
-- `vibepaper lint` lists sentences with a claim word beside a fact and no filter or
-  assert in the paragraph. CI runs `vibepaper lint --check`.
-- After re-running any analysis, run `vibepaper diff` before re-reading the paper. It
-  names the facts that changed and the unchecked sentences that use them.
+The prose holds no checks: it is plain Markdown plus `{{ facts }}`, so co-authors
+can edit it freely. Each section's checks live beside it in a claims sidecar
+(`paper/results.md` → `paper/results.claims.toml`):
+
+```toml
+[[claim]]                      # an assert tied to the wording it checks
+quote   = "All ... of ... two-person mixtures gate in"
+assert  = "srp434573.correction_n_gated == srp434573.correction_n_mixtures"
+message = "'All ... of ... two-person mixtures gate in'"
+
+[[ok]]                         # a hedge, definition or cited figure
+quote  = "most plausibly index hopping"
+reason = "hedge: the mechanism is attributed by the source study, not measured here"
+
+[[check]]                      # an invariant with no wording
+assert  = "qc_gating.n_review_clinical == srp434573.n_review"
+message = "the gating comparison's REVIEW count is the one quoted earlier"
+```
+
+- **A `quote` matches one sentence** of the section (or one table row), ignoring
+  case, `*` and line wrapping; `…` or `...` stands for a `{{ fact }}` or any text.
+  Quote the wording the check is about, at least three words. A `[[claim]]` covers
+  the claim words inside its quote; `quote` can be a list when a claim rests on
+  several sentences. The build fails if an assert is false and prints the fact
+  values with the sidecar line and the matched sentence.
+- **When you edit a sentence a quote matches**, `vibepaper lint` reports the quote
+  as no longer matching. Re-check the claim against the facts, then update the quote.
+  `vibepaper claims show` prints the prose with each section's checks under the
+  sentences they match, for review.
+- **Ordering and totality** ("all", "none", "rises", "lower") need a `[[claim]]`
+  whose assert is the condition the wording depends on.
+- **Judgement words** ("close to", "near", "comparable to", "essentially unchanged",
+  "unchanged") have one tolerance each, defined under `[claims]` in `paper.toml`
+  with the reason for it, and are used as tests: `assert = "a is near(b)"`.
+  Do not write a new hand-made tolerance into an assert; if a word needs a different
+  tolerance, it is a different word.
+- **Hedges and non-claim uses** of a claim word ("most plausibly", "at least one",
+  "estimated versus known" as an axis label) get an `[[ok]]` quoting the phrase, with
+  a reason. lint reports an `[[ok]]` that no longer accepts anything.
+- **Hand-typed numbers.** A result belongs in a fact. Design values (titration
+  levels, depths, the nominal 95%, p < 0.05) are listed under `[lint]
+  allowed_numbers`; a one-off constant (the heterozygous allele fraction 0.5, the
+  chi-squared critical value) or a figure quoted from a cited study gets an `[[ok]]`
+  quoting it.
+- **Citations after a full stop** (`text.[@key] Next`) stop lint splitting the
+  sentences there, so a quote may need to be longer to match only one. Prefer one
+  short `[[ok]]` per cited figure over one long quote.
 - A derived value a filter or assert needs (a ratio, a count of exceptions, a
   min/max across conditions) is emitted by the analysis script as a fact. It is
   never computed in the template for display.
+
+### Typed facts and provenance
+
+Producers write facts through `paper/scripts/facts_io.py` (`write_fact_csv`), which
+writes a vertical `field,value,type` CSV with vibepaper's `write_facts` and a
+`<name>.provenance.json` sidecar with the allomix version, date and command. Types
+come from the naming convention: `*_pct` is a `percent` (already multiplied by
+100), `n_*` / `*_n` a `count`, `*_rate` / `detect_rate_*` / `*_detect_0p<N>` a
+`fraction`, `*_ratio` / `*_fold` / `fold_*` a `ratio`; everything else is untyped.
+Follow the convention when you add a fact, and format a typed percent with
+`{{ x | pct(N) }}` rather than `{{ x | dp(N) }}%`. Scripts that read a facts CSV use
+`read_fact_csv`. Multi-row data tables keep their own `csv` writers, with
+`lineterminator="\n"`.
+
+The Methods cite the allomix version from `srp434573._prov`, and `vibepaper lint`
+flags a paragraph that mixes facts produced by different allomix versions.
+
+To retype a facts directory produced before this convention without rerunning the
+slow simulations, run `python paper/scripts/convert_facts_to_typed.py` from the
+repository root (or pass another facts directory). It converts one-row CSVs in
+place, rewrites CRLF data tables as LF, and writes no provenance sidecars (the
+cheap summary rules, which list `facts_io.py` as an input, rerun and write theirs).
+
+### Frozen facts
+
+`paper/frozen_facts.csv` holds values that are deliberately not measured by this
+pipeline, each with its source and type: the commercial-kit LoDs (`percent`) and
+marker counts (`count`) quoted in Table 1 and the Discussion. vibepaper applies it on
+top of the facts CSVs. Add a cited constant with
+`vibepaper freeze ns.field --value V --type percent --reason "..."`, format it like a
+measured fact (`{{ tool_landscape.devyser_lod | pct(2) }}`), and commit the file.
+
+### Checks
+
+```bash
+vibepaper lint --numbers --check   # claim words, hand-typed numbers, fact types (CI runs this)
+vibepaper lint --unused            # facts the paper never quotes; skip with [lint] unused_ok
+vibepaper check --check            # every sidecar assert against the facts that exist (CI runs this)
+vibepaper claims show              # the prose with each sentence's checks under it
+snakemake -s paper/Snakefile --cores 1 paper_check   # lint + check, as one rule
+```
+
+`vibepaper check` reports an assert as MISSING when its facts are not produced yet,
+so it works on a partial facts directory. A `quick=1` build cannot render the paper,
+because the low-iteration LoD grid fails the asserts that pin the analytical floor;
+use `paper_check` there to see which.
+
+After re-running any analysis, run `vibepaper diff` before re-reading the paper. It
+names the facts that changed and the unchecked sentences that use them, with a word
+diff of each changed paragraph. Facts are not committed, so to compare two runs keep
+a copy of the old `output/facts` and use `vibepaper diff --against-dir <old facts>`;
+paste `--format md` output into a re-run PR.
 
 ## Appendix: regenerating the real-data inputs (SRP434573)
 

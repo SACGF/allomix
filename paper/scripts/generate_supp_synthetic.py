@@ -44,6 +44,7 @@ from allomix.simulate import (  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from paper_quick import qval  # noqa: E402  (also patches savefig for the watermark)
+from facts_io import write_fact_csv  # noqa: E402
 from paper_seed import derive_seed  # noqa: E402
 
 HOST_VCF = "tests/test_data/host.vcf"
@@ -484,7 +485,7 @@ def run_calibration_batch(
     outpath = Path(outpath)
     outpath.parent.mkdir(parents=True, exist_ok=True)
     with open(outpath, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -646,11 +647,7 @@ def write_supp_facts(ablation_results, cal_results, empirical_biases, empirical_
     r = np.corrcoef(np.abs(empirical_biases), empirical_sd_within)[0, 1]
     facts["bias_stability_r"] = f"{r:.2f}"
 
-    path = FACTS_DIR / "supp_synthetic.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(facts.keys()))
-        writer.writeheader()
-        writer.writerow(facts)
+    path = write_fact_csv(FACTS_DIR / "supp_synthetic.csv", facts)
     print(f"  Wrote {path}", file=sys.stderr)
 
 

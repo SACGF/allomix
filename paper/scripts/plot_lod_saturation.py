@@ -248,7 +248,7 @@ def main() -> None:
     print(f"Wrote {args.out}")
 
     with args.facts.open("w", encoding="utf-8") as fh:
-        w = csv.writer(fh)
+        w = csv.writer(fh, lineterminator="\n")
         w.writerow(
             ["dataset", "relatedness", "A", "rho", "eff_depth_cap", "floor_pct_largest_panel"]
         )

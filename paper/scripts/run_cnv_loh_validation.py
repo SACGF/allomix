@@ -62,6 +62,7 @@ from allomix.simulate import (  # noqa: E402
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from facts_io import write_fact_csv  # noqa: E402
 from paper_quick import QUICK, qval  # noqa: E402
 
 # Quick-build mode (ALLOMIX_PAPER_QUICK=1) only cuts the replicate count (see
@@ -414,7 +415,7 @@ def summarise(raw: list[dict]) -> list[dict]:
 def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         for r in rows:
             writer.writerow(r)
@@ -471,9 +472,9 @@ def main() -> None:
     write_csv(FACTS_DIR / "cnv_loh_summary.csv", summary, summary_fields)
 
     headline = build_headline(summary)
-    # Single wide row, like lod_headline.csv, so the paper can template
+    # Typed vertical facts, like lod_headline.csv, so the paper can template
     # `{{ cnv_loh_headline.<field> }}`.
-    write_csv(FACTS_DIR / "cnv_loh_headline.csv", [headline], list(headline.keys()))
+    write_fact_csv(FACTS_DIR / "cnv_loh_headline.csv", headline)
 
     print(f"Wrote {len(raw)} raw rows, {len(summary)} summary cells to {FACTS_DIR}")
     for k, v in headline.items():

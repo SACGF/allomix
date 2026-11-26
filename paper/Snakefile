@@ -231,19 +231,12 @@ PRESENCE_LOD_FACTS = [
 PRESENCE_LOD_FIGS = [f"{FACTS_DIR}/fig_presence_lod_curves.png"]
 
 PAPER_FACTS = [
-    f"{FACTS_DIR}/validation_summary.csv",
     f"{FACTS_DIR}/bias_no_bias.csv",
     f"{FACTS_DIR}/bias_with_bias.csv",
-    f"{FACTS_DIR}/tool_landscape.csv",
     f"{FACTS_DIR}/sim_calibration.csv",
     f"{FACTS_DIR}/panel_specs.csv",
     f"{FACTS_DIR}/panel_empirical.csv",
-] + expand(
-    f"{FACTS_DIR}/val_host_{{h}}_donor_{{d}}.csv",
-    zip,
-    h=[100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0],
-    d=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-)
+]
 
 ALL_FACTS = (
     DEPTH_FACTS
@@ -303,6 +296,12 @@ rule all:
 
 # --- Validation scripts (all independent, run in parallel) -------------------
 
+# Facts CSVs are typed vertical CSVs written by paper/scripts/facts_io.py, each
+# with a provenance sidecar. Only the cheap summary rules list facts_io.py as an
+# input, so a change to the writer reruns them but not the slow simulations; to
+# retype facts from a slow rule without rerunning it, use
+# paper/scripts/convert_facts_to_typed.py.
+
 rule depth_validation:
     input:
         "tests/test_data/host.vcf",
@@ -339,6 +338,7 @@ rule multidonor_validation:
 
 rule build_tables:
     input:
+        "paper/scripts/facts_io.py",
         DEPTH_FACTS,
         RELATEDNESS_FACTS,
         MULTIDONOR_FACTS,
@@ -360,6 +360,7 @@ rule bias_comparison:
 
 rule paper_facts:
     input:
+        "paper/scripts/facts_io.py",
         "tests/test_data/host.vcf",
         "tests/test_data/donor.vcf",
         "paper/empirical_results/panel_empirical.csv",  # generated on TAU via scripts/measure_panel_bias.py
@@ -498,6 +499,7 @@ rule srp434573_synthetic_facts:
     # stub + placeholder figure when that snapshot is absent. No sequencing or
     # joint calling. Depends on two_person.tsv to order it after srp434573_allomix.
     input:
+        "paper/scripts/facts_io.py",
         "output/srp434573_two_person.tsv",
         "paper/scripts/generate_srp434573_synthetic_facts.py",
         *SRP434573_SYNTHETIC_VCFS,
@@ -516,6 +518,7 @@ rule error_table_arms_facts:
     # Summary only: no allomix runs here, so this is seconds, not the ~30 min the
     # arms themselves take.
     input:
+        "paper/scripts/facts_io.py",
         "paper/scripts/generate_error_table_arms_facts.py",
         # Panel B draws the independently measured co-pooled contamination floor
         # as a reference band, which the script reads out of the srp434573 facts.
@@ -537,6 +540,8 @@ rule srp434573_facts:
     # Summarises the allomix results on the SRP434573 public mixtures (from the
     # srp434573_allomix rule) into facts + a figure. No sequencing or joint calling.
     input:
+        "paper/scripts/facts_io.py",
+        "paper/scripts/generate_srp434573_facts.py",
         "output/srp434573_two_person.tsv",
         "output/srp434573_three_person.tsv",
     output:
@@ -551,6 +556,7 @@ rule qc_gating_sensitivity:
     # the goodness-of-fit reduced chi-squared distribution on the two-person mixtures.
     # Reruns allomix QC in-process on the committed VCFs; no sequencing or joint calling.
     input:
+        "paper/scripts/facts_io.py",
         "output/srp434573_two_person.tsv",
         "paper/scripts/qc_gating_sensitivity.py",
         "paper/scripts/srp434573_common.py",
@@ -617,6 +623,7 @@ rule srp434573_timeline_plot:
     # ladder (host 10% down to 0.5%) read as a declining-chimerism trajectory, known
     # vs allomix estimate with CIs. Reads the two-person TSV from srp434573_allomix.
     input:
+        "paper/scripts/facts_io.py",
         "output/srp434573_two_person.tsv",
         "paper/scripts/plot_srp434573_timeline.py",
     output:
@@ -631,6 +638,8 @@ rule srp_contam_facts:
     # VCFs only; no sequencing or simulation. Writes the headline medians and the
     # per-site long-format CSV that backs Figure S13.
     input:
+        "paper/scripts/facts_io.py",
+        "paper/scripts/probe_contam_median_srp434573.py",
         f"{SRP434573_GENOTYPES}/mix_F1_into_F3.admix.vcf.gz",
     output:
         SRP_CONTAM_FACTS,
@@ -713,6 +722,14 @@ PAPER_SECTIONS = [
     "paper/supplementary.md",
 ]
 
+# Each section's checks ([[claim]] asserts, [[check]] invariants, [[ok]]
+# acceptances) live beside it in a claims sidecar; build and check evaluate
+# them, so they are inputs too. Acknowledgements has none.
+PAPER_CLAIMS = [
+    s.replace(".md", ".claims.toml") for s in PAPER_SECTIONS
+    if s != "paper/acknowledgements.md"
+]
+
 rule paper_test:
     # Paper-glue tests: the parsers/helpers in paper/scripts (including the
     # semisynthetic generator) that the runners depend on. These do
@@ -721,8 +738,10 @@ rule paper_test:
     # point, would silently ship a wrong paper. Run them as a build gate. Re-runs
     # when a test or one of the scripts it imports changes.
     input:
+        "paper/tests/test_facts_io.py",
         "paper/tests/test_lod_validation.py",
         "paper/tests/test_semisynthetic_srp434573.py",
+        "paper/scripts/facts_io.py",
         "paper/scripts/run_lod_validation.py",
         "paper/scripts/run_srp434573_allomix.py",
         "paper/scripts/make_semisynthetic_srp434573.py",
@@ -742,12 +761,31 @@ rule paper:
         ALL_FACTS,
         ALL_FIGS,
         "paper.toml",
+        "paper/frozen_facts.csv",
         PAPER_SECTIONS,
+        PAPER_CLAIMS,
         "output/.paper_tests_passed",
     output:
         touch("output/.paper_built"),
     shell:
         "vibepaper build --md --pdf-if-available"
+
+
+rule paper_check:
+    # Fast claim checks without a full build: lint (claim words, hand-typed
+    # numbers, fact types, claims-sidecar quotes that no longer match) and every
+    # sidecar assert against the facts that exist.
+    # Asserts whose facts are not produced yet report MISSING and do not fail,
+    # so this runs on a partial facts directory. Not a dependency of `paper`
+    # (the build evaluates the asserts itself); run it on its own:
+    #   snakemake -s paper/Snakefile --cores 1 paper_check
+    input:
+        "paper.toml",
+        "paper/frozen_facts.csv",
+        PAPER_SECTIONS,
+        PAPER_CLAIMS,
+    shell:
+        "vibepaper lint --numbers --check && vibepaper check --check"
 
 
 # --- Housekeeping ------------------------------------------------------------

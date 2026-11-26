@@ -28,6 +28,8 @@ Outputs (into output/facts/):
 import csv
 from pathlib import Path
 
+from facts_io import read_fact_csv
+
 FACTS_DIR = Path("output/facts")
 
 # en dash for numeric ranges, matching the previous template text.
@@ -35,13 +37,8 @@ NDASH = "–"
 
 
 def read_fact(name: str) -> dict[str, str]:
-    """Read a single-row fact CSV as a dict of raw string values."""
-    path = FACTS_DIR / f"{name}.csv"
-    with open(path, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    if len(rows) != 1:
-        raise ValueError(f"{path}: expected exactly 1 data row, got {len(rows)}")
-    return rows[0]
+    """Read a facts CSV as a dict of raw string values."""
+    return read_fact_csv(FACTS_DIR / f"{name}.csv")
 
 
 def dp(value: str, decimals: int) -> str:
@@ -53,7 +50,7 @@ def write_table(name: str, header: list[str], rows: list[list[str]]) -> None:
     """Write a display-ready table CSV with pre-formatted string cells."""
     path = FACTS_DIR / f"{name}.csv"
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, lineterminator="\n")
         w.writerow(header)
         w.writerows(rows)
     print(f"Wrote {path} ({len(rows)} rows)")

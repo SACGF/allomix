@@ -34,6 +34,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from facts_io import read_fact_csv, write_fact_csv
 
 FRESH_ARMS_DIR = Path("output/error_table_arms")
 SNAPSHOT_ARMS_DIR = Path("paper/public_data/SRP434573/error_table_arms")
@@ -171,11 +172,8 @@ def contamination_band() -> tuple[float, float] | None:
     p = FACTS / "srp434573.csv"
     if not p.exists():
         return None
-    with p.open() as fh:
-        rows = list(csv.DictReader(fh))
-    if not rows:
-        return None
-    med, mx = _f(rows[0].get("contam_floor_median_pct")), _f(rows[0].get("contam_floor_max_pct"))
+    facts = read_fact_csv(p)
+    med, mx = _f(facts.get("contam_floor_median_pct")), _f(facts.get("contam_floor_max_pct"))
     return (med, mx) if med is not None and mx is not None else None
 
 
@@ -269,7 +267,7 @@ def main() -> None:
                 keys.append(k)
     out_csv = FACTS / "error_table_arms.csv"
     with out_csv.open("w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=keys)
+        w = csv.DictWriter(fh, fieldnames=keys, lineterminator="\n")
         w.writeheader()
         for arm, _, _ in ARMS:
             if arm in metrics:
@@ -290,10 +288,7 @@ def main() -> None:
         headline["contam_floor_max_pct"] = f"{band[1]:g}"
     headline["n_arms"] = str(len(metrics))
     out_headline = FACTS / "error_table_arms_headline.csv"
-    with out_headline.open("w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(headline))
-        w.writeheader()
-        w.writerow(headline)
+    write_fact_csv(out_headline, headline)
     print(f"Wrote {out_headline}")
 
     out_png = FACTS / "fig_error_table_arms.png"

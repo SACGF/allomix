@@ -1,0 +1,10 @@
+# Claims for introduction.md (vibepaper claims sidecar, see the
+# README's "Claims sidecars"). A quote must match one sentence.
+
+[[ok]]
+quote = "analytical sensitivity of 0.06--0.2%"
+reason = "figures quoted from the cited clinical validations (Qama 2026, Blouin 2024)"
+
+[[ok]]
+quote = "all currently available NGS chimerism tools"
+reason = "describes the commercial tool landscape; the marker counts are cited constants in frozen_facts.csv"

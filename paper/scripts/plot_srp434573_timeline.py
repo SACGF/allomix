@@ -26,6 +26,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
+from facts_io import write_fact_csv  # noqa: E402
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator  # noqa: E402
 
 OUT = Path("output")
@@ -148,10 +149,7 @@ def main() -> int:
         "floor_pct": round(floor_pct, 2) if floor_pct is not None else "",
     }
     facts_path = FACTS_DIR / "srp434573_timeline.csv"
-    with open(facts_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(facts))
-        w.writeheader()
-        w.writerow(facts)
+    write_fact_csv(facts_path, facts)
 
     print(f"Saved {fig_path}")
     print(f"Wrote {facts_path}: {facts}")

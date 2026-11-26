@@ -75,6 +75,7 @@ from allomix.qc.host_presence import host_presence_test  # noqa: E402
 from allomix.simulate import thin_informative_markers  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from facts_io import write_fact_csv  # noqa: E402
 from paper_quick import qval  # noqa: E402
 from run_lod_validation import derive_seed, fit_lod  # noqa: E402
 from run_srp434573_allomix import MIXES, known_host_pct  # noqa: E402
@@ -436,7 +437,7 @@ def write_raw(rows: list[dict], path: Path) -> None:
         "mle_analytical_lod",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for r in rows:
             w.writerow({k: r[k] for k in fields})
@@ -445,7 +446,7 @@ def write_raw(rows: list[dict], path: Path) -> None:
 def write_per_mixture(rows: list[dict], path: Path) -> None:
     fields = ["test", "mixture", "depth", "n_markers", "lod_pct", "note", "mean_n_used"]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for r in rows:
             w.writerow({k: r.get(k, "") for k in fields})
@@ -468,7 +469,7 @@ def write_summary(rows: list[dict], path: Path) -> None:
         "note",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for s in rows:
             w.writerow({k: s.get(k, "") for k in fields})
@@ -546,15 +547,13 @@ def write_headline(
         "presence_lod_250x_50markers_pct": lookup("presence", 250, 50),
         "contamination_floor_pct": _contamination_floor_pct(raw_rows),
     }
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(headline.keys()))
-        w.writeheader()
-        w.writerow(
-            {
-                k: (round(v, 4) if isinstance(v, float) and math.isfinite(v) else v)
-                for k, v in headline.items()
-            }
-        )
+    write_fact_csv(
+        path,
+        {
+            k: (round(v, 4) if isinstance(v, float) and math.isfinite(v) else v)
+            for k, v in headline.items()
+        },
+    )
 
 
 def _read_raw_csv(path: Path) -> list[dict]:

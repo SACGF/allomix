@@ -42,12 +42,17 @@ class AdmixtureSampleAnalysis:
 def _floor_detection_limits(
     result: ChimerismResult | MultiDonorResult, contamination_fraction: float
 ) -> None:
-    """Floor LoB/LoD at the in-data contamination level (further_improvements.md, Obs 2).
+    """Floor LoB/LoD at the in-data contamination level.
 
     Analytical limits (see ``allomix.estimate.chimerism.detection_limit``) come from
     sequencing error and Fisher information alone; they ignore the co-pooled
     contamination floor, a second noise term competing with sub-1% host detection.
     No-op when the fraction is 0 or the result has no LoB/LoD fields (multi-donor).
+
+    A one-off simulation also checked that feeding the in-data floor into the
+    host-presence background does not suppress a true 0.5% host on clean,
+    high-depth blends (where the floor should be ~0); its results were not
+    recorded. To rerun it: ``git show bdf8214:scripts/validate_contamination_lod_floor.py``.
     """
     if contamination_fraction <= 0.0 or not hasattr(result, "lob_fraction"):
         return

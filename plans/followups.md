@@ -37,10 +37,6 @@ wetlab design itself is in `plans/wetlab_validation_design.md`.
   detector selects zero markers from a non-empty informative set. Worth raising
   as a GitHub issue.
 
-- **Pre-existing lint.** `ruff check` reports two `I001` import-order errors in
-  `scripts/validate_contamination_lod_floor.py`. Present before this work and
-  left alone; both are auto-fixable with `ruff check --fix`.
-
 ## Repository hygiene
 
 - **Restore or retire the `claude/` design docs.** Nine references across
@@ -51,7 +47,3 @@ wetlab design itself is in `plans/wetlab_validation_design.md`.
   held is genuinely gone. Some of it (the presence detector's acceptance gates,
   the contamination-table design decisions, the one-sided trim motivation) is
   worth reconstructing into `plans/` or `docs/` if any copies survive locally.
-
-- **Track `plans/`.** The `claude/` case is the argument: docstrings that cite
-  untracked design docs become dead references as soon as the working copy moves
-  or is cleaned. Keep `plans/` in git rather than gitignored.

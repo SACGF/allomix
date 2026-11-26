@@ -55,7 +55,10 @@ ROBUST_MODES = ("off", "auto", "force")
 # host presence are never trimmed; only those pointing away (genotype miscalls,
 # mapping artifacts, host CNV/LoH in the anti-host direction) stay eligible. At the
 # limit of detection, keep a few artifacts rather than discard real low-fraction
-# host signal.
+# host signal. Motivated by SRP434573, where the symmetric cut read 0% host at a
+# ~1% truth. A one-off simulation compared the two modes on synthetic declining
+# mixtures (0.5-10% host); its results were not recorded. To rerun it:
+# git show bdf8214:scripts/validate_onesided_trim.py
 ROBUST_ONE_SIDED = True
 
 # Residual outlier cut for the non-robust per-marker flag, in SDs from the mean

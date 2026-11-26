@@ -156,12 +156,6 @@ Follow the convention when you add a fact, and format a typed percent with
 The Methods cite the allomix version from `srp434573._prov`, and `vibepaper lint`
 flags a paragraph that mixes facts produced by different allomix versions.
 
-To retype a facts directory produced before this convention without rerunning the
-slow simulations, run `python paper/scripts/convert_facts_to_typed.py` from the
-repository root (or pass another facts directory). It converts one-row CSVs in
-place, rewrites CRLF data tables as LF, and writes no provenance sidecars (the
-cheap summary rules, which list `facts_io.py` as an input, rerun and write theirs).
-
 ### Frozen facts
 
 `paper/frozen_facts.csv` holds values that are deliberately not measured by this

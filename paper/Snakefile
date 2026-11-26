@@ -298,9 +298,7 @@ rule all:
 
 # Facts CSVs are typed vertical CSVs written by paper/scripts/facts_io.py, each
 # with a provenance sidecar. Only the cheap summary rules list facts_io.py as an
-# input, so a change to the writer reruns them but not the slow simulations; to
-# retype facts from a slow rule without rerunning it, use
-# paper/scripts/convert_facts_to_typed.py.
+# input, so a change to the writer reruns them but not the slow simulations.
 
 rule depth_validation:
     input:

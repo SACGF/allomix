@@ -285,9 +285,16 @@ def run_pair(
     n_seq_reps: int,
     base_seed: int,
     work_root: Path,
+    seq_reps: list[int] | None = None,
 ) -> list[dict]:
     """Generate one fixed host/donor pair, then run ``n_seq_reps`` sequencing
     replicates across every (n_markers, depth, true_frac) cell.
+
+    ``seq_reps`` restricts the run to those replicate indices (default: all of
+    ``range(n_seq_reps)``). The pair's genotypes and biases are seeded by the pair
+    alone and each blend by its replicate, so running a pair's replicates in
+    separate calls gives the same rows as one call; the caller uses this to spread
+    one pair over several workers.
 
     Genotypes and per-marker biases are drawn once per pair (seeded by
     ``pair_idx``, not the seq replicate) and reused across replicates and panel
@@ -303,7 +310,10 @@ def run_pair(
 
     Returns one row per (n_markers, depth, true_frac, seq_rep).
     """
-    pair_dir = work_root / relatedness / f"pair_{pair_idx}"
+    if seq_reps is None:
+        seq_reps = list(range(n_seq_reps))
+    # One directory per call, so calls for the same pair never share VCF paths.
+    pair_dir = work_root / relatedness / f"pair_{pair_idx}" / f"reps_{seq_reps[0]}"
     pair_dir.mkdir(parents=True, exist_ok=True)
 
     max_markers = max(N_MARKERS_GRID)
@@ -326,7 +336,7 @@ def run_pair(
     rows: list[dict] = []
     admix_path = pair_dir / "admix.vcf"
 
-    for seq_rep in range(n_seq_reps):
+    for seq_rep in seq_reps:
         for depth in DEPTHS:
             for frac in TRUE_FRACTIONS:
                 blend_seed = derive_seed(
@@ -609,8 +619,8 @@ def write_headline(
 
 
 def _worker(args: tuple) -> list[dict]:
-    relatedness, pair_idx, n_seq_reps, base_seed, work_root, n_markers_subset = args
-    rows = run_pair(relatedness, pair_idx, n_seq_reps, base_seed, work_root)
+    relatedness, pair_idx, n_seq_reps, base_seed, work_root, n_markers_subset, seq_rep = args
+    rows = run_pair(relatedness, pair_idx, n_seq_reps, base_seed, work_root, seq_reps=[seq_rep])
     if n_markers_subset is not None:
         keep = set(n_markers_subset)
         rows = [r for r in rows if r["n_markers"] in keep]
@@ -628,7 +638,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--n-seq-reps", type=int, default=DEFAULT_N_SEQ_REPS,
                         help="Sequencing replicates per pair.")
     parser.add_argument("--n-workers", "-j", type=int, default=1,
-                        help="Process pool size for pair-level parallelism.")
+                        help="Process pool size (one task per pair and seq replicate).")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--relatedness", nargs="+", default=RELATEDNESS_LEVELS,
@@ -675,16 +685,19 @@ def main(argv: list[str] | None = None) -> int:
         for rel in args.relatedness
     }
 
-    # One task per (relatedness, pair); the worker iterates internally over seq
-    # replicates and n_markers, sharing the max-size admix VCF across panel sizes
-    # so the cells are strictly nested.
+    # One task per (relatedness, pair, seq replicate); the worker iterates over
+    # depths, fractions and n_markers, sharing the max-size admix VCF across panel
+    # sizes so the cells are strictly nested. Per-replicate tasks (rather than one
+    # per pair) keep every worker busy to the end: 50 pair tasks on 8 workers
+    # left 6 idle for the last round.
     n_markers_subset = (
         None if args.n_markers == N_MARKERS_GRID else list(args.n_markers)
     )
     tasks = [
-        (rel, pair_idx, args.n_seq_reps, args.seed, work_root, n_markers_subset)
+        (rel, pair_idx, args.n_seq_reps, args.seed, work_root, n_markers_subset, seq_rep)
         for rel in args.relatedness
         for pair_idx in range(n_pairs[rel])
+        for seq_rep in range(args.n_seq_reps)
     ]
     print(
         f"Sweep: relatedness={args.relatedness}, depths={DEPTHS}, "
@@ -693,9 +706,9 @@ def main(argv: list[str] | None = None) -> int:
         file=sys.stderr,
     )
     print(
-        f"Total (relatedness, pair) tasks: {len(tasks)} "
+        f"Total (relatedness, pair, seq_rep) tasks: {len(tasks)} "
         f"(each produces "
-        f"{args.n_seq_reps * len(args.n_markers) * len(DEPTHS) * len(TRUE_FRACTIONS)} "
+        f"{len(args.n_markers) * len(DEPTHS) * len(TRUE_FRACTIONS)} "
         f"estimator calls)",
         file=sys.stderr,
     )
@@ -704,7 +717,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.n_workers <= 1:
         for i, t in enumerate(tasks, 1):
             all_rows.extend(_worker(t))
-            if i % 5 == 0 or i == len(tasks):
+            if i % 50 == 0 or i == len(tasks):
                 print(f"  [{i}/{len(tasks)}] tasks done", file=sys.stderr)
     else:
         with ProcessPoolExecutor(max_workers=args.n_workers) as pool:
@@ -713,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
             for fut in as_completed(futures):
                 all_rows.extend(fut.result())
                 done += 1
-                if done % 5 == 0 or done == len(futures):
+                if done % 50 == 0 or done == len(futures):
                     print(f"  [{done}/{len(futures)}] tasks done", file=sys.stderr)
 
     # Sort for output stable across worker completion order.

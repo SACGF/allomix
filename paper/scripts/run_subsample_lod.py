@@ -192,8 +192,14 @@ def cell_results(markers_thinned_full: list, n_markers: int) -> dict:
     }
 
 
-def run_mixture(name: str, host: str, donor: str, n_seeds: int) -> list[dict]:
+def run_mixture(
+    name: str, host: str, donor: str, n_seeds: int, seeds: list[int] | None = None
+) -> list[dict]:
     """Sweep one mixture over (sample, fraction, depth, n_markers, seed).
+
+    ``seeds`` restricts the run to those seed indices (default: all of
+    ``range(n_seeds)``). Every draw is seeded by (mixture, sample, seed), so
+    running a mixture's seeds in separate calls gives the same rows as one call.
 
     One panel permutation per (sample, seed), shared across depths so panel
     composition is stable; per depth the ordered list is thinned once at that
@@ -207,7 +213,7 @@ def run_mixture(name: str, host: str, donor: str, n_seeds: int) -> list[dict]:
         for sample, markers_full in samples:
             n_inf = len(markers_full)
             panel_sizes = [n for n in N_MARKERS_GRID if n <= n_inf] or [n_inf]
-            for seed in range(n_seeds):
+            for seed in seeds if seeds is not None else range(n_seeds):
                 perm_rng = np.random.default_rng(derive_seed("perm", name, sample, seed))
                 order = perm_rng.permutation(n_inf)
                 ordered = [markers_full[i] for i in order]
@@ -590,8 +596,8 @@ def _read_raw_csv(path: Path) -> list[dict]:
 
 
 def _worker(arg: tuple) -> list[dict]:
-    name, host, donor, n_seeds = arg
-    return run_mixture(name, host, donor, n_seeds)
+    name, host, donor, n_seeds, seed = arg
+    return run_mixture(name, host, donor, n_seeds, seeds=[seed])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -603,7 +609,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Resampling replicates per (mixture, fraction-sample).",
     )
     parser.add_argument(
-        "--n-workers", "-j", type=int, default=1, help="Process pool size (one task per mixture)."
+        "--n-workers", "-j", type=int, default=1, help="Process pool size (one task per mixture and seed)."
     )
     parser.add_argument(
         "--from-raw",
@@ -626,8 +632,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         n_seeds_eff = args.n_seeds
+        # One task per (mixture, seed) rather than per mixture: 10 mixture tasks
+        # on 8 workers left 6 idle for the second half of the sweep.
         tasks = [
-            (name, host, donor, args.n_seeds) for name, (host, donor) in TWO_PERSON_MIXES.items()
+            (name, host, donor, args.n_seeds, seed)
+            for name, (host, donor) in TWO_PERSON_MIXES.items()
+            for seed in range(args.n_seeds)
         ]
         print(
             f"Sweep: mixtures={len(tasks)}, depths={DEPTHS}, n_markers={N_MARKERS_GRID}, "
@@ -639,7 +649,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.n_workers <= 1:
             for i, t in enumerate(tasks, 1):
                 all_rows.extend(_worker(t))
-                print(f"  [{i}/{len(tasks)}] {t[0]} done", file=sys.stderr)
+                if i % 20 == 0 or i == len(tasks):
+                    print(f"  [{i}/{len(tasks)}] tasks done", file=sys.stderr)
         else:
             with ProcessPoolExecutor(max_workers=args.n_workers) as pool:
                 futures = {pool.submit(_worker, t): t[0] for t in tasks}
@@ -647,7 +658,8 @@ def main(argv: list[str] | None = None) -> int:
                 for fut in as_completed(futures):
                     all_rows.extend(fut.result())
                     done += 1
-                    print(f"  [{done}/{len(futures)}] {futures[fut]} done", file=sys.stderr)
+                    if done % 20 == 0 or done == len(futures):
+                        print(f"  [{done}/{len(futures)}] tasks done", file=sys.stderr)
 
         all_rows.sort(
             key=lambda r: (

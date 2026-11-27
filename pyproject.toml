@@ -71,10 +71,9 @@ scripts = [
 paper = [
     "allomix[scripts]",
     "snakemake>=8.0",
-    # Pinned to vibepaper main for claims sidecars (paper/*.claims.toml), [limits]
-    # and typed frozen facts, which are not on PyPI yet. Switch back to a PyPI
-    # release ("vibepaper>=0.13") once one is out; also in .github/workflows/tests.yml.
-    "vibepaper @ git+https://github.com/SACGF/vibepaper@cec8979",  # bundles pandoc
+    # 0.13 for claims sidecars (paper/*.claims.toml) and FactsWriter/read_facts
+    # (paper/scripts/facts_io.py); also in .github/workflows/tests.yml.
+    "vibepaper>=0.13,<0.14",  # bundles pandoc
 ]
 
 [project.scripts]

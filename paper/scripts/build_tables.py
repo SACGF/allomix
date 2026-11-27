@@ -28,7 +28,7 @@ Outputs (into output/facts/):
 import csv
 from pathlib import Path
 
-from facts_io import read_fact_csv
+from vibepaper.facts import read_facts
 
 FACTS_DIR = Path("output/facts")
 
@@ -36,12 +36,12 @@ FACTS_DIR = Path("output/facts")
 NDASH = "–"
 
 
-def read_fact(name: str) -> dict[str, str]:
-    """Read a facts CSV as a dict of raw string values."""
-    return read_fact_csv(FACTS_DIR / f"{name}.csv")
+def read_fact(name: str) -> dict:
+    """Read a facts CSV as the values a template sees."""
+    return read_facts(FACTS_DIR / f"{name}.csv")
 
 
-def dp(value: str, decimals: int) -> str:
+def dp(value: float, decimals: int) -> str:
     """Fixed-decimal format, matching vibepaper's ``dp`` filter."""
     return f"{float(value):.{decimals}f}"
 

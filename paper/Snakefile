@@ -230,9 +230,14 @@ PRESENCE_LOD_FACTS = [
 ]
 PRESENCE_LOD_FIGS = [f"{FACTS_DIR}/fig_presence_lod_curves.png"]
 
-PAPER_FACTS = [
+# Written by compare_bias_correction.py (rule bias_comparison), which runs both
+# arms on the same simulated data and its own bias table.
+BIAS_FACTS = [
     f"{FACTS_DIR}/bias_no_bias.csv",
     f"{FACTS_DIR}/bias_with_bias.csv",
+]
+
+PAPER_FACTS = [
     f"{FACTS_DIR}/sim_calibration.csv",
     f"{FACTS_DIR}/panel_specs.csv",
     f"{FACTS_DIR}/panel_empirical.csv",
@@ -244,6 +249,7 @@ ALL_FACTS = (
     + MULTIDONOR_FACTS
     + TABLE_FACTS
     + PAPER_FACTS
+    + BIAS_FACTS
     + SUPP_SYNTHETIC_FACTS
     + LOD_FACTS
     + LOD_SATURATION_FACTS
@@ -348,10 +354,12 @@ rule build_tables:
 
 rule bias_comparison:
     input:
+        "paper/scripts/facts_io.py",
         "tests/test_data/host.vcf",
         "tests/test_data/donor.vcf",
     output:
         BIAS_FIGS,
+        BIAS_FACTS,
     shell:
         "python paper/scripts/compare_bias_correction.py"
 
@@ -359,8 +367,6 @@ rule bias_comparison:
 rule paper_facts:
     input:
         "paper/scripts/facts_io.py",
-        "tests/test_data/host.vcf",
-        "tests/test_data/donor.vcf",
         "paper/empirical_results/panel_empirical.csv",  # generated on TAU via scripts/measure_panel_bias.py
     output:
         PAPER_FACTS,

@@ -3,7 +3,8 @@
 
 Generates synthetic chimeric VCFs with per-marker capture bias, then runs allomix
 both with and without bias correction. Prints a side-by-side comparison of accuracy
-metrics to show the effect of bias correction.
+metrics to show the effect of bias correction, and writes them as the paper's
+``bias_no_bias`` and ``bias_with_bias`` facts.
 
 Usage:
     python scripts/compare_bias_correction.py
@@ -25,6 +26,7 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
+from facts_io import write_fact_csv  # noqa: E402
 from paper_seed import derive_seed  # noqa: E402
 
 from allomix.calibration.bias import load_bias_table  # noqa: E402
@@ -202,6 +204,22 @@ def compute_metrics(rows: list[dict]) -> dict:
     }
 
 
+def bias_facts(rows: list[dict], metrics: dict) -> dict:
+    """The paper's facts for one arm: error metrics over the interior fractions,
+    interval coverage and width over all of them, and the 0% / 100% estimates."""
+    est = {r["true_frac"]: r["est_frac"] for r in rows}
+    return {
+        "mean_signed_error_pct": round(metrics["mean_signed_error"] * 100, 4),
+        "mean_abs_error_pct": round(metrics["mean_abs_error"] * 100, 4),
+        "rmse_pct": round(metrics["rmse"] * 100, 4),
+        "max_abs_error_pct": round(metrics["max_abs_error"] * 100, 4),
+        "ci_coverage_pct": round(metrics["ci_coverage"] * 100, 1),
+        "mean_ci_width_pct": round(metrics["mean_ci_width"] * 100, 4),
+        "est_0pct": round(est[0.0] * 100, 2),
+        "est_100pct": round(est[1.0] * 100, 2),
+    }
+
+
 def print_comparison(m_no: dict, m_yes: dict, bias_sd: float) -> None:
     """Print side-by-side comparison table."""
     print(f"\n{'=' * 70}")
@@ -329,6 +347,10 @@ def main(argv: list[str] | None = None) -> int:
         "--outdir", default="output/bias_comparison",
         help="Output directory (default: output/bias_comparison)",
     )
+    parser.add_argument(
+        "--facts-dir", default="output/facts",
+        help="Where to write bias_no_bias.csv and bias_with_bias.csv (default: output/facts)",
+    )
     args = parser.parse_args(argv)
 
     outdir = Path(args.outdir)
@@ -361,6 +383,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print_per_sample(rows_no, rows_yes)
     print_comparison(m_no, m_yes, args.bias_sd)
+
+    facts_dir = Path(args.facts_dir)
+    facts_dir.mkdir(parents=True, exist_ok=True)
+    write_fact_csv(facts_dir / "bias_no_bias.csv", bias_facts(rows_no, m_no))
+    write_fact_csv(facts_dir / "bias_with_bias.csv", bias_facts(rows_yes, m_yes))
 
     outdir.mkdir(parents=True, exist_ok=True)
     try_plot(rows_no, rows_yes, outdir, args.bias_sd)

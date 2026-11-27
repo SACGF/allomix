@@ -16,6 +16,14 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
   The local overdispersion value is 0.82%; only a full build shows whether the pair is
   within a factor of two.
 
+## Pipeline
+
+- [ ] **`panel_empirical` reads its one-row CSV with `csv.DictReader`**, not
+  `vibepaper.facts.read_facts`, because vibepaper 0.13's `read_facts` upcasts every
+  integer in a horizontal CSV to float (`1732` → `1732.0`). Switch to `read_facts` once
+  vibepaper fixes it (SACGF/vibepaper#56), or make
+  `paper/empirical_results/panel_empirical.csv` vertical.
+
 ## Unchecked wording
 
 - [ ] Results, Figure 2: "the estimate floors near the dataset's co-pooled contamination

@@ -308,8 +308,12 @@ the detection limit Kakodkar et al. set in their laboratory validation, the lowe
 fraction they measured reproducibly (they also ran mixtures down to 0.05%).[@Kakodkar2023alloseq] The allomix cell lists the LoD by evidence class, from most
 to least real: ~{{ subsample_lod_headline.mle_lod_1000x_100markers_pct | pct(0) }} on
 real titrated mixtures (SRP434573) at the reference operating point (100 markers, 1,000x
-mean depth), an EP17-A2 LoD; ≤0.5% on the same mixtures subsampled to the largest panel
-and deepest coverage, an EP17-A2 LoD bounded by the dataset's 0.5% dilution floor; ~0.1%
+mean depth), an EP17-A2 LoD;
+{{ subsample_lod_headline.mle_lod_2000x_400markers_pct | pct(0) }} on the same mixtures
+subsampled to the largest panel and deepest coverage, an EP17-A2 LoD held at the
+{{ subsample_lod_headline.high_min_titration_pct | pct(0) }} lowest titration that
+{{ subsample_lod_headline.n_mixtures_to_high | number_word }} of the
+{{ subsample_lod_headline.n_mixtures | dp(0) }} mixtures carry, so an upper bound; ~0.1%
 on a semi-synthetic remix of the same real reads with the co-pooled contamination
 confound removed (the lowest fraction tracked, not an EP17-A2 LoD); and, in near-binomial
 simulation, an analytical EP17-A2 LoD of

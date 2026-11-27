@@ -16,21 +16,14 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
 - [ ] Results, Figure 2: "the estimate floors near the dataset's co-pooled contamination
   level" has no fact for the 0.5%-rung estimate, so nothing checks it (lint doesn't flag
   "near").
+- [ ] Results, real-data LoD: "in the three titrated to 0.5% recipient, both the magnitude
+  and presence-test LoD reached at or below that level" has no assert, and the magnitude
+  half does not hold: the `to_0.5pct` MLE LoD bottoms out at 0.51% (2000x/400 markers,
+  `subsample_lod_summary.csv`); only the presence test reaches 0.5% (censored). The
+  headline facts read only `mixture_set == "all"`, so a fix needs `to_0.5pct` facts from
+  `run_subsample_lod.py` (a `subsample_lod` rerun) or wording without the number.
 
 ## For the author
-
-- [ ] **Two asserts fail on the full build** (2026-11-27, non-quick, no `fast_grid`:
-  85 asserts, 83 pass, 2 fail; both `near` asserts pass, LoD at the fitted ρ 0.82% vs
-  subsample LoD 1.0%). The render stops on these two, so each needs a wording or
-  fact decision:
-  - Table 1 caption, "≤0.5% on the same mixtures subsampled to the largest panel"
-    (`results.claims.toml:257`): `subsample_lod_headline.mle_lod_2000x_400markers_pct`
-    is 1.0%, censored at the lowest titration of the 7 mixtures that stop at 1%. The
-    3 mixtures titrated to 0.5% give 0.51% at 2000x/400 markers (`to_0.5pct` row of
-    `subsample_lod_summary.csv`), so even that subset is not ≤0.5%.
-  - Figure S9, "only weakly correlated (r = …)" (`supplementary.claims.toml:142`,
-    assert `|r| < 0.3`): `supp_synthetic.bias_stability_r` is 0.40. It comes from the
-    empirical panel, not the simulation, so quick and full builds agree.
 
 - [ ] **Kakodkar 0.3%:** `discussion.md` says "Kakodkar et al. reported an analytical LoD
   of 0.3% for AlloSeq HCT", but the Table 1 footnote calls 0.3% the vendor-stated figure.

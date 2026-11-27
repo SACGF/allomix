@@ -255,9 +255,9 @@ quote = "~0.1-0.2% (analytical floor)"
 reason = "hand-typed range; the [[claim]] above pins it to the two in silico LoDs"
 
 [[claim]]
-quote = "≤0.5% on the same mixtures subsampled to the largest panel"
-assert = "subsample_lod_headline.mle_lod_2000x_400markers_pct <= subsample_lod_headline.min_titration_pct"
-message = "Table 1 caption: '<=0.5% on the same mixtures subsampled to the largest panel and deepest coverage'"
+quote = ["on the same mixtures subsampled to the largest panel", "held at the … lowest titration", "so an upper bound"]
+assert = "subsample_lod_headline.mle_lod_2000x_400markers_pct == subsample_lod_headline.high_min_titration_pct"
+message = "Table 1 caption: largest-panel, deepest-coverage LoD 'held at the ... lowest titration' of the 1%-floored mixtures"
 
 [[ok]]
 quote = "the lowest fraction tracked, not an EP17-A2 LoD"

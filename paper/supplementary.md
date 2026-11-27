@@ -473,10 +473,11 @@ figure.
 **Figure S9.** Validation of the fixed-bias-per-marker assumption. Each of the
 {{ supp_synthetic.n_empirical_markers | dp(0) }} markers is plotted by its absolute median
 bias (systematic component) against its within-marker het-VAF SD across samples (random
-component). The two are only weakly correlated (r =
-{{ supp_synthetic.bias_stability_r | dp(2) }}), so bias behaves as a stable per-marker
-offset rather than a quantity that grows with noise, supporting a fixed offset
-(Supplementary Methods S6) with residual scatter absorbed by the overdispersion term.
+component). The two are moderately correlated (r =
+{{ supp_synthetic.bias_stability_r | dp(2) }}): markers with a larger bias tend to be
+somewhat noisier, but noise explains only a minority of the spread in bias, so most of
+each marker's bias is a stable offset. This supports a fixed offset (Supplementary
+Methods S6) with residual scatter absorbed by the overdispersion term.
 
 ### S10. Absolute Error by Depth (Boxplots)
 

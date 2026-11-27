@@ -140,9 +140,9 @@ assert = "overdispersion_lod_headline.lod_at_real_rho_pct is near(subsample_lod_
 message = "Figure S8: LoD at the fitted rho 'near the ~...% measured directly by subsampling'"
 
 [[claim]]
-quote = ["The two are only weakly correlated (r = … )", "rather than a quantity that grows with noise"]
-assert = "supp_synthetic.bias_stability_r|abs < 0.3"
-message = "Figure S9: 'only weakly correlated (r = ...)'"
+quote = ["The two are moderately correlated (r = … )", "markers with a larger bias tend to be", "noise explains only a minority of the spread in bias", "so most of each marker's bias is a stable offset"]
+assert = "supp_synthetic.bias_stability_r >= 0.3 and supp_synthetic.bias_stability_r < 0.5"
+message = "Figure S9: 'moderately correlated (r = ...)', positive (larger bias, noisier), and r < 0.5 so r^2 < 0.25 ('a minority')"
 
 [[claim]]
 quote = "The median rises monotonically from the no-carrier floor"

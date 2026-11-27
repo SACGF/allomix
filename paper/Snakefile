@@ -289,7 +289,9 @@ ALL_FIGS = (
 
 rule all:
     input:
-        "output/.paper_built",
+        # A quick build's numbers fail some claims asserts and leave a few LoD
+        # cells blank, so it renders a placeholder-filled draft instead.
+        "output/.paper_quick_built" if QUICK else "output/.paper_built",
         # Simulated presence-test LoD curve (issue #25): built by the default
         # target but not a dependency of the `paper` rule yet.
         PRESENCE_LOD_FACTS,
@@ -745,6 +747,8 @@ rule paper_test:
         "paper/tests/test_facts_io.py",
         "paper/tests/test_lod_validation.py",
         "paper/tests/test_semisynthetic_srp434573.py",
+        "paper/tests/test_build_quick_paper.py",
+        "paper/scripts/build_quick_paper.py",
         "paper/scripts/facts_io.py",
         "paper/scripts/run_lod_validation.py",
         "paper/scripts/run_srp434573_allomix.py",
@@ -775,6 +779,28 @@ rule paper:
         "vibepaper build --md --pdf-if-available"
 
 
+rule paper_quick:
+    # Draft render from a quick build (the default target when quick=1): fills
+    # blank facts with placeholders and reports failed claims asserts as
+    # warnings, so the quick build still checks that every section, figure and
+    # template renders. Writes output/quick_paper/*_QUICK_*; not for reading as
+    # results. Also runs on full-build facts: `snakemake ... paper_quick`.
+    input:
+        ALL_FACTS,
+        ALL_FIGS,
+        "paper.toml",
+        "paper/frozen_facts.csv",
+        PAPER_SECTIONS,
+        PAPER_CLAIMS,
+        "paper/scripts/build_quick_paper.py",
+        "paper/scripts/facts_io.py",
+        "output/.paper_tests_passed",
+    output:
+        touch("output/.paper_quick_built"),
+    shell:
+        "python paper/scripts/build_quick_paper.py"
+
+
 rule paper_check:
     # Fast claim checks without a full build: lint (claim words, hand-typed
     # numbers, fact types, claims-sidecar quotes that no longer match) and every
@@ -799,7 +825,8 @@ rule clean:
         """
         rm -rf output/facts/ output/depth_validation/ output/relatedness_validation/
         rm -rf output/bias_comparison/ output/timeline/ output/lod_validation/ output/.paper_built
-        rm -f output/.paper_tests_passed
+        rm -f output/.paper_tests_passed output/.paper_quick_built
+        rm -rf output/quick_paper/
         rm -rf output/cnv_loh_validation/
         rm -rf build/
         """

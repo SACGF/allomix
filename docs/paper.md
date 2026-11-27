@@ -48,6 +48,15 @@ noisy, so **every figure is stamped with a "QUICK BUILD" watermark** (see
 `paper/scripts/paper_quick.py`); do not use quick-build figures for publication.
 Setting the environment variable `ALLOMIX_PAPER_QUICK=1` has the same effect.
 
+The quick numbers fail some claims asserts, and a few LoD cells are never reached
+and are written blank, so `vibepaper build` would refuse them. A quick build
+therefore ends with the `paper_quick` rule (`paper/scripts/build_quick_paper.py`)
+instead of `paper`. It copies the facts to `output/quick_paper/facts`, fills each
+blank fact with a placeholder (0, or 1 for a ratio), reports the failed asserts as
+warnings, and renders `output/quick_paper/allomix_paper_QUICK_<date>.{docx,md,pdf}`.
+That checks that every section, figure, table and template expression renders. The
+text's numbers are placeholders or low-iteration values, not results.
+
 ## Faster LoD sweep
 
 The LoD sweep (`run_lod_validation.py`) is roughly 99% of build time. Pass
@@ -178,9 +187,10 @@ snakemake -s paper/Snakefile --cores 1 paper_check   # lint + check, as one rule
 ```
 
 `vibepaper check` reports an assert as MISSING when its facts are not produced yet,
-so it works on a partial facts directory. A `quick=1` build cannot render the paper,
-because the low-iteration LoD grid fails the asserts that pin the analytical floor;
-use `paper_check` there to see which.
+so it works on a partial facts directory. A `quick=1` build's numbers fail the
+asserts that pin the analytical floor, so `vibepaper build` refuses them; the quick
+build renders a draft with `paper_quick` instead (see "Quick build"), and
+`paper_check` shows which asserts fail.
 
 After re-running any analysis, run `vibepaper diff` before re-reading the paper. It
 names the facts that changed and the unchecked sentences that use them, with a word

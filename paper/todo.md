@@ -5,11 +5,11 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
 
 ## Needs a full pipeline run
 
-- [ ] **Regenerate the full facts and provenance sidecars** (#56 item 1).
-  Locally, lint notes the missing `lod_headline`, `presence_lod_curve_headline`,
-  `subsample_lod_headline`, `supp_synthetic`, `sim_calibration`, `panel_specs`,
-  `panel_empirical` and `bias_*` facts, and `vibepaper check` reports 15 asserts as
-  MISSING until they exist.
+- [ ] **One non-quick build for real PASS/FAIL on every assert** (#56 item 1). A clean
+  `quick=1 fast_grid=1` build from a fresh clone (2026-11-27) produces every facts file
+  with its provenance sidecar: `vibepaper check` gives 85 asserts, 72 pass, 13 fail,
+  0 missing. The 13 fail on quick-mode numbers (coarse LoD grid, few replicates), so
+  only a full build shows whether they pass.
 - [ ] **Confirm the two `near` asserts** (Discussion and Figure S8). They compare the LoD
   at the fitted ρ with the measured subsample LoD
   (`subsample_lod_headline.mle_lod_1000x_100markers_pct`), replacing a hand-typed "~1%".

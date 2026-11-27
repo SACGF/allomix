@@ -26,7 +26,7 @@ if QUICK:
 
 # Fast LoD estimator: `snakemake -s paper/Snakefile --config fast_grid=1` (or set
 # ALLOMIX_FAST_GRID=1) routes the LoD sweep (run_lod_validation.py) through the
-# opt-in vectorized grid estimator, about 6.5x faster with a max lod_pct
+# opt-in vectorized grid estimator, about 3.7x faster with a max lod_pct
 # deviation of 0.0011 pp vs the exact estimator (see estimate_single_donor_bb_grid).
 # Independent of and composable with quick=1 (quick shrinks the grid; fast_grid
 # swaps the estimator). The exact estimator stays the default, so OMIT this for

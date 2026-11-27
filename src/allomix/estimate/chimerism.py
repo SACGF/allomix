@@ -153,6 +153,54 @@ _INFEASIBLE_PENALTY = 1e30
 MIN_CLASS_MARKERS = 30
 
 
+# Nelder-Mead stall guard (issue #60). Once the simplex has shrunk to this spread
+# in every coordinate it cannot move the estimate any further, but its vertex
+# values still differ by roundoff in the gammaln sums (~1e-9 at LL ~1e4), which
+# is above the estimators' 1e-10 ``fatol``. scipy then iterates on the frozen
+# simplex until ``maxiter``: about 97% of the LoD sweep's likelihood evaluations.
+_NM_COLLAPSED_SPREAD = 1e-12
+# Iterations per Nelder-Mead chunk between collapse checks. Above the ~150
+# iterations a converging fit needs, so most fits finish in one chunk.
+_NM_CHUNK = 250
+
+
+def _nelder_mead(fun, x0: list[float], xatol: float, fatol: float, maxiter: int):
+    """``scipy.optimize.minimize(method="Nelder-Mead")`` that stops on a collapsed simplex.
+
+    Runs in chunks of ``_NM_CHUNK`` iterations, resuming each chunk from the
+    previous chunk's final simplex, which replays the trajectory of one
+    uninterrupted run. A chunk that ends with every vertex within
+    ``_NM_COLLAPSED_SPREAD`` of the best one is treated as converged, as is the
+    ``maxiter`` total. Fits that meet ``xatol``/``fatol`` stop exactly where a
+    single ``minimize`` call would.
+
+    Returns:
+        The last chunk's ``OptimizeResult`` (``x``, ``fun``, ``final_simplex``).
+    """
+    initial_simplex = None
+    remaining = maxiter
+    while True:
+        chunk = min(_NM_CHUNK, remaining)
+        opt = minimize(
+            fun,
+            x0=x0,
+            method="Nelder-Mead",
+            options={
+                "xatol": xatol,
+                "fatol": fatol,
+                "maxiter": chunk,
+                "initial_simplex": initial_simplex,
+            },
+        )
+        remaining -= chunk
+        if opt.status != 2 or remaining <= 0:  # 2 = iteration limit hit
+            return opt
+        sim = opt.final_simplex[0]
+        if np.max(np.abs(sim[1:] - sim[0])) <= _NM_COLLAPSED_SPREAD:
+            return opt
+        initial_simplex = sim
+
+
 def _donor_het_mask(markers: list[InformativeMarker]) -> np.ndarray:
     """Boolean mask, True where the (single) donor genotype is heterozygous.
 
@@ -421,11 +469,8 @@ def _estimate_single_donor_bb_core(
             return _INFEASIBLE_PENALTY
         return -_total_ll_vec(arr, f_val, error_rate, rho_val)
 
-    opt = minimize(
-        neg_ll_joint,
-        x0=[best_f, math.log(best_rho)],
-        method="Nelder-Mead",
-        options={"xatol": 1e-6, "fatol": 1e-10, "maxiter": 5000},
+    opt = _nelder_mead(
+        neg_ll_joint, [best_f, math.log(best_rho)], xatol=1e-6, fatol=1e-10, maxiter=5000
     )
 
     f_mle = max(0.0, min(1.0, float(opt.x[0])))
@@ -544,11 +589,12 @@ def _estimate_single_donor_two_rho(
             + _total_ll_vec(arr_het, f_val, error_rate, r_het)
         )
 
-    opt = minimize(
+    opt = _nelder_mead(
         neg_ll_joint,
-        x0=[best_f, math.log(best_rho_hom), math.log(best_rho_het)],
-        method="Nelder-Mead",
-        options={"xatol": 1e-6, "fatol": 1e-10, "maxiter": 5000},
+        [best_f, math.log(best_rho_hom), math.log(best_rho_het)],
+        xatol=1e-6,
+        fatol=1e-10,
+        maxiter=5000,
     )
     f_mle = max(0.0, min(1.0, float(opt.x[0])))
     rho_hom_mle = math.exp(float(opt.x[1]))

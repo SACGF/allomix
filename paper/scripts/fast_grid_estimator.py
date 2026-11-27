@@ -185,9 +185,11 @@ def estimate_single_donor_bb_grid(
     Performance and accuracy (measured on the LoD sweep parameter space during
     development; the accuracy bound is pinned in tests/test_fast_grid_estimator.py):
 
-      - About 6.5x faster per call than the exact estimator (~30 ms vs ~191 ms;
-        4-7x depending on panel size, with the grid build dominating and the
-        refine ~5 ms). The win comes from replacing the exact estimator's
+      - About 6.5x faster per call than the exact estimator as it was then
+        (~30 ms vs ~191 ms; 4-7x depending on panel size, with the grid build
+        dominating and the refine ~5 ms). Since the exact estimator's
+        Nelder-Mead stall guard (#60) the gap is about 3.7x on a reduced LoD
+        sweep (24 s vs 90 s). The win comes from replacing the exact estimator's
         Python-level f-grid loop (a bounded rho profile per f point) and the
         joint Nelder-Mead refinement with a few vectorized array passes.
       - Donor-fraction agreement with the exact estimator: median 1e-6 pp,

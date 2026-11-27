@@ -152,7 +152,7 @@ snakemake -s paper/Snakefile --cores 1 paper               # render paper only (
 snakemake -s paper/Snakefile clean             # remove generated output
 ```
 
-For faster iteration on the heaviest rule (the LoD sweep, `run_lod_validation.py`, which is ~99% of build time), pass `--config fast_grid=1` to route it through the opt-in vectorized grid estimator (about 6.5x faster, max `lod_pct` deviation 0.0011 pp vs the exact estimator). The exact estimator is the default, so OMIT `fast_grid` for the final publication build. It composes with `quick=1` (quick shrinks the grid; fast_grid swaps the estimator):
+For faster iteration on the heaviest rule (the LoD sweep, `run_lod_validation.py`, the largest rule in the build), pass `--config fast_grid=1` to route it through the opt-in vectorized grid estimator (about 3.7x faster, max `lod_pct` deviation 0.0011 pp vs the exact estimator). The exact estimator is the default, so OMIT `fast_grid` for the final publication build. It composes with `quick=1` (quick shrinks the grid; fast_grid swaps the estimator):
 
 ```bash
 snakemake -s paper/Snakefile --cores $(nproc) --config fast_grid=1            # full grid, fast estimator

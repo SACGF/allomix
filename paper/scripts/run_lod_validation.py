@@ -36,7 +36,7 @@ Usage:
     python paper/scripts/run_lod_validation.py
     python paper/scripts/run_lod_validation.py --n-pairs 5 --n-seq-reps 10 --n-workers 8
 
-    # Opt in to the fast vectorized grid estimator (~6.5x faster, max lod_pct
+    # Opt in to the fast vectorized grid estimator (~3.7x faster, max lod_pct
     # deviation 0.0011 pp vs the exact default; see estimate_single_donor_bb_grid).
     # Use for fast iteration; OMIT for the final publication run.
     python paper/scripts/run_lod_validation.py --fast-grid

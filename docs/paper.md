@@ -59,9 +59,9 @@ text's numbers are placeholders or low-iteration values, not results.
 
 ## Faster LoD sweep
 
-The LoD sweep (`run_lod_validation.py`) is roughly 99% of build time. Pass
+The LoD sweep (`run_lod_validation.py`) is the largest rule in the build. Pass
 `--config fast_grid=1` to route it through the opt-in vectorized grid estimator
-(about 6.5x faster, max `lod_pct` deviation 0.0011 pp vs the exact estimator).
+(about 3.7x faster, max `lod_pct` deviation 0.0011 pp vs the exact estimator).
 The exact estimator is the default, so **omit `fast_grid` for the final
 publication build**. It composes with `quick=1` (quick shrinks the grid;
 fast_grid swaps the estimator):

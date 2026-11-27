@@ -2,9 +2,11 @@
 
 import math
 import random
+import zlib
 
 import numpy as np
 import pytest
+from scipy.optimize import minimize, rosen
 
 from allomix.estimate import chimerism
 from allomix.estimate.chimerism import (
@@ -875,3 +877,36 @@ class TestMarkerTypeOverdispersion:
         assert 0.0 <= f_lo <= result.donor_fraction <= f_hi <= 1.0
         # Fixture is built at f_host=0.02; the estimate should track it.
         assert abs(result.host_fraction - 0.02) < 0.01
+
+
+class TestNelderMeadStallGuard:
+    """``_nelder_mead`` replays scipy's trajectory but stops on a collapsed simplex (#60)."""
+
+    OPTS = {"xatol": 1e-6, "fatol": 1e-10, "maxiter": 5000}
+
+    def test_matches_scipy_when_tolerances_are_reachable(self) -> None:
+        """Across chunk boundaries the result is bit-identical to one minimize call."""
+        x0 = [-1.2, 1.0, 0.8]
+        ref = minimize(rosen, x0, method="Nelder-Mead", options=self.OPTS)
+        assert ref.status == 0 and ref.nit > chimerism._NM_CHUNK  # spans >1 chunk
+        got = chimerism._nelder_mead(rosen, x0, **self.OPTS)
+        assert got.status == 0
+        np.testing.assert_array_equal(got.x, ref.x)
+        assert got.fun == ref.fun
+
+    def test_stops_on_collapsed_simplex(self) -> None:
+        """When roundoff keeps vertex values > fatol apart, stop instead of spinning."""
+
+        def fun(x):
+            # Deterministic per-point noise of up to 1e-7, far above fatol, standing in
+            # for the roundoff in the estimator's gammaln sums.
+            noise = 1e-7 * (zlib.crc32(np.asarray(x, dtype=float).tobytes()) / 2**32)
+            return (x[0] - 0.3) ** 2 + (x[1] + 0.2) ** 2 + noise
+
+        x0 = [0.0, 0.0]
+        ref = minimize(fun, x0, method="Nelder-Mead", options=self.OPTS)
+        assert ref.status == 2  # plain scipy runs to maxiter
+        calls = []
+        got = chimerism._nelder_mead(lambda x: calls.append(1) or fun(x), x0, **self.OPTS)
+        assert len(calls) < ref.nfev / 5
+        np.testing.assert_allclose(got.x, ref.x, rtol=0, atol=1e-12)

@@ -19,11 +19,13 @@ Writes:
   output/facts/srp434573_chrx.csv    the same table as a facts CSV for the paper
 """
 
+import argparse
 import csv
+import os
 import sys
 from pathlib import Path
 
-from run_srp434573_allomix import MIXES, OUT, fnum, known_host_pct, run_mix, write_tsv
+from run_srp434573_allomix import MIXES, OUT, fnum, known_host_pct, run_mix_many, write_tsv
 
 FACTS_DIR = Path("output/facts")
 
@@ -72,18 +74,19 @@ def _host_pct(rec: dict) -> tuple[float | None, float | None, float | None]:
     return est, lo, hi
 
 
-def collect() -> list[dict]:
+def collect(n_workers: int) -> list[dict]:
+    jobs = [
+        dict(name=name, host=MIXES[name][0], donors=MIXES[name][1],
+             extra_args=["--contig-policy", policy])
+        for name in SAME_SEX
+        for policy in ("sex_aware", "autosomes_only")
+    ]
+    results = run_mix_many(jobs, n_workers)
     rows: list[dict] = []
-    for name in SAME_SEX:
+    for k, name in enumerate(SAME_SEX):
         host, (donor,) = MIXES[name]
-        on = {
-            r["sample"]: r
-            for r in run_mix(name, host, [donor], extra_args=["--contig-policy", "sex_aware"])
-        }
-        off = {
-            r["sample"]: r
-            for r in run_mix(name, host, [donor], extra_args=["--contig-policy", "autosomes_only"])
-        }
+        on = {r["sample"]: r for r in results[2 * k]}
+        off = {r["sample"]: r for r in results[2 * k + 1]}
         for sample in on:
             if sample not in off:
                 sys.stderr.write(f"[{name}] {sample}: missing from the autosomes-only arm\n")
@@ -133,7 +136,10 @@ def write_facts(path: Path, rows: list[dict]) -> None:
 
 
 def main() -> int:
-    rows = collect()
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--n-workers", type=int, default=os.cpu_count() or 1,
+                    help="Concurrent allomix detect processes (default: all cores)")
+    rows = collect(ap.parse_args().n_workers)
     write_tsv(OUT / "srp434573_chrx.tsv", COLS, rows)
     write_facts(FACTS_DIR / "srp434573_chrx.csv", rows)
     sys.stderr.write(

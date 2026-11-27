@@ -13,9 +13,12 @@ samples whose interpretation actually turns on it. No sequencing or joint callin
 reads the committed genotype VCFs only.
 """
 
+import argparse
 import csv
+import os
 import statistics
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from srp434573_common import resolve_srp434573_genotypes_dir
@@ -62,7 +65,78 @@ def _dilution_rows() -> dict[str, list[dict]]:
     return by_mix
 
 
+def _mix_inputs(mix: str, host: str, donor: str):
+    """Host, donor and calibration for one mixture, or None when its VCF is absent."""
+    gvcf = GEN / f"{mix}.SRP434573.vcf.gz"
+    if not gvcf.exists():
+        return None
+    h = parse_vcf(gvcf, sample=host, min_gq=MIN_GQ, gt_ad_consistency=True)
+    d = parse_vcf(gvcf, sample=donor, min_gq=MIN_GQ, gt_ad_consistency=True)
+    # Same table the headline CLI run resolves to (run_srp434573_allomix.
+    # resolve_error_table): the pooled table when built, else per-mixture.
+    etab = GEN / "pooled.error_table.tsv"
+    if not etab.exists():
+        etab = GEN / f"{mix}.error_table.tsv"
+    cal = PanelCalibration(errors=load_error_table(etab) if etab.exists() else {})
+    return h, d, cal
+
+
+def _assess_mixture(mix: str, rows: list[dict]) -> list[tuple]:
+    """Clinical status, legacy status and GoF for each timepoint of one mixture.
+
+    Returns one ``(known_pct, clinical_status, legacy_status, gof)`` tuple per
+    timepoint that has admix data, in row order (``gof`` may be None).
+    """
+    inputs = _mix_inputs(mix, rows[0]["host"], rows[0]["donor"])
+    if inputs is None:
+        return []
+    h, d, cal = inputs
+    avcf = GEN / f"{mix}.admix.vcf.gz"
+    out = []
+    for row in rows:
+        a = parse_vcf(avcf, sample=row["sample"])
+        if not a:
+            continue
+        an = analyse_sample(
+            h,
+            [d],
+            a,
+            min_dp=MIN_DP,
+            min_gq=MIN_GQ,
+            error_rate=ERROR_RATE,
+            calibration=cal,
+            robust="auto",
+            marker_type_overdispersion=True,
+            expected_relatedness=[Relatedness.UNRELATED],
+            sample_name=row["sample"],
+        )
+        # Legacy status: re-assess the same fitted result under the p-only rules.
+        legacy = assess_quality(
+            an.result,
+            an.genotypes,
+            expected_relatedness=[Relatedness.UNRELATED],
+            clinical_gating=False,
+        )
+        rho = getattr(an.result, "rho", float("inf"))
+        gof = _compute_gof(
+            an.result.per_marker,
+            rho=rho,
+            n_fitted_params=2,
+            error_rate=an.result.error_rate,
+        )
+        out.append((float(row["known_pct"]), an.qc.status, legacy.status, gof))
+    return out
+
+
 def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "--n-workers",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="Mixtures assessed in parallel (default: all cores)",
+    )
+    n_workers = ap.parse_args().n_workers
     by_mix = _dilution_rows()
 
     n_review_clinical = 0
@@ -72,60 +146,19 @@ def main() -> None:
     n_gof_p_significant = 0  # post-trim GoF p < 0.01 (would-be legacy GoF flag)
     review_known: list[float] = []  # known recipient % of each clinical REVIEW
 
-    for mix, rows in sorted(by_mix.items()):
-        host, donor = rows[0]["host"], rows[0]["donor"]
-        gvcf = GEN / f"{mix}.SRP434573.vcf.gz"
-        avcf = GEN / f"{mix}.admix.vcf.gz"
-        if not gvcf.exists():
-            continue
-        h = parse_vcf(gvcf, sample=host, min_gq=MIN_GQ, gt_ad_consistency=True)
-        d = parse_vcf(gvcf, sample=donor, min_gq=MIN_GQ, gt_ad_consistency=True)
-        # Same table the headline CLI run resolves to (run_srp434573_allomix.
-        # resolve_error_table): the pooled table when built, else per-mixture.
-        etab = GEN / "pooled.error_table.tsv"
-        if not etab.exists():
-            etab = GEN / f"{mix}.error_table.tsv"
-        cal = PanelCalibration(errors=load_error_table(etab) if etab.exists() else {})
+    mixes = sorted(by_mix)
+    with ProcessPoolExecutor(max_workers=max(1, n_workers)) as pool:
+        per_mix = list(pool.map(_assess_mixture, mixes, [by_mix[m] for m in mixes]))
 
-        for row in rows:
-            a = parse_vcf(avcf, sample=row["sample"])
-            if not a:
-                continue
-            an = analyse_sample(
-                h,
-                [d],
-                a,
-                min_dp=MIN_DP,
-                min_gq=MIN_GQ,
-                error_rate=ERROR_RATE,
-                calibration=cal,
-                robust="auto",
-                marker_type_overdispersion=True,
-                expected_relatedness=[Relatedness.UNRELATED],
-                sample_name=row["sample"],
-            )
-            # Legacy status: re-assess the same fitted result under the p-only rules.
-            legacy = assess_quality(
-                an.result,
-                an.genotypes,
-                expected_relatedness=[Relatedness.UNRELATED],
-                clinical_gating=False,
-            )
-            if an.qc.status == "REVIEW":
+    for results in per_mix:
+        for known, status, legacy_status, gof in results:
+            if status == "REVIEW":
                 n_review_clinical += 1
-                review_known.append(float(row["known_pct"]))
-            if an.qc.status == "PASS":
+                review_known.append(known)
+            if status == "PASS":
                 n_pass_clinical += 1
-            if legacy.status == "REVIEW":
+            if legacy_status == "REVIEW":
                 n_review_legacy += 1
-
-            rho = getattr(an.result, "rho", float("inf"))
-            gof = _compute_gof(
-                an.result.per_marker,
-                rho=rho,
-                n_fitted_params=2,
-                error_rate=an.result.error_rate,
-            )
             if gof is not None:
                 reduced_chisq.append(gof.reduced_chisq)
                 if gof.pval < 0.01:

@@ -21,11 +21,13 @@ Writes:
   output/facts/srp434573_sexmismatch.csv    the same table as a facts CSV
 """
 
+import argparse
 import csv
+import os
 import sys
 from pathlib import Path
 
-from run_srp434573_allomix import MIXES, OUT, fnum, known_host_pct, run_mix, write_tsv
+from run_srp434573_allomix import MIXES, OUT, fnum, known_host_pct, run_mix_many, write_tsv
 
 FACTS_DIR = Path("output/facts")
 
@@ -85,11 +87,12 @@ def _sexchrom(rec: dict) -> tuple[float | None, float | None, float | None]:
     )
 
 
-def collect() -> list[dict]:
+def collect(n_workers: int) -> list[dict]:
+    jobs = [dict(name=name, host=MIXES[name][0], donors=MIXES[name][1]) for name in MISMATCHED]
     rows: list[dict] = []
-    for name in MISMATCHED:
+    for name, recs in zip(MISMATCHED, run_mix_many(jobs, n_workers)):
         host, (donor,) = MIXES[name]
-        for rec in run_mix(name, host, [donor]):
+        for rec in recs:
             mle, mle_lo, mle_hi = _host_pct_from_ci(
                 fnum(rec.get("donor_pct")), fnum(rec.get("ci_lo")), fnum(rec.get("ci_hi"))
             )
@@ -132,7 +135,10 @@ def write_facts(path: Path, rows: list[dict]) -> None:
 
 
 def main() -> int:
-    rows = collect()
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--n-workers", type=int, default=os.cpu_count() or 1,
+                    help="Concurrent allomix detect processes (default: all cores)")
+    rows = collect(ap.parse_args().n_workers)
     write_tsv(OUT / "srp434573_sexmismatch.tsv", COLS, rows)
     write_facts(FACTS_DIR / "srp434573_sexmismatch.csv", rows)
     sys.stderr.write(

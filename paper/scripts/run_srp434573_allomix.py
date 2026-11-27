@@ -31,10 +31,12 @@ unless a freshly joint-called ``output/genotypes/SRP434573`` is present (full
 from-scratch reproduction), which takes precedence. Writes nothing to /tau.
 """
 
+import argparse
 import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from cyvcf2 import VCF
@@ -231,6 +233,7 @@ def run_mix(
     error_table: Path | None = None,
     contam_table: Path | None = None,
     extra_args: list[str] | None = None,
+    samples: list[str] | None = None,
 ) -> list[dict]:
     """Run allomix detect (TSV) and return one parsed dict per admix sample.
 
@@ -245,6 +248,7 @@ def run_mix(
             clean run is still a no-op).
         extra_args: Extra ``detect`` arguments appended verbatim (the chrX arm
             passes ``--contig-policy``; see ``run_srp434573_chrx.py``).
+        samples: Admix samples to run (defaults to every sample in ``admix``).
     """
     if panel is None:
         panel = GEN / f"{name}.SRP434573.vcf.gz"
@@ -274,7 +278,7 @@ def run_mix(
         cmd += ["--error-table", str(error_table)]
     for d in donors:
         cmd += ["--donor-sample", d, "--expected-relatedness", "unrelated"]
-    for s in admix_samples(admix):
+    for s in samples if samples is not None else admix_samples(admix):
         cmd += ["--sample", s]
     if extra_args:
         cmd += extra_args
@@ -293,6 +297,33 @@ def run_mix(
         if header is not None:
             rows.append(dict(zip(header, fields)))
     return rows
+
+
+def run_mix_many(jobs: list[dict], n_workers: int) -> list[list[dict]]:
+    """Run several ``run_mix`` jobs in parallel, one ``detect`` call per admix sample.
+
+    ``detect`` fits each ``--sample`` independently, so splitting a job's samples
+    across calls gives the same rows as one call. Each call is a single-core
+    subprocess, so a thread pool is enough. Returns one record list per job, in
+    job order, with each job's records in admix-VCF sample order.
+
+    Args:
+        jobs: Keyword arguments for ``run_mix``, one dict per job (``samples``
+            must not be set; it is filled per call).
+        n_workers: Number of concurrent ``detect`` processes.
+    """
+    calls = []  # (job index, kwargs for one sample)
+    for i, job in enumerate(jobs):
+        name = job["name"]
+        admix = job.get("admix") or GEN / f"{name}.admix.vcf.gz"
+        for s in admix_samples(admix):
+            calls.append((i, {**job, "samples": [s]}))
+    with ThreadPoolExecutor(max_workers=max(1, n_workers)) as pool:
+        results = list(pool.map(lambda c: run_mix(**c[1]), calls))
+    out: list[list[dict]] = [[] for _ in jobs]
+    for (i, _), recs in zip(calls, results):
+        out[i].extend(recs)
+    return out
 
 
 def fnum(v):
@@ -351,7 +382,9 @@ def two_person_row(name: str, host: str, donor: str, known: float | None, rec: d
     }
 
 
-def run_synthetic(syn_dir: Path, extra_args: list[str] | None = None) -> list[dict]:
+def run_synthetic(
+    syn_dir: Path, n_workers: int, extra_args: list[str] | None = None
+) -> list[dict]:
     """Run allomix on the committed semi-synthetic admix VCFs (issue #5).
 
     Reuses each pair's real per-patient error table (the host/donor individuals
@@ -359,20 +392,21 @@ def run_synthetic(syn_dir: Path, extra_args: list[str] | None = None) -> list[di
     host fraction and replicate parsed from the ``syn_..._f<pct>_rep<n>`` name.
     ``extra_args`` is passed through to ``detect`` (the shared-rho arm).
     """
-    rows: list[dict] = []
+    jobs = []
     for name, (host, donors) in MIXES.items():
         if len(donors) != 1:
             continue  # synthetic series is two-person only
-        donor = donors[0]
         panel = syn_dir / f"{name}.synthetic.SRP434573.vcf.gz"
         admix = syn_dir / f"{name}.synthetic.admix.vcf.gz"
         if not admix.exists():
             continue
         # Reuse the real error table (same host/donor individuals): the pooled
         # table when built, else this mixture's per-patient table.
-        error_table = resolve_error_table(name)
-        recs = run_mix(name, host, donors, panel=panel, admix=admix,
-                       error_table=error_table, extra_args=extra_args)
+        jobs.append(dict(name=name, host=host, donors=donors, panel=panel, admix=admix,
+                         error_table=resolve_error_table(name), extra_args=extra_args))
+    rows: list[dict] = []
+    for job, recs in zip(jobs, run_mix_many(jobs, n_workers)):
+        name, host, donor = job["name"], job["host"], job["donors"][0]
         for rec in recs:
             parsed = parse_synthetic_sample(rec.get("sample") or "")
             if parsed is None:
@@ -385,7 +419,9 @@ def run_synthetic(syn_dir: Path, extra_args: list[str] | None = None) -> list[di
     return rows
 
 
-def run_synthetic_three(syn_dir: Path, extra_args: list[str] | None = None) -> list[dict]:
+def run_synthetic_three(
+    syn_dir: Path, n_workers: int, extra_args: list[str] | None = None
+) -> list[dict]:
     """Run allomix on the semi-synthetic host + 2 donor mixtures (issue #5).
 
     The three-person trio (host F2, donors M1 + M2) is titrated with the host at
@@ -394,7 +430,7 @@ def run_synthetic_three(syn_dir: Path, extra_args: list[str] | None = None) -> l
     real three-person rows but with the ground truth decoded from the ``syn3_``
     name. Reuses the trio's real per-patient error table (same individuals).
     """
-    rows: list[dict] = []
+    jobs = []
     for name, (host, donors) in MIXES.items():
         if len(donors) != 2:
             continue
@@ -402,9 +438,11 @@ def run_synthetic_three(syn_dir: Path, extra_args: list[str] | None = None) -> l
         admix = syn_dir / f"{name}.synthetic.admix.vcf.gz"
         if not admix.exists():
             continue
-        error_table = resolve_error_table(name)
-        recs = run_mix(name, host, donors, panel=panel, admix=admix,
-                       error_table=error_table, extra_args=extra_args)
+        jobs.append(dict(name=name, host=host, donors=donors, panel=panel, admix=admix,
+                         error_table=resolve_error_table(name), extra_args=extra_args))
+    rows: list[dict] = []
+    for job, recs in zip(jobs, run_mix_many(jobs, n_workers)):
+        name, host, donors = job["name"], job["host"], job["donors"]
         for rec in recs:
             parsed = parse_synthetic3_sample(rec.get("sample") or "")
             if parsed is None:
@@ -434,17 +472,21 @@ def run_synthetic_three(syn_dir: Path, extra_args: list[str] | None = None) -> l
     return rows
 
 
-def collect(step30: bool, cohort: list[list]) -> tuple[list[dict], list[dict]]:
+def collect(step30: bool, cohort: list[list], n_workers: int) -> tuple[list[dict], list[dict]]:
     """Run every mixture and return (two-person rows, three-person rows).
 
     With ``step30`` the two-person mixtures use the per-mixture contamination
     table (the table self-gates). The three-person mixture is multi-donor, which
     the correction does not touch, so it is identical either way.
     """
+    jobs = [
+        dict(name=name, host=host, donors=donors,
+             contam_table=build_contam_table(name, host, donors, cohort) if step30 else None)
+        for name, (host, donors) in MIXES.items()
+    ]
     two, three = [], []
-    for name, (host, donors) in MIXES.items():
-        contam_table = build_contam_table(name, host, donors, cohort) if step30 else None
-        recs = run_mix(name, host, donors, contam_table=contam_table)
+    for job, recs in zip(jobs, run_mix_many(jobs, n_workers)):
+        name, host, donors = job["name"], job["host"], job["donors"]
         if len(donors) == 1:
             donor = donors[0]
             for rec in recs:
@@ -471,6 +513,11 @@ def collect(step30: bool, cohort: list[list]) -> tuple[list[dict], list[dict]]:
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--n-workers", type=int, default=os.cpu_count() or 1,
+                    help="Concurrent allomix detect processes (default: all cores)")
+    n_workers = ap.parse_args().n_workers
+
     # State which sources this run resolved to. A stale output/genotypes dir
     # silently outranks the committed snapshot, and the error-table arm is set by
     # env var, so both are worth printing rather than inferring afterwards.
@@ -491,7 +538,7 @@ def main() -> int:
 
     # Headline run: Step 30 applied (the contamination table self-gates per
     # mixture). The three-person rows come from this run unchanged.
-    two, three = collect(step30=not NO_STEP30, cohort=cohort)
+    two, three = collect(step30=not NO_STEP30, cohort=cohort, n_workers=n_workers)
     write_tsv(OUT / "srp434573_two_person.tsv", two_cols, two)
     write_tsv(OUT / "srp434573_three_person.tsv", three_cols, three)
 
@@ -499,7 +546,7 @@ def main() -> int:
     # in the facts and prose. Skipped when Step 30 is disabled (then the headline
     # run is already the baseline).
     if not NO_STEP30:
-        two_base, _ = collect(step30=False, cohort=cohort)
+        two_base, _ = collect(step30=False, cohort=cohort, n_workers=n_workers)
         write_tsv(OUT / "srp434573_two_person_baseline.tsv", two_cols, two_base)
 
     sys.stderr.write(
@@ -512,7 +559,7 @@ def main() -> int:
     # committed snapshot exists (TAU-side generation step); otherwise skipped.
     syn_dir = resolve_srp434573_synthetic_dir()
     if syn_dir is not None:
-        syn = run_synthetic(syn_dir)
+        syn = run_synthetic(syn_dir, n_workers)
         syn_cols = two_cols + ["frac_pct", "seed"]
         write_tsv(OUT / "srp434573_synthetic.tsv", syn_cols, syn)
         sys.stderr.write(f"Wrote {len(syn)} semi-synthetic two-person rows from {syn_dir}.\n")
@@ -520,7 +567,7 @@ def main() -> int:
         # Three-person host + 2 donor semi-synthetic mixtures (issue #5). Separate
         # TSV so the two-person low-fraction series stays clean; absent when only
         # two-person synthetic VCFs were generated.
-        syn3 = run_synthetic_three(syn_dir)
+        syn3 = run_synthetic_three(syn_dir, n_workers)
         syn3_cols = ["mixture", "sample", "component", "role", "host_known_pct",
                      "known_pct", "est_pct", "ci_lo", "ci_hi", "seed", "qc"]
         write_tsv(OUT / "srp434573_synthetic_three_person.tsv", syn3_cols, syn3)
@@ -532,9 +579,9 @@ def main() -> int:
         # than from a one-off run. Skipped when the whole run is already shared-rho.
         if not NO_MARKER_TYPE_OVERDISPERSION:
             shared = ["--no-marker-type-overdispersion"]
-            syn_sh = run_synthetic(syn_dir, extra_args=shared)
+            syn_sh = run_synthetic(syn_dir, n_workers, extra_args=shared)
             write_tsv(OUT / "srp434573_synthetic_shared_rho.tsv", syn_cols, syn_sh)
-            syn3_sh = run_synthetic_three(syn_dir, extra_args=shared)
+            syn3_sh = run_synthetic_three(syn_dir, n_workers, extra_args=shared)
             write_tsv(OUT / "srp434573_synthetic_three_person_shared_rho.tsv", syn3_cols, syn3_sh)
             sys.stderr.write(
                 f"Wrote {len(syn_sh)} + {len(syn3_sh)} shared-rho semi-synthetic rows.\n"

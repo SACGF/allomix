@@ -950,6 +950,39 @@ def generate_sibling_trio_genotypes(
     return markers
 
 
+_FORMAT_DEFS = {
+    "GT": '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+    "AD": '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele depths">',
+    "DP": '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">',
+    "GQ": '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">',
+    "PL": '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred-scaled genotype likelihoods">',
+    "AF": '##FORMAT=<ID=AF,Number=A,Type=Float,Description="Allele frequency">',
+}
+
+
+def _with_format_defs(header: list[str], fields: tuple[str, ...]) -> list[str]:
+    """Return ``header`` with a ``##FORMAT`` line added for each field it lacks.
+
+    The blend functions copy the host VCF's header but write their own FORMAT
+    fields, so a field the host header does not declare is added before the
+    ``#CHROM`` line (otherwise htslib warns and reads it as a String).
+    """
+    declared = {
+        line.split("ID=", 1)[1].split(",", 1)[0]
+        for line in header
+        if line.startswith("##FORMAT=<ID=")
+    }
+    missing = [_FORMAT_DEFS[f] for f in fields if f not in declared]
+    if not missing:
+        return list(header)
+    out = []
+    for line in header:
+        if line.startswith("#CHROM"):
+            out.extend(missing)
+        out.append(line)
+    return out
+
+
 def write_genotype_vcf(
     markers: list[dict],
     path: str | Path,
@@ -1071,9 +1104,10 @@ def blend_vcfs(
     if sample_name is None:
         sample_name = "simulated"
 
-    # Replace the sample name in the #CHROM line, copy other header lines as-is.
+    # Replace the sample name in the #CHROM line, copy other header lines as-is,
+    # declaring any written FORMAT field the host header lacks.
     out_header = []
-    for line in host_header:
+    for line in _with_format_defs(host_header, ("GT", "AD", "DP", "GQ", "PL", "AF")):
         if line.startswith("#CHROM"):
             parts = line.split("\t")
             parts[-1] = sample_name
@@ -1487,7 +1521,7 @@ def build_joint_vcf(
         marker_depths = None
 
     out_header = []
-    for line in host_header:
+    for line in _with_format_defs(host_header, ("GT", "AD", "DP", "GQ", "AF")):
         if line.startswith("#CHROM"):
             parts = line.split("\t")[:9]
             parts.extend(all_sample_names)

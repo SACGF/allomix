@@ -10,6 +10,7 @@ import tempfile
 import textwrap
 from pathlib import Path
 
+import cyvcf2
 import numpy as np
 import pytest
 
@@ -1406,6 +1407,22 @@ class TestBlendingWithSex:
                 host_path, donor_path, host_sex=sexes[0], donor_sex=sexes[1], **kwargs
             )
             assert same.records == base.records
+
+    def test_blend_vcfs_declares_written_format_fields(self, tmp_path: Path) -> None:
+        """PL and AF are declared in the output header, so AF parses as a Float (#61)."""
+        markers = generate_related_genotypes(20, "unrelated", random.Random(5))
+        host_path, donor_path = _write_pair_vcfs(markers, tmp_path)
+        out = tmp_path / "admix.vcf"
+        write_vcf(blend_vcfs(host_path, donor_path, 0.1, target_depth=1000, seed=1), out)
+
+        vcf = cyvcf2.VCF(str(out))
+        assert vcf.get_header_type("PL")["Type"] == "Integer"
+        assert vcf.get_header_type("AF")["Type"] == "Float"
+        af = next(iter(vcf)).format("AF")
+        assert af.dtype.kind == "f"
+        # A field the host header already declares is not declared twice.
+        format_ids = [line for line in vcf.raw_header.splitlines() if "FORMAT=<ID=GT," in line]
+        assert len(format_ids) == 1
 
     def test_blend_vcfs_male_host_female_donor_chrx(self, tmp_path: Path) -> None:
         """A female hom-alt donor at a male hom-ref chrX site reads 2f/(1+f), PAR stays diploid."""

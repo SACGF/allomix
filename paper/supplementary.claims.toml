@@ -91,6 +91,11 @@ quote = "essentially unchanged by bias correction"
 assert = "supp_synthetic.ablation_rmse_bias_corrected_pct is essentially_unchanged(supp_synthetic.ablation_rmse_bias_only_pct)"
 message = "Figure S4: bias alone 'essentially unchanged by bias correction'"
 
+[[claim]]
+quote = "while narrowing the mean interval from"
+assert = "bias_with_bias.mean_ci_width_pct < bias_no_bias.mean_ci_width_pct"
+message = "S6: bias correction 'narrowing the mean interval'"
+
 [[ok]]
 quote = "since injected biases average near zero"
 reason = "the simulated biases are drawn with mean zero (simulator design, S6)"

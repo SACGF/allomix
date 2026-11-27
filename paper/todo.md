@@ -18,12 +18,6 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
 
 ## Pipeline
 
-- [ ] **`bias_with_bias` depends on rule order.** `generate_paper_facts.py` (rule
-  `paper_facts`) loads `output/bias_comparison/vcfs/true_biases.tsv` if it exists, but
-  that file is written by `compare_bias_correction.py` (rule `bias_comparison`) and is
-  not an input of `paper_facts`. So `bias_with_bias.*` changes with which rule ran first
-  (a quick build gave `ci_coverage_pct` 100.0 in parallel, 91.7 when rerun after
-  `bias_comparison`). Declare the dependency, or have `paper_facts` write its own table.
 - [ ] **`panel_empirical` reads its one-row CSV with `csv.DictReader`**, not
   `vibepaper.facts.read_facts`, because vibepaper 0.13's `read_facts` upcasts every
   integer in a horizontal CSV to float (`1732` → `1732.0`). Switch to `read_facts` once

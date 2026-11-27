@@ -96,6 +96,16 @@ quote = "while narrowing the mean interval from"
 assert = "bias_with_bias.mean_ci_width_pct < bias_no_bias.mean_ci_width_pct"
 message = "S6: bias correction 'narrowing the mean interval'"
 
+[[claim]]
+quote = "The narrower intervals covered the true fraction less often"
+assert = "bias_with_bias.ci_coverage_pct < bias_no_bias.ci_coverage_pct"
+message = "S6: corrected intervals 'covered the true fraction less often'"
+
+[[claim]]
+quote = "below the nominal 95%, against"
+assert = "bias_with_bias.ci_coverage_pct < 95"
+message = "S6: corrected coverage 'below the nominal 95%'"
+
 [[ok]]
 quote = "since injected biases average near zero"
 reason = "the simulated biases are drawn with mean zero (simulator design, S6)"

@@ -340,7 +340,10 @@ available but modest by design: in a 2,000x experiment it left the point estimat
 essentially unchanged (0% and 100% donor estimated at {{ bias_with_bias.est_0pct }}% and
 {{ bias_with_bias.est_100pct }}%) while narrowing the mean interval from
 {{ bias_no_bias.mean_ci_width_pct | pct(2) }} to
-{{ bias_with_bias.mean_ci_width_pct | pct(2) }} (Supplementary Methods S6, Figure S4).
+{{ bias_with_bias.mean_ci_width_pct | pct(2) }} (Supplementary Methods S6, Figure S4). The
+narrower intervals covered the true fraction less often: in
+{{ bias_with_bias.ci_coverage_pct | pct(1) }} of mixtures, below the nominal 95%, against
+{{ bias_no_bias.ci_coverage_pct | pct(1) }} without correction.
 
 <!-- include-csv: output/facts/table_depth.csv
   align: center

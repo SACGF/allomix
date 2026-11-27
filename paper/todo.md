@@ -10,6 +10,13 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
   integer in a horizontal CSV to float (`1732` → `1732.0`). Switch to `read_facts` once
   vibepaper fixes it (SACGF/vibepaper#56), or make
   `paper/empirical_results/panel_empirical.csv` vertical.
+- [ ] **Multi-donor fixtures lack contig headers.** `tests/test_data/multidonor/*.vcf`
+  declare only `chr1`, so every `parse_vcf` prints ~21 htslib "Contig 'chrN' is not
+  defined in the header" warnings (read by `run_multidonor_validation.py`). Same kind of
+  log noise as #61; regenerate the fixtures with all contigs declared.
+- [ ] **Re-time the full build after #60.** The exact estimator is ~3x faster (b3e9392),
+  measured only on a reduced grid. After the next full build, update the "6+ hours" in
+  `CLAUDE.md` and the per-rule runtimes quoted in #56/#60.
 
 ## Unchecked wording
 

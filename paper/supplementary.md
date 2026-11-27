@@ -343,7 +343,9 @@ essentially unchanged (0% and 100% donor estimated at {{ bias_with_bias.est_0pct
 {{ bias_with_bias.mean_ci_width_pct | pct(2) }} (Supplementary Methods S6, Figure S4). The
 narrower intervals covered the true fraction less often: in
 {{ bias_with_bias.ci_coverage_pct | pct(1) }} of mixtures, below the nominal 95%, against
-{{ bias_no_bias.ci_coverage_pct | pct(1) }} without correction.
+{{ bias_no_bias.ci_coverage_pct | pct(1) }} without correction. Mean absolute error
+rose slightly, from {{ bias_no_bias.mean_abs_error_pct | pct(3) }} to
+{{ bias_with_bias.mean_abs_error_pct | pct(3) }}.
 
 <!-- include-csv: output/facts/table_depth.csv
   align: center

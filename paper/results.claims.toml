@@ -161,7 +161,12 @@ assert = "srp434573_timeline.host_start_pct > srp434573_timeline.host_end_pct"
 message = "timeline: 'declining-chimerism series', 'dilution from ... down to ...', 'donor chimerism rising'"
 
 [[claim]]
-quote = ["the 0.5% rung, and the residual-recipient presence test returned a positive call at all … timepoints", "the 0.5% rung; the residual-recipient presence test returned a positive call at all … timepoints"]
+quote = ["below the known fraction but above the mixture's co-pooled contamination level", "reads below it at the … rung, above the mixture's in-data co-pooled contamination level"]
+assert = "srp434573_timeline.low_rung_known_pct == srp434573_timeline.host_end_pct and srp434573_timeline.low_rung_ci_hi_pct < srp434573_timeline.low_rung_known_pct and srp434573_timeline.low_rung_ci_lo_pct > srp434573_timeline.floor_pct"
+message = "timeline and Figure 2 caption: lowest rung reads 'below the known fraction' (CI upper bound under it) 'but above' the contamination level (CI lower bound over it)"
+
+[[claim]]
+quote = ["The residual-recipient presence test was positive at all … timepoints", "), and the residual-recipient presence test returned a positive call at all … timepoints"]
 assert = "srp434573_timeline.presence_n_detected == srp434573_timeline.n_timepoints"
 message = "timeline and Figure 2 caption: presence test 'returned a positive call at all ... timepoints'"
 

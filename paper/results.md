@@ -185,15 +185,17 @@ chimerism rising from {{ srp434573_timeline.donor_start_pct | pct(0) }} to
 residual recipient, relapse surveillance (Figure 2). allomix followed the decline with
 {{ srp434573_timeline.mae_pct | pct(2) }} mean absolute error across the
 {{ srp434573_timeline.n_timepoints | dp(0) }} rungs, tracking the known fraction down to 1%
-recipient before the estimate floors near the dataset's co-pooled contamination level
-(~{{ srp434573_timeline.floor_pct | pct(2) }}) at the 0.5% rung, and the residual-recipient presence
-test returned a positive call at all {{ srp434573_timeline.presence_n_detected | dp(0) }}
+recipient; at the {{ srp434573_timeline.low_rung_known_pct | pct(1) }} rung the estimate read
+{{ srp434573_timeline.low_rung_mle_pct | pct(2) }} (95% CI {{ srp434573_timeline.low_rung_ci_lo_pct | pct(2) }} to {{ srp434573_timeline.low_rung_ci_hi_pct | pct(2) }}), below the known
+fraction but above the mixture's co-pooled contamination level
+(~{{ srp434573_timeline.floor_pct | pct(2) }}). The residual-recipient presence
+test was positive at all {{ srp434573_timeline.presence_n_detected | dp(0) }}
 timepoints. These are independent titration samples read as a monitoring trajectory, not
 serial timepoints from one patient. The estimator's
 in silico accuracy across sequencing depths (mean absolute error below 1% from 50x to
 1,000x) is reported separately in Supplementary Table S4 and Supplementary Figure S14.
 
-![**Figure 2.** Serial-monitoring trajectory on real titrated mixtures (SRP434573). One two-person dilution ladder ({{ srp434573_timeline.mixture_label }}) read as a declining-chimerism series: the titrated minor contributor is assigned to the recipient role, so its dilution from {{ srp434573_timeline.host_start_pct | pct(0) }} down to {{ srp434573_timeline.host_end_pct }}% recipient (x-axis, high to low) runs in the direction of successful engraftment or, read as residual recipient, relapse surveillance. Grey squares (dashed) are the known recipient fraction; blue circles (solid) are the allomix maximum-likelihood estimate with 95% profile-likelihood CIs, on a log y-axis. The estimate tracks the known fraction down to 1% recipient and floors near the mixture's in-data co-pooled contamination level (red dotted line, ~{{ srp434573_timeline.floor_pct | pct(2) }}) at the 0.5% rung; the residual-recipient presence test returned a positive call at all {{ srp434573_timeline.presence_n_detected | dp(0) }} timepoints. These are independent titration samples presented as a monitoring trajectory, not serial timepoints from one patient. Genotypes and admixture allele depths were produced with the two-phase pipeline (Methods), with the per-marker contamination correction enabled as in the validation above.]({{ facts_dir }}/fig_srp434573_timeline.png)
+![**Figure 2.** Serial-monitoring trajectory on real titrated mixtures (SRP434573). One two-person dilution ladder ({{ srp434573_timeline.mixture_label }}) read as a declining-chimerism series: the titrated minor contributor is assigned to the recipient role, so its dilution from {{ srp434573_timeline.host_start_pct | pct(0) }} down to {{ srp434573_timeline.host_end_pct }}% recipient (x-axis, high to low) runs in the direction of successful engraftment or, read as residual recipient, relapse surveillance. Grey squares (dashed) are the known recipient fraction; blue circles (solid) are the allomix maximum-likelihood estimate with 95% profile-likelihood CIs, on a log y-axis. The estimate tracks the known fraction down to 1% recipient and reads below it at the {{ srp434573_timeline.low_rung_known_pct | pct(1) }} rung, above the mixture's in-data co-pooled contamination level (red dotted line, ~{{ srp434573_timeline.floor_pct | pct(2) }}), and the residual-recipient presence test returned a positive call at all {{ srp434573_timeline.presence_n_detected | dp(0) }} timepoints. These are independent titration samples presented as a monitoring trajectory, not serial timepoints from one patient. Genotypes and admixture allele depths were produced with the two-phase pipeline (Methods), with the per-marker contamination correction enabled as in the validation above.]({{ facts_dir }}/fig_srp434573_timeline.png)
 
 ### Residual-recipient presence test
 

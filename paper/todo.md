@@ -11,17 +11,8 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
   vibepaper fixes it (SACGF/vibepaper#56), or make
   `paper/empirical_results/panel_empirical.csv` vertical.
 
-## Unchecked wording
-
-- [ ] Results, Figure 2: "the estimate floors near the dataset's co-pooled contamination
-  level" has no fact for the 0.5%-rung estimate, so nothing checks it (lint doesn't flag
-  "near").
-
 ## For the author
 
-- [ ] **Kakodkar 0.3%:** `discussion.md` says "Kakodkar et al. reported an analytical LoD
-  of 0.3% for AlloSeq HCT", but the Table 1 footnote calls 0.3% the vendor-stated figure.
-  Check against the source.
 - [ ] **Unused facts:** decide whether to cite or list in `[lint] unused_ok`:
   `lod_saturation.*` (Figure S7 fit parameters) and
   `srp434573_synthetic.{real,syn}_05_mle_med_pct` / `syn_minus_real_05_mle_pct`.

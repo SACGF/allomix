@@ -135,7 +135,7 @@ def main() -> int:
     fig.savefig(fig_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
-    # Caption facts. MAE over the ladder rungs, plus the span and floor.
+    # Caption facts. MAE over the ladder rungs, the span, the floor and the lowest rung.
     abs_err = [abs(m - k) for m, k in zip(mle, known)]
     facts = {
         "mixture_label": MIXTURE.replace("mix_", "").replace("_into_", " into "),
@@ -147,6 +147,11 @@ def main() -> int:
         "mae_pct": round(sum(abs_err) / len(abs_err), 2),
         "presence_n_detected": sum(detected),
         "floor_pct": round(floor_pct, 2) if floor_pct is not None else "",
+        # The lowest rung, quoted on its own in the text.
+        "low_rung_known_pct": known[-1],
+        "low_rung_mle_pct": mle[-1],
+        "low_rung_ci_lo_pct": ci_lo[-1],
+        "low_rung_ci_hi_pct": ci_hi[-1],
     }
     facts_path = FACTS_DIR / "srp434573_timeline.csv"
     write_fact_csv(facts_path, facts)

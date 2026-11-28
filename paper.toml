@@ -47,6 +47,10 @@ essentially_unchanged = { within_pct = 10 }
 # precision of the facts it compares.
 unchanged = { within = 0.01 }
 
+[limits]
+# JMD Regular Article: the abstract is the only hard limit (paper/jmd_guide.md).
+abstract = { file = "paper/abstract.md", max_words = 220 }
+
 [lint]
 # Design values typed into the prose: titration and burden levels, simulated
 # depths, nominal coverage and significance levels, worked-example arithmetic.

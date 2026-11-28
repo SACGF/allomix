@@ -13,7 +13,15 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
 
 ## For the author
 
-- [ ] **Word limits:** the target is JMD (the CSL in `paper.toml`), but `paper.toml` has no
-  `[limits]` table yet. Add one from the JMD Regular Article limits (the author guide at
-  jmdjournal.org / sciencedirect.com blocks automated fetches, so the limits need pasting
-  in). `vibepaper wordcount` prints the current counts.
+- [ ] **JMD conformance** (rules in `paper/jmd_guide.md`). Points where the draft may not
+  follow the guide:
+  - **Supplementary Methods (S1 to S11):** the guide says method detail in supplementary
+    material is not acceptable. Decide whether to move them into Methods or keep them and
+    risk an editor asking.
+  - **First person:** the guide asks for minimal "we/our/us" and prefers the passive.
+    There are about 45 uses (most in Methods, Results and Discussion).
+  - **Abstract at the limit:** exactly 220 of 220 words, so any added word fails
+    `vibepaper wordcount --check`.
+  - **AI disclosure:** a "Declaration of AI and AI-assisted technologies in the writing
+    process" section is needed if AI tools were used in writing.
+  - **Article type:** Regular Article or Technical Advance (same limits and charges).

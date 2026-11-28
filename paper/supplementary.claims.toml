@@ -235,3 +235,8 @@ reason = "the simulation default for the per-marker bias SD, a design value"
 [[ok]]
 quote = ["1.0 = no ADO", "markers with ratio < 0.8"]
 reason = "definitions in the Notes column: the het/HWE ratio of a marker without allelic dropout, and the low-ratio cut-off"
+
+[[claim]]
+quote = ["above the deepest simulated coverage", "tracks the binomial"]
+assert = "lod_saturation.rho > lod_saturation.max_depth"
+message = "Figure S7: fitted rho 'above the deepest simulated coverage', so the LoD 'tracks the binomial' curve (the size of the gap is quoted)"

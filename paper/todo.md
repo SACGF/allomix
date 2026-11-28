@@ -13,10 +13,5 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
 
 ## For the author
 
-- [ ] **Unused facts:** decide whether to cite or list in `[lint] unused_ok`:
-  `lod_saturation.*` (Figure S7 fit parameters) and
-  `srp434573_synthetic.{real,syn}_05_mle_med_pct` / `syn_minus_real_05_mle_pct`.
-  `val_host_*` / `validation_summary` are in `unused_ok` but nothing reads them: candidates
-  for removal from `generate_paper_facts.py`.
 - [ ] **Word limits:** add a `[limits]` table to `paper.toml` once the target journal is
   chosen (`vibepaper wordcount` prints the counts).

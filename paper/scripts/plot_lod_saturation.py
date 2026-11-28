@@ -32,7 +32,8 @@ figure (run it without --overlay-batch for that).
 
 Output:
     output/facts/fig_lod_saturation.png
-    output/facts/lod_saturation.csv   (fitted A, rho, floor per relatedness/overlay)
+    output/facts/lod_saturation.csv   fitted A, rho, floor and deepest depth (real_* for
+                                      an overlay)
 """
 
 import argparse
@@ -47,6 +48,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import paper_quick  # noqa: E402, F401  -- quick-build watermark (import for side effect)
+from facts_io import write_fact_csv  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 from scipy.optimize import curve_fit  # noqa: E402
 
@@ -132,6 +134,11 @@ def _read_batch(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             minf.append(float(r["n_informative"]))
             lod.append(float(lod_v))
     return np.array(depth), np.array(minf), np.array(lod)
+
+
+def _binomial_excess_pct(depth: float, rho: float) -> float:
+    """How far the model LoD sits above the binomial 1/sqrt(n) curve at one depth, in %."""
+    return (math.sqrt((depth + rho) / (rho + 1.0)) - 1.0) * 100.0
 
 
 def main() -> None:
@@ -247,33 +254,27 @@ def main() -> None:
     fig.savefig(args.out, dpi=150)
     print(f"Wrote {args.out}")
 
-    with args.facts.open("w", encoding="utf-8") as fh:
-        w = csv.writer(fh, lineterminator="\n")
-        w.writerow(
-            ["dataset", "relatedness", "A", "rho", "eff_depth_cap", "floor_pct_largest_panel"]
-        )
-        w.writerow(
-            [
-                "simulated",
-                args.relatedness,
-                f"{a_sim:.4f}",
-                f"{rho_sim:.1f}",
-                f"{rho_sim + 1:.0f}",
-                f"{floor_big:.4f}",
-            ]
-        )
-        if rho_real is not None:
-            floor_real = (a_sim / math.sqrt(float(np.median(rminf)))) / math.sqrt(rho_real + 1.0)
-            w.writerow(
-                [
-                    args.overlay_label,
-                    "real",
-                    f"{a_sim:.4f}",
-                    f"{rho_real:.1f}",
-                    f"{rho_real + 1:.0f}",
-                    f"{floor_real:.4f}",
-                ]
-            )
+    facts = {
+        "relatedness": args.relatedness,
+        "A": round(a_sim, 4),
+        "rho": round(rho_sim),
+        "eff_depth_cap": round(rho_sim + 1),
+        "floor_largest_panel_pct": round(floor_big, 4),
+        "max_depth": round(float(n.max())),
+        "binomial_excess_at_max_depth_pct": round(_binomial_excess_pct(n.max(), rho_sim), 2),
+    }
+    if rho_real is not None:
+        floor_real = (a_sim / math.sqrt(float(np.median(rminf)))) / math.sqrt(rho_real + 1.0)
+        facts |= {
+            "real_rho": round(rho_real, 1),
+            "real_eff_depth_cap": round(rho_real + 1),
+            "real_floor_pct": round(floor_real, 4),
+            "real_max_depth": round(float(rd.max())),
+            "real_binomial_excess_at_max_depth_pct": round(
+                _binomial_excess_pct(rd.max(), rho_real), 2
+            ),
+        }
+    write_fact_csv(args.facts, facts)
     print(f"Wrote {args.facts}")
 
 

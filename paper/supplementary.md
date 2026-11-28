@@ -432,8 +432,8 @@ unrelated panels in the LoD sweep. Points are the in silico LoD per panel size; 
 are the LoD model $\mathrm{LoD} = (A/\sqrt{M})\sqrt{(n + \rho)/(n(\rho + 1))}$ fitted
 across panels ($M$ = informative markers, $n$ = depth, $\rho$ = beta-binomial
 overdispersion concentration). The simulator draws reads from a binomial (Methods), so
-the fit returns a near-infinite $\rho$ and the LoD falls close to $1/\sqrt{n}$ with no
-floor (dashed binomial reference). Under real, finite $\rho$ the per-marker variance
+the fit returns $\rho$ = {{ lod_saturation.rho | commas }}, above the deepest simulated coverage ({{ lod_saturation.max_depth | commas }}x). The LoD therefore tracks the binomial $1/\sqrt{n}$ reference
+(dashed) across the grid: even at that depth the model sits {{ lod_saturation.binomial_excess_at_max_depth_pct | pct(0) }} above the binomial curve. Under real, finite $\rho$ the per-marker variance
 instead approaches $p(1-p)/(\rho + 1)$, so the LoD saturates at a floor and depth beyond
 an effective cap of $\rho + 1$ reads yields diminishing returns. The in silico LoD
 reported elsewhere is therefore an analytical best case under near-binomial sampling.

@@ -70,6 +70,9 @@ unused_ok = [
     "error_table_arms_headline.*",
     # LoD grid cells beside the quoted operating points.
     "lod_headline.*", "presence_lod_curve_headline.*", "cnv_loh_headline.*",
+    # Figure S7 fit parameters beside the quoted rho (plot inputs).
+    "lod_saturation.relatedness", "lod_saturation.A", "lod_saturation.eff_depth_cap",
+    "lod_saturation.floor_largest_panel_pct",
     "subsample_lod_headline.*", "overdispersion_lod_headline.lod_rho1000_pct",
     # Per-rung detail of the semi-synthetic ladder.
     "srp434573_synthetic.*_0p?", "srp434573_synthetic.n_points",

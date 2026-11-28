@@ -13,5 +13,7 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
 
 ## For the author
 
-- [ ] **Word limits:** add a `[limits]` table to `paper.toml` once the target journal is
-  chosen (`vibepaper wordcount` prints the counts).
+- [ ] **Word limits:** the target is JMD (the CSL in `paper.toml`), but `paper.toml` has no
+  `[limits]` table yet. Add one from the JMD Regular Article limits (the author guide at
+  jmdjournal.org / sciencedirect.com blocks automated fetches, so the limits need pasting
+  in). `vibepaper wordcount` prints the current counts.

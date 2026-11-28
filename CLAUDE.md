@@ -124,7 +124,7 @@ Entry point is `allomix.cli:main`, invoked as `allomix` on the command line. Use
 
 ### Building the Paper
 
-**Do NOT run the full paper build (`snakemake -s paper/Snakefile ...` for the `all` or `paper` target) without the user's express direction.** A full build runs the heavy validation simulations (LoD sweeps, presence sweep, subsample LoD, real-data runs, calibration batches) and takes 6+ hours. When you only need to validate new code, build the single rule or run the single script that produces the facts/figure you changed, and confirm those outputs in isolation. Leave the full render to the user, who runs it on a machine with more cores.
+**Do NOT run the full paper build (`snakemake -s paper/Snakefile ...` for the `all` or `paper` target) without the user's express direction.** A full build runs the heavy validation simulations (LoD sweeps, presence sweep, subsample LoD, real-data runs, calibration batches) and takes about 2h45m on 8 cores. When you only need to validate new code, build the single rule or run the single script that produces the facts/figure you changed, and confirm those outputs in isolation. Leave the full render to the user, who runs it on a machine with more cores.
 
 The paper build uses Snakemake (`paper/Snakefile`). The validation/figure scripts in `paper/scripts/` are independent and run in parallel, then `vibepaper build` renders the final document from the facts CSVs they produce in `output/facts/`.
 

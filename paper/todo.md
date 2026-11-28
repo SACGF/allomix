@@ -19,12 +19,6 @@ Open work on the paper. Delete an item when it is done. How to work on the repo 
 - [ ] Results, Figure 2: "the estimate floors near the dataset's co-pooled contamination
   level" has no fact for the 0.5%-rung estimate, so nothing checks it (lint doesn't flag
   "near").
-- [ ] Results, real-data LoD: "in the three titrated to 0.5% recipient, both the magnitude
-  and presence-test LoD reached at or below that level" has no assert, and the magnitude
-  half does not hold: the `to_0.5pct` MLE LoD bottoms out at 0.51% (2000x/400 markers,
-  `subsample_lod_summary.csv`); only the presence test reaches 0.5% (censored). The
-  headline facts read only `mixture_set == "all"`, so a fix needs `to_0.5pct` facts from
-  `run_subsample_lod.py` (a `subsample_lod` rerun) or wording without the number.
 
 ## For the author
 

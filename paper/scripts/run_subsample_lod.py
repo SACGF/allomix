@@ -517,21 +517,24 @@ def write_headline(
     n_mixtures_to_min: int,
     n_mixtures_to_high: int,
     high_min_titration_pct: float,
+    min_set_name: str,
 ) -> None:
     """One-row CSV of cells/values later prose may quote.
 
     ``n_mixtures_to_min`` counts the mixtures titrated down to the lowest probed
     fraction; ``n_mixtures_to_high`` the rest, whose own lowest titration is
     ``high_min_titration_pct``. These are the two disjoint rows of the figure.
+    Facts prefixed ``to_min_`` read the ``min_set_name`` subset (the mixtures
+    titrated to the lowest fraction); the rest read the "all" set.
     """
 
-    def lookup(test: str, d: int, nm: int) -> float:
+    def lookup(test: str, d: int, nm: int, mixture_set: str = "all") -> float:
         for s in summaries:
             if (
                 s["test"] == test
                 and s["depth"] == d
                 and s["n_markers"] == nm
-                and s.get("mixture_set", "all") == "all"
+                and s.get("mixture_set", "all") == mixture_set
             ):
                 return s["lod_pct"]
         return float("nan")
@@ -551,6 +554,8 @@ def write_headline(
         "presence_lod_2000x_400markers_pct": lookup("presence", 2000, 400),
         "mle_lod_250x_50markers_pct": lookup("mle", 250, 50),
         "presence_lod_250x_50markers_pct": lookup("presence", 250, 50),
+        "to_min_mle_lod_2000x_400markers_pct": lookup("mle", 2000, 400, min_set_name),
+        "to_min_presence_lod_2000x_400markers_pct": lookup("presence", 2000, 400, min_set_name),
         "contamination_floor_pct": _contamination_floor_pct(raw_rows),
     }
     write_fact_csv(
@@ -789,6 +794,7 @@ def main(argv: list[str] | None = None) -> int:
         n_mixtures_to_min=len(lowdf_mixtures),
         n_mixtures_to_high=len(highdf_mixtures),
         high_min_titration_pct=highdf_min_pct,
+        min_set_name=lowdf_set_name,
     )
     print(f"Wrote {FACTS_DIR / 'subsample_lod_headline.csv'}", file=sys.stderr)
 

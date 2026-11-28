@@ -208,6 +208,11 @@ quote = "mixtures titrated only to 1% the median LoD"
 assert = "subsample_lod_headline.high_min_titration_pct == 1"
 message = "real-data LoD: 'mixtures titrated only to 1%'"
 
+[[claim]]
+quote = ["the presence-test LoD reached at or below that level", "and the magnitude LoD came to"]
+assert = "subsample_lod_headline.to_min_presence_lod_2000x_400markers_pct <= subsample_lod_headline.min_titration_pct and subsample_lod_headline.to_min_mle_lod_2000x_400markers_pct > subsample_lod_headline.min_titration_pct"
+message = "real-data LoD, mixtures titrated to 0.5%: presence LoD at or below the lowest titration, magnitude LoD above it"
+
 [[ok]]
 quote = "(its lowest real titration)"
 reason = "names the series' lowest dilution, a property of the design"

@@ -249,7 +249,9 @@ fewer informative markers (Methods). In the
 median LoD reached at or below 1% (the lowest dilution they carry); in the
 {{ subsample_lod_headline.n_mixtures_to_min | number_word }} titrated to
 {{ subsample_lod_headline.min_titration_pct | pct(1) }}
-recipient, both the magnitude and presence-test LoD reached at or below that level. The dilution series
+recipient, the presence-test LoD reached at or below that level at the top of the
+panel-size and depth grid, and the magnitude LoD came to
+{{ subsample_lod_headline.to_min_mle_lod_2000x_400markers_pct | pct(2) }} there. The dilution series
 stops at {{ subsample_lod_headline.min_titration_pct | pct(1) }} (its lowest real
 titration), and the dataset's co-pooled contamination floor (a median
 {{ subsample_lod_headline.contamination_floor_pct | pct(2) }} at the deepest, largest
